@@ -32,12 +32,25 @@ public static class AccountingFlow
     /// <summary>Hộp thoại đích — 会計データ修正 (modAcc.cs:931-942).</summary>
     public const string ChgAccDataFragment = "計上しますか";
 
+    /// <summary>
+    /// Cửa sổ 入金指定 (frm203027) — <b>bằng chứng đã đi nhầm sang nhánh F</b>, không phải
+    /// một hộp thoại cần thêm luật.
+    ///
+    /// <para>Nó chỉ được mở ở modAcc.cs:602, tức là BÊN TRONG nhánh
+    /// 「会計データが存在しない」. Thấy nó ⇒ <c>past_billing_amount == 0</c> hoặc
+    /// <c>pAccLink == false</c> ngay từ modAcc.cs:598, và <c>ChgAccData</c> nằm ở nhánh
+    /// else nên không còn đường quay lại. Xem <see cref="AccountingPreconditions"/>.</para>
+    /// </summary>
+    public const string BranchFMarker = "入金指定額";
+
     /// <summary>Một hộp thoại đã gặp trên đường đi.</summary>
     public sealed record Seen(string Text, string Answered, string[] Buttons);
 
     /// <param name="Reached">Có tới được hộp thoại 「…計上しますか？」 không.</param>
     /// <param name="Trail">Mọi hộp thoại đã gặp, theo thứ tự — đây là chuỗi THẬT.</param>
-    public sealed record Walk(bool Reached, IReadOnlyList<Seen> Trail, Window? Target);
+    /// <param name="Diagnosis">Khi không tới đích: vì sao, nói bằng ngôn ngữ của modAcc.</param>
+    public sealed record Walk(
+        bool Reached, IReadOnlyList<Seen> Trail, Window? Target, string? Diagnosis = null);
 
     /// <summary>
     /// Luật trả lời cho các hộp thoại TRUNG GIAN.
@@ -56,10 +69,18 @@ public static class AccountingFlow
     /// <code>
     /// [1] 「処置データチェックでエラーがありました。このまま続けますか?」   OK / Cancel
     /// [2] 「会計処理を行う日が本日でありません。よろしいですか。」          OK / Cancel
+    /// [3] cửa sổ 入金指定 (frm203027)  ← KHÔNG phải hộp thoại. Xem BranchFMarker.
     /// </code>
     /// F8 chạy 処置データチェック TRƯỚC khi vào cây quyết định 会計 của LetAccData2.
     /// Bệnh nhân test không có 部位・病名 nên luôn dính cảnh báo
     /// 「当月に部位・病名がない可能性があります」.
+    ///
+    /// <para><b>⚠️ Không phải cửa sổ nào chặn đường cũng cần thêm luật.</b> Bước [3] trông
+    /// hệt một hộp thoại lạ, và phản xạ đầu tiên là viết luật bấm 「F1 指定なし」 cho nó đi
+    /// tiếp. Sai: 入金指定 nằm TRONG nhánh 「会計データが存在しない」, nên tới được đó nghĩa
+    /// là 会計データ修正 đã bị bỏ qua từ modAcc.cs:598 rồi. Việc phải làm là dựng tiền đề
+    /// TRƯỚC khi bấm F8 (<see cref="AccountingPreconditions"/>), không phải bấm thêm nút.
+    /// Trước khi thêm bất kỳ luật nào: tra xem cửa sổ đó nằm ở nhánh nào của source.</para>
     ///
     /// <para><b>Cả hai đều phải đáp OK (tiếp tục).</b> Lượt chạy đầu rơi vào luật mặc
     /// định "phủ định cho an toàn" → bấm Cancel → huỷ cả chuỗi F8. Với hộp thoại dạng
@@ -85,6 +106,16 @@ public static class AccountingFlow
         ("増えています", ["いいえ", "No", "Cancel"], "khong tao dong 差額 — nhanh F, khong phai G"),
         ("差額",         ["いいえ", "No", "Cancel"], "cung ly do"),
     ];
+
+    private const string BranchFDiagnosis =
+        "Chuỗi F8 mở cửa sổ 入金指定 (frm203027). Cửa sổ đó chỉ tồn tại ở modAcc.cs:602, " +
+        "tức BÊN TRONG nhánh 「会計データが存在しない」 — nên 会計データ修正 đã bị bỏ qua " +
+        "ngay ở modAcc.cs:598, trước mọi hộp thoại.\n\n" +
+        "  Điều kiện rẽ: past_billing_amount == 0 || pAccLink == false. Kiểm hai thứ:\n" +
+        "    1. ACCDAT của (患者, 診療日) có dòng km_cd 40-49/57/58, lflg = 0, claim_amt > 0 chưa?\n" +
+        "    2. accconfig.tre_acc_link có = 1 không? (đổi rồi phải KHỞI ĐỘNG LẠI app)\n\n" +
+        "  AccountingPreconditions.Ensure lo cả hai — nếu bạn thấy dòng này thì nó đã " +
+        "chạy mà vẫn không đủ, hãy đọc lại nhật ký ở phần đầu.";
 
     /// <summary>
     /// Bấm F8 会計 rồi đi theo luật cho tới khi gặp 「…計上しますか？」.
@@ -117,11 +148,29 @@ public static class AccountingFlow
             if (any is null)
             {
                 trace?.Note("khong con hop thoai nao — chuoi F8 da ket thuc ma khong toi 会計データ修正");
-                return new Walk(false, trail, null);
+                return new Walk(false, trail, null,
+                    trail.Count == 0
+                        ? "F8 không mở hộp thoại nào. Thường là 処置 hiện tại KHỚP HỆT 会計 " +
+                          "đã chốt (modAcc.cs:571 trả về ngay), hoặc ngày đang xem không có 処置."
+                        : "Chuỗi F8 kết thúc mà không tới 「…計上しますか？」 — xem hộp thoại cuối " +
+                          "trong danh sách trên để biết đã rẽ đi đâu.");
             }
 
             var text = Txt.N(Dialogs.TextOf(any));
             var buttons = ButtonNames(any);
+
+            // Nhận ra nhánh SAI trước khi tra luật: 入金指定 không phải hộp thoại hỏi
+            // đáp, và trả lời nó kiểu gì cũng không kéo về được nhánh G.
+            if (Txt.Has(text, BranchFMarker))
+            {
+                trace?.Note($"hop thoai [{trail.Count + 1}]: cua so 入金指定 (frm203027) — DAU HIEU NHANH F");
+                trace?.Shot($"hop-thoai-{trail.Count + 1}-nhanh-F");
+                // 戻る: nút lui của chính cửa sổ đó. Nhãn là 「F10\n戻る」 nên phải so CHỨA.
+                var backed = Dialogs.ClickButtonContaining(any, "戻る", "Cancel", "Close");
+                trail.Add(new Seen(text, backed ? "F10 戻る (lui)" : "(KHONG BAM DUOC)", buttons));
+                return new Walk(false, trail, null, BranchFDiagnosis);
+            }
+
             var rule = Rules.FirstOrDefault(r => Txt.Has(text, r.Contains));
 
             // Mặc định phủ định cho hộp thoại LẠ: an toàn với hộp thoại kiểu "có ghi
@@ -139,7 +188,10 @@ public static class AccountingFlow
             {
                 trail.Add(new Seen(text, "(KHONG BAM DUOC)", buttons));
                 trace?.Note($"  !! khong co nut nao trong {string.Join("/", answer)} — dung lai");
-                return new Walk(false, trail, null);
+                return new Walk(false, trail, null,
+                    $"Cửa sổ cuối không có nút nào trong {string.Join("/", answer)}. Nếu nó là " +
+                    "FORM chứ không phải MessageBox thì đừng thêm luật — hãy hỏi vì sao chuỗi " +
+                    "lại đi qua đó (xem BranchFMarker).");
             }
 
             trail.Add(new Seen(text, answer[0], buttons));
@@ -147,7 +199,7 @@ public static class AccountingFlow
         }
 
         trace?.Note("cham tran 8 hop thoai — nghi vong lap, dung lai");
-        return new Walk(false, trail, null);
+        return new Walk(false, trail, null, "Chạm trần 8 hộp thoại — nghi vòng lặp.");
     }
 
     /// <summary>

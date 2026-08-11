@@ -12,9 +12,10 @@
     Teardown khoi phuc theo anh chup dau lo, nhung do la duong lui chu khong phai
     giay phep — hay tro patient.patNo vao BENH NHAN TEST.
 
-    TIEN DE khong dung duoc tu test:
-      - Benh nhan da 窓口精算 xong ngay test (co dong ACCDAT)
-      - 会計設定.tre_acc_link = 1
+    TIEN DE (modAcc.cs:598 — hai dieu kien de vao duoc nhanh 会計データ修正):
+      - Ngay test co dong ACCDAT 医療保険 => TEST TU SEED, teardown tu xoa
+      - accconfig.tre_acc_link = 1        => TEST TU BAT, nhung cai nay chi
+        duoc doc LUC APP KHOI DONG, nen phai DONG WinForm roi chay lai.
     Thieu thi testcase tu Ignore kem ly do, khong do mo ho.
 
     PHAI chay tren Windows, trong phien dang nhap CO MAN HINH THAT.
@@ -24,6 +25,11 @@
     Chay cong cu chan doan: bam F8 va do TOAN BO chuoi hop thoai gap phai
     (noi dung + nut), khong tra loi hop thoai dich. Chay cai nay truoc neu
     chuoi F8 tren may ban khac voi gia dinh.
+
+    No dung CUNG tien de voi testcase that (nen cung can parity.allowSave, va
+    tu xoa dong 会計 da seed khi xong). Ban dau no khong dung gi ca — nghe thi
+    "trung lap" nhung hoa ra la hong: no khao sat nhanh F trong khi testcase
+    chay nhanh G, moi luat rut ra deu lech dia chi.
 
 .PARAMETER Case
     Loc theo ten testcase, vd "Tc8_2".

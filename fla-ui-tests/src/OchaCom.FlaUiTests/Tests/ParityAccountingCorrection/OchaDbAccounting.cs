@@ -126,6 +126,42 @@ public sealed class OchaDbAccounting
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // accconfig — công tắc bật/tắt CẢ nhánh G
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 処置会計連動 (<c>accconfig.tre_acc_link</c>) — 窓口精算 xong mà sửa 処置 thì
+    /// chênh lệch có được tính vào 預り金/未収金 hay không.
+    ///
+    /// <para><b>Đây là công tắc tổng của nhánh G.</b> <c>LetAccData2</c> rẽ bằng
+    /// <c>if (past_billing_amount == 0 || pAccLink == false)</c> (modAcc.cs:598) — cờ tắt
+    /// thì mọi lần F8 đều đi tạo 未精算データ, và <c>ChgAccData</c> <b>không bao giờ</b>
+    /// chạy dù dữ liệu có dựng đẹp tới đâu.</para>
+    ///
+    /// <para>⚠️ Cờ được đọc MỘT LẦN lúc app khởi động (<c>modCommon.cs:346</c> nạp
+    /// <c>_accConfigData</c>), nên sửa DB khi app đang chạy sẽ không có tác dụng — phải
+    /// đóng app rồi chạy lại. <see cref="AccountingPreconditions"/> lo việc báo đúng
+    /// điều đó thay vì để chuỗi F8 lặng lẽ đi nhầm nhánh.</para>
+    /// </summary>
+    public int? ReadTreAccLink()
+    {
+        using var con = Open();
+        using var cmd = Cmd(con, "SELECT TOP 1 tre_acc_link FROM accconfig");
+        var v = cmd.ExecuteScalar();
+        return v is null or DBNull ? null : Convert.ToInt32(v);
+    }
+
+    /// <summary>Bật/tắt 処置会計連動. Chỉ có hiệu lực sau khi app khởi động lại.</summary>
+    public void SetTreAccLink(int value)
+    {
+        using var con = Open();
+        using var cmd = Cmd(con, "UPDATE accconfig SET tre_acc_link = @v");
+        cmd.Parameters.Add("@v", SqlDbType.Int).Value = value;
+        if (cmd.ExecuteNonQuery() == 0)
+            throw new InvalidOperationException("Bảng accconfig rỗng — không có 窓口精算設定 để sửa.");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // Dựng tiền đề — 会計 đã chốt cho ngày test
     // ═══════════════════════════════════════════════════════════════════════
 

@@ -15,6 +15,17 @@ namespace OchaCom.FlaUiTests.Tests.ParityAccountingCorrection;
 /// trên máy bạn có thể khác giả định trong <c>AccountingFlow.Rules</c>. File sinh ra
 /// nói rõ phải thêm luật nào.</para>
 ///
+/// ═══════════════════════════════════════════════════════════════════════════
+/// ⚠️ NÓ DỰNG TIỀN ĐỀ Y HỆT TESTCASE
+/// ═══════════════════════════════════════════════════════════════════════════
+/// Bản đầu không dựng gì, chỉ bấm F8 rồi ghi. Nghe thì "trung lập" nhưng hoá ra là
+/// hỏng: thiếu dòng 会計 đã chốt thì <c>LetAccData2</c> rẽ sang nhánh tạo 未精算データ,
+/// nên nó khảo sát một cây quyết định <b>khác</b> cây mà testcase sẽ gặp, và mọi luật
+/// rút ra từ đó đều lệch địa chỉ. Lượt 2026-08-11 mất trọn một vòng vì chuyện này.
+///
+/// <para>Vì có <see cref="AccountingPreconditions"/> nên nó GHI vào ACCDAT ⇒ đòi
+/// <c>parity.allowSave</c> như testcase thật, và teardown xoá phần đã seed.</para>
+///
 /// <code>
 ///   .\run-parity-accounting.ps1 -Diagnostics
 /// </code>
@@ -24,6 +35,42 @@ namespace OchaCom.FlaUiTests.Tests.ParityAccountingCorrection;
 [Explicit("Cong cu chan doan, chay tay")]
 public sealed class AccountingFlowDiagnosticsTests : UiTestBase
 {
+    private OchaDbAccounting? _db;
+    private bool _seededAccounting;
+
+    protected override string? FixturePreflightSkipReason()
+    {
+        var s = TestSettings.Current;
+
+        if (!s.Db.Enabled || string.IsNullOrWhiteSpace(s.Db.ConnectionString))
+            return "Cần db.connectionString: công cụ này phải ĐỌC ACCDAT / accconfig mới " +
+                   "biết chuỗi F8 rẽ nhánh nào.\n\n  " + TestSettings.LocalFileHint();
+
+        if (!s.Parity.AllowSave)
+            return "Cần parity.allowSave: để khảo sát ĐÚNG cây quyết định, công cụ phải dựng " +
+                   "sẵn một dòng 会計 đã chốt cho ngày test (nó tự xoá khi xong).\n\n  " +
+                   TestSettings.LocalFileHint();
+
+        return null;
+    }
+
+    [OneTimeTearDown]
+    public void DiagnosticsTearDown()
+    {
+        if (_db is null || !_seededAccounting) return;
+        try
+        {
+            var n = _db.DeleteAccDat(PatNo, TrtDate);
+            TestContext.Out.WriteLine($"Don: xoa {n} dong ACCDAT do cong cu chan doan tao");
+        }
+        catch (Exception e)
+        {
+            TestContext.Out.WriteLine(
+                $"⚠️ KHONG xoa duoc dong 会計 da seed ({e.Message}). Xoa tay:\n" +
+                $"  DELETE FROM ACCDAT WHERE pat_no = {PatNo} AND trt_dt = '{TrtDate:yyyy-MM-dd}';");
+        }
+    }
+
     [Test]
     [Description("Đổ chuỗi hộp thoại của F8 会計 để biết cây quyết định thật")]
     public void DumpAccountingDialogChain()
@@ -33,11 +80,29 @@ public sealed class AccountingFlowDiagnosticsTests : UiTestBase
         var dir = Path.Combine(AppContext.BaseDirectory, "artifacts");
         Directory.CreateDirectory(dir);
 
-        var walk = AccountingFlow.WalkToChgAccData(App, Screen.Window, trace);
+        _db = OchaDbAccounting.CreateOrNull(Settings)
+              ?? throw new InvalidOperationException("Không dựng được OchaDbAccounting.");
+
+        var pre = AccountingPreconditions.Ensure(_db, PatNo, TrtDate, trace);
+        _seededAccounting = pre.SeededAccounting;
 
         var report = new System.Text.StringBuilder();
         report.AppendLine($"F8 会計 — chuoi hop thoai thuc te, {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         report.AppendLine($"benh nhan={Settings.Patient.PatNo}  ngay={TrtDate:yyyy-MM-dd}");
+
+        if (!pre.Ok)
+        {
+            // Bấm F8 lúc này chỉ tốn một vòng nữa để khảo sát nhánh KHÔNG quan tâm.
+            report.AppendLine("tien de CHUA DU — khong bam F8.");
+            report.AppendLine();
+            report.AppendLine(pre.Blocker);
+            WriteReport(dir, report.ToString());
+            IgnoreWithReason(pre.Blocker!);
+            return;
+        }
+
+        var walk = AccountingFlow.WalkToChgAccData(App, Screen.Window, trace);
+
         report.AppendLine($"toi duoc 会計データ修正: {walk.Reached}");
         report.AppendLine();
 
@@ -60,14 +125,22 @@ public sealed class AccountingFlowDiagnosticsTests : UiTestBase
         else
         {
             report.AppendLine();
-            report.AppendLine("KHONG toi duoc hop thoai dich. Doi chieu danh sach tren voi");
-            report.AppendLine("AccountingFlow.Rules — hop thoai nao chua co luat thi them vao do.");
+            report.AppendLine("KHONG toi duoc hop thoai dich.");
+            report.AppendLine(walk.Diagnosis ?? "(khong co chan doan)");
+            report.AppendLine();
+            report.AppendLine("Chi them luat vao AccountingFlow.Rules khi cua so o tren THAT SU la");
+            report.AppendLine("MessageBox cua cay quyet dinh 会計 — tra source truoc, dung doan.");
         }
 
+        WriteReport(dir, report.ToString());
+    }
+
+    private static void WriteReport(string dir, string content)
+    {
         var path = Path.Combine(dir, $"accounting-dialog-chain-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
-        File.WriteAllText(path, report.ToString());
+        File.WriteAllText(path, content);
         TestContext.AddTestAttachment(path, "Chuoi hop thoai F8 会計");
-        TestContext.Out.WriteLine(report.ToString());
+        TestContext.Out.WriteLine(content);
         TestContext.Out.WriteLine($"Da ghi: {path}");
     }
 }

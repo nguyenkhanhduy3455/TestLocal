@@ -50,6 +50,16 @@ public sealed class ChgAccDataTests : UiTestBase
     /// <summary>true = dòng 会計 do lô test tạo ⇒ teardown xoá hẳn.</summary>
     private bool _seededAccounting;
 
+    /// <summary>
+    /// Tc8-0 đã xác nhận nhánh G tới được chưa.
+    ///
+    /// <para>Cần cờ riêng vì <c>Assert.Ignore</c> KHÔNG phải Failed, nên
+    /// <c>run.stopOnFirstFailure</c> không chặn các testcase sau. Chạy Tc8-1/Tc8-2 khi
+    /// tiền đề chưa dựng được chỉ sinh ra một chuỗi F8 đi nhầm nhánh — mà nhánh đó
+    /// GHI 未精算データ vào DB thật.</para>
+    /// </summary>
+    private bool _branchGReachable;
+
     protected override string? FixturePreflightSkipReason()
     {
         var s = TestSettings.Current;
@@ -109,35 +119,29 @@ public sealed class ChgAccDataTests : UiTestBase
     // ─────────────────────────────────────────────────────────────────────────
 
     [Test, Order(1)]
-    [Description("Tc8-0 (mốc) — tiền đề: ngày test phải có 会計 đã chốt")]
-    public void Tc8_0_DayHasSettledAccounting()
+    [Description("Tc8-0 (mốc) — tiền đề: 会計 đã chốt + 処置会計連動 bật")]
+    public void Tc8_0_BranchGIsReachable()
     {
         using var trace = TestTrace.Begin();
-        var db = _db!;
 
-        // Tự dựng tiền đề. Điểm/tiền lấy xấp xỉ mức 処置 đang có để 会計 seed trông
-        // như một lượt 窓口精算 thật, không phải con số bịa.
-        var patBr = trace.Do("lay 枝番 tu 処置 cua ngay", () => db.ResolvePatBr(PatNo, TrtDate));
-        _seededAccounting = trace.Do(
-            "dung tien de: bao dam ngay test co 会計 da chot",
-            () => db.EnsureSettledAccounting(PatNo, TrtDate, score: 339, claimAmt: 1_020, patBr: patBr));
-        trace.Note(_seededAccounting
-            ? "=> VUA TAO dong 会計 (teardown se xoa)"
-            : "=> da co san, khong tao them");
+        // Hai điều kiện của modAcc.cs:598, dựng chung một chỗ với công cụ chẩn đoán —
+        // testcase và công cụ chẩn đoán phải đứng CÙNG một điểm xuất phát, nếu không
+        // bản đồ cái này vẽ ra không dùng được cho cái kia.
+        var pre = AccountingPreconditions.Ensure(_db!, PatNo, TrtDate, trace);
+        _seededAccounting = pre.SeededAccounting;
 
-        var rows = trace.Do("doc ACCDAT cua ngay test", () => db.ReadAccDat(PatNo, TrtDate));
-        foreach (var r in rows)
-            trace.Note($"  acc_dt={r.AccDt:yyyy-MM-dd} acc_cnt={r.AccCnt} trt_cnt={r.TrtCnt} " +
-                       $"km_cd={r.KmCd} lflg={r.Lflg} score={r.Score} claim={r.ClaimAmt} rece={r.ReceAmt}");
+        // Không Fail: thiếu tiền đề không phải bug của bản port, mà là môi trường chưa
+        // sẵn sàng (điển hình: tre_acc_link vừa bật, phải khởi động lại app).
+        if (!pre.Ok) IgnoreWithReason(pre.Blocker!);
 
-        var target = db.FindTargetRow(PatNo, TrtDate);
-        Assert.That(target, Is.Not.Null,
-            "Không có dòng 医療保険 (km_cd 40-49 / 57 / 58, lflg = 0). ChgAccData đọc thẳng " +
-            "Rows[0] của tập đó nên WinForm sẽ ném IndexOutOfRange — bản web trả " +
-            "TREATMENT.ACCOUNTING_ROW_NOT_FOUND. Ghi lại nếu bạn gặp trạng thái này.");
+        _branchGReachable = true;
+    }
 
-        trace.Note($"dong se bi sua: km_cd={target!.KmCd} score={target.Score} " +
-                   $"claim_amt={target.ClaimAmt} rece_amt={target.ReceAmt}");
+    /// <summary>Tc8-1/Tc8-2 chỉ được bấm F8 khi Tc8-0 đã xanh — xem <see cref="_branchGReachable"/>.</summary>
+    private void RequireBranchG()
+    {
+        if (!_branchGReachable)
+            IgnoreWithReason("Tc8-0 chưa dựng được tiền đề nên KHÔNG bấm F8 — đọc lý do ở Tc8-0.");
     }
 
     [Test, Order(2)]
@@ -145,6 +149,7 @@ public sealed class ChgAccDataTests : UiTestBase
     public void Tc8_1_F8ChainReachesChgAccData()
     {
         using var trace = TestTrace.Begin();
+        RequireBranchG();
 
         // 処置 phải KHÁC với 会計 đã chốt, nếu không precheck trả GIsNothing và
         // chuỗi kết thúc sớm. Thêm một 再診 là đủ tạo chênh lệch.
@@ -158,12 +163,12 @@ public sealed class ChgAccDataTests : UiTestBase
 
         if (!walk.Reached)
         {
-            // Không tới đích KHÔNG chắc là lỗi: có thể tenant tắt tre_acc_link, hoặc
-            // dữ liệu không rơi vào nhánh G. Nhật ký ở trên nói rõ đã đi tới đâu.
+            // Không tới đích KHÔNG chắc là lỗi của bản port: cây quyết định rẽ theo dữ
+            // liệu. walk.Diagnosis nói bằng ngôn ngữ của modAcc chứ không phải
+            // "không thấy nút", nên đọc là biết đi sửa ở đâu.
             Assert.Inconclusive(
-                "Chuỗi F8 không dẫn tới 「…計上しますか？」. Đọc danh sách hộp thoại ở trên: " +
-                "nếu dừng ở 「請求金額が増えています」 thì dữ liệu đang rơi vào nhánh F (差額), " +
-                "không phải G. Cần 会計設定.tre_acc_link = 1 và 処置 phải GIẢM so với 会計 đã chốt.");
+                "Chuỗi F8 không dẫn tới 「…計上しますか？」.\n\n" +
+                (walk.Diagnosis ?? "(khong co chan doan)"));
         }
 
         // Không bấm はい ở testcase này — chỉ xác nhận đường đi. Đóng lại để Tc8-2
@@ -176,6 +181,7 @@ public sealed class ChgAccDataTests : UiTestBase
     public void Tc8_2_MiddleBranch_WipesTheOtherBalance()
     {
         using var trace = TestTrace.Begin();
+        RequireBranchG();
         var db = _db!;
 
         // Dựng đúng tổ hợp làm nhánh GIỮA chạy: có CẢ HAI số dư, và số dư bị trừ
@@ -191,7 +197,8 @@ public sealed class ChgAccDataTests : UiTestBase
 
         var walk = AccountingFlow.WalkToChgAccData(App, Screen.Window, trace);
         if (!walk.Reached)
-            Assert.Inconclusive("Không tới được 会計データ修正 — xem Tc8-1 để biết chuỗi dừng ở đâu.");
+            Assert.Inconclusive("Không tới được 会計データ修正.\n\n" +
+                                (walk.Diagnosis ?? "(khong co chan doan)"));
 
         var text = AccountingFlow.Answer(walk.Target!, yes: true, trace);
         trace.Note($"nguyen van hop thoai: 「{text}」");

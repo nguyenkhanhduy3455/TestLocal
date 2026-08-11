@@ -82,6 +82,31 @@ public static class Dialogs
         return false;
     }
 
+    /// <summary>
+    /// Bấm nút đầu tiên có tên CHỨA một trong các mảnh; không có nút nào khớp → false.
+    ///
+    /// <para>Dùng cho các FORM tự vẽ (frm203027 入金指定…), nơi nhãn nút gộp cả phím tắt
+    /// lẫn chữ trên hai dòng: 「F10\n戻る」. <see cref="ClickButton"/> so KHỚP TUYỆT ĐỐI nên
+    /// tìm 「戻る」 sẽ trượt. MessageBox chuẩn thì vẫn dùng ClickButton — nhãn của nó là
+    /// một từ, so tuyệt đối tránh được cảnh 「はい」 khớp nhầm 「いいえ」.</para>
+    /// </summary>
+    public static bool ClickButtonContaining(Window dialog, params string[] fragments)
+    {
+        try
+        {
+            var buttons = dialog.FindAllDescendants(cf => cf.ByControlType(ControlType.Button));
+            foreach (var fragment in fragments)
+            {
+                var btn = buttons.FirstOrDefault(b => Txt.Has(Uia.NameOf(b).Replace("&", ""), fragment));
+                if (btn is null) continue;
+                Uia.Click(btn);
+                return true;
+            }
+        }
+        catch { /* đã đóng */ }
+        return false;
+    }
+
     /// <summary>Đóng hộp thoại cảnh báo (OK / はい) rồi chờ nó biến mất.</summary>
     public static void DismissOk(Window dialog, TimeSpan? timeout = null)
     {
