@@ -144,6 +144,34 @@ public sealed class TestSettings
         [JsonPropertyName("traceScreenshots")] public bool TraceScreenshots { get; set; } = true;
         [JsonPropertyName("captureOnFail")] public bool CaptureOnFail { get; set; } = true;
         [JsonPropertyName("stopOnFirstFailure")] public bool StopOnFirstFailure { get; set; } = true;
+
+        /// <summary>
+        /// Khi một testcase <b>đỏ</b>: <c>UiTestBase.TearDown</c> gọi
+        /// <c>OchaApp.ForceKill()</c> thay vì đợi <c>OneTimeTearDown</c>. Trước đây app
+        /// vẫn sống nguyên cho tới khi cả fixture xong — nghĩa là testcase lỗi sẽ để
+        /// app ở trạng thái lệch, chờ thao tác thật của người chạy. Cờ này <b>mặc
+        /// định bật</b>: lần fail nào cũng kill ngay, khỏi treo.
+        ///
+        /// <para><b>Chỉ áp dụng khi test tự mở app</b> (<c>App.OwnsProcess = true</c>).
+        /// Nếu test bám vào Menu.exe đang chạy (<c>app.attachIfRunning = true</c>) thì
+        /// không kill — đó là app THẬT của người dùng.</para>
+        /// </summary>
+        [JsonPropertyName("killOnFail")] public bool KillOnFail { get; set; } = true;
+
+        /// <summary>
+        /// Khi testcase <b>xanh</b> (Passed): kill app. Mặc định <c>false</c> để người
+        /// chạy còn xem app cho biết app "sạch" trông thế nào. Bật khi chạy CI / chạy
+        /// nhiều fixture liên tiếp, muốn kết thúc ngay.
+        /// </summary>
+        [JsonPropertyName("killOnSuccess")] public bool KillOnSuccess { get; set; }
+
+        /// <summary>
+        /// Khi testcase <b>timeout</b> (Failed vì vượt quá <c>testTimeout</c> của NUnit):
+        /// kill app. Mặc định <c>true</c> — timeout thường nghĩa là app đang ở trạng thái
+        /// treo / không phản hồi, để nguyên thì người chạy phải tự tay tắt.
+        /// </summary>
+        [JsonPropertyName("killOnTimeout")] public bool KillOnTimeout { get; set; } = true;
+
         [JsonPropertyName("nuisanceDialogs")] public string[] NuisanceDialogs { get; set; } = [];
         [JsonPropertyName("nuisanceDialogButtons")] public string[] NuisanceDialogButtons { get; set; } = ["いいえ", "No"];
 

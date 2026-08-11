@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text;
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Definitions;
@@ -170,6 +171,55 @@ public static class Uia
     public static void MouseClick(AutomationElement e)
     {
         e.Click();
+    }
+
+    /// <summary>
+    /// Click chuột VẬT LÝ (chuột trái) tại tọa độ màn hình tuyệt đối.
+    ///
+    /// <para>Khác <see cref="MouseClick"/>: cái đó chỉ gọi UIA Invoke (hoặc LegacyIAccessible
+    /// DoDefaultAction). Với DataGridView, Invoke không sinh ra <c>CellMouseClick</c> /
+    /// <c>CellContentClick</c> — cần sự kiện chuột THẬT để chọn dòng, focus, mở menu.</para>
+    /// </summary>
+    public static void LeftClickPhysical(int x, int y)
+    {
+        Win32.SetCursorPos(x, y);
+        Win32.mouse_event(Win32.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+        Thread.Sleep(30);
+        Win32.mouse_event(Win32.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+    }
+
+    /// <summary>
+    /// Click chuột phải VẬT LÝ tại tọa độ màn hình tuyệt đối. Mở context menu
+    /// của control đang nằm dưới con trỏ.
+    /// </summary>
+    public static void RightClickPhysical(int x, int y)
+    {
+        Win32.SetCursorPos(x, y);
+        Thread.Sleep(30);
+        Win32.mouse_event(Win32.MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
+        Thread.Sleep(30);
+        Win32.mouse_event(Win32.MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
+    }
+
+    /// <summary>Tọa độ trung tâm BoundingRectangle của phần tử (toạ độ màn hình).</summary>
+    public static (int X, int Y) Center(AutomationElement e)
+    {
+        var r = e.BoundingRectangle;
+        return ((int)(r.X + r.Width / 2), (int)(r.Y + r.Height / 2));
+    }
+
+    private static class Win32
+    {
+        public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+        public const uint MOUSEEVENTF_LEFTUP   = 0x0004;
+        public const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+        public const uint MOUSEEVENTF_RIGHTUP   = 0x0010;
+
+        [DllImport("user32.dll")]
+        public static extern bool SetCursorPos(int X, int Y);
+
+        [DllImport("user32.dll")]
+        public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, int dwExtraInfo);
     }
 
     /// <summary>Ô nhập bên trong một ComboBox có thể sửa; không có thì trả về chính nó.</summary>
