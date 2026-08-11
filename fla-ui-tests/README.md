@@ -243,6 +243,11 @@ Mỗi testcase ghi rõ nó ứng với TC nào bên kia. Hai dialog đầu vào 
 DB (`TRTSTATE` của một bệnh nhân, `chkprm` là cấu hình **toàn phòng khám**) nằm sau cờ
 riêng `inpP1.allowSave` và tự trả lại giá trị cũ. Ｂｒサンプル không ghi gì.
 
+> ⚠️ **Chưa chạy lần nào trên Windows.** Tên control mới chỉ đọc ra từ Designer. Chạy
+> `.\run-inp-p1-dialog.ps1 -Diagnostics` **trước tiên** rồi mới chạy testcase — sai
+> locator thì log trông y hệt "WinForm sai". Đáp án nằm ở các dòng `=== KQ-n ===`, runner
+> lọc sẵn ra `inp-p1-dialog-KQ.txt`.
+>
 > Luồng này thay cho `StepsEdit` / `run-steps-edit.ps1` cũ — luồng đó chỉ mở `frm203050`
 > rồi đọc cấu trúc, giờ là `StepEditTests.Tc1` trong đây.
 

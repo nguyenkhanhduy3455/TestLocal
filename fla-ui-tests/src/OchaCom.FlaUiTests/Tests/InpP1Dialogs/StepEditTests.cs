@@ -82,7 +82,7 @@ public sealed class StepEditTests : InpP1TestBase
         var shown = StepEditDialog.VisibleRow(_dialog);
         _probeBefore = shown[ProbeBui - 1];
         trace.Note($"32 o dang hien (種別 {ProbeKind}): {string.Join(" ", shown)}");
-        Log($"TRTSTATE 種別 {ProbeKind} tren man hinh: {string.Join(" ", shown)}");
+        LogKq(2, $"TRTSTATE 種別 {ProbeKind} tren man hinh: {string.Join(" ", shown)}");
 
         // ── Đối chiếu với DB: đây là chỗ chứng minh initProc nạp ĐÚNG dữ liệu ──
         // initProc gọi TrtState.getTrtState(con, _patNo) rồi setStsBui (:205-208), và
@@ -123,7 +123,7 @@ public sealed class StepEditTests : InpP1TestBase
 
         var items = StepEditDialog.KindItems(Dialog);
         trace.Note($"cboKind co {items.Count} muc: {string.Join(" / ", items)}");
-        Log($"cboKind: {string.Join(" / ", items)}");
+        LogKq(1, $"cboKind hien theo thu tu: {string.Join(" / ", items)}");
 
         Assert.That(items, Has.Count.EqualTo(StepEditDialog.KindCount),
             $"cboKind phai do tu CODMST cd_type {StepEditDialog.KindCdType} " +
@@ -161,7 +161,7 @@ public sealed class StepEditTests : InpP1TestBase
         // Nhãn combo lấy nguyên từ CODMST.ANY_VAL1 — so từng mục để bắt trường hợp
         // app hiển thị cột khác (ANY_VAL2) hoặc cắt chuỗi.
         var codItems = InpDb.ComboItems(StepEditDialog.KindCdType);
-        Log("CODMST 70 (ORDER BY SORT_ORDER — dung cau app chay): " +
+        LogKq(1, "CODMST 70 (ORDER BY SORT_ORDER — dung cau app chay): " +
             string.Join(" / ", codItems.Select(c => $"cd_val={c.CdVal} sort={c.SortOrder} 「{c.Label}」")));
 
         Assert.That(items.Select(Txt.N).ToList(),
@@ -280,7 +280,7 @@ public sealed class StepEditTests : InpP1TestBase
         var changed = StepEditDialog.TrySelectKind(Dialog, OtherKindIndex);
         var alert = InpP1MenuFlow.ReadAndDismissError(App, Dialog, TimeSpan.FromSeconds(5));
 
-        Log($"doi 種別 khi o sai: thao tac {(changed ? "chay xong" : "bi chan giua chung")}; " +
+        LogKq(3, $"doi 種別 khi o sai: thao tac {(changed ? "chay xong" : "bi chan giua chung")}; " +
             $"hop canh bao = {(alert is null ? "KHONG CO" : $"「{alert}」")}");
         trace.Note($"kindBefore=「{kindBefore}」 kindAfter=「{StepEditDialog.SelectedKind(Dialog)}」");
 
@@ -293,7 +293,7 @@ public sealed class StepEditTests : InpP1TestBase
         }
         else
         {
-            Log("KHONG co E00100 — nghia la txtEpp_Leave (frm203050.cs:179) da keo focus ve " +
+            LogKq(3, "KHONG co E00100 — nghia la txtEpp_Leave (frm203050.cs:179) da keo focus ve " +
                 "TRUOC khi cboKind kip doi. Ban web KHONG co lop chan nay; xem README muc 5.");
         }
 
@@ -402,7 +402,7 @@ public sealed class StepEditTests : InpP1TestBase
             ?? throw new InvalidOperationException($"benh nhan {PatNo} khong co dong TRTSTATE.");
         var probeBefore = before[ProbeBui - 1];
         var blankBefore = before[BlankBui - 1];
-        Log($"truoc khi ghi: bui{ProbeKind}_{ProbeBui} = {probeBefore}, " +
+        LogKq(2, $"truoc khi ghi: bui{ProbeKind}_{ProbeBui} = {probeBefore}, " +
             $"bui{ProbeKind}_{BlankBui} = {blankBefore}");
 
         try

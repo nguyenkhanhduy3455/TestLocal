@@ -212,13 +212,43 @@ riêng**, không phải con của popup cha, nên phải tìm mục con trong *m
 ## 8. Chạy
 
 ```powershell
+.\run-inp-p1-dialog.ps1 -Diagnostics    # ⚠️ CHẠY CÁI NÀY TRƯỚC TIÊN
 .\run-inp-p1-dialog.ps1                 # cả ba dialog
 .\run-inp-p1-dialog.ps1 -Dialog step    # step | check | br
 .\run-inp-p1-dialog.ps1 -Case Tc3
 .\run-inp-p1-dialog.ps1 -StepMs 1200    # chậm lại để ngồi nhìn
 .\run-inp-p1-dialog.ps1 -AllowSave      # bật nhánh GHI DB
-.\run-inp-p1-dialog.ps1 -Diagnostics    # đổ cây UIA trước khi sửa locator
 ```
+
+**Vì sao `-Diagnostics` trước.** Luồng này **chưa chạy lần nào trên Windows**. Mọi tên
+control mới chỉ được đọc ra từ Designer, chưa đối chiếu với cây UIA thật. Sai một cái là
+testcase đỏ vì *không tìm thấy control* — trong log nhìn **giống hệt** "WinForm sai", và
+người đọc sẽ đi sửa nhầm chỗ. `-Diagnostics` đổ cây UIA của menu, của cả bốn form, sơ đồ
+răng và danh sách `CODMST` ra artifact; không bấm F9, không ghi DB.
+
+Runner chạy **một `dotnet test` cho mỗi fixture** (build một lần rồi `--no-build`), lọc
+theo dạng `~<namespace>.<TênLớp>` — đúng dạng mà `run-karte-auto-calc.ps1` đã chạy được.
+Một fixture đỏ **không** làm dừng hai fixture kia: lượt chạy đầu tiên cần biết cả ba cái
+nào chạy được, không chỉ cái đầu.
+
+### Dòng `=== KQ-n ===` — thứ cần gửi lại
+
+Mọi **đáp án** lấy được từ WinForm đều in ra với tiền tố `=== KQ-n ===` (cùng quy ước với
+`Tests/KarteAutoCalc`), phân biệt với hàng trăm dòng nhật ký thao tác. Sau mỗi lượt chạy,
+runner gom chúng — cộng mọi dòng `IGNORE —` và `CANH BAO` — vào **`inp-p1-dialog-KQ.txt`**.
+
+| | Trả lời câu gì |
+|---|---|
+| `KQ-0` | cây UIA + tên control thật (chỉ có ở `-Diagnostics`) |
+| `KQ-1` | combo 種別 của `CODMST` 70 hiện theo **thứ tự** nào |
+| `KQ-2` | 32 ô STEP so với `TRTSTATE` |
+| `KQ-3` | giá trị > 30000 bị **lớp nào** chặn (`txtEpp_Leave` hay `saveData` — xem mục 5) |
+| `KQ-4` | 19 nhãn チェック項目設定 — hợp đồng cho BE bản web |
+| `KQ-5` | giá trị `chkprm` + các mục `CODMST` 62/63/64 |
+| `KQ-6` | Ｂｒサンプル: răng chọn được, số mẫu khớp, câu lỗi |
+
+Dòng `IGNORE —` quan trọng ngang `KQ-` ở lượt chạy đầu: nó nói chính xác dữ liệu của máy
+đang thiếu gì (bệnh nhân không có 処置 cần 部位, `BrSample` không có mẫu khớp…).
 
 Chạy **cả fixture**, đừng chạy lẻ một testcase: cả fixture dùng chung một lần mở dialog
 và thứ tự `Order` có ý nghĩa (`Tc6` dựa vào giá trị sai mà `Tc5` để lại). Đây là bản

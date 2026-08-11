@@ -83,7 +83,7 @@ public sealed class BrSampleTests : InpP1TestBase
         BrSampleFlow.SelectUpperLeftTeeth(_tooth!, BrTeeth, trace);
 
         var marked = BrSampleFlow.MarkedTeeth(_tooth!);
-        Log($"o rang dang co chu: {string.Join(" ", marked)}");
+        LogKq(6, $"o rang dang co chu: {string.Join(" ", marked)}");
         trace.Note($"{marked.Count} o rang co chu");
 
         Assert.That(marked, Has.Count.EqualTo(BrTeeth.Length),
@@ -117,7 +117,7 @@ public sealed class BrSampleTests : InpP1TestBase
         }
 
         var headers = BrSampleFlow.BrHeaders(br);
-        Log($"header luoi Ｂｒサンプル: {string.Join(" | ", headers)}");
+        LogKq(6, $"header luoi Ｂｒサンプル: {string.Join(" | ", headers)}");
         Assert.That(headers.Any(h => Txt.Has(h, BrSampleFlow.BrColumnNo)), Is.True,
             $"thieu cot 「{BrSampleFlow.BrColumnNo}」 (_viewItem, frm203049.cs:53).");
         Assert.That(headers.Any(h => Txt.Has(h, BrSampleFlow.BrColumnBui)), Is.True,
@@ -126,7 +126,7 @@ public sealed class BrSampleTests : InpP1TestBase
         var rows = Waits.Poll(() => BrSampleFlow.BrRows(br), r => r.Count > 0,
                               "luoi Ｂｒサンプル dung xong it nhat mot dong",
                               Settings.Run.DefaultTimeout);
-        Log($"Ｂｒサンプル: {rows.Count} mau khop");
+        LogKq(6, $"Ｂｒサンプル: {rows.Count} mau khop");
         trace.Note($"{rows.Count} mau khop");
 
         // Cột 部位 là 歯式 HAI DÒNG (hàm trên \n hàm dưới) — WrapMode = True trong
@@ -171,8 +171,8 @@ public sealed class BrSampleTests : InpP1TestBase
                                m => m.Count > before.Count,
                                "so o rang co chu tang len sau khi ap mau Br",
                                Settings.Run.DefaultTimeout);
-        Log($"truoc khi ap mau: {string.Join(" ", before)}");
-        Log($"sau khi ap mau : {string.Join(" ", after)}");
+        LogKq(6, $"truoc khi ap mau: {string.Join(" ", before)}");
+        LogKq(6, $"sau khi ap mau : {string.Join(" ", after)}");
 
         Assert.That(after.Count, Is.GreaterThan(before.Count),
             "ap mau Br xong ma lua chon khong doi gi — defData (frm203049.cs:300-311) " +
@@ -197,7 +197,7 @@ public sealed class BrSampleTests : InpP1TestBase
         // đúng tiền đề mà nhánh 上下顎同時 cần (frm203049.cs:230-233).
         const int oneJawToothCount = 16;
         var marked = BrSampleFlow.MarkedToothCount(tooth);
-        Log($"sau F7 全顎: {marked} o rang co chu");
+        LogKq(6, $"sau F7 全顎: {marked} o rang co chu");
         Assert.That(marked, Is.GreaterThan(oneJawToothCount),
             $"F7 全顎 phai chon ca ham tren lan ham duoi (frm902003.cs:272-278), " +
             $"dang chi co {marked} o co chu.");
@@ -238,7 +238,7 @@ public sealed class BrSampleTests : InpP1TestBase
         // (frm203049.cs:242-252) trả 0 dòng.
         BrSampleFlow.SelectUpperLeftTeeth(tooth, NoMatchTeeth, trace);
         var marked = BrSampleFlow.MarkedTeeth(tooth);
-        Log($"o rang dang co chu: {string.Join(" ", marked)}");
+        LogKq(6, $"o rang dang co chu: {string.Join(" ", marked)}");
         Assert.That(marked, Has.Count.EqualTo(NoMatchTeeth.Length),
             $"phai chon dung {NoMatchTeeth.Length} rang, dang co {marked.Count}.");
 

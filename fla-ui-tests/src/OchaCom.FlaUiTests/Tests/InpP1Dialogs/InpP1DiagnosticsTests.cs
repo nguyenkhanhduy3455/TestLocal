@@ -125,7 +125,7 @@ public sealed class InpP1DiagnosticsTests : InpP1TestBase
             WriteAndAttach("inp-p1-tooth-map.txt", sb.ToString(), "So do rang cua 部位選択");
 
             BrSampleFlow.SelectUpperLeftTeeth(tooth, Settings.InpP1.BrTeeth, trace);
-            Log($"sau khi bam Delete, →, {string.Join(",", Settings.InpP1.BrTeeth)}: " +
+            LogKq(0, $"sau khi bam Delete, →, {string.Join(",", Settings.InpP1.BrTeeth)}: " +
                 string.Join(" ", BrSampleFlow.MarkedTeeth(tooth)));
 
             var opened = BrSampleFlow.OpenBrSample(App, tooth, trace);
@@ -134,7 +134,7 @@ public sealed class InpP1DiagnosticsTests : InpP1TestBase
                 WriteAndAttach("inp-p1-frm203049.uia.txt",
                                Uia.DumpTree(opened.Dialog, maxDepth: 12, maxChildrenPerNode: 200),
                                "Cay UIA Ｂｒサンプル (frm203049)");
-                Log(opened.HasError
+                LogKq(0, opened.HasError
                     ? $"frm203049 bao loi: 「{opened.ErrorMessage}」"
                     : $"frm203049 co {BrSampleFlow.BrRows(opened.Dialog).Count} dong mau");
             }
@@ -167,7 +167,7 @@ public sealed class InpP1DiagnosticsTests : InpP1TestBase
         }
 
         var text = sb.ToString();
-        Log(text);
+        LogKq(0, text);
         WriteAndAttach("inp-p1-codmst.txt", text, "Muc CODMST cua bon combo");
     }
 
@@ -189,7 +189,7 @@ public sealed class InpP1DiagnosticsTests : InpP1TestBase
             var buttons = dialog.FindAllDescendants(cf => cf.ByControlType(ControlType.Button))
                 .Select(b => $"  id=「{Uia.AutomationIdOf(b)}」 name=「{Uia.NameOf(b).Replace("\n", " ")}」 " +
                              $"enabled={SafeEnabled(b)}");
-            Log($"Nut cua {item.DialogId}:{Environment.NewLine}{string.Join(Environment.NewLine, buttons)}");
+            LogKq(0, $"Nut cua {item.DialogId}:{Environment.NewLine}{string.Join(Environment.NewLine, buttons)}");
         }
         finally
         {

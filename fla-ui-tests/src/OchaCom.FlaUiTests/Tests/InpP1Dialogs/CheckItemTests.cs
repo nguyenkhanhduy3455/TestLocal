@@ -69,7 +69,7 @@ public sealed class CheckItemTests : InpP1TestBase
                 "(frm203044.Designer.cs customLabel" + item.No + ".Text). " +
                 "Neu WinForm moi la dung thi phai sua CheckItemSettings.cs cua ban web.");
         }
-        Log("19 nhan cua frm203044: " + string.Join(" | ", actual));
+        LogKq(4, "19 nhan cua frm203044: " + string.Join(" | ", actual));
 
         // Đúng 19 combo — _param = new ComboBox[19] (frm203044.cs:25). ChkPrmData còn có
         // param20 (ChkPrm.cs:39) nhưng KHÔNG có ô nào trên màn cho nó.
@@ -130,7 +130,7 @@ public sealed class CheckItemTests : InpP1TestBase
             .ToDictionary(t => t, t => db.ComboItems(t).Select(c => Txt.N(c.Label)).ToList());
 
         foreach (var (cdType, labels) in expectedByType)
-            Log($"CODMST {cdType}: {string.Join(" / ", labels)}");
+            LogKq(5, $"CODMST {cdType}: {string.Join(" / ", labels)}");
 
         foreach (var item in CheckItemDialog.Items)
         {
@@ -176,7 +176,7 @@ public sealed class CheckItemTests : InpP1TestBase
         //   · KHÔNG có dòng nào → 1, riêng mục 14/15/16 → 9.
         // Đây đúng là bộ mặc định mà `GET /tenant/chk-prm` của bản web phải trả khi
         // isConfigured = false.
-        Log(stored is null
+        LogKq(5, stored is null
             ? "chkprm CHUA co dong nao — man hinh dang hien GIA TRI MAC DINH cua WinForm."
             : $"chkprm param1..19 = {string.Join(" ", stored)}");
 
@@ -263,7 +263,7 @@ public sealed class CheckItemTests : InpP1TestBase
         var before = db.ReadChkPrm();
         var probeNo = CheckItemDialog.SecondOnwardsItemNo;
         var probeBefore = before?[probeNo - 1];
-        Log($"truoc khi ghi: chkprm co {db.CountChkPrmRows()} dong, " +
+        LogKq(5, $"truoc khi ghi: chkprm co {db.CountChkPrmRows()} dong, " +
             $"param{probeNo} = {(probeBefore?.ToString() ?? "chua co dong nao")}");
 
         try

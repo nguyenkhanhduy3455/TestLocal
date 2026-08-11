@@ -67,4 +67,25 @@ public abstract class InpP1TestBase : UiTestBase
         try { TestContext.Progress.WriteLine(line); }
         catch { /* không có console */ }
     }
+
+    /// <summary>
+    /// Ghi một dòng <b>ĐÁP ÁN</b> — thứ mà lượt chạy này lấy được từ WinForm và người
+    /// đọc log cần gửi lại, phân biệt với hàng trăm dòng nhật ký thao tác.
+    ///
+    /// <para>Tiền tố <c>=== KQ-n ===</c> giống hệt luồng <c>Tests/KarteAutoCalc</c> để
+    /// runner của cả hai luồng lọc được bằng CÙNG một mẫu. <c>run-inp-p1-dialog.ps1</c>
+    /// gom hết các dòng này ra <c>inp-p1-dialog-KQ.txt</c> sau mỗi lượt chạy.</para>
+    ///
+    /// <para>Bảy câu hỏi mà luồng này trả lời — xem README.md mục 2:</para>
+    /// <list type="table">
+    ///   <item><term>KQ-0</term><description>cây UIA / tên control thật (chỉ ở fixture chẩn đoán)</description></item>
+    ///   <item><term>KQ-1</term><description>combo 種別 của CODMST 70 hiện theo thứ tự nào</description></item>
+    ///   <item><term>KQ-2</term><description>32 ô STEP so với TRTSTATE</description></item>
+    ///   <item><term>KQ-3</term><description>giá trị &gt; 30000 bị LỚP NÀO chặn (Leave hay saveData)</description></item>
+    ///   <item><term>KQ-4</term><description>19 nhãn チェック項目設定 — hợp đồng cho BE bản web</description></item>
+    ///   <item><term>KQ-5</term><description>giá trị chkprm + các mục CODMST 62/63/64</description></item>
+    ///   <item><term>KQ-6</term><description>Ｂｒサンプル: răng chọn được, số mẫu khớp, câu lỗi</description></item>
+    /// </list>
+    /// </summary>
+    protected static void LogKq(int no, string line) => Log($"=== KQ-{no} === {line}");
 }
