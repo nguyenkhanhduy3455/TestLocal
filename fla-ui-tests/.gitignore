@@ -3,5 +3,11 @@ obj/
 artifacts/
 *.user
 .vs/
-testsettings.local.json
 TestResults/
+
+# Allow testsettings and env files
+!testsettings.json
+!testsettings.*.json
+!.env
+!*.env
+
