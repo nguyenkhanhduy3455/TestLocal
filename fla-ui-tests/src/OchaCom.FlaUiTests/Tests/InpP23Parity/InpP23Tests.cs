@@ -138,6 +138,11 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
 
             step = $"F10 dong 登録 ({tag})";
             InpP23Dialog.Close(reg);
+
+            // Đóng luôn 一覧: nó MODAL trên frm203002, để mở thì cặp sau không với
+            // tới được menu オプション nữa.
+            step = $"F10 dong 一覧 ({tag})";
+            InpP23Dialog.Close(list);
         }
         catch (Exception e)
         {

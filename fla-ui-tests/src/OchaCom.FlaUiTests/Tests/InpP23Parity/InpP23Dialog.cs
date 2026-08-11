@@ -116,6 +116,12 @@ public static class InpP23Dialog
             return already;
         }
 
+        // 一覧 KIA còn mở thì phải đóng trước. Cả hai 一覧 đều MODAL trên frm203002,
+        // nên chừng nào một cái còn mở thì btnF11 của màn chính không với tới được
+        // — đo được 2026-08-11: mở xong cặp chk rồi gọi tiếp cặp dis thì trượt với
+        // 「man dang mo khong co btnF11」, mà thủ phạm là frm203038 vẫn đang chắn.
+        CloseOtherList(app, listId, screen, trace);
+
         var opened = KarteAutoCalcMenu.OpenSentakuMenu(app, screen, trace);
         if (opened.Popup is null)
             throw new InvalidOperationException($"Khong mo duoc menu 選択: {opened.Reason}");
@@ -134,6 +140,44 @@ public static class InpP23Dialog
         KarteAutoCalcDialog.RequireChrome(
             dialog, ListGridId, skipId: null, TestSettings.Current.Run.DefaultTimeout);
         return dialog;
+    }
+
+    /// <summary>
+    /// Đóng mọi 一覧 / 登録 KHÔNG phải <paramref name="keepListId"/>.
+    ///
+    /// <para>Đóng theo thứ tự con-trước-cha: form 登録 nằm TRONG cây của 一覧, đóng
+    /// 一覧 khi con còn mở thì WinForm sẽ hỏi hoặc lờ đi.</para>
+    /// </summary>
+    private static void CloseOtherList(
+        OchaApp app, string keepListId, Window screen, TestTrace? trace)
+    {
+        var pairs = new[]
+        {
+            (ListId: ChkListId, ListTitle: ChkListTitle, RegId: ChkRegisterId, RegTitle: ChkRegisterTitle),
+            (ListId: DisListId, ListTitle: DisListTitle, RegId: DisRegisterId, RegTitle: DisRegisterTitle),
+        };
+
+        foreach (var p in pairs)
+        {
+            if (p.ListId == keepListId) continue;
+
+            var list = KarteAutoCalcDialog.FindDialogWindow(app, p.ListId, p.ListTitle, screen);
+            if (list is null) continue;
+
+            var reg = KarteAutoCalcDialog.FindDialogWindow(app, p.RegId, p.RegTitle, list);
+            if (reg is not null)
+            {
+                trace?.Note($"dong {p.RegId} truoc khi dong {p.ListId}");
+                try { Close(reg); } catch (Exception e) { trace?.Note($"khong dong duoc {p.RegId}: {e.Message}"); }
+            }
+
+            trace?.Note($"dong {p.ListId} de giai phong menu オプション");
+            try { Close(list); } catch (Exception e) { trace?.Note($"khong dong duoc {p.ListId}: {e.Message}"); }
+
+            Waits.TryUntil(
+                () => KarteAutoCalcDialog.FindDialogWindow(app, p.ListId, p.ListTitle, screen) is null,
+                TimeSpan.FromSeconds(5));
+        }
     }
 
     public static Window OpenChkList(OchaApp app, Window screen, TestTrace? trace = null) =>
