@@ -21,6 +21,7 @@ public sealed class TestSettings
     [JsonPropertyName("db")] public DbSection Db { get; set; } = new();
     [JsonPropertyName("run")] public RunSection Run { get; set; } = new();
     [JsonPropertyName("parity")] public ParitySection Parity { get; set; } = new();
+    [JsonPropertyName("inpP1")] public InpP1Section InpP1 { get; set; } = new();
     [JsonPropertyName("locators")] public Dictionary<string, string> Locators { get; set; } = new();
 
     private static TestSettings? _current;
@@ -126,6 +127,39 @@ public sealed class TestSettings
         [JsonPropertyName("dialogTimeoutSeconds")] public int DialogTimeoutSeconds { get; set; } = 90;
 
         public TimeSpan DialogTimeout => TimeSpan.FromSeconds(DialogTimeoutSeconds);
+    }
+
+    /// <summary>
+    /// Luồng <c>Tests/InpP1Dialogs</c> — ba dialog vừa được port sang web
+    /// (Ｓｔｅｐ編集 / チェック項目設定 / Ｂｒサンプル).
+    ///
+    /// <para>Cờ riêng chứ không dùng chung <see cref="ParitySection.AllowSave"/>: hai
+    /// luồng ghi vào những bảng KHÁC HẲN nhau về mức rủi ro. Parity ghi <c>TRNTRN</c> /
+    /// <c>ACC_DAT</c> (処置行 và sổ tiền của cả tháng); luồng này ghi <c>TRTSTATE</c> của
+    /// đúng một bệnh nhân và <c>chkprm</c>. Trộn hai cờ thì bật cái này là mở luôn cái kia.</para>
+    ///
+    /// <para>Tương đương <c>TEST_ALLOW_SAVE=1</c> bên bộ Playwright
+    /// (<c>web-tenant-tests/tests/inp-p1-ported-dialogs.spec.ts</c>).</para>
+    /// </summary>
+    public sealed class InpP1Section
+    {
+        /// <summary>
+        /// Cho phép bấm F9 để GHI THẬT <c>TRTSTATE</c> / <c>chkprm</c>. Mặc định tắt;
+        /// tắt thì các testcase ghi tự Ignore, phần chỉ-đọc vẫn chạy.
+        /// </summary>
+        [JsonPropertyName("allowSave")] public bool AllowSave { get; set; }
+
+        /// <summary>
+        /// Hai răng của vùng 左上 dùng để tìm mẫu Br (nhánh CÓ mẫu khớp).
+        /// LU răng N nằm ở bui index 8+(N-1) ⇒ vị trí 1-based 9+(N-1).
+        /// </summary>
+        [JsonPropertyName("brTeeth")] public int[] BrTeeth { get; set; } = [5, 6];
+
+        /// <summary>
+        /// Cặp răng KHÔNG có mẫu Br nào (nhánh 該当なし). Cầu nối răng cửa giữa (1) với
+        /// răng khôn (8) là vô lý về nha khoa nên <c>BrSample</c> không có dòng nào.
+        /// </summary>
+        [JsonPropertyName("brNoMatchTeeth")] public int[] BrNoMatchTeeth { get; set; } = [1, 8];
     }
 
     public sealed class RunSection
@@ -246,6 +280,9 @@ public sealed class TestSettings
         Set("OCHA_STEP_MS", v => s.Run.StepMs = int.Parse(v));
         Set("OCHA_SCREENSHOT_DIR", v => s.Run.ScreenshotDir = v);
         Set("OCHA_STOP_ON_FIRST_FAILURE", v => s.Run.StopOnFirstFailure = ToBool(v));
+        Set("OCHA_INP_P1_ALLOW_SAVE", v => s.InpP1.AllowSave = ToBool(v));
+        Set("OCHA_BR_TEETH", v => s.InpP1.BrTeeth = ToIntArray(v));
+        Set("OCHA_BR_NO_MATCH_TEETH", v => s.InpP1.BrNoMatchTeeth = ToIntArray(v));
 
         static void Set(string name, Action<string> apply)
         {
@@ -255,5 +292,12 @@ public sealed class TestSettings
 
         static bool ToBool(string v) =>
             v is "1" or "true" or "TRUE" or "True" or "yes" or "on";
+
+        // "5,6" → [5, 6]. Giữ cùng dạng với TEST_BR_TEETH bên bộ Playwright.
+        static int[] ToIntArray(string v) =>
+            v.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+             .Select(p => int.TryParse(p, out var n) ? n : 0)
+             .Where(n => n > 0)
+             .ToArray();
     }
 }

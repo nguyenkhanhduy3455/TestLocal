@@ -74,6 +74,21 @@
     "dialogTimeoutSeconds": 90
   },
 
+  "inpP1": {
+    "//": [
+      "Luong Tests/InpP1Dialogs — ba dialog vua port sang web:",
+      "  Ｓｔｅｐ編集 (frm203050) / チェック項目設定 (frm203044) / Ｂｒサンプル (frm203049).",
+      "allowSave = true moi cho bam F9 GHI THAT vao TRTSTATE (1 benh nhan) va chkprm",
+      "(cau hinh TOAN PHONG KHAM). Mac dinh false => cac TC ghi tu Ignore, phan chi-doc van chay.",
+      "Co RIENG, khong dung chung parity.allowSave: hai luong ghi vao bang khac han nhau."
+    ],
+    "allowSave": false,
+    "//brTeeth": "Hai rang vung 左上 de tim mau Br (nhanh CO mau). LU rang N => vi tri 1-based 9+(N-1).",
+    "brTeeth": [ 5, 6 ],
+    "//brNoMatchTeeth": "Cap rang KHONG co mau Br nao (nhanh 該当なし). 1+8 = rang cua giua + rang khon.",
+    "brNoMatchTeeth": [ 1, 8 ]
+  },
+
   "locators": {
     "//": "AutomationId = Control.Name bên WinForm. Nếu máy Windows soi Inspect thấy khác thì sửa ở đây, KHÔNG phải sửa code.",
     "kobetuTabItem": "個別",

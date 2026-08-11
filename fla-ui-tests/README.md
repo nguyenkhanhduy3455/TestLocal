@@ -126,12 +126,20 @@ src/OchaCom.FlaUiTests/
 └── Tests/
     ├── KobetuSidePanelScoreTests.cs   TC-1 … TC-3
     ├── UiaTreeDumpTests.cs            công cụ chẩn đoán locator ([Explicit])
-    └── ParitySaveData/                ⚠️ luồng GHI DB, runner riêng — xem mục 8b
-        ├── README.md                  đọc file này TRƯỚC khi chạy
-        ├── Bug2dConcurrentSaveTests.cs
-        ├── SaveFlow.cs                lái chuỗi hộp thoại F9
-        ├── OchaDbParity.cs            truy vấn CÓ GHI (tách khỏi Data/OchaDb.cs)
-        └── BuiDialogDiagnosticsTests.cs
+    ├── ParitySaveData/                ⚠️ luồng GHI DB, runner riêng — xem mục 8b
+    │   ├── README.md                  đọc file này TRƯỚC khi chạy
+    │   ├── Bug2dConcurrentSaveTests.cs
+    │   ├── SaveFlow.cs                lái chuỗi hộp thoại F9
+    │   ├── OchaDbParity.cs            truy vấn CÓ GHI (tách khỏi Data/OchaDb.cs)
+    │   └── BuiDialogDiagnosticsTests.cs
+    └── InpP1Dialogs/                  ba dialog vừa port sang web — xem mục 8b
+        ├── README.md                  bảng tương ứng với spec Playwright
+        ├── InpP1MenuFlow.cs           F11 → 「９ オプション」 → mục con
+        ├── StepEditDialog.cs          frm203050 Ｓｔｅｐ編集
+        ├── CheckItemDialog.cs         frm203044 チェック項目設定
+        ├── BrSampleFlow.cs            frm902003 部位選択 → frm203049 Ｂｒサンプル
+        ├── InpP1Db.cs                 truy vấn CHỈ ĐỌC TRTSTATE / chkprm / CODMST
+        └── *Tests.cs                  3 fixture + 1 fixture chẩn đoán ([Explicit])
 ```
 
 > Một luồng có tiền đề riêng / rủi ro riêng thì để trong thư mục con của `Tests/` cùng
@@ -211,29 +219,32 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 |---|---|---|---|
 | `.\run-save-treatment-data.ps1` | F9 登録 → `modSave.SaveData` (処置データ登録) | `Tests/ParitySaveData/` | ⚠️ **CÓ** — `trn_trn` |
 | `.\run-fix-accounting-data.ps1` | F8 会計 → `modAcc.ChgAccData` (会計データ修正) | `Tests/ParityAccountingCorrection/` | ⚠️ **CÓ** — `acc_dat` + `person_exp` (**sổ tiền**) |
+| `.\run-inp-p1-dialog.ps1` | F11 →「９ オプション」→ Step / チェック項目設定 · 部位選択 → F9 Br例 | `Tests/InpP1Dialogs/` | ⚠️ chỉ khi `-AllowSave` — `TRTSTATE`, `chkprm` |
 
 > Thêm luồng mới thì giữ đúng quy ước này: `run-<động từ>-<đối tượng>.ps1` mô tả việc
 > mà WinForm làm, chứ không phải `run-<tên thư mục test>.ps1`. Tên cũ
 > (`run-parity-savedata` / `run-parity-accounting`) chỉ nói "đây là test parity" —
 > thứ mà mọi luồng ở đây đều là, nên không phân biệt được gì.
-| ParitySaveData | `Tests/ParitySaveData/` | `.\run-parity-savedata.ps1` | ⚠️ **CÓ** — `trn_trn` |
-| ParityAccountingCorrection | `Tests/ParityAccountingCorrection/` | `.\run-parity-accounting.ps1` | ⚠️ **CÓ** — `acc_dat` + `person_exp` (**sổ tiền**) |
-| StepsEdit | `Tests/StepsEdit/` | `.\run-steps-edit.ps1` | ✖ |
 
 **ParitySaveData** xác minh các bug parity của `modSave.SaveData` trên WinForm thật. Nó
-là luồng DUY NHẤT bấm F9 登録 nên **ghi thật xuống DB** (F9 ghi lại toàn bộ 処置行 của
-tháng). Mặc định tắt; chưa bật `parity.allowSave` thì cả fixture tự bỏ qua ngay, không
-tốn công mở app.
+là luồng DUY NHẤT bấm F9 登録 của 診療入力 nên **ghi thật xuống DB** (F9 ghi lại toàn bộ
+処置行 của tháng). Mặc định tắt; chưa bật `parity.allowSave` thì cả fixture tự bỏ qua
+ngay, không tốn công mở app.
 
 **ParityAccountingCorrection** xác minh 会計データ修正 (`ChgAccData`, lô 8). Nặng hơn:
 nó sửa **sổ tiền** — 会計 đã chốt và số dư 預り金/未収金. Cần tiền đề mà test không tự
 dựng được (ngày đã 窓口精算, `tre_acc_link = 1`).
 
-**StepsEdit** mở dialog frm203050 「Ｓｔｅｐ編集」 từ menu của 診療入力 và xác minh
-cấu trúc (title, `cboKind`, 32 ô `txtEpp1..txtEpp32`). Đường tới dialog đi qua menu
-bar VB6 (MenuItem, không phải `btnF*`), nên locator không xài được như các luồng trên
-— tách riêng để dọn đường cho các luồng sau có thể đụng dialog này (ví dụ round-trip
-TrtState). Không ghi DB.
+**InpP1Dialogs** đo **đáp án** cho spec Playwright của bản web
+(`../web-tenant-tests/tests/inp-p1-ported-dialogs.spec.ts`): ba dialog vừa được port —
+`frm203050`「Ｓｔｅｐ編集」, `frm203044`「チェック項目設定」, `frm203049`「Ｂｒサンプル」.
+Mỗi testcase ghi rõ nó ứng với TC nào bên kia. Hai dialog đầu vào bằng **mục menu**
+(`IDM_Step` / `IDM_ChkPrm`), locator khác hẳn nút `btnF*` của các luồng trên. Nhánh ghi
+DB (`TRTSTATE` của một bệnh nhân, `chkprm` là cấu hình **toàn phòng khám**) nằm sau cờ
+riêng `inpP1.allowSave` và tự trả lại giá trị cũ. Ｂｒサンプル không ghi gì.
+
+> Luồng này thay cho `StepsEdit` / `run-steps-edit.ps1` cũ — luồng đó chỉ mở `frm203050`
+> rồi đọc cấu trúc, giờ là `StepEditTests.Tc1` trong đây.
 
 → Đọc README trong thư mục của luồng **trước khi chạy**.
 
