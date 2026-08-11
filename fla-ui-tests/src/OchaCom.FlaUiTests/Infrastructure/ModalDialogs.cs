@@ -1,12 +1,15 @@
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Definitions;
 using OchaCom.FlaUiTests.App;
-using OchaCom.FlaUiTests.Infrastructure;
 
-namespace OchaCom.FlaUiTests.Tests.ParitySaveData;
+namespace OchaCom.FlaUiTests.Infrastructure;
 
 /// <summary>
-/// Tìm hộp thoại modal của app — bản riêng của luồng parity.
+/// Tìm hộp thoại modal của app.
+///
+/// <para>Ban đầu viết riêng cho luồng ParitySaveData. Khi luồng thứ hai
+/// (ParityAccountingCorrection) cũng cần, nó được nâng lên đây — chép đôi một hàm
+/// đã chứng minh là cần thiết thì lần sau sửa sẽ quên mất một bản.</para>
 ///
 /// ═══════════════════════════════════════════════════════════════════════════
 /// VÌ SAO KHÔNG DÙNG <see cref="Dialogs.Open"/>

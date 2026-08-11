@@ -206,14 +206,24 @@ trong thư mục con của `Tests/` và có script chạy riêng, KHÔNG đi qua
 
 | Luồng | Thư mục | Chạy | Ghi DB? |
 |---|---|---|---|
-| ParitySaveData | `Tests/ParitySaveData/` | `.\run-parity-savedata.ps1` | ⚠️ **CÓ** |
+| ParitySaveData | `Tests/ParitySaveData/` | `.\run-parity-savedata.ps1` | ⚠️ **CÓ** — `trn_trn` |
+| ParityAccountingCorrection | `Tests/ParityAccountingCorrection/` | `.\run-parity-accounting.ps1` | ⚠️ **CÓ** — `acc_dat` + `person_exp` (**sổ tiền**) |
 
 **ParitySaveData** xác minh các bug parity của `modSave.SaveData` trên WinForm thật. Nó
 là luồng DUY NHẤT bấm F9 登録 nên **ghi thật xuống DB** (F9 ghi lại toàn bộ 処置行 của
 tháng). Mặc định tắt; chưa bật `parity.allowSave` thì cả fixture tự bỏ qua ngay, không
 tốn công mở app.
 
-→ Đọc `Tests/ParitySaveData/README.md` trước khi chạy.
+**ParityAccountingCorrection** xác minh 会計データ修正 (`ChgAccData`, lô 8). Nặng hơn:
+nó sửa **sổ tiền** — 会計 đã chốt và số dư 預り金/未収金. Cần tiền đề mà test không tự
+dựng được (ngày đã 窓口精算, `tre_acc_link = 1`).
+
+→ Đọc README trong thư mục của luồng **trước khi chạy**.
+
+> Mỗi luồng có tiền đề riêng và rủi ro riêng thì nằm trong thư mục con của `Tests/`
+> cùng helper của chính nó, kèm README và runner riêng. Thứ nào hoá ra dùng chung
+> (ví dụ `Infrastructure/ModalDialogs.cs`, ban đầu viết cho ParitySaveData) thì nâng
+> lên `Infrastructure/` khi luồng thứ hai cần — chứ không chép đôi.
 
 ---
 
