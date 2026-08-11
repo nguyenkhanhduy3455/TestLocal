@@ -64,21 +64,30 @@ public static class InpP23Dialog
 
     /// <summary>
     /// Ô 算定処置コード / 枝番 / 名称 thứ n của frm203039 (n từ 1).
-    /// Suy từ <c>INP.Lib.GetControl.getControl(pnlCon, controlType.cd, i + 1)</c>
-    /// (frm203039.cs:239-241) — Tc0 đổ cây UIA để xác nhận trước khi tin.
+    ///
+    /// <para><b>Chỉ số có ĐỆM 0 thành 2 chữ số.</b> <c>INP.Lib.GetControl</c> ghép tên
+    /// bằng <c>string.Format("{0:D2}", idx)</c> (GetControl.cs:125-133), nên là
+    /// <c>txtCd01</c> chứ không phải <c>txtCd1</c>. Lần chạy 18:41 mất trắng ba
+    /// testcase (Tc3/Tc4/Tc7) vì tôi đoán 1 chữ số — trong khi câu trả lời nằm ngay
+    /// trong source, đúng cái bẫy đã tự nhắc mình.</para>
     /// </summary>
-    public static string ChkCdBox(int n) => $"txtCd{n}";
-    public static string ChkSbBox(int n) => $"txtSb{n}";
-    public static string ChkNmBox(int n) => $"txtNm{n}";
+    public static string ChkCdBox(int n) => $"txtCd{n:D2}";
+    public static string ChkSbBox(int n) => $"txtSb{n:D2}";
+    public static string ChkNmBox(int n) => $"txtNm{n:D2}";
 
-    /// <summary>Nhãn 算定処置コード thứ n — CLICK vào nhãn mới mở 処置検索 (frm203039.cs:148).</summary>
+    /// <summary>
+    /// Nhãn 算定処置コード thứ n — CLICK vào nhãn mới mở 処置検索 (frm203039.cs:148).
+    ///
+    /// <para>NHÃN thì KHÔNG đệm 0: đo được 18:44, <c>lblCd1</c> mở đúng 「処置検索」.
+    /// Nhãn không đi qua <c>GetControl</c> nên không theo khuôn <c>D2</c>.</para>
+    /// </summary>
     public static string ChkCdLabel(int n) => $"lblCd{n}";
 
-    /// <summary>Ô 病名コード / 病名 thứ n của frm203037 (n từ 1..20).</summary>
-    public static string DisCdBox(int n) => $"txtDisCd{n}";
-    public static string DisNmBox(int n) => $"txtDisNm{n}";
+    /// <summary>Ô 病名コード / 病名 thứ n của frm203037 (n từ 1..20). Đệm 0 như trên.</summary>
+    public static string DisCdBox(int n) => $"txtDisCd{n:D2}";
+    public static string DisNmBox(int n) => $"txtDisNm{n:D2}";
 
-    /// <summary>Nhãn 病名コード thứ n — click mở 病名検索 (frm203037.cs:148).</summary>
+    /// <summary>Nhãn 病名コード thứ n — đo được: <c>lblDisCd1</c> mở 「病名検索」.</summary>
     public static string DisCdLabel(int n) => $"lblDisCd{n}";
 
     /// <summary>Số ô của mỗi form 登録.</summary>

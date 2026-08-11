@@ -253,7 +253,14 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
         Waits.Step();
         Thread.Sleep(400);
 
-        var dialogs = ModalDialogs.All(App, list).ToList();
+        // Bỏ chính form 登録 ra khỏi danh sách: ModalDialogs.All coi nó là hộp thoại
+        // (đúng về mặt kỹ thuật — nó modal trên 一覧), nên lần chạy 18:43 in ra
+        // 「自動算定登録」 và trông y như một hộp Q00002 vừa bung. Cái ta cần biết là
+        // có hộp XÁC NHẬN nào MỚI hay không.
+        var dialogs = ModalDialogs.All(App, list)
+            .Where(d => !Txt.Same(Uia.AutomationIdOf(d), InpP23Dialog.ChkRegisterId))
+            .ToList();
+        if (dialogs.Count == 0) Log("=== KQ-1 === sau ESC: KHONG co hop thoai xac nhan nao moi");
         foreach (var d in dialogs) Log($"=== KQ-1 === sau ESC, hop thoai: 「{Uia.NameOf(d)}」 {Trim(Txt.N(Dialogs.TextOf(d)), 80)}");
 
         var stillOpenAfter = KarteAutoCalcDialog.FindDialogWindow(
@@ -264,7 +271,8 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
         Log("   khong doi gi                  ⇒ ESC bi nuot");
 
         // Dọn: đóng hộp xác nhận nếu ESC bung ra, rồi đóng dialog.
-        foreach (var d in ModalDialogs.All(App, list))
+        foreach (var d in ModalDialogs.All(App, list)
+                     .Where(d => !Txt.Same(Uia.AutomationIdOf(d), InpP23Dialog.ChkRegisterId)))
         {
             // Chỉ có DismissOk trong Infrastructure; hộp Q00002 mà ESC bung ra sẽ
             // được OK — tức là GHI. Không mong muốn, nên chỉ log rồi để người chạy
