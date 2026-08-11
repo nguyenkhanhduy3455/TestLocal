@@ -21,32 +21,41 @@ namespace OchaCom.FlaUiTests.Tests.KarteAutoCalc;
 /// <c>=== KQ-n ===</c> trong log gửi lại. Mỗi khối trả lời đúng một câu hỏi.</para>
 ///
 /// ═══════════════════════════════════════════════════════════════════════════
-/// SÁU ĐIỂM CẦN TRẢ LỜI
+/// SÁU ĐIỂM — TẤT CẢ ĐÃ TRẢ LỜI (2026-08-11)
 /// ═══════════════════════════════════════════════════════════════════════════
-///  KQ-1 一覧 có liệt kê 処置 CHƯA có cấu hình không, và đếm được bao nhiêu dòng?
-///        → bản web LEFT JOIN nên có. Nếu WinForm chỉ hiện 処置 đã cấu hình thì
-///          bản web đang thừa ~1.580 dòng.
-///  KQ-2 一覧 lọc theo version của 処置マスタ như thế nào?
-///        → demo có 35 version; bản web lấy version có hiệu lực HÔM NAY qua
-///          mst_trt_ver. Cần số 該当件数 thật để đối chiếu (kỳ vọng ~1.764).
-///  KQ-3 ⏳ MỘT NỬA (2026-08-11) — 処置 100-0 có 6 dòng, DB cho thấy MỌI dòng
-///        no_chk = 0, và WinForm hiện 確認画面不要 KHÔNG tick. Khớp bản web ở vế
-///        "không phải tất cả đều 1 ⇒ không tick". Vế "tất cả đều 1 ⇒ tick" và
-///        vế "0 dòng ⇒ không tick" vẫn cần Tc3.
-///  KQ-4 F9 登録 có giữ nguyên use_cnt không?
-///        → bản web round-trip use_cnt. Nếu WinForm reset về 0 thì học máy mất.
-///  KQ-5 登録 với lưới RỖNG có xoá sạch cấu hình không?
-///        → bản web coi lines = [] là "xoá". Nếu WinForm chặn thì phải bỏ.
-///  KQ-6b ✅ THÊM (2026-08-11) — cột 名称 lấy từ mst_cmt2, KHÔNG phải bản sao
-///        trên cmt_auto. Ảnh chụp 処置 100-0 hiện 「次回予約ＴＥＬ待ち」「終了」…
-///        đúng mst_cmt2, trong khi cmt_auto.cmt_nm của chính các dòng đó là
-///        「*日位前から**の歯が痛い」… ⇒ COALESCE(master, shadow) của bản web đúng.
+/// <b>Đọc source legacy trả lời được HẾT, nhanh hơn hẳn chạy máy thật.</b> Ghi lại
+/// vì chính tôi đã đánh giá sai độ khó lúc đầu: sáu câu này không cần quan sát
+/// hành vi, chúng nằm ngay trong SQL và trong <c>setInputData</c>. Luồng UI vẫn giữ
+/// vì nó xác nhận độc lập — nhưng nếu gặp câu tương tự lần sau, MỞ SOURCE TRƯỚC.
 ///
-///  KQ-6 cmt_nm bị cắt theo BYTE hay KÝ TỰ?
-///        → WinForm dùng ComLibrary.LeftB = Shift-JIS BYTE (60B ≈ 30 chữ Nhật).
-///          Bản web cắt theo KÝ TỰ (60 chữ). Cột Postgres là varchar(60) tính
-///          KÝ TỰ và dữ liệu đã migrate có tên 41 ký tự / 78 byte — tức bản
-///          migrate KHÔNG cắt theo byte. Cần biết WinForm thật cắt ở đâu.
+///  KQ-1 ✅ <c>MstTrt.getMstTrtDataCmtAuto</c> (MstTrt.cs:2236) dùng
+///        <c>LEFT JOIN cmtauto</c> ⇒ 処置 chưa cấu hình VẪN hiện. Bản web đúng.
+///        Đo trên máy: 101-0/101-1/101-2 hiện với cột comment trống.
+///  KQ-2 ✅ Không phải "lọc version" mà là <b>MỖI VERSION MỘT BẢNG RIÊNG</b>:
+///        <c>MST_TRT087</c>, <c>MST_TRT084</c>… <c>TrtSel.getTrtSel</c> (TrtSel.cs:21)
+///        tra <c>TRT_SEL.MTBL_NM</c> theo ngày rồi query đúng bảng đó. Bản web gộp
+///        thành một bảng + version_id và lọc theo ngày — cùng nghĩa. Đo được
+///        該当件数 = 1.764, khớp bản web sau khi sửa (trước đó là 73.537).
+///  KQ-3 ✅ frm203043.cs:388-401: <c>noChk = dt.Rows.Count > 0 && mọi dòng
+///        no_chk != "0"</c>. Đúng y bản web (<c>lines.Count > 0 && All(NoChk == 1)</c>).
+///        Khác biệt duy nhất: legacy so <c>!= "0"</c> nên no_chk = 2 cũng tính là
+///        tick — vô nghĩa trên thực tế vì cột chỉ nhận 0/1.
+///  KQ-4 ✅ frm203043.cs:590: <c>data.use_cnt = row["use_cnt"]</c> đọc từ cột ẨN
+///        của lưới (cột bị ẩn ở :416) ⇒ delete + insert vẫn GIỮ NGUYÊN use_cnt.
+///        Bản web round-trip use_cnt — đúng.
+///  KQ-5 ✅ frm203043.cs:550-556: lưu = <c>deleteCmtAuto</c> rồi insert từng dòng
+///        của DataTable. Lưới rỗng ⇒ chỉ còn delete ⇒ XOÁ SẠCH. Bản web coi
+///        <c>lines = []</c> là xoá — đúng.
+///  KQ-6 ⚠️ <c>ComLibrary.LeftB</c> = cắt theo BYTE Shift-JIS (ComLibrary.cs:378
+///        → MidB dùng <c>Encoding.GetEncoding("Shift_JIS").GetByteCount</c>).
+///        WinForm cắt trt_nm 50 byte (~25 chữ Nhật) và cmt_nm 60 byte (~30 chữ).
+///        Bản web cắt theo KÝ TỰ. Xem ghi chú trong inp-p1-remaining-3-pairs.md —
+///        <b>chênh lệch có thật nhưng vô hại</b>, và cố tình không sửa.
+///  KQ-6b ✅ cột 名称 lấy từ mst_cmt2, KHÔNG phải bản sao trên cmt_auto:
+///        <c>CASE WHEN cmt.cmt_nm IS NOT NULL THEN cmt.cmt_nm ELSE aut.cmt_nm END</c>
+///        (MstTrt.cs:2228) = đúng <c>COALESCE(master, shadow)</c> của bản web. Ảnh
+///        chụp 処置 100-0 xác nhận: hiện 「次回予約ＴＥＬ待ち」「終了」… theo mst_cmt2,
+///        trong khi cmt_auto.cmt_nm của chính các dòng đó là chuỗi khác hẳn.
 ///
 /// ═══════════════════════════════════════════════════════════════════════════
 /// GHI DB
@@ -354,9 +363,12 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
         using var trace = TestTrace.Begin();
         _list = KarteAutoCalcDialog.OpenList(App, Screen.Window, trace);
 
+        // XOÁ ĐIỀU KIỆN LỌC TRƯỚC ĐÃ. Tc0 để lại 一覧 đang lọc 処置コード=100, mà
+        // OpenList thấy dialog mở sẵn thì dùng lại — lần chạy 16:52 vì thế đo được
+        // 該当件数 = 12 rồi kết luận nhầm là con số của cả bảng.
+        Search(_list, "", "");
+
         var grid = RequireGrid(_list, KarteAutoCalcDialog.ListGridId);
-        var headers = grid.Headers();
-        Log("=== KQ-1 === cot 一覧: " + string.Join(" | ", headers));
 
         // 該当件数 do chính app tính (lblCount) — đáng tin hơn đếm phần tử UIA.
         var countLabel = KarteAutoCalcDialog.FindChrome(_list, KarteAutoCalcDialog.ListCountLabelId, KarteAutoCalcDialog.ListGridId);
@@ -365,7 +377,8 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
         Log("   (ban web sau khi loc version mst_trt cho 1.764 dong — so nay phai khop)");
 
         // Đọc tối đa 40 dòng đầu; chỉ cần biết CÓ hay KHÔNG dòng chưa cấu hình.
-        var rows = grid.Rows(limit: 40);
+        var (headers, rows) = ReadHeaderAndRows(grid, limit: 40);
+        Log("=== KQ-1 === cot 一覧: " + string.Join(" | ", headers));
         var blankCmt = 0;
         foreach (var r in rows.Take(40))
         {
@@ -404,8 +417,8 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
         Search(_list, trtCd.Value.ToString(), "");
 
         var grid = RequireGrid(_list, KarteAutoCalcDialog.ListGridId);
-        var rows = grid.Rows(limit: 10);
-        Log($"=== KQ-1 === WinForm tra ve {rows.Count} dong");
+        var (_, rows) = ReadHeaderAndRows(grid, limit: 10);
+        Log($"=== KQ-1 === WinForm tra ve {rows.Count} dong (da tru dong tieu de)");
         foreach (var r in rows.Take(5)) Log("   " + string.Join(" | ", r.Cells));
         Log("   >= 1 dong ⇒ CO liet ke (LEFT JOIN) — ban web dung");
         Log("   0 dong + hop thoai E00003 ⇒ KHONG liet ke — ban web phai doi sang INNER JOIN");
@@ -641,6 +654,36 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
     // ═══════════════════════════════════════════════════════════════════════
     // Helper
     // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Đọc lưới 一覧: trả về (tiêu đề cột, các dòng DỮ LIỆU).
+    ///
+    /// <para><b>Vì sao không dùng thẳng <c>grid.Headers()</c> / <c>grid.Rows()</c>.</b>
+    /// <c>WinFormsGrid.IsHeaderRow</c> nhận diện dòng tiêu đề bằng cách đòi mọi ô con
+    /// phải là <c>HeaderItem</c>. Lưới của frm203042 không như vậy: lần chạy
+    /// 16:52 cho <c>Headers()</c> RỖNG, còn <c>Rows()[0]</c> lại chính là dòng tiêu đề
+    /// (「処置コード | 処置名 | コメントコード | 名称 | 表示順 | 使用」). Hệ quả: mọi phép
+    /// đếm lệch 1 và ô ở dòng 0 đọc ra tên cột chứ không phải dữ liệu.</para>
+    ///
+    /// <para>Chữa tại chỗ trong luồng này thay vì sửa <c>WinFormsGrid</c> — lớp đó
+    /// các luồng khác đang dùng và đã chạy đúng với lưới của họ.</para>
+    /// </summary>
+    private static (IReadOnlyList<string> Headers, IReadOnlyList<DgvRow> Rows) ReadHeaderAndRows(
+        WinFormsGrid grid, int limit)
+    {
+        var headers = grid.Headers();
+        var rows = grid.Rows(limit: limit + 1);
+
+        if (headers.Count > 0) return (headers, rows.Take(limit).ToList());
+        if (rows.Count == 0) return (headers, rows);
+
+        // Không có HeaderItem ⇒ dòng đầu là tiêu đề nếu nó khớp tên cột đã biết.
+        var first = rows[0].Cells;
+        var looksLikeHeader = first.Count > 0 && Txt.Has(Txt.N(first[0]), "処置コード");
+        return looksLikeHeader
+            ? (first, rows.Skip(1).Take(limit).ToList())
+            : (headers, rows.Take(limit).ToList());
+    }
 
     private static WinFormsGrid RequireGrid(Window dialog, string gridId)
     {

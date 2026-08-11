@@ -51,6 +51,42 @@ internal sealed class KarteAutoCalcDb
         return c;
     }
 
+    // ── 処置マスタ: MỖI PHIÊN BẢN MỘT BẢNG ──────────────────────────────────
+
+    /// <summary>Tên bảng dùng khi <c>TRT_SEL</c> không trả gì — y như legacy (TrtSel.cs:25).</summary>
+    private const string DefaultTrtTable = "MST_TRT087";
+
+    /// <summary>
+    /// Tên bảng 処置マスタ đang hiệu lực hôm nay.
+    ///
+    /// <para><b>Không có bảng nào tên <c>mst_trt</c> trên SQL Server.</b> Legacy chứa
+    /// MỖI PHIÊN BẢN MỘT BẢNG RIÊNG — <c>MST_TRT087</c>, <c>MST_TRT084</c>… — và
+    /// <c>TRT_SEL</c> là bảng tra: cột <c>MTBL_NM</c> cho biết bảng nào hiệu lực
+    /// trong khoảng <c>START_DT</c>–<c>END_DT</c> (TrtSel.cs:21-51). Bản web gộp tất
+    /// cả vào một bảng <c>mst_trt</c> kèm <c>version_id</c>, nên tên bên đó KHÔNG
+    /// dùng được ở đây. Lần chạy 2026-08-11 chết vì đúng chuyện này:
+    /// 「Invalid object name 'mst_trt'」.</para>
+    ///
+    /// <para>Tên trả về bị nối thẳng vào câu SQL nên phải kiểm dạng — chỉ nhận đúng
+    /// khuôn <c>MST_TRT</c> + chữ số.</para>
+    /// </summary>
+    public string ResolveTrtTableName(DateTime? asOf = null)
+    {
+        using var con = Open();
+        using var cmd = Cmd(con, @"
+            SELECT TOP 1 MTBL_NM
+            FROM   TRT_SEL
+            WHERE  START_DT <= @d
+              AND  (END_DT >= @d OR END_DT IS NULL)");
+        cmd.Parameters.Add("@d", SqlDbType.DateTime).Value = (asOf ?? DateTime.Today).Date;
+
+        var v = cmd.ExecuteScalar();
+        var name = v is null or DBNull ? "" : (Convert.ToString(v) ?? "").Trim();
+        return System.Text.RegularExpressions.Regex.IsMatch(name, @"^MST_TRT\d{1,4}$")
+            ? name
+            : DefaultTrtTable;
+    }
+
     // ── Chọn dữ liệu thử ────────────────────────────────────────────────────
 
     /// <summary>
@@ -59,16 +95,15 @@ internal sealed class KarteAutoCalcDb
     /// </summary>
     public int? FindTrtCdWithoutCmtAuto()
     {
+        var trtTable = ResolveTrtTableName();
+
         using var con = Open();
-        using var cmd = Cmd(con, string.Empty);
-        // Không lọc version ở đây: chỉ cần MỘT mã 処置 tồn tại mà chắc chắn không
-        // có cấu hình. Việc 一覧 hiện hay không mới là thứ đang đo.
-        cmd.CommandText = @"
+        using var cmd = Cmd(con, $@"
             SELECT TOP 1 t.trt_cd
-            FROM   mst_trt t
+            FROM   {trtTable} t
             WHERE  t.trt_cd >= 100
               AND  NOT EXISTS (SELECT 1 FROM cmtauto a WHERE a.trt_cd = t.trt_cd)
-            ORDER BY t.trt_cd";
+            ORDER BY t.trt_cd");
         var v = cmd.ExecuteScalar();
         return v is null or DBNull ? null : Convert.ToInt32(v);
     }
