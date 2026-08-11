@@ -1,0 +1,24 @@
+{
+  "name": "web-tenant-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright E2E tests for web-tenant on Chrome (https://tenant1.ochacom.local/)",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "codegen": "playwright codegen --ignore-https-errors https://tenant1.ochacom.local/",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "@types/node": "^22.10.0",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/pg": "^8.20.0",
+    "dotenv": "^17.4.2",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.22.0",
+    "typescript": "^5.7.0"
+  }
+}

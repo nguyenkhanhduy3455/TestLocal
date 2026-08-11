@@ -1,0 +1,82 @@
+{
+  "//": [
+    "Cấu hình chung, ĐƯỢC commit. Thứ riêng của từng máy (đường dẫn exe, mật khẩu, chuỗi",
+    "kết nối) để trong testsettings.local.json (đã .gitignore) hoặc biến môi trường.",
+    "Thứ tự ưu tiên: biến môi trường > testsettings.local.json > testsettings.json."
+  ],
+
+  "app": {
+    "exePath": "C:\\Ocha\\MENU.exe",
+    "workingDirectory": "",
+    "arguments": [],
+    "launchTimeoutSeconds": 180,
+    "attachIfRunning": true,
+    "closeOnFinish": false,
+    "mainWindowTitleContains": "",
+    "treatmentWindowTitleContains": "診療入力"
+  },
+
+  "login": {
+    "enabled": true,
+    "userId": "",
+    "password": ""
+  },
+
+  "patient": {
+    "patNo": "12138",
+    "//trtDate": "yyyy-MM-dd; để trống = HÔM NAY (phải thuộc tháng hiện hành thì mới thao tác được)",
+    "trtDate": "",
+    "//openMode": "update = F8 閲覧/変更 (ít hộp thoại); insert = Enter/F9 初再診入力",
+    "openMode": "update"
+  },
+
+  "db": {
+    "//": "SQL Server của app legacy — xem INP/Call/Ocha.xml <DbConnectString>. CHỈ ĐỌC.",
+    "enabled": true,
+    "connectionString": "Data Source=(local);Initial Catalog=SIM2000;User ID=sa;Password=tmdu;TrustServerCertificate=True",
+    "commandTimeoutSeconds": 60
+  },
+
+  "run": {
+    "//stepMs": "Nhịp quan sát giữa các thao tác (ms). 0 = chạy hết tốc lực.",
+    "stepMs": 0,
+    "defaultTimeoutSeconds": 20,
+    "gridLoadTimeoutSeconds": 60,
+    "screenshotDir": "artifacts\\screenshots",
+    "captureOnPass": true,
+    "//traceScreenshots": "Chup man hinh TUNG BUOC (TestTrace), khong chi mot anh cuoi testcase.",
+    "traceScreenshots": true,
+    "captureOnFail": true,
+    "//stopOnFirstFailure": "Bắt chước mode:'serial' của Playwright — TC sau bị Ignore khi TC trước đỏ.",
+    "stopOnFirstFailure": true,
+    "//nuisanceDialogs": "Hộp thoại nhiễu tự bấm 'いいえ' (giống addLocatorHandler bên Playwright).",
+    "nuisanceDialogs": [ "を算定しますか？", "加算を算定しますか" ],
+    "nuisanceDialogButtons": [ "いいえ", "No", "N" ]
+  },
+
+  "parity": {
+    "//": [
+      "Bo test parity (Tests/Parity*) la bo DUY NHAT bam F9 登録 nen GHI THAT xuong DB.",
+      "F9 ghi lai TOAN BO 処置行 cua thang do (xoa + chen lai). CHON BENH NHAN TEST.",
+      "Mac dinh false => bo parity tu Ignore."
+    ],
+    "allowSave": false,
+    "//simpleTrtCd": "処置 tao mot dong don gian, KHONG can chon 部位. 110 = 再診.",
+    "simpleTrtCd": 110,
+    "simpleTrtSb": 0,
+    "//dialogTimeoutSeconds": "Cho hop thoai cua luong 登録. Dai hon run.defaultTimeoutSeconds la CO CHU Y: MessageBox modal chan luong chinh cua app nen moi vong poll UIA ton hang giay.",
+    "dialogTimeoutSeconds": 90
+  },
+
+  "locators": {
+    "//": "AutomationId = Control.Name bên WinForm. Nếu máy Windows soi Inspect thấy khác thì sửa ở đây, KHÔNG phải sửa code.",
+    "kobetuTabItem": "個別",
+    "kobetuGrid": "hfgKobetu",
+    "kobetuSearchCode": "txtKobeSearchCode",
+    "kobetuSearchName": "txtKobeSearchName",
+    "kobetuSearchTens": "txtKobeSearchTens",
+    "kobetuSearchButton": "btnKobeSearch",
+    "kobetuSelNo": "txtKobetuSel",
+    "regiGrid": "grdRegi"
+  }
+}

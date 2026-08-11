@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Local File Viewer</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📂</text></svg>"
+    />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">📂 Local File Viewer</div>
+      <form id="path-form" class="path-form" autocomplete="off">
+        <input
+          id="path-input"
+          class="path-input"
+          type="text"
+          spellcheck="false"
+          placeholder="Nhập đường dẫn thư mục, ví dụ: /Users/ban/Documents"
+        />
+        <button type="submit" class="btn primary">Mở</button>
+        <button type="button" class="btn" id="btn-home" title="Về thư mục home">Home</button>
+        <button type="button" class="btn" id="btn-up" title="Lên thư mục cha">↑ Lên</button>
+        <button type="button" class="btn" id="btn-reload" title="Tải lại danh sách">⟳</button>
+        <button type="button" class="btn" id="btn-compare" title="So sánh hai file hoặc hai thư mục">
+          ⇄ So sánh
+        </button>
+      </form>
+    </header>
+
+    <nav id="breadcrumb" class="breadcrumb" aria-label="Đường dẫn"></nav>
+    <div id="banner" class="banner" hidden></div>
+
+    <main class="layout">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-head">
+          <input id="filter-input" class="filter-input" type="search" placeholder="Lọc tên file…" spellcheck="false" />
+          <label class="check"><input type="checkbox" id="show-hidden" /> File ẩn</label>
+        </div>
+        <div id="file-list" class="file-list" role="listbox" aria-label="Danh sách file"></div>
+        <div id="list-stat" class="list-stat"></div>
+      </aside>
+
+      <div class="resizer" id="resizer" role="separator" aria-orientation="vertical"></div>
+
+      <section class="viewer">
+        <div class="viewer-head">
+          <div class="viewer-title">
+            <span id="viewer-name">Chưa chọn file</span>
+            <span id="viewer-meta" class="meta"></span>
+          </div>
+          <div class="viewer-tools">
+            <div class="tabs" id="view-tabs" hidden>
+              <button class="tab" data-mode="pretty">Đẹp</button>
+              <button class="tab" data-mode="raw">Thô</button>
+            </div>
+            <select id="encoding-select" class="select" title="Bảng mã">
+              <option value="auto">Tự động</option>
+              <option value="utf-8">UTF-8</option>
+              <option value="shift_jis">Shift_JIS</option>
+              <option value="euc-jp">EUC-JP</option>
+              <option value="windows-1252">Windows-1252</option>
+            </select>
+            <label class="check"><input type="checkbox" id="wrap-toggle" /> Xuống dòng</label>
+            <button class="btn" id="btn-copy" title="Copy nội dung">Copy</button>
+            <button class="btn" id="btn-download" title="Tải file về">Tải</button>
+          </div>
+        </div>
+
+        <div class="find-bar" id="find-bar">
+          <input id="find-input" class="find-input" type="search" placeholder="Tìm trong file (Ctrl/Cmd + F)" spellcheck="false" />
+          <span id="find-count" class="find-count"></span>
+          <button class="btn small" id="find-prev" title="Kết quả trước">▲</button>
+          <button class="btn small" id="find-next" title="Kết quả sau">▼</button>
+        </div>
+
+        <div id="viewer-body" class="viewer-body">
+          <div class="empty">
+            <p>Nhập một đường dẫn thư mục ở trên rồi bấm <strong>Mở</strong>.</p>
+            <p class="dim">Hỗ trợ xem: .txt .csv .log .md .xml .yml .ini .js .ts .sql … dạng text có số dòng; .json tự động format đẹp; ảnh xem trực tiếp; file nhị phân xem dạng hex.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- So sánh: hai file → diff theo dòng; hai thư mục → bảng trạng thái từng file. -->
+    <div id="cmp-overlay" class="cmp-overlay" hidden>
+      <div class="cmp-panel" role="dialog" aria-modal="true" aria-labelledby="cmp-title">
+        <div class="cmp-head">
+          <span id="cmp-title">⇄ So sánh file / thư mục</span>
+          <button type="button" class="btn small" id="cmp-close" title="Đóng (Esc)">Đóng ✕</button>
+        </div>
+
+        <form id="cmp-form" class="cmp-form" autocomplete="off">
+          <label class="cmp-field">
+            <span class="cmp-label">Trái</span>
+            <input id="cmp-left" class="path-input" type="text" spellcheck="false"
+                   placeholder="Ví dụ: C:\test\01\win\xray" />
+          </label>
+          <label class="cmp-field">
+            <span class="cmp-label">Phải</span>
+            <input id="cmp-right" class="path-input" type="text" spellcheck="false"
+                   placeholder="Ví dụ: C:\test\01\web\xray" />
+          </label>
+          <select id="cmp-encoding" class="select" title="Bảng mã dùng để decode cả hai bên">
+            <option value="auto">Tự động</option>
+            <option value="utf-8">UTF-8</option>
+            <option value="shift_jis">Shift_JIS</option>
+            <option value="euc-jp">EUC-JP</option>
+            <option value="windows-1252">Windows-1252</option>
+          </select>
+          <button type="button" class="btn small" id="cmp-swap" title="Đổi chỗ hai bên">⇅</button>
+          <button type="submit" class="btn primary">So sánh</button>
+        </form>
+
+        <div id="cmp-summary" class="cmp-summary"></div>
+        <div id="cmp-body" class="cmp-body">
+          <div class="empty">
+            <p>Nhập hai đường dẫn <strong>cùng loại</strong> (hai file hoặc hai thư mục).</p>
+            <p class="dim">
+              File tiếng Nhật do WinForm xuất thường là <strong>Shift_JIS</strong>. Để
+              <em>Tự động</em> là đọc đúng; kết quả tách riêng “giống từng byte” và “giống nội dung
+              sau khi decode”, nên khác bảng mã sẽ không bị báo nhầm thành sai dữ liệu.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

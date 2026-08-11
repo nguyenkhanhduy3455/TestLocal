@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Máy chạy test là Windows + .NET 8. App dưới test là WinForms .NET Framework 3.5,
+         nhưng FlaUI điều khiển qua UIAutomation nên khác TFM không sao. -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- UseWindowsForms: cần System.Drawing (chụp màn hình) + Clipboard (đường đọc lưới
+         dự phòng, xem Infrastructure/WinFormsGrid.cs). -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>OchaCom.FlaUiTests</RootNamespace>
+    <AssemblyName>OchaCom.FlaUiTests</AssemblyName>
+    <!-- Test chạy tuần tự trong 1 phiên app: tắt song song của NUnit. -->
+    <TestTfmsInParallel>false</TestTfmsInParallel>
+    <!-- Cho phép BIÊN DỊCH thử trên macOS/Linux (chỉ để soát lỗi cú pháp; chạy thì vẫn
+         phải trên Windows vì UIAutomation là API của Windows). -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FlaUI.UIA3" Version="4.0.0" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="NUnit" Version="4.2.2" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="testsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="testsettings.local.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

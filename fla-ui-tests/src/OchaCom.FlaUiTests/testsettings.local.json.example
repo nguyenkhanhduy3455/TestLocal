@@ -1,0 +1,39 @@
+{
+  "//": [
+    "Chép file này thành testsettings.local.json (đã .gitignore) rồi sửa theo máy bạn.",
+    "Chỉ cần ghi những khoá muốn đè — hai file được deep-merge, không phải chép cả bộ."
+  ],
+
+  "app": {
+    "exePath": "C:\\Users\\me\\src\\OCHACOM\\MENU\\bin\\x86\\Debug\\MENU.exe",
+    "closeOnFinish": false
+  },
+
+  "patient": {
+    "patNo": "12138",
+    "trtDate": "",
+    "openMode": "update"
+  },
+
+  "db": {
+    "enabled": true,
+    "connectionString": "Data Source=(local);Initial Catalog=SIM2000;User ID=sa;Password=tmdu;TrustServerCertificate=True"
+  },
+
+  "//parity": [
+    "Bo test parity (Tests/Parity*) la bo DUY NHAT bam F9 登録 nen GHI THAT xuong DB.",
+    "F9 ghi lai TOAN BO 処置行 cua thang do (xoa + chen lai, disp_no danh so lai tu 1).",
+    "CHI bat khi patient.patNo o tren dang tro vao BENH NHAN TEST.",
+    "Chua bat thi ca fixture tu bo qua NGAY, khong ton cong mo app."
+  ],
+  "parity": {
+    "allowSave": false,
+    "//simpleTrtCd": "処置 de tao mot dong don gian, KHONG can chon 部位. 110 = 再診.",
+    "simpleTrtCd": 110,
+    "simpleTrtSb": 0
+  },
+
+  "run": {
+    "stepMs": 0
+  }
+}
