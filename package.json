@@ -4,6 +4,6 @@
   "private": true,
   "description": "Root workspace for TestLocal test suites and utilities",
   "scripts": {
-    "install:all": "pnpm -C web-tenant-tests install && pnpm -C file-viewer install && (cd fla-ui-tests && dotnet restore)"
+    "install:all": "pnpm -C web-tenant-tests install && pnpm -C file-viewer install && pnpm -C web-tenant-tests exec playwright install && (cd fla-ui-tests && dotnet restore)"
   }
 }
