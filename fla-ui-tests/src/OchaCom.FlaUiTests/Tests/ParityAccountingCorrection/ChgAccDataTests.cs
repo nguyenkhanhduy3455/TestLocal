@@ -123,7 +123,7 @@ public sealed class ChgAccDataTests : UiTestBase
         _snapshot = _db?.Snapshot(PatNo, TrtDate);
         _treatmentsBefore = _db?.CountTreatments(PatNo, TrtDate) ?? -1;
         if (_snapshot is not null)
-            TestContext.Out.WriteLine(
+            TestContext.Progress.WriteLine(
                 $"Anh chup dau lo: {_snapshot.Rows.Count} dong ACCDAT | " +
                 $"dep_due={_snapshot.DepDue} ins_due_bal={_snapshot.InsDueBal} | " +
                 $"{_treatmentsBefore} dong TRNTRN");
@@ -138,23 +138,23 @@ public sealed class ChgAccDataTests : UiTestBase
             // 未精算データ (UNPAID) — nhánh F ghi vào đây, và bảng này KHÔNG nằm trong
             // ảnh chụp ACCDAT nên phải dọn riêng, dọn trước cả hai đường bên dưới.
             var u = _db.DeleteUnpaidNotIn(PatNo, TrtDate, _unpaidBefore);
-            if (u > 0) TestContext.Out.WriteLine($"Don: xoa {u} dong UNPAID phat sinh trong lo test");
+            if (u > 0) TestContext.Progress.WriteLine($"Don: xoa {u} dong UNPAID phat sinh trong lo test");
 
             if (_seededAccounting)
             {
                 // Ảnh chụp đầu lô KHÔNG có dòng 会計 nào ⇒ xoá sạch là đúng nguyên trạng.
                 var d = _db.DeleteAccDat(PatNo, TrtDate);
                 _db.SetBalances(PatNo, _snapshot.DepDue, _snapshot.InsDueBal);
-                TestContext.Out.WriteLine($"Don: xoa {d} dong ACCDAT do lo test tao + tra so du ve cu");
+                TestContext.Progress.WriteLine($"Don: xoa {d} dong ACCDAT do lo test tao + tra so du ve cu");
                 return;
             }
 
             var n = _db.Restore(PatNo, TrtDate, _snapshot);
-            TestContext.Out.WriteLine($"Don: khoi phuc ACCDAT + PERSON_EXP ({n} dong bi cham)");
+            TestContext.Progress.WriteLine($"Don: khoi phuc ACCDAT + PERSON_EXP ({n} dong bi cham)");
         }
         catch (Exception e)
         {
-            TestContext.Out.WriteLine(
+            TestContext.Progress.WriteLine(
                 $"⚠️ KHONG khoi phuc duoc so tien ({e.Message}). Kiem tay:\n" +
                 $"  SELECT * FROM ACCDAT WHERE pat_no = {PatNo} AND trt_dt = '{TrtDate:yyyy-MM-dd}';\n" +
                 $"  SELECT * FROM UNPAID WHERE pat_no = {PatNo} AND trt_dt = '{TrtDate:yyyy-MM-dd}';\n" +
@@ -184,7 +184,7 @@ public sealed class ChgAccDataTests : UiTestBase
             var after = _db.CountTreatments(PatNo, TrtDate);
             if (after == _treatmentsBefore) return;
 
-            TestContext.Out.WriteLine(
+            TestContext.Progress.WriteLine(
                 $"LECH TRNTRN: {_treatmentsBefore} -> {after} dong. F8 luu luoi truoc khi tinh 会計 " +
                 "nen 処置 lo test them vao da nam lai trong DB. KHONG tu xoa (xem doc). Soi tay:\n" +
                 $"  SELECT * FROM TRNTRN WHERE pat_no = {PatNo} AND trt_dt = '{TrtDate:yyyy-MM-dd}' " +
@@ -192,7 +192,7 @@ public sealed class ChgAccDataTests : UiTestBase
         }
         catch (Exception e)
         {
-            TestContext.Out.WriteLine($"Khong doc duoc so dong TRNTRN de bao lech: {e.Message}");
+            TestContext.Progress.WriteLine($"Khong doc duoc so dong TRNTRN de bao lech: {e.Message}");
         }
     }
 

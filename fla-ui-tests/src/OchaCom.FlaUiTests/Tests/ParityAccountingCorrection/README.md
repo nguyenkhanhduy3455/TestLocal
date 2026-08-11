@@ -20,6 +20,35 @@ một bug **không tồn tại**, và phải gỡ ra cùng `AccountingBalanceAll
 
 ---
 
+## ✅ KẾT QUẢ — 2026-08-11 12:42, 3/3 xanh
+
+```
+Trước:  dep_due = 10.000   ins_due_bal = 300      会計 đã chốt ¥1.020
+        処置 cho 請求額 ¥0  ⇒ diffPrice = 1.020, hướng GIẢM
+WinForm: 「処置点数が 0点追加されました。¥1,020預り金に計上しますか?」 → はい
+Sau:    dep_due = 720      ins_due_bal = 0
+```
+
+**ISSUE-1 có thật.** `720 = 1.020 − 300`, tức phép GÁN. Đúng nghiệp vụ phải là
+`10.000 + (1.020 − 300) = 10.720` — bệnh nhân **mất 9.280 ¥ tiền cọc**, không một
+dòng log hay cảnh báo nào. Phương án A (port nguyên parity) giờ có căn cứ đo được,
+và `AccountingBalanceAllocatorTests` đang khoá đúng thứ cần khoá.
+
+Phép ghi `ACCDAT` cũng khớp §5b của `winform-parity-verification-guide.md`:
+
+| Cột | Trước | Sau | Khớp source |
+|---|---|---|---|
+| `km_cd` | 40 | **58** | `km_cd = intBtyp` (科目コード mới) |
+| `claim_amt` | 1.020 | 0 | `claim_amt + diffPrice` |
+| `rece_amt` | 1.020 | 0 | `rece_amt + diffPrice` (chỉ nhánh GIẢM) |
+| `score` | 339 | 339 | `score + diffScore`, diffScore = 0 |
+| — | — | dòng mới `km_cd 85, rece_amt 1.020` | dòng hoàn tiền |
+
+Hướng TĂNG vẫn **chưa đo được**: cần bệnh nhân có 保険 tự trả khác 0, mà bệnh nhân
+test là 公費単独 nên `cur.insPrice` luôn = 0.
+
+---
+
 ## 2. ⚠️ Luồng này GHI VÀO SỔ TIỀN
 
 Nặng hơn ParitySaveData: cái kia chỉ ghi lại `処置行`, cái này sửa **`ACCDAT`**

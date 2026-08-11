@@ -64,17 +64,17 @@ public sealed class AccountingFlowDiagnosticsTests : UiTestBase
             if (_seededAccounting)
             {
                 var n = _db.DeleteAccDat(PatNo, TrtDate);
-                TestContext.Out.WriteLine($"Don: xoa {n} dong ACCDAT do cong cu chan doan tao");
+                TestContext.Progress.WriteLine($"Don: xoa {n} dong ACCDAT do cong cu chan doan tao");
             }
 
             // Chuỗi F8 đi nhầm sang nhánh F thì WinForm đã kịp ghi 未精算データ.
             // Bảng UNPAID không nằm trong ảnh chụp ACCDAT nên phải dọn riêng.
             var u = _db.DeleteUnpaidNotIn(PatNo, TrtDate, _unpaidBefore);
-            if (u > 0) TestContext.Out.WriteLine($"Don: xoa {u} dong UNPAID phat sinh trong luot chay");
+            if (u > 0) TestContext.Progress.WriteLine($"Don: xoa {u} dong UNPAID phat sinh trong luot chay");
         }
         catch (Exception e)
         {
-            TestContext.Out.WriteLine(
+            TestContext.Progress.WriteLine(
                 $"⚠️ KHONG don duoc ({e.Message}). Xoa tay:\n" +
                 $"  DELETE FROM ACCDAT WHERE pat_no = {PatNo} AND trt_dt = '{TrtDate:yyyy-MM-dd}';\n" +
                 $"  DELETE FROM UNPAID WHERE pat_no = {PatNo} AND trt_dt = '{TrtDate:yyyy-MM-dd}';");
@@ -151,7 +151,7 @@ public sealed class AccountingFlowDiagnosticsTests : UiTestBase
         var path = Path.Combine(dir, $"accounting-dialog-chain-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
         File.WriteAllText(path, content);
         TestContext.AddTestAttachment(path, "Chuoi hop thoai F8 会計");
-        TestContext.Out.WriteLine(content);
-        TestContext.Out.WriteLine($"Da ghi: {path}");
+        TestContext.Progress.WriteLine(content);
+        TestContext.Progress.WriteLine($"Da ghi: {path}");
     }
 }
