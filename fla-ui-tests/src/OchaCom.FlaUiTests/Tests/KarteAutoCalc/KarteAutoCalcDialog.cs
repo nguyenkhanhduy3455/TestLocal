@@ -96,6 +96,58 @@ public static class KarteAutoCalcDialog
     public const int TrtNmMaxBytes = 50;
     public const int CmtNmMaxBytes = 60;
 
+    // ── Tìm control mà KHÔNG chui vào lưới ──────────────────────────────────
+
+    /// <summary>
+    /// Tìm control theo AutomationId bằng duyệt THEO BỀ RỘNG, bỏ qua cây con của
+    /// lưới.
+    ///
+    /// <para><b>Vì sao không dùng <see cref="Uia.ById"/>.</b> Nó gọi
+    /// <c>FindFirstDescendant</c> — duyệt SÂU toàn cây. Lưới 一覧 có 1.764 dòng
+    /// (該当件数 đo được trên máy thật), và cầu MSAA→UIA của WinForms dựng phần tử
+    /// cho MỌI dòng chứ không ảo hoá như web. Duyệt sâu vào đó thì hết giờ UIA —
+    /// đúng triệu chứng 「Operation timed out (0x80131505)」 của lần chạy
+    /// 2026-08-11. Repo đã ghi cảnh báo y hệt cho lưới 個別
+    /// (Infrastructure/WinFormsGrid.cs).</para>
+    ///
+    /// <para>Các control của khung (ô 検索, nút F9/F10, nhãn 該当件数) đều nằm NÔNG,
+    /// nên bề rộng chạm chúng sau vài chục nút — trong khi bề sâu có thể lún vào
+    /// hàng nghìn ô lưới trước.</para>
+    /// </summary>
+    /// <param name="root">Cửa sổ dialog.</param>
+    /// <param name="automationId">AutomationId cần tìm.</param>
+    /// <param name="skipId">AutomationId của cây con bỏ qua (thường là lưới).</param>
+    /// <param name="maxNodes">Trần số nút đã duyệt — chặn trường hợp cây lạ.</param>
+    public static AutomationElement? FindChrome(
+        AutomationElement root, string automationId, string? skipId = null, int maxNodes = 400)
+    {
+        var queue = new Queue<AutomationElement>();
+        queue.Enqueue(root);
+        var seen = 0;
+
+        while (queue.Count > 0 && seen < maxNodes)
+        {
+            var node = queue.Dequeue();
+            seen++;
+
+            string id;
+            try { id = Uia.AutomationIdOf(node); } catch { continue; }
+
+            if (!string.IsNullOrEmpty(skipId) && Txt.Same(id, skipId)) continue; // đừng chui vào lưới
+            if (Txt.Same(id, automationId)) return node;
+
+            try { foreach (var c in Uia.Children(node)) queue.Enqueue(c); }
+            catch { /* nút vừa biến mất */ }
+        }
+        return null;
+    }
+
+    /// <summary>Như <see cref="FindChrome"/> nhưng chờ tới khi thấy.</summary>
+    public static AutomationElement RequireChrome(
+        AutomationElement root, string automationId, string? skipId = null, TimeSpan? timeout = null) =>
+        Waits.For(() => FindChrome(root, automationId, skipId),
+                  $"control AutomationId=「{automationId}」", timeout);
+
     // ── Mở / đóng ───────────────────────────────────────────────────────────
 
     /// <summary>AutomationId của mục submenu mở <c>frm203042</c> (frm203002.Designer.cs).</summary>
@@ -134,10 +186,9 @@ public static class KarteAutoCalcDialog
                                $"dialog {ListId} hien len sau khi click 「{MenuItemText}」",
                                TestSettings.Current.Run.DefaultTimeout);
 
-        // initProc() nạp lưới xong chưa.
-        Waits.For(() => Uia.ById(dialog, ListGridId),
-                  $"luoi {ListGridId} cua {ListId} dung xong",
-                  TestSettings.Current.Run.DefaultTimeout);
+        // initProc() nạp lưới xong chưa. Tìm bằng bề rộng — lưới nằm nông, còn
+        // duyệt sâu sẽ lún vào 1.764 dòng của chính nó.
+        RequireChrome(dialog, ListGridId, skipId: null, TestSettings.Current.Run.DefaultTimeout);
         return dialog;
     }
 
@@ -158,10 +209,11 @@ public static class KarteAutoCalcDialog
         }
 
         trace?.Step("F9 選択 tren 一覧");
-        var f9 = Uia.ById(list, "btnF9")
+        // FindChrome, KHÔNG Uia.ById: lưới 1.764 dòng làm duyệt sâu hết giờ UIA.
+        var f9 = FindChrome(list, "btnF9", ListGridId)
             ?? throw new InvalidOperationException(
-                $"Khong thay btnF9 tren {ListId}. Chay Tc0_DumpUiaTree roi sua ten nut.");
-        f9.Click();
+                $"Khong thay btnF9 tren {ListId}. Chay Tc0 (-Diagnostics) roi sua ten nut.");
+        Uia.Click(f9);
         Waits.Step();
 
         return Waits.For(() => app.Window(RegisterId),
@@ -172,8 +224,8 @@ public static class KarteAutoCalcDialog
     /// <summary>F10 戻る — đóng mà không ghi gì.</summary>
     public static void Close(OchaApp app, Window dialog)
     {
-        var f10 = Uia.ById(dialog, "btnF10");
-        if (f10 is not null) { f10.Click(); }
+        var f10 = FindChrome(dialog, "btnF10", ListGridId);
+        if (f10 is not null) { Uia.Click(f10); }
         else { Uia.SendKey(InpP1Dialogs.Vk.F10); }
         Waits.Step();
     }

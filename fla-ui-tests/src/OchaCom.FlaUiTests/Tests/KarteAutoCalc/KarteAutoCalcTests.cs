@@ -184,6 +184,9 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
             InpP1Dialogs.InpP1MenuFlow.WriteArtifact(
                 "kac-02-list.uia.txt", Uia.DumpTree(list, maxDepth: 6, maxChildrenPerNode: 60));
 
+            // Thu nhỏ lưới TRƯỚC khi đụng F9. 1.764 dòng làm mọi thao tác UIA
+            // trên form này chậm tới mức hết giờ — lọc còn vài dòng thì nhanh.
+            Search(list, "100", "");
             var reg = KarteAutoCalcDialog.OpenRegister(App, list, trace);
             Log($"=== KQ-0 === MO DUOC 登録: title 「{Uia.NameOf(reg)}」");
             InpP1Dialogs.InpP1MenuFlow.WriteArtifact(
@@ -300,7 +303,7 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
     // ═══════════════════════════════════════════════════════════════════════
 
     [Test, Order(1)]
-    [Description("Tc1 — KQ-1/KQ-2: 一覧 có 処置 chưa cấu hình không, và tổng số dòng")]
+    [Description("Tc1 — KQ-1/KQ-2 (đã trả lời): xác nhận lại bằng số liệu, không phải ảnh")]
     public void Tc1_ListIncludesUnconfiguredTreatments()
     {
         using var trace = TestTrace.Begin();
@@ -311,7 +314,7 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
         Log("=== KQ-1 === cot 一覧: " + string.Join(" | ", headers));
 
         // 該当件数 do chính app tính (lblCount) — đáng tin hơn đếm phần tử UIA.
-        var countLabel = Uia.ById(_list, KarteAutoCalcDialog.ListCountLabelId);
+        var countLabel = KarteAutoCalcDialog.FindChrome(_list, KarteAutoCalcDialog.ListCountLabelId, KarteAutoCalcDialog.ListGridId);
         var shownCount = countLabel is null ? "(khong doc duoc lblCount)" : Uia.NameOf(countLabel);
         Log($"=== KQ-2 === 該当件数 WinForm hien: {shownCount}");
         Log("   (ban web sau khi loc version mst_trt cho 1.764 dong — so nay phai khop)");
@@ -399,7 +402,7 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
             Search(_list, trtCd.ToString(), "");
             var reg = KarteAutoCalcDialog.OpenRegister(App, _list, trace);
 
-            var chk = Uia.ById(reg, KarteAutoCalcDialog.NoChkCheckBoxId);
+            var chk = KarteAutoCalcDialog.FindChrome(reg, KarteAutoCalcDialog.NoChkCheckBoxId, KarteAutoCalcDialog.RegisterGridId);
             var state = chk is null
                 ? "(khong thay chkNoChk — sua ten trong KarteAutoCalcDialog)"
                 : (chk.AsCheckBox().IsChecked == true ? "TICK" : "KHONG tick");
@@ -416,7 +419,7 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
             try
             {
                 var reg = KarteAutoCalcDialog.OpenRegister(App, _list, trace);
-                var chk = Uia.ById(reg, KarteAutoCalcDialog.NoChkCheckBoxId);
+                var chk = KarteAutoCalcDialog.FindChrome(reg, KarteAutoCalcDialog.NoChkCheckBoxId, KarteAutoCalcDialog.RegisterGridId);
                 var state = chk?.AsCheckBox().IsChecked == true ? "TICK" : "KHONG tick";
                 Log($"=== KQ-3 === ca 「KHONG co dong nao」 — 処置 {empty}: WinForm hien {state}");
                 Log("   ban web: KHONG tick (tranh vacuous-true khi 0 dong)");
@@ -462,9 +465,9 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
         // KHÔNG sửa gì — chỉ F9. Đây là phép thử thuần: lưu mà không đổi gì thì
         // use_cnt phải y nguyên.
         trace.Step("F9 登録 (khong sua gi)");
-        var f9 = Uia.ById(reg, "btnF9");
+        var f9 = KarteAutoCalcDialog.FindChrome(reg, "btnF9", KarteAutoCalcDialog.RegisterGridId);
         Assert.That(f9, Is.Not.Null, "khong thay btnF9 tren frm203043");
-        f9!.Click();
+        Uia.Click(f9!);
         Waits.Step();
         DismissAnyDialog();
         Waits.Step();
@@ -509,15 +512,15 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
         var reg = KarteAutoCalcDialog.OpenRegister(App, _list, trace);
 
         trace.Step("F2 全行削除");
-        var f2 = Uia.ById(reg, "btnF2");
+        var f2 = KarteAutoCalcDialog.FindChrome(reg, "btnF2", KarteAutoCalcDialog.RegisterGridId);
         Assert.That(f2, Is.Not.Null, "khong thay btnF2 (全行削除) tren frm203043");
-        f2!.Click();
+        Uia.Click(f2!);
         Waits.Step();
         DismissAnyDialog();
 
         trace.Step("F9 登録 voi luoi rong");
-        var f9 = Uia.ById(reg, "btnF9");
-        f9?.Click();
+        var f9 = KarteAutoCalcDialog.FindChrome(reg, "btnF9", KarteAutoCalcDialog.RegisterGridId);
+        if (f9 is not null) Uia.Click(f9);
         Waits.Step();
         DismissAnyDialog();
         Waits.Step();
@@ -594,7 +597,7 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
 
     private static WinFormsGrid RequireGrid(Window dialog, string gridId)
     {
-        var el = Uia.ById(dialog, gridId)
+        var el = KarteAutoCalcDialog.FindChrome(dialog, gridId)
             ?? throw new InvalidOperationException(
                 $"Khong thay luoi 「{gridId}」. Chay Tc0_DumpUiaTree roi sua " +
                 "KarteAutoCalcDialog cho khop cay UIA that.");
@@ -604,13 +607,13 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
     /// <summary>Gõ điều kiện rồi bấm 検索 — WinForm chỉ truy vấn khi bấm nút.</summary>
     private void Search(Window list, string trtCd, string trtNm)
     {
-        var cd = Uia.ById(list, KarteAutoCalcDialog.ListTrtCdBoxId);
+        var cd = KarteAutoCalcDialog.FindChrome(list, KarteAutoCalcDialog.ListTrtCdBoxId, KarteAutoCalcDialog.ListGridId);
         if (cd is not null) Uia.SetText(cd, trtCd);
-        var nm = Uia.ById(list, KarteAutoCalcDialog.ListTrtNmBoxId);
+        var nm = KarteAutoCalcDialog.FindChrome(list, KarteAutoCalcDialog.ListTrtNmBoxId, KarteAutoCalcDialog.ListGridId);
         if (nm is not null) Uia.SetText(nm, trtNm);
 
-        var btn = Uia.ById(list, KarteAutoCalcDialog.ListSearchButtonId);
-        if (btn is not null) btn.Click();
+        var btn = KarteAutoCalcDialog.FindChrome(list, KarteAutoCalcDialog.ListSearchButtonId, KarteAutoCalcDialog.ListGridId);
+        if (btn is not null) Uia.Click(btn);
         Waits.Step();
         // 0 件 thì WinForm bung E00003; đóng đi rồi đọc lưới rỗng như bình thường.
         DismissAnyDialog();
