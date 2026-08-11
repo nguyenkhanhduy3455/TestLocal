@@ -140,12 +140,26 @@ public sealed class OchaDbAccounting
     /// tháng 1/2026, mà 診療入力 chỉ sửa được 処置月 hiện hành nên không mở ra đổi
     /// 処置 được. Seed không phải đường tắt — đó là đường duy nhất.
     ///
-    /// <para>Cột được dựng ĐỘNG từ <c>INFORMATION_SCHEMA</c>: ACCDAT có 43 cột
-    /// NOT NULL, liệt kê tay thì dài và vỡ ngay khi schema đổi. Cột không có ý nghĩa
-    /// với testcase nhận 0 / '' / ngày test.</para>
+    /// <para>Cột dựng ĐỘNG từ <c>INFORMATION_SCHEMA</c> (ACCDAT có 44 cột, liệt kê tay
+    /// thì dài và vỡ ngay khi schema đổi), nhưng giá trị của mọi cột <b>không liên quan
+    /// tới testcase được SAO CHÉP TỪ MỘT DÒNG THẬT</b>, không điền hằng số.</para>
     ///
-    /// <para>Số liệu mẫu lấy theo một dòng thật trong DB (km_cd 40, pflg 1, lflg 0)
-    /// để không tạo ra trạng thái mà app chưa từng thấy.</para>
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// ⚠️ VÌ SAO PHẢI CHÉP, KHÔNG ĐƯỢC ĐIỀN 0 / ''
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// Bản đầu điền hằng số cho mọi cột "vô nghĩa". Cùng cách làm đó áp lên TRNTRN đã
+    /// làm <b>app WinForm crash</b> khi mở 診療入力:
+    /// <list type="bullet">
+    ///   <item><c>CHK_FLG</c> là <c>char(10)</c>; đặt <c>''</c> thì SQL Server đệm thành
+    ///     10 dấu cách, và <c>editStringToInt</c> gọi <c>int.Parse("          ")</c> →
+    ///     FormatException (Trntrn.cs:431).</item>
+    ///   <item>Cột nullable bị bỏ qua hoàn toàn ⇒ <c>MED_ST_DT</c> / <c>SUM_DT</c> NULL,
+    ///     mà <c>setTrtData</c> ép <c>(DateTime)</c> thẳng.</item>
+    ///   <item><c>BT_DT1/2</c> nghe như ngày nhưng là <c>smallint</c> năm/tháng.</item>
+    /// </list>
+    ///
+    /// <para>Chép từ dòng thật thì mọi cột như <c>rece_kbn</c>, <c>sflg</c>, <c>tflg</c>,
+    /// <c>nte</c> nhận đúng giá trị app quen đọc — không phải đoán từng cột một.</para>
     /// </summary>
     /// <returns>true nếu VỪA TẠO (teardown phải xoá); false nếu đã có sẵn.</returns>
     public bool EnsureSettledAccounting(int patNo, DateTime trtDt, int score, int claimAmt, short patBr)
@@ -155,30 +169,43 @@ public sealed class OchaDbAccounting
         using var con = Open();
         using var cmd = Cmd(con,
             """
-            DECLARE @cols nvarchar(max) = '', @vals nvarchar(max) = '';
+            DECLARE @cols nvarchar(max)='', @sel nvarchar(max)='';
 
             SELECT @cols = @cols + CASE WHEN @cols='' THEN '' ELSE ', ' END + QUOTENAME(COLUMN_NAME),
-                   @vals = @vals + CASE WHEN @vals='' THEN '' ELSE ', ' END +
+                   @sel  = @sel  + CASE WHEN @sel ='' THEN '' ELSE ', ' END +
                      CASE COLUMN_NAME
-                       WHEN 'ACC_DT'   THEN '@d'   WHEN 'ACC_CNT'   THEN '1'
-                       WHEN 'TRT_DT'   THEN '@d'   WHEN 'TRT_CNT'   THEN '1'
-                       WHEN 'PAT_NO'   THEN '@p'   WHEN 'KM_CD'     THEN '40'
-                       WHEN 'SCORE'    THEN '@sc'  WHEN 'CLAIM_AMT' THEN '@ca'
-                       WHEN 'RECE_AMT' THEN '@ca'  WHEN 'PFLG'      THEN '1'
-                       WHEN 'SCORE_D1' THEN '@sc'  WHEN 'PAT_BR'    THEN '@br'
-                       WHEN 'ACC_TM'   THEN 'GETDATE()'
-                       ELSE CASE WHEN DATA_TYPE IN ('datetime','date','smalldatetime') THEN '@d'
-                                 WHEN DATA_TYPE IN ('char','nchar','varchar','nvarchar') THEN 
-                                 ELSE '0' END
+                       WHEN 'ACC_DT'    THEN '@d'  WHEN 'ACC_CNT'   THEN '1'
+                       WHEN 'TRT_DT'    THEN '@d'  WHEN 'TRT_CNT'   THEN '1'
+                       WHEN 'PAT_NO'    THEN '@p'  WHEN 'KM_CD'     THEN '40'
+                       WHEN 'SCORE'     THEN '@sc' WHEN 'CLAIM_AMT' THEN '@ca'
+                       WHEN 'RECE_AMT'  THEN '@ca' WHEN 'PFLG'      THEN '1'
+                       WHEN 'LFLG'      THEN '0'   WHEN 'DEL_FLG'   THEN '0'
+                       WHEN 'SCORE_D1'  THEN '@sc' WHEN 'PAT_BR'    THEN '@br'
+                       WHEN 'ACC_TM'    THEN 'GETDATE()'
+                       WHEN 'SCORE_D2'  THEN '0'   WHEN 'SCORE_D3'  THEN '0'
+                       WHEN 'SCORE_D4'  THEN '0'   WHEN 'SCORE_D5'  THEN '0'
+                       WHEN 'SCORE_D6'  THEN '0'   WHEN 'SCORE_D7'  THEN '0'
+                       WHEN 'SCORE_D8'  THEN '0'   WHEN 'SCORE_D9'  THEN '0'
+                       WHEN 'SCORE_D10' THEN '0'   WHEN 'SCORE_D11' THEN '0'
+                       WHEN 'SCORE_D12' THEN '0'   WHEN 'SCORE_D13' THEN '0'
+                       WHEN 'SCORE_D14' THEN '0'
+                       ELSE 't.' + QUOTENAME(COLUMN_NAME)   -- moi cot con lai: LAY TU DONG THAT
                      END
             FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_NAME='ACCDAT' AND IS_NULLABLE='NO'
+            WHERE TABLE_NAME='ACCDAT'
+              AND COLUMNPROPERTY(OBJECT_ID('ACCDAT'),COLUMN_NAME,'IsIdentity')=0
             ORDER BY ORDINAL_POSITION;
 
-            DECLARE @sql nvarchar(max) = 'INSERT INTO ACCDAT (' + @cols + ') VALUES (' + @vals + ')';
-            EXEC sp_executesql @sql,
-                 N'@p int, @d datetime, @sc int, @ca int, @br smallint',
-                 @p=@p, @d=@d, @sc=@sc, @ca=@ca, @br=@br;
+            DECLARE @sql nvarchar(max) =
+              'INSERT INTO ACCDAT (' + @cols + ') SELECT ' + @sel +
+              ' FROM (SELECT TOP 1 * FROM ACCDAT WHERE del_flg=0 AND lflg=0' +
+              ' AND km_cd BETWEEN 40 AND 49 ORDER BY acc_dt DESC) t';
+
+            IF NOT EXISTS (SELECT 1 FROM ACCDAT WHERE del_flg=0 AND lflg=0 AND km_cd BETWEEN 40 AND 49)
+                THROW 50001, 'Khong tim thay dong ACCDAT mau (km_cd 40-49, lflg 0) de sao chep.', 1;
+
+            EXEC sp_executesql @sql, N'@p int,@d datetime,@sc int,@ca int,@br smallint',
+                 @p=@p,@d=@d,@sc=@sc,@ca=@ca,@br=@br;
             """);
         cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
         cmd.Parameters.Add("@d", SqlDbType.DateTime).Value = trtDt.Date;
