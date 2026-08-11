@@ -131,8 +131,10 @@ public sealed class Bug2dConcurrentSaveTests : UiTestBase
         {
             try
             {
-                var n = _write.DeleteRowsAddedSince(PatNo, TrtDate, _seqsAtStart);
-                TestContext.Out.WriteLine($"Don: xoa {n} dong do lo test them vao");
+                var drift = _write.DescribeDrift(PatNo, TrtDate, _seqsAtStart);
+                TestContext.Out.WriteLine(drift.Length == 0
+                    ? "So dong 処置 cua thang khong doi"
+                    : "CANH BAO — " + drift);
             }
             catch (Exception e)
             {

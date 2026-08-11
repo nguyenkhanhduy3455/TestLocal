@@ -205,42 +205,42 @@ public sealed class OchaDbParity
     }
 
     /// <summary>
-    /// Xoá những dòng KHÔNG có trong ảnh chụp — tức các dòng do lượt chạy này thêm vào.
+    /// So tháng hiện tại với ảnh chụp và trả về mô tả chênh lệch. <b>KHÔNG XOÁ GÌ.</b>
     ///
-    /// <para>Không có bước này thì mỗi lần chạy lại cộng thêm một dòng 再診 vào tháng của
-    /// bệnh nhân test, và sau chục lượt thì dữ liệu chẳng còn giống ban đầu nữa.</para>
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// ⚠️ BẢN TRƯỚC CỦA HÀM NÀY ĐÃ XOÁ SẠCH DỮ LIỆU BỆNH NHÂN TEST
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// Nó xoá mọi dòng có <c>seq</c> không nằm trong ảnh chụp, với giả định "seq mới
+    /// = dòng do test thêm". Giả định đó SAI: F9 登録 <b>xoá rồi chèn lại toàn bộ</b>
+    /// 処置行 của tháng, nên sau bất kỳ lượt lưu nào thì <b>mọi</b> seq đều mới —
+    /// không dòng nào khớp ảnh chụp, và teardown xoá sạch cả tháng.
     ///
-    /// <para>⚠️ Chỉ xoá thêm-mới. Thứ tự <c>disp_no</c> bị F9 đánh số lại thì KHÔNG khôi
-    /// phục được từ đây — đó là lý do <see cref="SimulateRemoteSave"/> phải dời dòng cuối
-    /// chứ không phải dòng đầu.</para>
+    /// <para>Đo được thật: bệnh nhân 10 mất cả 8 dòng, phải dựng lại bằng tay. Trớ
+    /// trêu là nó nằm trong <c>catch</c>-free teardown nên chạy cả khi test xanh.</para>
+    ///
+    /// <para>Bài học: <b>đừng tự xoá trên bảng nghiệp vụ dựa vào một khoá mà chính
+    /// hành vi đang test làm thay đổi.</b> Ở đây chỉ BÁO CÁO chênh lệch kèm câu SQL
+    /// sẵn sàng chạy — dọn hay không là quyết định của con người.</para>
     /// </summary>
-    /// <returns>Số dòng đã xoá.</returns>
-    public int DeleteRowsAddedSince(int patNo, DateTime month, HashSet<int> snapshot)
+    /// <returns>Chuỗi mô tả; rỗng nghĩa là số dòng không đổi.</returns>
+    public string DescribeDrift(int patNo, DateTime month, HashSet<int> snapshot)
     {
         var (from, to) = MonthRange(month);
         using var con = Open();
+        using var cmd = Cmd(con,
+            "SELECT COUNT(*) FROM TRNTRN WHERE pat_no = @p AND trt_dt BETWEEN @from AND @to");
+        cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+        cmd.Parameters.Add("@from", SqlDbType.DateTime).Value = from;
+        cmd.Parameters.Add("@to", SqlDbType.DateTime).Value = to;
+        var now = Convert.ToInt32(cmd.ExecuteScalar());
 
-        var toDelete = new List<int>();
-        using (var pick = Cmd(con,
-            "SELECT seq FROM TRNTRN WHERE pat_no = @p AND trt_dt BETWEEN @from AND @to"))
-        {
-            pick.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
-            pick.Parameters.Add("@from", SqlDbType.DateTime).Value = from;
-            pick.Parameters.Add("@to", SqlDbType.DateTime).Value = to;
-            using var r = pick.ExecuteReader();
-            while (r.Read())
-            {
-                var seq = Convert.ToInt32(r["seq"]);
-                if (!snapshot.Contains(seq)) toDelete.Add(seq);
-            }
-        }
+        if (now == snapshot.Count) return "";
 
-        if (toDelete.Count == 0) return 0;
-
-        using var del = Cmd(con,
-            $"DELETE FROM TRNTRN WHERE pat_no = @p AND seq IN ({string.Join(",", toDelete)})");
-        del.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
-        return del.ExecuteNonQuery();
+        return $"So dong 処置 cua thang doi: {snapshot.Count} -> {now} (lech {now - snapshot.Count}). " +
+               "Lo test co the da them dong. KHONG tu xoa — kiem va don bang tay:\n" +
+               $"  SELECT trt_dt, disp_no, trt_cd, trt_pt, dsp_trt FROM TRNTRN " +
+               $"WHERE pat_no = {patNo} AND trt_dt BETWEEN '{from:yyyy-MM-dd}' AND '{to:yyyy-MM-dd}' " +
+               "ORDER BY trt_dt, disp_no;";
     }
 
     // ═══════════════════════════════════════════════════════════════════════
