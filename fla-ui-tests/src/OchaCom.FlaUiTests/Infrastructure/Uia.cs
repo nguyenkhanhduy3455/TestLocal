@@ -208,6 +208,27 @@ public static class Uia
         return ((int)(r.X + r.Width / 2), (int)(r.Y + r.Height / 2));
     }
 
+    /// <summary>
+    /// Gửi 1 phím vật lý qua <c>SendInput</c>. Đi qua message queue của Windows → an
+    /// toàn khi cửa sổ khác đang topmost (gửi tới foreground window).
+    /// </summary>
+    public static void SendKey(ushort virtualKey)
+    {
+        var inputs = new Win32.INPUT[2];
+        inputs[0] = new Win32.INPUT { type = Win32.INPUT_KEYBOARD_VAL, wVk = virtualKey };
+        inputs[1] = new Win32.INPUT { type = Win32.INPUT_KEYBOARD_VAL, wVk = virtualKey, dwFlags = Win32.KEYEVENTF_KEYUP_VAL };
+        Win32.SendInput((uint)inputs.Length, inputs, System.Runtime.InteropServices.Marshal.SizeOf<Win32.INPUT>());
+    }
+
+    /// <summary>Di chuyển chuột tới tọa độ màn hình tuyệt đối (không click).</summary>
+    public static void MoveCursorTo(int x, int y) => Win32.SetCursorPos(x, y);
+
+    /// <summary>Mã Virtual-Key F11 (Winuser.h VK_F11 = 0x7A).</summary>
+    public const ushort VK_F11 = 0x7A;
+
+    /// <summary>Mã Virtual-Key Right Arrow (Winuser.h VK_RIGHT = 0x27).</summary>
+    public const ushort VK_RIGHT = 0x27;
+
     private static class Win32
     {
         public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
@@ -215,11 +236,124 @@ public static class Uia
         public const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
         public const uint MOUSEEVENTF_RIGHTUP   = 0x0010;
 
+        // INPUT type (lưu vào biến-val để SendKey đọc được)
+        public const uint INPUT_KEYBOARD_VAL = 1;
+        public const uint KEYEVENTF_KEYUP_VAL = 0x0002;
+
+        // SetWindowPos flags
+        public static readonly IntPtr HWND_TOPMOST     = new(-1);
+        public static readonly IntPtr HWND_NOTOPMOST   = new(-2);
+        public const uint SWP_NOMOVE = 0x0002;
+        public const uint SWP_NOSIZE = 0x0001;
+        public const uint SWP_SHOWWINDOW = 0x0040;
+        public const uint SWP_NOZORDER = 0x0004;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct INPUT
+        {
+            public uint type;
+            public ushort wVk;
+            public ushort wScan;
+            public uint dwFlags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
         [DllImport("user32.dll")]
         public static extern bool SetCursorPos(int X, int Y);
 
         [DllImport("user32.dll")]
         public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, int dwExtraInfo);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
+            int X, int Y, int cx, int cy, uint uFlags);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct RECT { public int Left, Top, Right, Bottom; }
+
+        [DllImport("user32.dll")]
+        public static extern int GetWindowRect(IntPtr hWnd, out RECT lpRect);
+    }
+
+    /// <summary>
+    /// Đẩy cửa sổ lên trên cùng (TOPMOST) hoặc trả về bình thường.
+    /// Cần thiết khi cửa sổ khác (IDE, File Explorer) đang topmost che mất
+    /// cửa sổ app — khi đó popup menu của app có thể bị che.
+    /// </summary>
+    public static void SetWindowTopmost(IntPtr hwnd, bool on = true)
+    {
+        Win32.SetWindowPos(hwnd,
+            on ? Win32.HWND_TOPMOST : Win32.HWND_NOTOPMOST,
+            0, 0, 0, 0,
+            Win32.SWP_NOMOVE | Win32.SWP_NOSIZE | Win32.SWP_SHOWWINDOW);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    // ForceForeground dùng AttachThreadInput để "đánh cắp" foreground khi cửa sổ
+    // khác (IDE) đang giữ — workaround cho Windows 10+ foreground lock.
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    /// <summary>
+    /// Force một cửa sổ lên foreground bằng AttachThreadInput (cướp quyền foreground
+    /// từ cửa sổ khác). Windows 10+ có foreground-lock ngăn SetForeground bình thường.
+    /// </summary>
+    public static bool ForceForeground(IntPtr hWnd)
+    {
+        var fg = GetForegroundWindow();
+        if (fg == hWnd) return true;
+        var fgThread = GetWindowThreadProcessId(fg, out _);
+        var ourThread = GetCurrentThreadId();
+        try
+        {
+            if (fgThread != 0) AttachThreadInput(ourThread, fgThread, true);
+            AttachThreadInput(ourThread, GetWindowThreadProcessId(hWnd, out _), true);
+            ShowWindow(hWnd, 9 /* SW_RESTORE */);
+            return SetForegroundWindow(hWnd);
+        }
+        finally
+        {
+            AttachThreadInput(ourThread, fgThread, false);
+            AttachThreadInput(ourThread, GetWindowThreadProcessId(hWnd, out _), false);
+        }
+    }
+
+    /// <summary>
+    /// Di chuyển cửa sổ tới (x, y) trên màn hình. <c>keepSize=true</c> để giữ nguyên
+    /// kích thước; <c>false</c> để vừa dời vừa resize.
+    /// </summary>
+    public static void MoveWindow(IntPtr hwnd, int x, int y, bool keepSize = true)
+    {
+        var r = new Win32.RECT();
+        if (keepSize && Win32.GetWindowRect(hwnd, out r) != 0)
+        {
+            Win32.SetWindowPos(hwnd, IntPtr.Zero, x, y,
+                r.Right - r.Left, r.Bottom - r.Top,
+                Win32.SWP_NOZORDER | Win32.SWP_SHOWWINDOW);
+        }
+        else
+        {
+            Win32.SetWindowPos(hwnd, IntPtr.Zero, x, y, 0, 0,
+                Win32.SWP_NOZORDER | Win32.SWP_NOSIZE | Win32.SWP_SHOWWINDOW);
+        }
     }
 
     /// <summary>Ô nhập bên trong một ComboBox có thể sửa; không có thì trả về chính nó.</summary>

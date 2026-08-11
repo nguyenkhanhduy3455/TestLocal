@@ -1,3 +1,4 @@
+using System.Text;
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Definitions;
 using FlaUI.Core.Input;
@@ -53,39 +54,57 @@ public static class StepsEditFlow
         screen.Focus();
         Waits.Step();
 
-        trace?.Step("mo context menu cua grdRegi → オプション > Step");
+        trace?.Step("F11 → オプション > Step");
 
-        // 1) RightClick vào 1 cell KHÔNG thuộc cột 「日」 (cột 0) của grdRegi để
-        //    mở contextMenuStripSentaku (chứa IDM_Option > IDM_Step). Cell thuộc
-        //    cột 0 mở contextMenuStripDateChg (chỉ có 日付変更 — sai mục).
-        OpenContextMenuOnGrdRegi(app, screen, trace);
+        // 1) Mở menu bằng cách invoke btnF11 + đảm bảo form ở (0,0) để popup không bị IDE che.
+        OpenMenuByF11(app, screen, trace);
 
-        // 2) Trong popup vừa hiện, tìm và click 「オプション」 để bung submenu.
+        // 1b) Diagnostics
+        var afterDump = DumpAllTopLevelWindows(app);
+        WriteArtifact("steps-edit-after-f11.uia.txt", afterDump);
+
+        // 2) Popup menu phải hiện ra. Đợi tối đa 3s.
         var popup = WaitForContextMenuPopup(app, trace);
         if (popup is null)
             throw new InvalidOperationException(
-                "RightClick khong mo duoc context menu tren grdRegi. " +
-                "Kiem lai frm203002.Designer.cs:374 (grdRegi.ContextMenuStrip) va " +
-                "vi tri click co dung cell khong thuoc cot 0 khong.");
+                "F11 da click nhung khong thay popup menu nao. " +
+                "Xem file: steps-edit-after-f11.uia.txt");
 
         trace?.Note($"popup menu ClassName='{Uia.ClassNameOf(popup)}' " +
                     $"Name='{Uia.NameOf(popup)}'");
 
-        // Dump popup để debug.
         var dump = Uia.DumpTree(popup, maxDepth: 4, maxChildrenPerNode: 30);
         WriteArtifact("steps-edit-contextmenu.uia.txt", dump);
 
+        // 3) Tìm mục オプション trong popup. Có thể là MenuItem ở cấp 1.
         var optionItem = FindMenuItemByText(popup, "オプション")
-            ?? FindMenuItemByText(popup, "9 ");  // "&9 オプション" — text có thể là "9 オプション" qua UIA
+            ?? FindMenuItemByText(popup, "9 ");
         if (optionItem is null)
             throw new InvalidOperationException(
                 "Da mo context menu nhung khong thay muc 「オプション」. " +
                 "Xem file: steps-edit-contextmenu.uia.txt.");
 
-        trace?.Note($"LeftClick 「{Uia.NameOf(optionItem)}」");
+        trace?.Note($"Hover + Click 「{Uia.NameOf(optionItem)}」");
         var (ox, oy) = Uia.Center(optionItem);
+
+        // 3a) Di chuyển chuột + click để focus mục オプション
+        Uia.MoveCursorTo(ox, oy);
+        Thread.Sleep(200);
         Uia.LeftClickPhysical(ox, oy);
         Thread.Sleep(400);
+
+        // 3b) Dump submenu ngay để xem có bung không (debug)
+        var subDumpAtClick = DumpAllTopLevelWindows(app);
+        WriteArtifact("steps-edit-after-click-option.uia.txt", subDumpAtClick);
+
+        // 3c) Right Arrow — WinForms nav key để bung DropDown của mục đang focus.
+        // Click chuột trái 1 lần lên mục có DropDownItems thường KHÔNG tự bung submenu
+        // (WinForms ContextMenuStrip mặc định cần nav key như Right Arrow).
+        Uia.SendKey(Uia.VK_RIGHT);
+        Thread.Sleep(500);
+
+        var subDumpAfterArrow = DumpAllTopLevelWindows(app);
+        WriteArtifact("steps-edit-after-right-arrow.uia.txt", subDumpAfterArrow);
 
         // 3) Submenu bung — tìm 「Step」 bên trong.
         var sub = WaitForContextMenuPopup(app, trace);
@@ -136,60 +155,60 @@ public static class StepsEditFlow
         return dialog;
     }
 
-    /// <summary>RightClick vào 1 cell KHÔNG thuộc cột 「日」 của grdRegi.</summary>
-    private static void OpenContextMenuOnGrdRegi(OchaApp app, Window screen, TestTrace? trace)
+    /// <summary>
+    /// Mở <c>contextMenuStripSentaku</c> bằng phím F11.
+    ///
+    /// <para>Source <c>frm203002.cs:920-965</c> <c>btnF11_Click</c>: gọi thẳng
+    /// <c>contextMenuStripSentaku.Show()</c> tại vị trí dưới nút <c>btnF11</c>.
+    /// Đây là cách mở menu trong app — KHÔNG cần RightClick (DataGridView ContextMenuStrip
+    /// hay bị nuốt bởi cell edit mode, DPI, focus issue).</para>
+    ///
+    /// <para><b>Vì sao dùng bàn phím chứ không phải click chuột.</b> Trên máy có cửa sổ
+    /// khác (IDE, File Explorer) che lên trên app, <c>SetCursorPos + mouse_event</c>
+    /// vẫn gửi được, NHƯNG <c>contextMenuStripSentaku.Show(x, y)</c> hiển thị menu tại
+    /// toạ độ màn hình — nếu cửa sổ khác đang topmost, menu có thể bị che. Gửi phím
+    /// F11 đi qua message queue của tiến trình đang focused → app nhận và tự tính
+    /// vị trí menu (vẫn theo <c>PointToScreen</c> của nó — nhưng app focus thì menu
+    /// sẽ hiện ngay dưới btnF11 trong form).</para>
+    /// </summary>
+    private static void OpenMenuByF11(OchaApp app, Window screen, TestTrace? trace)
     {
-        var grid = Uia.ById(screen, "grdRegi")
-            ?? throw new InvalidOperationException("Khong thay grdRegi tren frm203002.");
+        var btnF11 = Uia.ByIdOrName(screen, "btnF11", "選択", ControlType.Button)
+            ?? throw new InvalidOperationException(
+                "frm203002 khong co btnF11 (選択).");
 
-        AutomationElement? dataCell = null;
+        // Di chuyển form sang góc trên-trái (0,0) — tránh IDE (Antigravity / Chrome /
+        // File Explorer) đang topmost ở các vị trí khác che popup context menu. Code
+        // Show(x, y) của app tính theo Parent.PointToScreen — nếu form bị dời, popup
+        // sẽ theo, không nằm dưới IDE.
+        IntPtr hwnd = IntPtr.Zero;
         try
         {
-            var cells = grid.FindAllDescendants(cf => cf.ByControlType(ControlType.DataItem));
-            foreach (var c in cells)
+            hwnd = screen.Properties.NativeWindowHandle.ValueOrDefault;
+            if (hwnd != IntPtr.Zero)
             {
-                var rect = c.BoundingRectangle;
-                var name = Uia.NameOf(c) ?? "";
-                if (rect.X <= 360) continue;  // bỏ cột 「日」 (X≈326..354)
-                if (name.Contains("Row 1")) { dataCell = c; break; }
+                Uia.MoveWindow(hwnd, x: 0, y: 0, keepSize: true);
+                Thread.Sleep(100);
+                // Bỏ topmost để các dialog sau hiện bình thường, nhưng vẫn ÉP foreground.
+                Uia.SetWindowTopmost(hwnd, on: true);
+                Thread.Sleep(50);
+                Uia.SetWindowTopmost(hwnd, on: false);
+                Uia.ForceForeground(hwnd);
             }
         }
-        catch { /* thử cách khác */ }
+        catch (Exception ex) { trace?.Note($"Focus warning: {ex.Message}"); }
 
-        if (dataCell is null)
-        {
-            // Không tìm được cell Row 1 — RightClick vào giữa grid, cách xa cột 「日」.
-            var (gx, gy) = Uia.Center(grid);
-            trace?.Note($"khong thay cell Row 1, RightClick vao giua grid ({gx},{gy})");
-            Mouse.Click(new System.Drawing.Point(gx, gy), MouseButton.Right);
-            return;
-        }
-
-        // SelectionItemPattern.Select() để chắc chắn cell là "current" khi user
-        // right-click — ContextMenuStrip của DataGridView nhiều khi chỉ mở khi
-        // cell đang active.
-        try
-        {
-            if (dataCell.Patterns.SelectionItem.IsSupported)
-                dataCell.Patterns.SelectionItem.Pattern.Select();
-        }
-        catch { /* bỏ qua */ }
-
-        var (x, y) = Uia.Center(dataCell);
-        trace?.Note($"ESC + LeftClick + RightClick cell 「{Uia.NameOf(dataCell)}」 tai ({x},{y})");
-        // Bước 0: ESC để thoát edit mode (DataGridView có thể đang edit 1 cell, khi
-        //         đó RightClick bị nuốt, không mở ContextMenuStrip).
-        Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.ESCAPE);
-        Thread.Sleep(50);
-        // Bước 1: LeftClick để focus app + chọn cell.
-        Mouse.Click(new System.Drawing.Point(x, y), MouseButton.Left);
+        try { screen.Focus(); } catch { /* */ }
         Thread.Sleep(150);
-        // ESC lần nữa sau khi chọn cell (LeftClick có thể bật edit mode).
-        Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.ESCAPE);
-        Thread.Sleep(50);
-        // Bước 2: RightClick — Mouse.Click của FlaUI gửi WM_RBUTTONDOWN + UP
-        //         qua SendInput (đó mới là thứ .NET Control nghe được).
-        Mouse.Click(new System.Drawing.Point(x, y), MouseButton.Right);
+
+        var (fx, fy) = Uia.Center(btnF11);
+        trace?.Note($"Invoke UIA btnF11 tai center=({fx},{fy})");
+
+        // Gọi handler — đồng bộ trong process, Show() chạy ngay.
+        Uia.Click(btnF11);
+
+        var dump = DumpAllTopLevelWindows(app);
+        WriteArtifact("steps-edit-immediately-after-invoke.uia.txt", dump);
     }
 
     /// <summary>Tìm MenuItem có Name chứa chuỗi cho trước.</summary>
@@ -220,27 +239,55 @@ public static class StepsEditFlow
     /// <summary>
     /// Tìm cửa sổ pop-up menu đang hiện — bất kể do Windows quản lý (ClassName
     /// <c>#32768</c>) hay do .NET <c>ContextMenuStrip</c> quản lý. Đi qua cả
-    /// desktop root lẫn app process.
+    /// desktop root lẫn app process. ContextMenuStrip của WinForms tạo cửa sổ
+    /// top-level thuộc process của form — KHÔNG nằm ở <c>GetDesktop</c> root trong
+    /// một số trường hợp, mà nằm trong <c>app.Windows()</c>.
     /// </summary>
     private static AutomationElement? FindAnyContextMenuPopup(OchaApp app)
     {
-        // Nguồn 1: desktop (popup do Windows quản lý).
-        var desktop = OchaApp.SharedAutomation.GetDesktop();
-        foreach (var m in desktop.FindAllChildren(cf => cf.ByClassName("#32768")))
+        // Nguồn 1: desktop — popup Windows quản lý (ClassName #32768).
+        try
         {
-            try { if (Uia.IsOnScreen(m)) return m; }
-            catch { /* vừa đóng */ }
+            var desktop = OchaApp.SharedAutomation.GetDesktop();
+            foreach (var m in desktop.FindAllChildren(cf => cf.ByClassName("#32768")))
+            {
+                try { if (Uia.IsOnScreen(m)) return m; }
+                catch { /* vừa đóng */ }
+            }
         }
+        catch { /* */ }
 
         // Nguồn 2: cửa sổ top-level của app, lọc ControlType.Menu.
-        foreach (var w in app.Windows())
+        try
         {
-            try
+            foreach (var w in app.Windows())
             {
-                if (w.ControlType == ControlType.Menu) return w;
+                try
+                {
+                    if (w.ControlType == ControlType.Menu) return w;
+                }
+                catch { /* bỏ qua */ }
             }
-            catch { /* bỏ qua */ }
         }
+        catch { /* */ }
+
+        // Nguồn 3 (mở rộng): mọi window top-level của app — bao gồm cả những
+        // popup ContextMenuStrip có className riêng. Lọc theo tên/kiểu.
+        try
+        {
+            foreach (var w in app.Windows())
+            {
+                try
+                {
+                    var name = Uia.NameOf(w);
+                    if (Txt.Has(name, "オプション") || Txt.Has(name, "Step") ||
+                        Txt.Has(name, "選択") || Txt.Has(name, "コピー"))
+                        return w;
+                }
+                catch { /* */ }
+            }
+        }
+        catch { /* */ }
 
         return null;
     }
@@ -253,6 +300,31 @@ public static class StepsEditFlow
             : Path.Combine(AppContext.BaseDirectory, outDir);
         Directory.CreateDirectory(fullDir);
         File.WriteAllText(Path.Combine(fullDir, fileName), content);
+    }
+
+    /// <summary>
+    /// Dump mọi cửa sổ top-level mà Windows thấy — bao gồm cả popup menu
+    /// <c>#32768</c> và ContextMenuStrip. Trả về text để ghi artifact.
+    /// </summary>
+    private static string DumpAllTopLevelWindows(OchaApp app)
+    {
+        var sb = new StringBuilder();
+        var desktop = OchaApp.SharedAutomation.GetDesktop();
+        var all = desktop.FindAllChildren();
+        sb.AppendLine($"== So phan tu top-level tren desktop: {all.Length} ==");
+        foreach (var el in all)
+        {
+            try
+            {
+                var r = el.BoundingRectangle;
+                var ct = Uia.ControlTypeOf(el)?.ToString() ?? "?";
+                sb.AppendLine($"  [{ct}] id='{Uia.AutomationIdOf(el)}' " +
+                              $"name='{Uia.NameOf(el)}' class='{Uia.ClassNameOf(el)}' " +
+                              $"@({r.X},{r.Y} {r.Width}x{r.Height})");
+            }
+            catch { /* có thể đang đóng */ }
+        }
+        return sb.ToString();
     }
 
     /// <summary>
