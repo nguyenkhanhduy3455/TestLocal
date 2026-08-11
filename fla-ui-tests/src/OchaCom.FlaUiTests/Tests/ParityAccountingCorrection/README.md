@@ -91,17 +91,22 @@ Luật then chốt: 「既に…会計処理…」 phải trả lời **いい�
 
 ```
 [1] 「処置データチェックでエラーがありました。このまま続けますか?」   OK / Cancel
+[2] 「会計処理を行う日が本日でありません。よろしいですか。」          OK / Cancel
 ```
 
-Phát hiện quan trọng: **F8 chạy 処置データチェック TRƯỚC** khi vào cây quyết định của
-`LetAccData2`. Bệnh nhân test không có 部位・病名 nên luôn dính cảnh báo
-「当月に部位・病名がない可能性があります」.
+**F8 chạy 処置データチェック TRƯỚC** khi vào cây quyết định của `LetAccData2`. Bệnh nhân
+test không có 部位・病名 nên luôn dính cảnh báo 「当月に部位・病名がない可能性があります」.
 
-Hộp thoại này dùng **OK/Cancel**, không phải はい/いいえ. Lượt chạy đầu rơi vào luật
-mặc định "phủ định cho an toàn" → bấm Cancel → **huỷ cả chuỗi F8** trước khi tới 会計.
+Cả hai đều là MessageBox **OK/Cancel**, không phải はい/いいえ.
 
-> Bài học đã ghi vào `AccountingFlow.Rules`: với hộp thoại kiểu 「…続けますか？」 thì
-> phủ định = **bỏ cuộc**, không phải an toàn. Mọi hộp thoại dạng đó phải có luật riêng.
+Ba bài học, đều từ vấp thật:
+
+1. **Với 「…続けますか？」 / 「…よろしいですか。」 thì phủ định = BỎ CUỘC**, không phải an
+   toàn. Luật mặc định "trả lời phủ định" bấm Cancel và huỷ cả chuỗi F8.
+2. **Luật phải HẸP.** Bản đầu khớp trên 「会計処理」 và bắt nhầm hộp thoại [2] (cảnh báo
+   NGÀY). Luật cho 既存会計 giờ đòi cả 「既に」.
+3. **`patient.trtDate` phải trỏ đúng ngày CÓ 処置.** Để trống (= hôm nay) thì màn hình
+   mở vào ngày trống, 窓口精算 ra toàn số 0 và chuỗi kết thúc sớm vì không có gì để tính.
 
 Chuỗi trên máy bạn khác giả định thì chạy:
 

@@ -54,25 +54,34 @@ public static class AccountingFlow
     /// CHUỖI THẬT, đo bằng -Diagnostics ngày 2026-08-11
     /// ═══════════════════════════════════════════════════════════════════════
     /// <code>
-    /// [1] 「処置データチェックでエラーがありました。このまま続けますか?」  OK / Cancel
+    /// [1] 「処置データチェックでエラーがありました。このまま続けますか?」   OK / Cancel
+    /// [2] 「会計処理を行う日が本日でありません。よろしいですか。」          OK / Cancel
     /// </code>
     /// F8 chạy 処置データチェック TRƯỚC khi vào cây quyết định 会計 của LetAccData2.
     /// Bệnh nhân test không có 部位・病名 nên luôn dính cảnh báo
     /// 「当月に部位・病名がない可能性があります」.
     ///
-    /// <para><b>Phải đáp OK (tiếp tục).</b> Lượt chạy đầu rơi vào luật mặc định
-    /// "phủ định cho an toàn" → bấm Cancel → huỷ cả chuỗi F8 trước khi tới 会計.
-    /// Với hộp thoại dạng 「…続けますか？」 thì phủ định = bỏ cuộc, không phải an toàn.</para>
+    /// <para><b>Cả hai đều phải đáp OK (tiếp tục).</b> Lượt chạy đầu rơi vào luật mặc
+    /// định "phủ định cho an toàn" → bấm Cancel → huỷ cả chuỗi F8. Với hộp thoại dạng
+    /// 「…続けますか？」/「…よろしいですか。」 thì phủ định = bỏ cuộc, không phải an toàn.</para>
+    ///
+    /// <para><b>⚠️ Luật phải HẸP.</b> Bản đầu khớp trên 「会計処理」 và vô tình bắt luôn
+    /// hộp thoại [2] (cảnh báo NGÀY), rồi trả lời いいえ. Hộp thoại 既存会計 mà ta thật sự
+    /// muốn bắt có dạng 「既に…会計処理…されています」 — nên luật của nó đòi cả 「既に」.</para>
     /// </summary>
     private static readonly (string Contains, string[] Buttons, string Why)[] Rules =
     [
-        // Cảnh báo チェック trước khi vào 会計 — tiếp tục, nếu không thì dừng ngay ở đây.
-        ("続けますか",   ["OK", "はい", "Yes"], "canh bao チェック — tiep tuc de toi 会計"),
-        ("チェックで",   ["OK", "はい", "Yes"], "cung y tren, phong khi cau chu khac"),
+        // ── Cảnh báo TRƯỚC cây quyết định 会計 — đều phải TIẾP TỤC ──────────────
+        ("続けますか",       ["OK", "はい", "Yes"], "canh bao 処置データチェック — tiep tuc"),
+        ("チェックで",       ["OK", "はい", "Yes"], "cung y tren, phong khi cau chu khac"),
+        ("本日でありません", ["OK", "はい", "Yes"], "ngay 会計 khac hom nay — van tiep tuc"),
+        ("よろしいですか",   ["OK", "はい", "Yes"], "xac nhan chung chung — tiep tuc"),
 
-        // Cây quyết định của LetAccData2.
-        ("会計処理",     ["いいえ", "No", "Cancel"], "giu 会計 cu => moi re duoc sang nhanh G"),
-        ("既に",         ["いいえ", "No", "Cancel"], "cung y tren, phong khi cau chu khac"),
+        // ── Cây quyết định của LetAccData2 ─────────────────────────────────────
+        // ⚠️ Luật này đòi CẢ 「既に」: khớp trần 「会計処理」 sẽ bắt nhầm cảnh báo ngày
+        // 「会計処理を行う日が本日でありません」 ở trên (đã vấp thật).
+        ("既に",         ["いいえ", "No", "Cancel"], "giu 会計 cu => moi re duoc sang nhanh G"),
+        ("されています", ["いいえ", "No", "Cancel"], "cung y tren, phong khi cau chu khac"),
         ("増えています", ["いいえ", "No", "Cancel"], "khong tao dong 差額 — nhanh F, khong phai G"),
         ("差額",         ["いいえ", "No", "Cancel"], "cung ly do"),
     ];

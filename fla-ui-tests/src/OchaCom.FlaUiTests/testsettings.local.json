@@ -40,9 +40,15 @@
     "  - 0 dong ACCDAT, dep_due = 0, ins_due_bal = 0 => khong co tien nong de lam hong",
     "  - da co san BNOW/MISOU/TRN_STATUS"
   ],
+  "//trtDate": [
+    "PHAI tro dung ngay co 処置. Benh nhan 10 co 8 dong 処置 o 2026-08-03.",
+    "De trong (= hom nay) thi man hinh mo ngay khong co 処置 nao => 窓口精算 toan so 0,",
+    "va chuoi F8 ket thuc som vi khong co gi de tinh tien. Da vap that 2026-08-11.",
+    "Ngay nay van thuoc 処置月 hien hanh nen 診療入力 sua duoc binh thuong."
+  ],
   "patient": {
     "patNo": "10",
-    "trtDate": "",
+    "trtDate": "2026-08-03",
     "openMode": "update"
   },
 
