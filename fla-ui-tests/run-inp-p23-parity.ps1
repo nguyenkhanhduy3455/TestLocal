@@ -1,3 +1,7 @@
+﻿# -*- coding: utf-8 -*-
+# File nay LUU KEM BOM UTF-8 (EF BB BF). Windows PowerShell 5.1 doc .ps1 khong co
+# BOM theo bang ma ANSI, nen moi ky tu Nhat/Viet trong file deu bien thanh rac —
+# lan chay 18:35 in ra "蜃ｦ鄂ｮ" thay vi "処置". Dung xoa BOM khi sua file nay.
 <#
 .SYNOPSIS
     Chạy luồng InpP23Parity — ĐIỀU TRA parity của cặp 2 (自動算定, frm203038/039)
