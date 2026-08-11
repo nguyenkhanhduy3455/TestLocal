@@ -275,6 +275,61 @@ public sealed class OchaDbAccounting
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // UNPAID — rác do nhánh F để lại
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>Khoá tự nhiên của một dòng 未精算 trong phạm vi (患者, 診療日).</summary>
+    public sealed record UnpaidKey(int TrtCnt, int KmCd);
+
+    /// <summary>
+    /// Khoá của mọi dòng 未精算データ của (患者, 診療日).
+    ///
+    /// <para>Nhánh F (<c>UnPaid.insertUnPaid</c>, modAcc.cs:640…) ghi vào bảng
+    /// <c>UNPAID</c> — <b>không phải ACCDAT</b>, nên <see cref="DeleteAccDat"/> không
+    /// đụng tới. Mỗi lượt chạy đi nhầm nhánh lại bồi thêm một dòng, và chúng hiện lên
+    /// 未精算患者一覧 của 窓口精算 như bệnh nhân thật đang chờ thu tiền.</para>
+    /// </summary>
+    public List<UnpaidKey> ReadUnpaidKeys(int patNo, DateTime trtDt)
+    {
+        using var con = Open();
+        using var cmd = Cmd(con,
+            "SELECT trt_cnt, km_cd FROM UNPAID WHERE pat_no = @p AND trt_dt = @d ORDER BY trt_cnt, km_cd");
+        cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+        cmd.Parameters.Add("@d", SqlDbType.DateTime).Value = trtDt.Date;
+
+        var keys = new List<UnpaidKey>();
+        using var r = cmd.ExecuteReader();
+        while (r.Read()) keys.Add(new UnpaidKey(ToInt(r["trt_cnt"]), ToInt(r["km_cd"])));
+        return keys;
+    }
+
+    /// <summary>
+    /// Xoá những dòng 未精算 <b>không có</b> trong ảnh chụp đầu lô — tức phần do lô test
+    /// sinh ra.
+    ///
+    /// <para>Cố tình KHÔNG xoá sạch theo (患者, 診療日): bệnh nhân test vẫn có thể có
+    /// 未精算 hợp lệ từ trước, và dọn rác của mình không phải cái cớ để xoá dữ liệu
+    /// người khác.</para>
+    /// </summary>
+    public int DeleteUnpaidNotIn(int patNo, DateTime trtDt, IReadOnlyCollection<UnpaidKey> keep)
+    {
+        var deleted = 0;
+        using var con = Open();
+        foreach (var key in ReadUnpaidKeys(patNo, trtDt))
+        {
+            if (keep.Contains(key)) continue;
+            using var cmd = Cmd(con,
+                "DELETE FROM UNPAID WHERE pat_no = @p AND trt_dt = @d AND trt_cnt = @tc AND km_cd = @km");
+            cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+            cmd.Parameters.Add("@d", SqlDbType.DateTime).Value = trtDt.Date;
+            cmd.Parameters.Add("@tc", SqlDbType.Int).Value = key.TrtCnt;
+            cmd.Parameters.Add("@km", SqlDbType.Int).Value = key.KmCd;
+            deleted += cmd.ExecuteNonQuery();
+        }
+        return deleted;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // Dọn dẹp
     // ═══════════════════════════════════════════════════════════════════════
 

@@ -37,6 +37,7 @@ public sealed class AccountingFlowDiagnosticsTests : UiTestBase
 {
     private OchaDbAccounting? _db;
     private bool _seededAccounting;
+    private IReadOnlyCollection<OchaDbAccounting.UnpaidKey> _unpaidBefore = [];
 
     protected override string? FixturePreflightSkipReason()
     {
@@ -57,17 +58,26 @@ public sealed class AccountingFlowDiagnosticsTests : UiTestBase
     [OneTimeTearDown]
     public void DiagnosticsTearDown()
     {
-        if (_db is null || !_seededAccounting) return;
+        if (_db is null) return;
         try
         {
-            var n = _db.DeleteAccDat(PatNo, TrtDate);
-            TestContext.Out.WriteLine($"Don: xoa {n} dong ACCDAT do cong cu chan doan tao");
+            if (_seededAccounting)
+            {
+                var n = _db.DeleteAccDat(PatNo, TrtDate);
+                TestContext.Out.WriteLine($"Don: xoa {n} dong ACCDAT do cong cu chan doan tao");
+            }
+
+            // Chuỗi F8 đi nhầm sang nhánh F thì WinForm đã kịp ghi 未精算データ.
+            // Bảng UNPAID không nằm trong ảnh chụp ACCDAT nên phải dọn riêng.
+            var u = _db.DeleteUnpaidNotIn(PatNo, TrtDate, _unpaidBefore);
+            if (u > 0) TestContext.Out.WriteLine($"Don: xoa {u} dong UNPAID phat sinh trong luot chay");
         }
         catch (Exception e)
         {
             TestContext.Out.WriteLine(
-                $"⚠️ KHONG xoa duoc dong 会計 da seed ({e.Message}). Xoa tay:\n" +
-                $"  DELETE FROM ACCDAT WHERE pat_no = {PatNo} AND trt_dt = '{TrtDate:yyyy-MM-dd}';");
+                $"⚠️ KHONG don duoc ({e.Message}). Xoa tay:\n" +
+                $"  DELETE FROM ACCDAT WHERE pat_no = {PatNo} AND trt_dt = '{TrtDate:yyyy-MM-dd}';\n" +
+                $"  DELETE FROM UNPAID WHERE pat_no = {PatNo} AND trt_dt = '{TrtDate:yyyy-MM-dd}';");
         }
     }
 
@@ -85,6 +95,7 @@ public sealed class AccountingFlowDiagnosticsTests : UiTestBase
 
         var pre = AccountingPreconditions.Ensure(_db, PatNo, TrtDate, trace);
         _seededAccounting = pre.SeededAccounting;
+        _unpaidBefore = pre.UnpaidBefore;
 
         var report = new System.Text.StringBuilder();
         report.AppendLine($"F8 会計 — chuoi hop thoai thuc te, {DateTime.Now:yyyy-MM-dd HH:mm:ss}");

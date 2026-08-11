@@ -107,17 +107,19 @@ Luật then chốt: 「既に…会計処理…」 phải trả lời **いい�
 ### Chuỗi thật, đo ngày 2026-08-11
 
 ```
-[1] 「処置データチェックでエラーがありました。このまま続けますか?」   OK / Cancel
-[2] 「会計処理を行う日が本日でありません。よろしいですか。」          OK / Cancel
-[3] cửa sổ 入金指定 (frm203027)     ← KHÔNG phải hộp thoại. Xem bài học 4.
+[1] 「処置データチェックでエラーがありました。このまま続けますか?」        OK / Cancel
+[2] 「会計処理を行う日が本日でありません。よろしいですか。」               OK / Cancel
+[3] 「既に、¥N の会計処理がされていますが、未清算データ(¥M)を…?」        Yes / No   → いいえ
+[4] 「処置点数が …。¥N を 預り金/未収金 に計上しますか？」   ← ĐÍCH (ChgAccData)
 ```
 
 **F8 chạy 処置データチェック TRƯỚC** khi vào cây quyết định của `LetAccData2`. Bệnh nhân
 test không có 部位・病名 nên luôn dính cảnh báo 「当月に部位・病名がない可能性があります」.
 
-[1] và [2] đều là MessageBox **OK/Cancel**, không phải はい/いいえ.
+[1] và [2] là MessageBox **OK/Cancel**, [3] là **Yes/No** — trên Windows tiếng Anh nhãn
+ra tiếng Anh, nên mọi luật đều liệt kê cả hai thứ tiếng.
 
-Bốn bài học, đều từ vấp thật:
+Năm bài học, đều từ vấp thật:
 
 1. **Với 「…続けますか？」 / 「…よろしいですか。」 thì phủ định = BỎ CUỘC**, không phải an
    toàn. Luật mặc định "trả lời phủ định" bấm Cancel và huỷ cả chuỗi F8.
@@ -136,6 +138,32 @@ Bốn bài học, đều từ vấp thật:
 
    > Quy tắc rút ra: gặp cửa sổ lạ thì **tra xem nó nằm ở nhánh nào của source**
    > trước, rồi mới quyết định thêm luật hay sửa tiền đề.
+
+5. **Thứ tự trong `Rules` là một phần của luật: cụ thể trước, chung chung sau.**
+   Khớp là first-wins, mà câu chữ của WinForm chồng lấn rất nhiều. Hộp thoại [3]
+   chứa **cả** 「既に」 lẫn 「よろしいですか」; luật chung 「よろしいですか」 đứng trước
+   nên trúng trước và trả lời **はい** — mà はい chính là 「tạo 未精算データ mới」
+   (modAcc.cs:566 đặt `past_billing_amount = 0`), tức tự tay rẽ sang nhánh F.
+   Chuỗi đi đúng tới cửa ngõ nhánh G rồi bị luật của chính mình đẩy ra.
+
+   Luật 「よろしいですか」 giờ nằm **cuối cùng** và có ghi chú: thêm luật mới thì đặt
+   TRÊN nó.
+
+### Rác nhánh F: bảng `UNPAID`
+
+Mỗi lượt F8 đi nhầm sang nhánh F đều ghi một dòng 未精算データ vào **`UNPAID`** —
+bảng này **không** nằm trong ảnh chụp `ACCDAT` nên trước đây không ai dọn, và chúng
+hiện lên 未精算患者一覧 của 窓口精算 như bệnh nhân thật đang chờ thu tiền.
+
+Giờ tiền đề chụp `UNPAID` trước lô, teardown xoá đúng phần **vượt ra ngoài** ảnh chụp
+(không xoá sạch theo ngày — bệnh nhân test vẫn có thể có 未精算 hợp lệ từ trước).
+
+Rác của các lượt chạy **trước** bản vá này thì phải xoá tay:
+
+```sql
+SELECT * FROM UNPAID WHERE pat_no = 10 AND trt_dt = '2026-08-03';
+DELETE FROM UNPAID WHERE pat_no = 10 AND trt_dt = '2026-08-03';
+```
 
 Chuỗi trên máy bạn khác giả định thì chạy:
 

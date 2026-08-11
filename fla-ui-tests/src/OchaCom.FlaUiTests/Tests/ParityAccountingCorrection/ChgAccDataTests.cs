@@ -60,6 +60,9 @@ public sealed class ChgAccDataTests : UiTestBase
     /// </summary>
     private bool _branchGReachable;
 
+    /// <summary>未精算 đã có trước lô — teardown chỉ xoá phần vượt ra ngoài.</summary>
+    private IReadOnlyCollection<OchaDbAccounting.UnpaidKey> _unpaidBefore = [];
+
     protected override string? FixturePreflightSkipReason()
     {
         var s = TestSettings.Current;
@@ -94,6 +97,11 @@ public sealed class ChgAccDataTests : UiTestBase
         if (_db is null || _snapshot is null) return;
         try
         {
+            // 未精算データ (UNPAID) — nhánh F ghi vào đây, và bảng này KHÔNG nằm trong
+            // ảnh chụp ACCDAT nên phải dọn riêng, dọn trước cả hai đường bên dưới.
+            var u = _db.DeleteUnpaidNotIn(PatNo, TrtDate, _unpaidBefore);
+            if (u > 0) TestContext.Out.WriteLine($"Don: xoa {u} dong UNPAID phat sinh trong lo test");
+
             if (_seededAccounting)
             {
                 // Ảnh chụp đầu lô KHÔNG có dòng 会計 nào ⇒ xoá sạch là đúng nguyên trạng.
@@ -111,6 +119,7 @@ public sealed class ChgAccDataTests : UiTestBase
             TestContext.Out.WriteLine(
                 $"⚠️ KHONG khoi phuc duoc so tien ({e.Message}). Kiem tay:\n" +
                 $"  SELECT * FROM ACCDAT WHERE pat_no = {PatNo} AND trt_dt = '{TrtDate:yyyy-MM-dd}';\n" +
+                $"  SELECT * FROM UNPAID WHERE pat_no = {PatNo} AND trt_dt = '{TrtDate:yyyy-MM-dd}';\n" +
                 $"  UPDATE PERSON_EXP SET dep_due = {_snapshot.DepDue}, " +
                 $"ins_due_bal = {_snapshot.InsDueBal} WHERE pat_no = {PatNo};");
         }
@@ -129,6 +138,7 @@ public sealed class ChgAccDataTests : UiTestBase
         // bản đồ cái này vẽ ra không dùng được cho cái kia.
         var pre = AccountingPreconditions.Ensure(_db!, PatNo, TrtDate, trace);
         _seededAccounting = pre.SeededAccounting;
+        _unpaidBefore = pre.UnpaidBefore;
 
         // Không Fail: thiếu tiền đề không phải bug của bản port, mà là môi trường chưa
         // sẵn sàng (điển hình: tre_acc_link vừa bật, phải khởi động lại app).

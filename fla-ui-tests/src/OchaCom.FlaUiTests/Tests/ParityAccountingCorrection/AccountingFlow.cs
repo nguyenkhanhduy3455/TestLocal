@@ -67,10 +67,13 @@ public static class AccountingFlow
     /// CHUỖI THẬT, đo bằng -Diagnostics ngày 2026-08-11
     /// ═══════════════════════════════════════════════════════════════════════
     /// <code>
-    /// [1] 「処置データチェックでエラーがありました。このまま続けますか?」   OK / Cancel
-    /// [2] 「会計処理を行う日が本日でありません。よろしいですか。」          OK / Cancel
-    /// [3] cửa sổ 入金指定 (frm203027)  ← KHÔNG phải hộp thoại. Xem BranchFMarker.
+    /// [1] 「処置データチェックでエラーがありました。このまま続けますか?」        OK / Cancel
+    /// [2] 「会計処理を行う日が本日でありません。よろしいですか。」               OK / Cancel
+    /// [3] 「既に、¥N の会計処理がされていますが、未清算データ(¥M)を…?」        Yes / No
+    /// [4] 「処置点数が …。¥N を 預り金/未収金 に計上しますか？」  ← ĐÍCH (ChgAccData)
     /// </code>
+    /// Nút của [1][2] là <b>OK/Cancel</b>, của [3] là <b>Yes/No</b> — trên Windows tiếng
+    /// Anh nhãn ra tiếng Anh, nên mọi luật đều liệt kê cả hai thứ tiếng.
     /// F8 chạy 処置データチェック TRƯỚC khi vào cây quyết định 会計 của LetAccData2.
     /// Bệnh nhân test không có 部位・病名 nên luôn dính cảnh báo
     /// 「当月に部位・病名がない可能性があります」.
@@ -92,19 +95,36 @@ public static class AccountingFlow
     /// </summary>
     private static readonly (string Contains, string[] Buttons, string Why)[] Rules =
     [
-        // ── Cảnh báo TRƯỚC cây quyết định 会計 — đều phải TIẾP TỤC ──────────────
+        // ══════════════════════════════════════════════════════════════════════
+        // ⚠️ THỨ TỰ LÀ MỘT PHẦN CỦA LUẬT — CỤ THỂ TRƯỚC, CHUNG CHUNG SAU
+        // ══════════════════════════════════════════════════════════════════════
+        // Khớp là first-wins. Câu chữ của WinForm chồng lấn nhau rất nhiều, nên một
+        // luật chung đặt sai chỗ sẽ NUỐT hộp thoại mà luật cụ thể đang chờ.
+        //
+        // Đã vấp thật (2026-08-11 11:36): hộp thoại
+        //   「既に、¥1,020 の会計処理がされていますが、未清算データ(¥0)を作成してよろしいですか?」
+        // chứa CẢ 「既に」 lẫn 「よろしいですか」. Luật 「よろしいですか」 đứng trước nên
+        // trúng nó và trả lời はい — mà はい chính là 「tạo 未精算データ mới」
+        // (modAcc.cs:566 đặt past_billing_amount = 0), tức tự tay rẽ sang nhánh F.
+        // Chuỗi đi đúng tới cửa ngõ nhánh G rồi bị luật của chính mình đẩy ra.
+
+        // ── 1. Cây quyết định của LetAccData2 — CỤ THỂ, phải đứng trước ────────
+        // 「既に…会計処理…されていますが、未清算データ…作成してよろしいですか?」
+        // いいえ = giữ 会計 cũ ⇒ đường DUY NHẤT còn lại dẫn tới ChgAccData.
+        ("既に",         ["いいえ", "No", "Cancel"], "giu 会計 cu => moi re duoc sang nhanh G"),
+        ("されています", ["いいえ", "No", "Cancel"], "cung y tren, phong khi cau chu khac"),
+        // 「会計処理後、請求金額が増えています。差額分の未精算データ…作成しますか?」
+        ("増えています", ["いいえ", "No", "Cancel"], "khong tao dong 差額 — nhanh F, khong phai G"),
+        ("差額",         ["いいえ", "No", "Cancel"], "cung ly do"),
+
+        // ── 2. Cảnh báo TRƯỚC cây quyết định — CHUNG CHUNG, đứng sau ───────────
+        // Đều phải TIẾP TỤC. Xem ghi chú 「phủ định = bỏ cuộc」 ở phần tóm tắt trên.
         ("続けますか",       ["OK", "はい", "Yes"], "canh bao 処置データチェック — tiep tuc"),
         ("チェックで",       ["OK", "はい", "Yes"], "cung y tren, phong khi cau chu khac"),
         ("本日でありません", ["OK", "はい", "Yes"], "ngay 会計 khac hom nay — van tiep tuc"),
+        // ⚠️ Luật RỘNG NHẤT, chốt cuối: 「よろしいですか」 có trong rất nhiều câu.
+        // Thêm luật mới thì đặt TRÊN nó, đừng đặt dưới.
         ("よろしいですか",   ["OK", "はい", "Yes"], "xac nhan chung chung — tiep tuc"),
-
-        // ── Cây quyết định của LetAccData2 ─────────────────────────────────────
-        // ⚠️ Luật này đòi CẢ 「既に」: khớp trần 「会計処理」 sẽ bắt nhầm cảnh báo ngày
-        // 「会計処理を行う日が本日でありません」 ở trên (đã vấp thật).
-        ("既に",         ["いいえ", "No", "Cancel"], "giu 会計 cu => moi re duoc sang nhanh G"),
-        ("されています", ["いいえ", "No", "Cancel"], "cung y tren, phong khi cau chu khac"),
-        ("増えています", ["いいえ", "No", "Cancel"], "khong tao dong 差額 — nhanh F, khong phai G"),
-        ("差額",         ["いいえ", "No", "Cancel"], "cung ly do"),
     ];
 
     private const string BranchFDiagnosis =

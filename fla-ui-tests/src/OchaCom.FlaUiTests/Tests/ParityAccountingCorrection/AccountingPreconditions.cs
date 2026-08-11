@@ -40,7 +40,14 @@ public static class AccountingPreconditions
 {
     /// <param name="Blocker">null = đủ điều kiện; khác null = lý do nhánh G không tới được.</param>
     /// <param name="SeededAccounting">true = dòng 会計 do lô test tạo ⇒ teardown phải xoá.</param>
-    public sealed record Result(string? Blocker, bool SeededAccounting)
+    /// <param name="UnpaidBefore">
+    /// 未精算 đã có TRƯỚC lô test. Teardown chỉ được xoá những dòng KHÔNG nằm trong đây —
+    /// mọi thứ vượt ra ngoài là do lô test (hoặc một lượt chạy hỏng) sinh ra.
+    /// </param>
+    public sealed record Result(
+        string? Blocker,
+        bool SeededAccounting,
+        IReadOnlyCollection<OchaDbAccounting.UnpaidKey> UnpaidBefore)
     {
         public bool Ok => Blocker is null;
     }
@@ -52,6 +59,17 @@ public static class AccountingPreconditions
 
     public static Result Ensure(OchaDbAccounting db, int patNo, DateTime trtDt, TestTrace trace)
     {
+        // ── 0. Ảnh chụp 未精算 ───────────────────────────────────────────────
+        // Mọi lượt F8 đi nhầm sang nhánh F đều ĐỂ LẠI một dòng UNPAID, và bảng đó
+        // không nằm trong ảnh chụp ACCDAT nên trước đây không ai dọn. Chụp trước để
+        // teardown biết dòng nào là của mình.
+        var unpaidBefore = trace.Do("chup 未精算データ (UNPAID) truoc lo",
+                                    () => db.ReadUnpaidKeys(patNo, trtDt));
+        trace.Note($"  UNPAID dang co: {unpaidBefore.Count} dong");
+        if (unpaidBefore.Count > 0)
+            trace.Note("  (neu day la rac tu cac luot chay hong truoc, xoa tay: " +
+                       $"DELETE FROM UNPAID WHERE pat_no = {patNo} AND trt_dt = '{trtDt:yyyy-MM-dd}';)");
+
         // ── 1. Công tắc tổng ────────────────────────────────────────────────
         var link = trace.Do("doc accconfig.tre_acc_link (cong tac tong cua nhanh G)",
                             db.ReadTreAccLink);
@@ -70,7 +88,7 @@ public static class AccountingPreconditions
                 "(modCommon.cs:346), nên phải ĐÓNG WinForm rồi chạy lại lệnh test.\n\n" +
                 "  Muốn trả về nguyên trạng sau khi xong:\n" +
                 $"    UPDATE accconfig SET tre_acc_link = {link?.ToString() ?? "0"};",
-                SeededAccounting: false);
+                SeededAccounting: false, unpaidBefore);
         }
 
         // ── 2. 会計 đã chốt cho ngày test ────────────────────────────────────
@@ -91,7 +109,7 @@ public static class AccountingPreconditions
             return new Result(
                 "Ngày test vẫn không có dòng 医療保険 (km_cd 40-49 / 57 / 58, lflg = 0) " +
                 "sau khi seed — xem danh sách ACCDAT ở trên.",
-                seeded);
+                seeded, unpaidBefore);
 
         // past_billing_amount cộng cả 介護 + 自費, nhưng dòng seed là 医療保険 nên
         // claim_amt của nó chính là toàn bộ. Bằng 0 thì điều kiện > 0 vẫn trượt.
@@ -99,10 +117,10 @@ public static class AccountingPreconditions
             return new Result(
                 $"Dòng 会計 của ngày test có claim_amt = 0, nên past_billing_amount = 0 và " +
                 "modAcc.cs:598 vẫn rẽ sang nhánh tạo 未精算データ.",
-                seeded);
+                seeded, unpaidBefore);
 
         trace.Note($"TIEN DE DU: dong se bi sua km_cd={target.KmCd} score={target.Score} " +
                    $"claim_amt={target.ClaimAmt} rece_amt={target.ReceAmt}");
-        return new Result(null, seeded);
+        return new Result(null, seeded, unpaidBefore);
     }
 }
