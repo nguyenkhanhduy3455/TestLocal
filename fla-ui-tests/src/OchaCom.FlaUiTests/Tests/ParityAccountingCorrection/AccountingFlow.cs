@@ -275,6 +275,19 @@ public static class AccountingFlow
     ///
     /// <para>Bấm 「F10 戻る」 — nút lui chuẩn của màn đó. Không dùng nút X: BaseForm bật
     /// <c>CS_NOCLOSE</c> (BaseForm.cs:43-57).</para>
+    ///
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// ⚠️ 戻る CÒN HỎI LẠI MỘT LẦN NỮA
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// <c>btnF10_Click</c> mở <c>MsgDialog.ShowOKCancelMsg("Q00004", "登録せずに")</c>
+    /// (frm204002.cs:1349) rồi mới đóng màn. Bản đầu bỏ qua bước này: bấm 戻る xong đi
+    /// thẳng sang mở lại 診療入力, trong khi hộp thoại xác nhận đang <b>chặn luồng UI</b>
+    /// của app — đúng cái bẫy đã ghi ở <see cref="ModalDialogs"/>. Mọi phép duyệt cửa sổ
+    /// sau đó đi vào chỗ mù, và người chạy chỉ thấy app đứng yên ở màn 窓口精算.
+    ///
+    /// <para>Nên: trả lời hộp thoại qua <see cref="ModalDialogs"/> (đường sống khi luồng
+    /// UI bị chặn), rồi <b>chờ 窓口精算 đóng thật</b> mới trả về. Chờ ở đây để lỗi nói
+    /// đúng chỗ, thay vì để bước sau báo 「không thấy メインメニュー」.</para>
     /// </summary>
     /// <returns>true nếu vừa đóng 窓口精算; false nếu nó không mở.</returns>
     public static bool LeaveCounterPayment(OchaApp app, TestTrace? trace = null)
@@ -283,12 +296,36 @@ public static class AccountingFlow
         if (seisan is null) return false;
 
         trace?.Note("F8 da dong 診療入力 va mo 窓口精算 — bam 「F10 戻る」 de lui");
-        if (!Dialogs.ClickButtonContaining(seisan, "戻る", "Back"))
-            throw new InvalidOperationException(
-                "Màn 窓口精算 đang mở nhưng không thấy nút 「F10 戻る」 để lui. " +
-                "Không đóng được thì testcase sau không mở lại được 診療入力.");
 
+        // Click CHUỘT THẬT: nút của app là GradientButton tự vẽ, cùng lý do với btnF8
+        // ở TriggerAccounting. Uia.Click (InvokePattern) có thể "thành công" mà không
+        // có gì xảy ra, và khi đó chỗ hỏng lộ ra ở tận bước sau.
+        var back = Uia.ByIdOrName(seisan, "btnF10", "戻る", FlaUI.Core.Definitions.ControlType.Button)
+            ?? throw new InvalidOperationException(
+                "Màn 窓口精算 đang mở nhưng không thấy nút 「F10 戻る」 (btnF10) để lui. " +
+                "Không đóng được thì testcase sau không mở lại được 診療入力.");
+        Uia.MouseClick(back);
         Waits.Step();
+
+        // 「登録せずに…」 Q00004 — OK/Cancel, mặc định phải OK.
+        var confirm = Waits.TryFor(() => ModalDialogs.All(app, seisan).FirstOrDefault(),
+                                   TimeSpan.FromSeconds(10));
+        if (confirm is not null)
+        {
+            trace?.Note($"xac nhan lui: 「{Txt.N(Dialogs.TextOf(confirm))}」 -> OK");
+            if (!Dialogs.ClickButton(confirm, "OK", "はい", "Yes"))
+                throw new InvalidOperationException(
+                    "Hộp thoại xác nhận của 「F10 戻る」 không có nút OK/はい. " +
+                    $"Các nút đang có: {string.Join("/", ButtonNames(confirm))}.");
+            Waits.Step();
+        }
+        else
+        {
+            trace?.Note("khong thay hop thoai xac nhan — man hinh co the da dong ngay");
+        }
+
+        Waits.Until(() => app.Window("frm204002") is null,
+                    "man 窓口精算 dong lai sau khi bam 「F10 戻る」", TimeSpan.FromSeconds(20));
         return true;
     }
 

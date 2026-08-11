@@ -173,6 +173,17 @@ Năm bài học, đều từ vấp thật:
    Giờ nó có luật riêng, đặt trên, ghi rõ はい = `SaveData` / いいえ = `RestoreData`;
    còn luật cũ thu hẹp thành `"会計処理がされています"`.
 
+7. **Đường lui cũng là một chuỗi hộp thoại.** Sau Tc8-1, app nằm ở 窓口精算 và
+   Tc8-2 phải bấm 「F10 戻る」 để quay lại. Nhưng `btnF10_Click` còn hỏi tiếp
+   「登録せずに…」 (`Q00004`, frm204002.cs:1349). Bản đầu bấm 戻る xong đi thẳng sang
+   mở lại 診療入力 — trong khi hộp thoại xác nhận đang **chặn luồng UI**, nên mọi
+   phép duyệt cửa sổ sau đó đi vào chỗ mù và app **đứng yên** ở màn 窓口精算.
+
+   `LeaveCounterPayment` giờ: click **chuột thật** (nút `GradientButton` tự vẽ, không
+   ăn `InvokePattern`) → trả lời hộp thoại qua `ModalDialogs` → **chờ 窓口精算 đóng
+   thật** rồi mới trả về. Chờ ở đây để lỗi nói đúng chỗ, thay vì để bước sau báo
+   「không thấy メインメニュー」.
+
 ### F8 để lại ba thứ, và còn đóng cả màn hình
 
 `ExitWithoutSaving(DialogResult.Yes, …)` chạy **trước** `LetAccData2`

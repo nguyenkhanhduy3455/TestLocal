@@ -89,6 +89,11 @@ public static class Dialogs
     /// lẫn chữ trên hai dòng: 「F10\n戻る」. <see cref="ClickButton"/> so KHỚP TUYỆT ĐỐI nên
     /// tìm 「戻る」 sẽ trượt. MessageBox chuẩn thì vẫn dùng ClickButton — nhãn của nó là
     /// một từ, so tuyệt đối tránh được cảnh 「はい」 khớp nhầm 「いいえ」.</para>
+    ///
+    /// <para>Và bấm bằng <b>chuột thật</b>, không phải InvokePattern: nút trên các form
+    /// này là <c>GradientButton</c> tự vẽ, cùng lý do đã buộc <c>AppNavigator</c> phải
+    /// click chuột vào các pane của menu chính. InvokePattern có thể "thành công" mà
+    /// chẳng có gì xảy ra, và khi đó chỗ hỏng chỉ lộ ra ở tận bước sau.</para>
     /// </summary>
     public static bool ClickButtonContaining(Window dialog, params string[] fragments)
     {
@@ -99,7 +104,7 @@ public static class Dialogs
             {
                 var btn = buttons.FirstOrDefault(b => Txt.Has(Uia.NameOf(b).Replace("&", ""), fragment));
                 if (btn is null) continue;
-                Uia.Click(btn);
+                Uia.MouseClick(btn);
                 return true;
             }
         }
