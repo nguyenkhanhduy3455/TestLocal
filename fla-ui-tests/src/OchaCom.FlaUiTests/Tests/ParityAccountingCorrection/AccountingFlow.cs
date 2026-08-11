@@ -244,6 +244,40 @@ public static class AccountingFlow
     }
 
     /// <summary>
+    /// Đóng màn 窓口精算 (frm204002) nếu F8 đã mở nó, trả app về chỗ mở lại 診療入力 được.
+    ///
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// VÌ SAO CẦN
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// Sau khi <c>LetAccData2</c> trả true, handler F8 <b>ĐÓNG 診療入力</b> rồi mở
+    /// 窓口精算 (frm203002.cs:7741-7742: <c>showForm(ID204002); this.Close();</c>).
+    /// Testcase sau đó không còn cửa sổ nào để thao tác, mà lỗi báo ra sẽ là
+    /// 「không thấy tab 個別」 — chỉ người đọc đi sửa locator, hoàn toàn sai địa chỉ.
+    ///
+    /// <para><c>AppNavigator.OpenTreatmentEntry</c> tự nó không cứu được: 診療入力 đã
+    /// đóng, 患者選択 đang ẩn (<c>GAMEN_HIDE</c>) nên bộ lọc IsOnScreen không thấy, còn
+    /// メインメニュー thì bị 窓口精算 che. Phải đóng 窓口精算 trước đã.</para>
+    ///
+    /// <para>Bấm 「F10 戻る」 — nút lui chuẩn của màn đó. Không dùng nút X: BaseForm bật
+    /// <c>CS_NOCLOSE</c> (BaseForm.cs:43-57).</para>
+    /// </summary>
+    /// <returns>true nếu vừa đóng 窓口精算; false nếu nó không mở.</returns>
+    public static bool LeaveCounterPayment(OchaApp app, TestTrace? trace = null)
+    {
+        var seisan = app.Window("frm204002");
+        if (seisan is null) return false;
+
+        trace?.Note("F8 da dong 診療入力 va mo 窓口精算 — bam 「F10 戻る」 de lui");
+        if (!Dialogs.ClickButtonContaining(seisan, "戻る", "Back"))
+            throw new InvalidOperationException(
+                "Màn 窓口精算 đang mở nhưng không thấy nút 「F10 戻る」 để lui. " +
+                "Không đóng được thì testcase sau không mở lại được 診療入力.");
+
+        Waits.Step();
+        return true;
+    }
+
+    /// <summary>
     /// Kích hoạt 会計. Click nút <c>btnF8</c> — cùng lý do với 登録 ở luồng
     /// ParitySaveData: nhãn F8 không đồng nghĩa với phím F8, và ô lưới đang soạn
     /// thảo sẽ nuốt phím.

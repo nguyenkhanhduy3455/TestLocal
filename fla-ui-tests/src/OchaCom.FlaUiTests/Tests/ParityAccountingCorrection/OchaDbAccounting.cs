@@ -126,6 +126,32 @@ public sealed class OchaDbAccounting
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // TRNTRN — F8 lưu 処置 trước khi tính 会計
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Số dòng 処置 của (患者, 診療日).
+    ///
+    /// <para>Handler F8 gọi <c>ModSave.ExitWithoutSaving(DialogResult.Yes, …)</c>
+    /// <b>trước</b> <c>LetAccData2</c> (frm203002.cs:7716) — tức là 会計 LƯU luôn 処置
+    /// đang có trên lưới. 処置 mà testcase thêm vào để tạo chênh lệch sẽ nằm lại trong
+    /// TRNTRN thật.</para>
+    ///
+    /// <para>Chỉ ĐẾM để báo lệch, <b>không</b> tự xoá. Luồng ParitySaveData đã học bài
+    /// này bằng cách mất dữ liệu: F9 xoá rồi chèn lại cả tháng với <c>seq</c> MỚI, nên
+    /// "xoá dòng thêm vào" theo ảnh chụp hoá ra xoá sạch. Báo cáo là đủ.</para>
+    /// </summary>
+    public int CountTreatments(int patNo, DateTime trtDt)
+    {
+        using var con = Open();
+        using var cmd = Cmd(con,
+            "SELECT COUNT(*) FROM TRNTRN WHERE pat_no = @p AND trt_dt = @d AND del_flg = 0");
+        cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+        cmd.Parameters.Add("@d", SqlDbType.DateTime).Value = trtDt.Date;
+        return Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // accconfig — công tắc bật/tắt CẢ nhánh G
     // ═══════════════════════════════════════════════════════════════════════
 

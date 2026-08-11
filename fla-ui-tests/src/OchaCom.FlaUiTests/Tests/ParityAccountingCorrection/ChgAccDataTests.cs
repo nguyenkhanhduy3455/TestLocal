@@ -30,15 +30,27 @@ namespace OchaCom.FlaUiTests.Tests.ParityAccountingCorrection;
 /// ═══════════════════════════════════════════════════════════════════════════
 /// TEST TỰ DỰNG TIỀN ĐỀ
 /// ═══════════════════════════════════════════════════════════════════════════
-/// Nhánh G chỉ tới được khi bệnh nhân ĐÃ có 会計 chốt cho ngày đó. Test <b>tự tạo
-/// dòng đó</b> (<c>EnsureSettledAccounting</c>) thay vì bắt người chạy đi 窓口精算
-/// bằng tay — đây là auto test.
+/// Nhánh G chỉ tới được khi thoả CẢ HAI điều kiện của modAcc.cs:598 — xem
+/// <see cref="AccountingPreconditions"/>. Test <b>tự dựng</b> thay vì bắt người chạy
+/// đi 窓口精算 bằng tay: đây là auto test.
 ///
 /// <para>Không phải đường tắt: đã tra DB, <b>toàn bộ SIM2000 không có dòng ACCDAT
 /// nào trong tháng test</b> (mới nhất 2026-07-31). Bệnh nhân đã 窓口精算 đều ở tháng
 /// 1/2026, mà 診療入力 chỉ sửa được 処置月 hiện hành. Nên seed là cách duy nhất.</para>
 ///
-/// <para>Teardown xoá đúng phần đã seed và khôi phục số dư theo ảnh chụp đầu lô.</para>
+/// ═══════════════════════════════════════════════════════════════════════════
+/// BA THỨ F8 ĐỂ LẠI
+/// ═══════════════════════════════════════════════════════════════════════════
+/// <list type="number">
+///   <item><c>ACCDAT</c> + <c>PERSON_EXP</c> — khôi phục theo ảnh chụp đầu lô.</item>
+///   <item><c>UNPAID</c> — nhánh F ghi vào đây; teardown xoá phần vượt ảnh chụp.</item>
+///   <item><c>TRNTRN</c> — F8 LƯU lưới trước khi tính 会計 (frm203002.cs:7716), nên
+///     処置 thêm vào để tạo chênh lệch nằm lại thật. Chỉ <b>báo lệch</b>, không xoá:
+///     xem <see cref="ReportTreatmentDrift"/>.</item>
+/// </list>
+///
+/// <para>Và F8 còn <b>đóng</b> 診療入力 rồi mở 窓口精算 (frm203002.cs:7741-7742) —
+/// nên mỗi testcase gọi <see cref="EnsureTreatmentScreen"/> ở đầu.</para>
 /// </summary>
 [TestFixture]
 [Category("parity")]
@@ -63,6 +75,9 @@ public sealed class ChgAccDataTests : UiTestBase
     /// <summary>未精算 đã có trước lô — teardown chỉ xoá phần vượt ra ngoài.</summary>
     private IReadOnlyCollection<OchaDbAccounting.UnpaidKey> _unpaidBefore = [];
 
+    /// <summary>Số dòng 処置 trước lô — F8 tự lưu lưới nên số này sẽ tăng. Chỉ để BÁO.</summary>
+    private int _treatmentsBefore = -1;
+
     protected override string? FixturePreflightSkipReason()
     {
         var s = TestSettings.Current;
@@ -85,10 +100,12 @@ public sealed class ChgAccDataTests : UiTestBase
     {
         _db = OchaDbAccounting.CreateOrNull(Settings);
         _snapshot = _db?.Snapshot(PatNo, TrtDate);
+        _treatmentsBefore = _db?.CountTreatments(PatNo, TrtDate) ?? -1;
         if (_snapshot is not null)
             TestContext.Out.WriteLine(
                 $"Anh chup dau lo: {_snapshot.Rows.Count} dong ACCDAT | " +
-                $"dep_due={_snapshot.DepDue} ins_due_bal={_snapshot.InsDueBal}");
+                $"dep_due={_snapshot.DepDue} ins_due_bal={_snapshot.InsDueBal} | " +
+                $"{_treatmentsBefore} dong TRNTRN");
     }
 
     [OneTimeTearDown]
@@ -123,6 +140,39 @@ public sealed class ChgAccDataTests : UiTestBase
                 $"  UPDATE PERSON_EXP SET dep_due = {_snapshot.DepDue}, " +
                 $"ins_due_bal = {_snapshot.InsDueBal} WHERE pat_no = {PatNo};");
         }
+        finally
+        {
+            ReportTreatmentDrift();
+        }
+    }
+
+    /// <summary>
+    /// Báo phần 処置 mà lô test để lại — <b>báo thôi, không xoá</b>.
+    ///
+    /// <para>F8 gọi <c>ExitWithoutSaving(DialogResult.Yes, …)</c> trước
+    /// <c>LetAccData2</c> (frm203002.cs:7716), nên 処置 mà testcase thêm để tạo chênh
+    /// lệch được LƯU THẬT vào TRNTRN. Không tự xoá vì luồng ParitySaveData đã học bài
+    /// đó bằng cách mất dữ liệu: F9 xoá rồi chèn lại cả tháng với <c>seq</c> mới, nên
+    /// "xoá dòng thêm vào" theo ảnh chụp hoá ra xoá sạch cả 8 dòng gốc.</para>
+    /// </summary>
+    private void ReportTreatmentDrift()
+    {
+        if (_db is null || _treatmentsBefore < 0) return;
+        try
+        {
+            var after = _db.CountTreatments(PatNo, TrtDate);
+            if (after == _treatmentsBefore) return;
+
+            TestContext.Out.WriteLine(
+                $"LECH TRNTRN: {_treatmentsBefore} -> {after} dong. F8 luu luoi truoc khi tinh 会計 " +
+                "nen 処置 lo test them vao da nam lai trong DB. KHONG tu xoa (xem doc). Soi tay:\n" +
+                $"  SELECT * FROM TRNTRN WHERE pat_no = {PatNo} AND trt_dt = '{TrtDate:yyyy-MM-dd}' " +
+                "AND del_flg = 0 ORDER BY disp_no;");
+        }
+        catch (Exception e)
+        {
+            TestContext.Out.WriteLine($"Khong doc duoc so dong TRNTRN de bao lech: {e.Message}");
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -154,12 +204,32 @@ public sealed class ChgAccDataTests : UiTestBase
             IgnoreWithReason("Tc8-0 chưa dựng được tiền đề nên KHÔNG bấm F8 — đọc lý do ở Tc8-0.");
     }
 
+    /// <summary>
+    /// Đưa app về màn 診療入力 trước khi testcase thao tác.
+    ///
+    /// <para>Cần vì F8 <b>đóng</b> 診療入力 rồi mở 窓口精算 khi <c>LetAccData2</c> trả
+    /// true (frm203002.cs:7741-7742). Testcase trước bấm F8 xong thì testcase sau không
+    /// còn cửa sổ nào — mà lỗi báo ra sẽ là 「không thấy tab 個別」, chỉ người đọc đi sửa
+    /// locator, hoàn toàn sai địa chỉ.</para>
+    ///
+    /// <para>Đặt ở ĐẦU testcase chứ không ở cuối testcase trước: testcase trước có thể
+    /// đã ném lỗi giữa chừng, và dọn ở đầu thì trạng thái nào cũng về được.</para>
+    /// </summary>
+    private void EnsureTreatmentScreen(TestTrace trace)
+    {
+        var closed = AccountingFlow.LeaveCounterPayment(App, trace);
+        if (!closed && TreatmentScreenAlive()) return;
+
+        trace.Do("mo lai man 診療入力", ReopenTreatmentScreen);
+    }
+
     [Test, Order(2)]
     [Description("Tc8-1 — chuỗi hộp thoại F8 có dẫn tới 会計データ修正 không (ghi lại chuỗi thật)")]
     public void Tc8_1_F8ChainReachesChgAccData()
     {
         using var trace = TestTrace.Begin();
         RequireBranchG();
+        EnsureTreatmentScreen(trace);
 
         // 処置 phải KHÁC với 会計 đã chốt, nếu không precheck trả GIsNothing và
         // chuỗi kết thúc sớm. Thêm một 再診 là đủ tạo chênh lệch.
@@ -192,6 +262,7 @@ public sealed class ChgAccDataTests : UiTestBase
     {
         using var trace = TestTrace.Begin();
         RequireBranchG();
+        EnsureTreatmentScreen(trace);
         var db = _db!;
 
         // Dựng đúng tổ hợp làm nhánh GIỮA chạy: có CẢ HAI số dư, và số dư bị trừ

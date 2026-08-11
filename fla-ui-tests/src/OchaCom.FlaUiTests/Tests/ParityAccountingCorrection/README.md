@@ -106,12 +106,17 @@ Luật then chốt: 「既に…会計処理…」 phải trả lời **いい�
 
 ### Chuỗi thật, đo ngày 2026-08-11
 
+**Đã đi trọn chuỗi, đo 2026-08-11 11:44 — `toi duoc 会計データ修正: True`:**
+
 ```
-[1] 「処置データチェックでエラーがありました。このまま続けますか?」        OK / Cancel
-[2] 「会計処理を行う日が本日でありません。よろしいですか。」               OK / Cancel
-[3] 「既に、¥N の会計処理がされていますが、未清算データ(¥M)を…?」        Yes / No   → いいえ
-[4] 「処置点数が …。¥N を 預り金/未収金 に計上しますか？」   ← ĐÍCH (ChgAccData)
+[1] 「処置データチェックでエラーがありました。このまま続けますか?」        OK / Cancel → OK
+[2] 「会計処理を行う日が本日でありません。よろしいですか。」               OK / Cancel → OK
+[3] 「既に、¥1,020 の会計処理がされていますが、未清算データ(¥0)を…?」   Yes / No   → いいえ
+[4] 「処置点数が 0点追加されました。¥1,020預り金に計上しますか?」  ← ĐÍCH (ChgAccData)
 ```
+
+Hướng ra 預り金 vì bệnh nhân test là **公費単独** ⇒ `cur.insPrice = 0`, còn 会計 seed
+là ¥1.020 → `diffPrice = −1.020`. Đúng hướng mà `Tc8_2` cần cho ISSUE-1.
 
 **F8 chạy 処置データチェック TRƯỚC** khi vào cây quyết định của `LetAccData2`. Bệnh nhân
 test không có 部位・病名 nên luôn dính cảnh báo 「当月に部位・病名がない可能性があります」.
@@ -148,6 +153,26 @@ Năm bài học, đều từ vấp thật:
 
    Luật 「よろしいですか」 giờ nằm **cuối cùng** và có ghi chú: thêm luật mới thì đặt
    TRÊN nó.
+
+### F8 để lại ba thứ, và còn đóng cả màn hình
+
+`ExitWithoutSaving(DialogResult.Yes, …)` chạy **trước** `LetAccData2`
+(frm203002.cs:7716), và khi `LetAccData2` trả true thì handler **đóng 診療入力** rồi mở
+窓口精算 (frm203002.cs:7741-7742).
+
+| Thứ | Xử lý |
+|---|---|
+| `ACCDAT` + `PERSON_EXP` | Khôi phục theo ảnh chụp đầu lô |
+| `UNPAID` | Teardown xoá phần vượt ảnh chụp (xem dưới) |
+| `TRNTRN` | **Chỉ báo lệch, không xoá** — 処置 thêm vào bị F8 lưu thật |
+| Màn 診療入力 bị đóng | Mỗi testcase gọi `EnsureTreatmentScreen` ở **đầu** |
+
+`TRNTRN` không tự xoá vì luồng ParitySaveData đã học bài đó bằng cách mất dữ liệu:
+F9 xoá rồi chèn lại cả tháng với `seq` **mới**, nên "xoá dòng thêm vào" theo ảnh chụp
+hoá ra xoá sạch cả 8 dòng gốc.
+
+`EnsureTreatmentScreen` đặt ở đầu testcase chứ không ở cuối testcase trước — testcase
+trước có thể đã ném lỗi giữa chừng, dọn ở đầu thì trạng thái nào cũng về được.
 
 ### Rác nhánh F: bảng `UNPAID`
 
