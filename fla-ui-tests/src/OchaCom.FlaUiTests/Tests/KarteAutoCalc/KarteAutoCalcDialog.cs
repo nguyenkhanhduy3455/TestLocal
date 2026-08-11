@@ -26,9 +26,8 @@ namespace OchaCom.FlaUiTests.Tests.KarteAutoCalc;
 /// <c>frm203002</c> F11 → 「９ オプション」 → 「６ コメント自動入力登録」
 /// (<c>IDM_CmtAuto</c>) mở <c>frm203042</c>. Từ đó F9 選択 mở <c>frm203043</c>.
 ///
-/// Dùng lại <see cref="InpP1Dialogs.InpP1MenuFlow"/> — nó đã lo phần khó: bung
-/// submenu <c>ContextMenuStrip</c> bằng click + Right Arrow, và tìm mục con trong
-/// cửa sổ popup <c>#32768</c> RIÊNG chứ không phải con của popup cha.
+/// Menu do <see cref="KarteAutoCalcMenu"/> lo — bản riêng của luồng này, KHÔNG
+/// dời cửa sổ về (0,0) và trả lý do thay vì ném. Xem doc-comment của lớp đó.
 ///
 /// ═══════════════════════════════════════════════════════════════════════════
 /// TÊN CONTROL
@@ -99,13 +98,48 @@ public static class KarteAutoCalcDialog
 
     // ── Mở / đóng ───────────────────────────────────────────────────────────
 
-    /// <summary>Mục submenu mở <c>frm203042</c>.</summary>
-    public static readonly InpP1Dialogs.InpP1MenuFlow.OptionItem MenuItem =
-        new("IDM_CmtAuto", "コメント自動入力登録", ListId, ListTitleFragment, ListGridId);
+    /// <summary>AutomationId của mục submenu mở <c>frm203042</c> (frm203002.Designer.cs).</summary>
+    public const string MenuItemId = "IDM_CmtAuto";
 
-    /// <summary>F11 → オプション → コメント自動入力登録.</summary>
-    public static Window OpenList(OchaApp app, Window screen, TestTrace? trace = null) =>
-        InpP1Dialogs.InpP1MenuFlow.Open(app, screen, MenuItem, trace);
+    /// <summary>Chữ trên mục menu — đường dự phòng khi UIA không có AutomationId.</summary>
+    public const string MenuItemText = "コメント自動入力登録";
+
+    /// <summary>
+    /// F11 → オプション → コメント自動入力登録.
+    ///
+    /// <para>Dialog đang mở sẵn thì trả về luôn — các testcase nối tiếp nhau trong
+    /// một fixture, testcase trước có thể đã để nó mở.</para>
+    /// </summary>
+    public static Window OpenList(OchaApp app, Window screen, TestTrace? trace = null)
+    {
+        var already = app.Window(ListId);
+        if (already is not null)
+        {
+            trace?.Note($"dialog {ListId} da mo san — dung lai");
+            return already;
+        }
+
+        var opened = KarteAutoCalcMenu.OpenSentakuMenu(app, screen, trace);
+        if (opened.Popup is null)
+            throw new InvalidOperationException(
+                $"Khong mo duoc menu 選択: {opened.Reason}. Chay Tc0 (-Diagnostics) de co " +
+                "danh sach cua so + MenuItem dang hien.");
+
+        if (!KarteAutoCalcMenu.ClickOptionSubItem(
+                app, opened.Popup, MenuItemId, MenuItemText, out var why, trace))
+            throw new InvalidOperationException(
+                $"Khong click duoc muc menu: {why}. Chay Tc0 (-Diagnostics) de xem ten thuc te.");
+
+        var dialog = Waits.For(() => app.Window(ListId),
+                               $"dialog {ListId} hien len sau khi click 「{MenuItemText}」",
+                               TestSettings.Current.Run.DefaultTimeout);
+
+        // initProc() nạp lưới xong chưa.
+        Waits.For(() => Uia.ById(dialog, ListGridId),
+                  $"luoi {ListGridId} cua {ListId} dung xong",
+                  TestSettings.Current.Run.DefaultTimeout);
+        return dialog;
+    }
 
     /// <summary>
     /// F9 選択 trên 一覧 → <c>frm203043</c>.

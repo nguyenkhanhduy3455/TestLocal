@@ -59,9 +59,13 @@ namespace OchaCom.FlaUiTests.Tests.KarteAutoCalc;
 ///   .\run-karte-auto-calc.ps1
 ///   .\run-karte-auto-calc.ps1 -Case Tc3
 ///
-/// <c>-Diagnostics</c> đổ cây UIA của cả hai form ra artifact. Tên control trong
-/// <see cref="KarteAutoCalcDialog"/> mới chỉ là SUY ĐOÁN từ các form anh em —
-/// phải xem cây thật rồi sửa lại trước khi các Tc khác chạy được.
+/// <c>-Diagnostics</c> chạy Tc0 — chẩn đoán từng bước, KHÔNG ném lỗi, in ra đủ
+/// để biết menu hỏng ở đâu (nếu hỏng) và đổ cây UIA của hai form (nếu mở được).
+/// Artifact: <c>kac-00-screen</c> / <c>kac-01-after-f11</c> / <c>kac-02-list</c> /
+/// <c>kac-03-register</c>.
+///
+/// Tên control trong <see cref="KarteAutoCalcDialog"/> mới chỉ là SUY ĐOÁN từ các
+/// form anh em — xem cây thật rồi sửa lại trước khi các Tc khác chạy được.
 /// </summary>
 [TestFixture]
 [Category("karte-auto-calc")]
@@ -101,34 +105,195 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
     // ═══════════════════════════════════════════════════════════════════════
 
     [Test, Order(0)]
-    [Description("Tc0 — đổ cây UIA của frm203042 + frm203043 để chốt tên control")]
+    [Description("Tc0 — chẩn đoán: F11 có mở được menu không, và cây UIA của 2 form")]
     public void Tc0_DumpUiaTree()
     {
         using var trace = TestTrace.Begin();
 
-        _list = KarteAutoCalcDialog.OpenList(App, Screen.Window, trace);
-        Log($"=== KQ-0 === title 一覧: 「{Uia.NameOf(_list)}」");
-        InpP1Dialogs.InpP1MenuFlow.WriteArtifact("karte-auto-calc-list.uia.txt",
-                      Uia.DumpTree(_list, maxDepth: 6, maxChildrenPerNode: 60));
+        // Tc0 tự đi TỪNG BƯỚC và KHÔNG BAO GIỜ ném, để một lần chạy ra đủ bức
+        // tranh dù hỏng ở đâu. Lần chạy đầu (2026-08-11) chỉ nói được "khong thay
+        // popup menu nao" rồi dừng — không đủ để biết vì sao, và tốn nguyên một
+        // vòng gửi qua gửi lại. Các bước dưới đây in ra: đang ở màn nào, có hộp
+        // thoại nào chắn không, nút F11 có enabled không, sau khi click có cửa sổ
+        // nào mới, và MenuItem nào đang hiện.
 
-        // Mở luôn 登録 để lấy cả cây của nó. Dòng đang chọn là dòng đầu.
+        // ── Bước 1: đang đứng ở màn nào ────────────────────────────────────
+        var screen = Screen.Window;
+        Log($"=== KQ-0 === man dang mo: AutomationId='{Uia.AutomationIdOf(screen)}' " +
+            $"title='{Uia.NameOf(screen)}'");
+        Log("   ky vong: frm203002 (診療入力). Neu la frm203001 (患者選択) thi F11 la " +
+            "nut khac han va menu オプション khong ton tai.");
+
+        InpP1Dialogs.InpP1MenuFlow.WriteArtifact(
+            "kac-00-screen.uia.txt", Uia.DumpTree(screen, maxDepth: 3, maxChildrenPerNode: 80));
+
+        // ── Bước 2: có hộp thoại nào đang chắn không ───────────────────────
+        // Đây là nghi vấn số 1 khi click "không ăn": hop thoai modal nuot het click.
+        LogOpenDialogs("truoc khi bam F11");
+
+        // ── Bước 3: nút F11 ────────────────────────────────────────────────
+        var btnF11 = Uia.ByIdOrName(screen, "btnF11", "選択", FlaUI.Core.Definitions.ControlType.Button);
+        if (btnF11 is null)
+        {
+            Log("=== KQ-0 === KHONG thay btnF11 tren man nay ⇒ dung han. " +
+                "Xem kac-00-screen.uia.txt de biet man dang mo la gi.");
+            Assert.Pass("khong co btnF11 — xem log");
+            return;
+        }
+        Log($"=== KQ-0 === btnF11: name='{Uia.NameOf(btnF11)}' " +
+            $"enabled={IsEnabled(btnF11)} onScreen={Uia.IsOnScreen(btnF11)}");
+
+        // ── Bước 4: click rồi chụp MỌI cửa sổ top-level ────────────────────
+        trace.Step("bam btnF11");
+        try { Uia.Click(btnF11); } catch (Exception e) { Log($"=== KQ-0 === click btnF11 loi: {e.Message}"); }
+        Thread.Sleep(600);
+
+        InpP1Dialogs.InpP1MenuFlow.WriteArtifact("kac-01-after-f11.uia.txt", DumpTopLevelWindows());
+        LogOpenDialogs("ngay sau khi bam F11");
+        LogPopupCandidates();
+
+        // ── Bước 5: tìm mục menu ở BẤT KỲ đâu ──────────────────────────────
+        // Không giả định popup nằm ở desktop hay trong app — quét cả hai.
+        var menuItems = AllMenuItemNames();
+        Log($"=== KQ-0 === tim thay {menuItems.Count} MenuItem dang hien:");
+        foreach (var m in menuItems.Take(40)) Log("   " + m);
+        if (menuItems.Count == 0)
+        {
+            Log("   0 muc ⇒ F11 KHONG mo duoc menu. Ba kha nang, xem kac-01-after-f11.uia.txt:");
+            Log("     a) co hop thoai modal chan (danh sach o tren se co ten no)");
+            Log("     b) popup co mo nhung ClassName khac '#32768' va khong thuoc app.Windows()");
+            Log("     c) F11 bi disable theo trang thai (pAccUse / thang khac thang hien tai)");
+            Assert.Pass("khong mo duoc menu — xem log + artifact");
+            return;
+        }
+
+        // ── Bước 6: có mục コメント自動入力登録 không ────────────────────────
+        var hit = menuItems.Any(m => Txt.Has(m, KarteAutoCalcDialog.MenuItemText))
+                  || menuItems.Any(m => Txt.Has(m, KarteAutoCalcDialog.MenuItemId));
+        Log($"=== KQ-0 === co muc 「{KarteAutoCalcDialog.MenuItemText}」 " +
+            $"({KarteAutoCalcDialog.MenuItemId}) trong danh sach tren? {hit}");
+        Log("   false ⇒ hoac submenu オプション chua bung, hoac AutomationId khac suy doan " +
+            "(sua KarteAutoCalcDialog.MenuItemId cho khop ten thuc te o tren).");
+
+        // ── Bước 7: nếu tới được thì mở luôn 2 form để lấy cây UIA ─────────
         try
         {
-            var reg = KarteAutoCalcDialog.OpenRegister(App, _list, trace);
-            Log($"=== KQ-0 === title 登録: 「{Uia.NameOf(reg)}」");
-            InpP1Dialogs.InpP1MenuFlow.WriteArtifact("karte-auto-calc-register.uia.txt",
-                          Uia.DumpTree(reg, maxDepth: 6, maxChildrenPerNode: 60));
+            var list = KarteAutoCalcDialog.OpenList(App, screen, trace);
+            Log($"=== KQ-0 === MO DUOC 一覧: title 「{Uia.NameOf(list)}」");
+            _list = list;
+            InpP1Dialogs.InpP1MenuFlow.WriteArtifact(
+                "kac-02-list.uia.txt", Uia.DumpTree(list, maxDepth: 6, maxChildrenPerNode: 60));
+
+            var reg = KarteAutoCalcDialog.OpenRegister(App, list, trace);
+            Log($"=== KQ-0 === MO DUOC 登録: title 「{Uia.NameOf(reg)}」");
+            InpP1Dialogs.InpP1MenuFlow.WriteArtifact(
+                "kac-03-register.uia.txt", Uia.DumpTree(reg, maxDepth: 6, maxChildrenPerNode: 60));
             KarteAutoCalcDialog.Close(App, reg);
         }
         catch (Exception e)
         {
-            // Không mở được cũng là một kết quả — ghi lại rồi để Tc khác quyết.
-            Log($"=== KQ-0 === KHONG mo duoc {KarteAutoCalcDialog.RegisterId}: {e.Message}");
+            Log($"=== KQ-0 === dung o buoc mo form: {e.Message}");
         }
 
-        Log("Da ghi artifact karte-auto-calc-*.uia.txt — doi chieu roi sua " +
-            "KarteAutoCalcDialog neu ten control lech.");
+        Log("=== KQ-0 === Gui lai: tat ca dong '=== KQ-0 ===' o tren + cac file " +
+            "artifacts\\kac-*.uia.txt");
     }
+
+    /// <summary>Liệt kê mọi hộp thoại đang mở — nghi vấn số 1 khi click "không ăn".</summary>
+    private void LogOpenDialogs(string when)
+    {
+        List<Window> dialogs;
+        try { dialogs = ModalDialogs.All(App, Screen.Window).ToList(); }
+        catch (Exception e) { Log($"=== KQ-0 === khong liet ke duoc hop thoai ({when}): {e.Message}"); return; }
+
+        if (dialogs.Count == 0) { Log($"=== KQ-0 === {when}: KHONG co hop thoai nao dang mo"); return; }
+
+        Log($"=== KQ-0 === {when}: co {dialogs.Count} hop thoai dang mo ⇒ RAT CO THE la thu phan click:");
+        foreach (var d in dialogs)
+        {
+            string text;
+            try { text = Txt.N(Dialogs.TextOf(d)); } catch { text = "(khong doc duoc)"; }
+            Log($"   [{Uia.AutomationIdOf(d)}] 「{Uia.NameOf(d)}」 — {Trim(text, 120)}");
+        }
+    }
+
+    /// <summary>Popup ứng viên mà KarteAutoCalcMenu nhìn thấy — để biết bộ lọc có trúng không.</summary>
+    private void LogPopupCandidates()
+    {
+        try
+        {
+            var popups = KarteAutoCalcMenu.AllPopups(App).ToList();
+            Log($"=== KQ-0 === popup ung vien (desktop '#32768' + cua so app co MenuItem): {popups.Count}");
+            foreach (var p in popups)
+                Log($"   class='{Uia.ClassNameOf(p)}' name='{Uia.NameOf(p)}' id='{Uia.AutomationIdOf(p)}'");
+        }
+        catch (Exception e) { Log($"=== KQ-0 === khong quet duoc popup: {e.Message}"); }
+    }
+
+    /// <summary>Đổ mọi cửa sổ top-level của app + popup desktop ra chuỗi.</summary>
+    private string DumpTopLevelWindows()
+    {
+        var sb = new System.Text.StringBuilder();
+        try
+        {
+            foreach (var w in App.Windows())
+            {
+                sb.AppendLine($"--- app window id='{Uia.AutomationIdOf(w)}' " +
+                              $"name='{Uia.NameOf(w)}' class='{Uia.ClassNameOf(w)}' ---");
+                sb.AppendLine(Uia.DumpTree(w, maxDepth: 3, maxChildrenPerNode: 40));
+            }
+        }
+        catch (Exception e) { sb.AppendLine($"(loi liet ke cua so app: {e.Message})"); }
+
+        try
+        {
+            foreach (var p in KarteAutoCalcMenu.AllPopups(App))
+            {
+                sb.AppendLine($"--- popup class='{Uia.ClassNameOf(p)}' name='{Uia.NameOf(p)}' ---");
+                sb.AppendLine(Uia.DumpTree(p, maxDepth: 4, maxChildrenPerNode: 60));
+            }
+        }
+        catch (Exception e) { sb.AppendLine($"(loi liet ke popup: {e.Message})"); }
+
+        return sb.ToString();
+    }
+
+    /// <summary>Tên mọi MenuItem đang hiện, quét cả desktop lẫn cửa sổ của app.</summary>
+    private List<string> AllMenuItemNames()
+    {
+        var names = new List<string>();
+        var roots = new List<AutomationElement>();
+
+        try { roots.AddRange(OchaCom.FlaUiTests.App.OchaApp.SharedAutomation.GetDesktop().FindAllChildren()); }
+        catch { /* desktop ban */ }
+        try { roots.AddRange(App.Windows()); }
+        catch { /* app ban */ }
+
+        foreach (var root in roots)
+        {
+            try
+            {
+                if (!Uia.IsOnScreen(root)) continue;
+                foreach (var mi in root.FindAllDescendants(
+                             cf => cf.ByControlType(FlaUI.Core.Definitions.ControlType.MenuItem)))
+                {
+                    var nm = Uia.NameOf(mi).Replace("&", "");
+                    var id = Uia.AutomationIdOf(mi);
+                    if (string.IsNullOrWhiteSpace(nm) && string.IsNullOrWhiteSpace(id)) continue;
+                    names.Add($"id='{id}' name='{nm}'");
+                }
+            }
+            catch { /* cửa sổ vừa đóng */ }
+        }
+        return names.Distinct().ToList();
+    }
+
+    private static bool IsEnabled(AutomationElement e)
+    {
+        try { return e.Properties.IsEnabled.ValueOrDefault; } catch { return false; }
+    }
+
+    private static string Trim(string s, int max) => s.Length <= max ? s : s[..max] + "…";
 
     // ═══════════════════════════════════════════════════════════════════════
     // Tc1 + Tc2 — KQ-1 / KQ-2
