@@ -108,11 +108,26 @@ public static class AccountingFlow
         // (modAcc.cs:566 đặt past_billing_amount = 0), tức tự tay rẽ sang nhánh F.
         // Chuỗi đi đúng tới cửa ngõ nhánh G rồi bị luật của chính mình đẩy ra.
 
+        // ── 0. 処置 chưa lưu — TRẢ LỜI いいえ CÓ CHỦ Ý ────────────────────────
+        // 「処置データは変更されています。保存しますか？」 (modSave.cs:179) do
+        // ExitWithoutSaving hỏi TRƯỚC LetAccData2 (frm203002.cs:7716).
+        //   はい   → SaveData: ghi thẳng 処置 vào TRNTRN
+        //   いいえ → RestoreData: nạp lại lưới từ DB, bỏ phần sửa
+        // Lô này đi xác minh phép ghi ACCDAT/PERSON_EXP, KHÔNG có việc gì với 処置 —
+        // nên いいえ, để TRNTRN không lệch. Lưới đáng lẽ phải sạch (mỗi testcase mở
+        // lại màn hình); hộp thoại này hiện lên là dấu hiệu có ai đó vừa sửa lưới.
+        //
+        // ⚠️ Phải đứng TRÊN luật 「されています」: câu này cũng chứa 「されています」.
+        // Lượt 11:54 đã bị luật kia bắt trước và trả lời đúng い い え một cách TÌNH CỜ —
+        // đúng kết quả, sai lý do, và lý do sai thì lần sau đổi luật là hỏng.
+        ("保存しますか", ["いいえ", "No"], "KHONG luu 処置 — lo test khong duoc lam lech TRNTRN"),
+
         // ── 1. Cây quyết định của LetAccData2 — CỤ THỂ, phải đứng trước ────────
         // 「既に…会計処理…されていますが、未清算データ…作成してよろしいですか?」
         // いいえ = giữ 会計 cũ ⇒ đường DUY NHẤT còn lại dẫn tới ChgAccData.
-        ("既に",         ["いいえ", "No", "Cancel"], "giu 会計 cu => moi re duoc sang nhanh G"),
-        ("されています", ["いいえ", "No", "Cancel"], "cung y tren, phong khi cau chu khac"),
+        ("既に",                 ["いいえ", "No", "Cancel"], "giu 会計 cu => moi re duoc sang nhanh G"),
+        // Hẹp hơn 「されています」 trần: câu chữ đó dùng chung với hộp thoại 保存 ở trên.
+        ("会計処理がされています", ["いいえ", "No", "Cancel"], "cung y tren, phong khi cau chu khac"),
         // 「会計処理後、請求金額が増えています。差額分の未精算データ…作成しますか?」
         ("増えています", ["いいえ", "No", "Cancel"], "khong tao dong 差額 — nhanh F, khong phai G"),
         ("差額",         ["いいえ", "No", "Cancel"], "cung ly do"),

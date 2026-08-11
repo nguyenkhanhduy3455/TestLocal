@@ -51,6 +51,27 @@ namespace OchaCom.FlaUiTests.Tests.ParityAccountingCorrection;
 ///
 /// <para>Và F8 còn <b>đóng</b> 診療入力 rồi mở 窓口精算 (frm203002.cs:7741-7742) —
 /// nên mỗi testcase gọi <see cref="EnsureTreatmentScreen"/> ở đầu.</para>
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+/// VÌ SAO KHÔNG ĐỤNG VÀO LƯỚI 処置
+/// ═══════════════════════════════════════════════════════════════════════════
+/// Bản đầu có <c>AddTreatmentToCreateDelta</c>: mở tab 個別, chèn một 処置, rồi mới bấm
+/// F8 — vì tôi cho rằng không có chênh lệch thì chuỗi kết thúc sớm. <b>Sai.</b>
+///
+/// <para>Chênh lệch đã có sẵn từ tiền đề: bệnh nhân test là <b>公費単独</b> nên
+/// <c>cur.insPrice = 0</c>, trong khi 会計 seed là ¥1.020 ⇒ <c>diffPrice = −1.020</c>.
+/// Lượt chẩn đoán 11:44 <b>không đụng gì vào lưới</b> mà vẫn tới thẳng
+/// 「…預り金に計上しますか?」.</para>
+///
+/// <para>Còn thêm 処置 thì phải trả giá: lưới thành "đã sửa" ⇒ F8 hỏi
+/// 「処置データは変更されています。保存しますか？」 (modSave.cs:179). Trả はい là ghi thẳng
+/// vào TRNTRN; trả いいえ là <c>RestoreData</c> vứt bỏ đúng cái 処置 vừa thêm — tức công
+/// đoạn đó vô nghĩa ở cả hai nhánh. Lượt 11:54 đi đúng vào cảnh thứ hai, và còn làm
+/// 点数 tính ra lệch hẳn (「280点削除」) so với lượt không đụng lưới.</para>
+///
+/// <para>Cần chênh lệch theo 点数 chứ không chỉ theo tiền thì đổi
+/// <c>AccountingPreconditions.SeedScore</c> — sửa dữ liệu seed rẻ và sạch hơn nhiều
+/// so với gõ vào giao diện.</para>
 /// </summary>
 [TestFixture]
 [Category("parity")]
@@ -231,10 +252,6 @@ public sealed class ChgAccDataTests : UiTestBase
         RequireBranchG();
         EnsureTreatmentScreen(trace);
 
-        // 処置 phải KHÁC với 会計 đã chốt, nếu không precheck trả GIsNothing và
-        // chuỗi kết thúc sớm. Thêm một 再診 là đủ tạo chênh lệch.
-        AddTreatmentToCreateDelta(trace);
-
         var walk = AccountingFlow.WalkToChgAccData(App, Screen.Window, trace);
 
         trace.Note($"chuoi thuc te: {walk.Trail.Count} hop thoai trung gian");
@@ -274,7 +291,6 @@ public sealed class ChgAccDataTests : UiTestBase
             () => db.SetBalances(PatNo, depDue, insDue));
 
         var accBefore = trace.Do("chup ACCDAT truoc", () => db.ReadAccDat(PatNo, TrtDate));
-        AddTreatmentToCreateDelta(trace);
 
         var walk = AccountingFlow.WalkToChgAccData(App, Screen.Window, trace);
         if (!walk.Reached)
@@ -314,25 +330,5 @@ public sealed class ChgAccDataTests : UiTestBase
             Assert.That(accAfter, Is.Not.EqualTo(accBefore),
                 "ACCDAT phải đổi — không đổi nghĩa là 会計データ修正 chưa ghi gì.");
         });
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Thêm một 処置 để 処置 hiện tại khác với 会計 đã chốt.
-    ///
-    /// <para>Không có chênh lệch thì precheck trả <c>GIsNothing</c> và chuỗi F8 kết
-    /// thúc trước khi tới 会計データ修正.</para>
-    /// </summary>
-    private void AddTreatmentToCreateDelta(TestTrace trace)
-    {
-        var cd = Settings.Parity.SimpleTrtCd;
-        var sb = Settings.Parity.SimpleTrtSb;
-
-        var kobetu = trace.Do("mo tab 個別", () => Screen.Kobetu.Open());
-        trace.Do("xoa 3 o tim kiem", kobetu.ResetSearchBoxes);
-        var row = trace.Do($"tim 処置 {cd}-{sb}", () => kobetu.RequireRow(cd, sb));
-        trace.Do($"chon 処置 {cd}-{sb}", () => kobetu.SelectRow(row));
-        Waits.Step();
     }
 }

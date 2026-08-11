@@ -84,6 +84,16 @@ thư mục luồng kia, đã nâng lên hạ tầng khi luồng thứ hai cần 
 | `Tc8_1` | Chuỗi F8 có dẫn tới 「…計上しますか？」 — và **ghi lại chuỗi thật** |
 | `Tc8_2` | 🐛 ISSUE-1: nhánh giữa GÁN ⇒ `dep_due` bị ghi đè, không cộng dồn |
 
+Không testcase nào **đụng vào lưới 処置**. Bản đầu có chèn một 処置 để "tạo chênh
+lệch" — thừa: chênh lệch đến từ tiền đề (bệnh nhân test là 公費単独 ⇒
+`cur.insPrice = 0` so với 会計 seed ¥1.020). Mà chèn xong thì lưới thành "đã sửa" nên
+F8 hỏi 「処置データは変更されています。保存しますか？」: trả **はい** là ghi thẳng vào
+`TRNTRN`, trả **いいえ** là `RestoreData` vứt bỏ đúng cái vừa chèn — vô nghĩa ở cả hai
+nhánh, mà còn làm 点数 tính ra lệch hẳn.
+
+Cần chênh lệch theo 点数 chứ không chỉ theo tiền thì đổi
+`AccountingPreconditions.SeedScore`, đừng gõ vào giao diện.
+
 `Tc8_2` dựng `dep_due = 10.000`, `ins_due_bal = 300`. Tổ hợp này là **bắt buộc**:
 nhánh mang bug chỉ chạy khi có **cả hai** số dư và số dư bị trừ **nhỏ hơn** mức
 chênh. Sai tổ hợp thì đi nhánh ngoài (vốn cộng dồn đúng) và chẳng chứng minh gì.
@@ -153,6 +163,15 @@ Năm bài học, đều từ vấp thật:
 
    Luật 「よろしいですか」 giờ nằm **cuối cùng** và có ghi chú: thêm luật mới thì đặt
    TRÊN nó.
+
+6. **Đúng kết quả vì lý do sai vẫn là lỗi.** Lượt 11:54 gặp thêm
+   「処置データは変更されています。保存しますか？」. Nó bị luật `"されています"` (viết cho
+   hộp thoại 既存会計) bắt, và trả lời いいえ — **tình cờ đúng** với ý đồ của lô test
+   (không làm lệch `TRNTRN`), nhưng vì lý do hoàn toàn khác. Lý do sai thì lần sau
+   ai sửa luật kia là hỏng luôn cái này.
+
+   Giờ nó có luật riêng, đặt trên, ghi rõ はい = `SaveData` / いいえ = `RestoreData`;
+   còn luật cũ thu hẹp thành `"会計処理がされています"`.
 
 ### F8 để lại ba thứ, và còn đóng cả màn hình
 
