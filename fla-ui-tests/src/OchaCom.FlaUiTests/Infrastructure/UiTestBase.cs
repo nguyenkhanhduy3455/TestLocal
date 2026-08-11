@@ -125,6 +125,13 @@ public abstract class UiTestBase
         var ctx = TestContext.CurrentContext;
         var status = ctx.Result.Outcome.Status;
         var failed = status == TestStatus.Failed;
+        var passed = status == TestStatus.Passed;
+
+        // Timeout của NUnit vào nhánh Failed + stacktrace chứa "Test exceeded".
+        // Nhận ra từ stacktrace thay vì flag riêng — NUnit không có TestStatus.Timeout.
+        var timedOut = failed && ContainsIgnoreCase(ctx.Result.Message, "exceeded") ||
+                       failed && ContainsIgnoreCase(ctx.Result.StackTrace, "TestAdapter")
+                                && ContainsIgnoreCase(ctx.Result.StackTrace, "Timeout");
 
         if (failed) _aborted = true;
 
@@ -132,34 +139,70 @@ public abstract class UiTestBase
             TestContext.Out.WriteLine("Hộp thoại đã tự đóng: " + string.Join(" / ", w.Dismissed));
 
         var shouldCapture = failed ? Settings.Run.CaptureOnFail : Settings.Run.CaptureOnPass;
-        if (!shouldCapture) return;
-
-        var name = $"{_testIndex:00}_{ShortName(ctx.Test.Name)}_{status}_{DateTime.Now:HHmmss}";
-        try
+        if (shouldCapture)
         {
-            var path = ScreenCapture.CaptureToFile(ScreenshotDirectory(), name);
-            TestContext.AddTestAttachment(path, $"Toàn màn hình sau 「{ctx.Test.Name}」 ({status})");
+            var name = $"{_testIndex:00}_{ShortName(ctx.Test.Name)}_{status}_{DateTime.Now:HHmmss}";
+            try
+            {
+                var path = ScreenCapture.CaptureToFile(ScreenshotDirectory(), name);
+                TestContext.AddTestAttachment(path, $"Toàn màn hình sau 「{ctx.Test.Name}」 ({status})");
+            }
+            catch (Exception e)
+            {
+                TestContext.Out.WriteLine($"Không chụp được màn hình: {e.Message}");
+            }
         }
-        catch (Exception e)
+
+        if (failed)
         {
-            TestContext.Out.WriteLine($"Không chụp được màn hình: {e.Message}");
+            // Đỏ thì đổ thêm cây UIA — không có nó thì lỗi "không tìm thấy control"
+            // trên máy người khác là ngõ cụt.
+            try
+            {
+                var dumpPath = Path.Combine(
+                    ScreenshotDirectory(),
+                    $"{_testIndex:00}_{ShortName(ctx.Test.Name)}_{status}_{DateTime.Now:HHmmss}.uia.txt");
+                File.WriteAllText(dumpPath, Uia.DumpTree(Screen.Window));
+            }
+            catch (Exception e)
+            {
+                TestContext.Out.WriteLine($"Không đổ được cây UIA: {e.Message}");
+            }
         }
 
-        if (!failed) return;
+        // Kill app ngay trong TearDown nếu cờ tương ứng bật. Bám vào app đang
+        // chạy thì App.ForceKill() tự no-op.
+        //
+        //   killOnFail    — testcase lỗi (Failed)           : tránh để app ở trạng
+        //                   thái lệch chờ thao tác thật
+        //   killOnTimeout — testcase vượt quá testTimeout   : timeout thường nghĩa
+        //                   là app đang treo không phản hồi
+        //   killOnSuccess — testcase xanh (Passed)          : cho kết thúc ngay
+        //                   khi chạy nhiều fixture liên tiếp / CI
+        var wantKill =
+            (failed && !timedOut && Settings.Run.KillOnFail) ||
+            (timedOut && Settings.Run.KillOnTimeout) ||
+            (passed && Settings.Run.KillOnSuccess);
 
-        // Đỏ thì đổ thêm cây UIA — không có nó thì lỗi "không tìm thấy control" trên máy
-        // người khác là ngõ cụt.
-        try
+        if (wantKill)
         {
-            var dumpPath = Path.Combine(ScreenshotDirectory(), name + ".uia.txt");
-            File.WriteAllText(dumpPath, Uia.DumpTree(Screen.Window));
-            TestContext.AddTestAttachment(dumpPath, "Cây UIA của frm203002 lúc đỏ");
-        }
-        catch (Exception e)
-        {
-            TestContext.Out.WriteLine($"Không đổ được cây UIA: {e.Message}");
+            var reason = timedOut ? "TIMEOUT" : passed ? "PASSED" : "FAILED";
+            var flag = timedOut ? "killOnTimeout" : passed ? "killOnSuccess" : "killOnFail";
+            TestContext.Out.WriteLine($"KILL APP — trạng thái {reason}, cờ run.{flag} đang bật.");
+            try
+            {
+                App.ForceKill();
+                App.Dispose();
+            }
+            catch (Exception e)
+            {
+                TestContext.Out.WriteLine($"Không kill được app: {e.Message}");
+            }
         }
     }
+
+    private static bool ContainsIgnoreCase(string? s, string needle) =>
+        s is { Length: > 0 } && s.Contains(needle, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Mở lại màn 診療入力 sau khi nó bị đóng.
@@ -207,6 +250,8 @@ public abstract class UiTestBase
     public void UiTestBaseOneTimeTearDown()
     {
         _watcher?.Dispose();
+        // App.Dispose() đã idempotent: nếu TearDown đã kill + dispose rồi thì
+        // idempotent no-op. Tránh phải cờ phụ.
         App?.Dispose();
     }
 

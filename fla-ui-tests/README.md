@@ -216,6 +216,9 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 > mà WinForm làm, chứ không phải `run-<tên thư mục test>.ps1`. Tên cũ
 > (`run-parity-savedata` / `run-parity-accounting`) chỉ nói "đây là test parity" —
 > thứ mà mọi luồng ở đây đều là, nên không phân biệt được gì.
+| ParitySaveData | `Tests/ParitySaveData/` | `.\run-parity-savedata.ps1` | ⚠️ **CÓ** — `trn_trn` |
+| ParityAccountingCorrection | `Tests/ParityAccountingCorrection/` | `.\run-parity-accounting.ps1` | ⚠️ **CÓ** — `acc_dat` + `person_exp` (**sổ tiền**) |
+| StepsEdit | `Tests/StepsEdit/` | `.\run-steps-edit.ps1` | ✖ |
 
 **ParitySaveData** xác minh các bug parity của `modSave.SaveData` trên WinForm thật. Nó
 là luồng DUY NHẤT bấm F9 登録 nên **ghi thật xuống DB** (F9 ghi lại toàn bộ 処置行 của
@@ -225,6 +228,12 @@ tốn công mở app.
 **ParityAccountingCorrection** xác minh 会計データ修正 (`ChgAccData`, lô 8). Nặng hơn:
 nó sửa **sổ tiền** — 会計 đã chốt và số dư 預り金/未収金. Cần tiền đề mà test không tự
 dựng được (ngày đã 窓口精算, `tre_acc_link = 1`).
+
+**StepsEdit** mở dialog frm203050 「Ｓｔｅｐ編集」 từ menu của 診療入力 và xác minh
+cấu trúc (title, `cboKind`, 32 ô `txtEpp1..txtEpp32`). Đường tới dialog đi qua menu
+bar VB6 (MenuItem, không phải `btnF*`), nên locator không xài được như các luồng trên
+— tách riêng để dọn đường cho các luồng sau có thể đụng dialog này (ví dụ round-trip
+TrtState). Không ghi DB.
 
 → Đọc README trong thư mục của luồng **trước khi chạy**.
 

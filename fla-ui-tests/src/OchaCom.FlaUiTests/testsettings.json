@@ -49,6 +49,12 @@
     "captureOnFail": true,
     "//stopOnFirstFailure": "Bắt chước mode:'serial' của Playwright — TC sau bị Ignore khi TC trước đỏ.",
     "stopOnFirstFailure": true,
+    "//killOnFail": "Khi testcase đỏ: kill Menu.exe ngay trong TearDown (chỉ khi test tự mở app, không bám vào app đang chạy). Tránh app treo ở trạng thái lệch chờ thao tác thật.",
+    "killOnFail": true,
+    "//killOnSuccess": "Khi testcase xanh (Passed): kill app sau TearDown. Mặc định false — để người chạy còn xem app.",
+    "killOnSuccess": false,
+    "//killOnTimeout": "Khi testcase bị NUnit timeout: kill app sau TearDown. Mặc định true — timeout thường nghĩa là app đang treo, để nguyên thì phải tay tắt.",
+    "killOnTimeout": true,
     "//nuisanceDialogs": "Hộp thoại nhiễu tự bấm 'いいえ' (giống addLocatorHandler bên Playwright).",
     "nuisanceDialogs": [ "を算定しますか？", "加算を算定しますか" ],
     "nuisanceDialogButtons": [ "いいえ", "No", "N" ]

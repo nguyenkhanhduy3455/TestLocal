@@ -31,6 +31,15 @@ public sealed class OchaApp : IDisposable
     public FlaUIApplication Application { get; }
     public UIA3Automation Automation { get; }
 
+    /// <summary>
+    /// UIA root độc lập tiến trình — dùng để duyệt cửa sổ mà Windows quản lý
+    /// riêng (popup menu <c>#32768</c>, tooltip), vốn không nằm trong UI tree
+    /// của tiến trình gốc. Lazy, dùng chung toàn app.
+    /// </summary>
+    private static UIA3Automation? _sharedAutomation;
+    public static UIA3Automation SharedAutomation =>
+        _sharedAutomation ??= new UIA3Automation();
+
     /// <summary>False khi bám vào app người dùng đang mở sẵn — lúc đó không được đóng nó.</summary>
     public bool OwnsProcess { get; }
 
@@ -150,9 +159,40 @@ public sealed class OchaApp : IDisposable
 
     public void Dispose()
     {
+        Dispose(forceKill: false);
+    }
+
+    private bool _disposed;
+
+    /// <summary>
+    /// Kill tiến trình <b>ngay lập tức</b>, kể cả khi <c>app.closeOnFinish = false</c>.
+    /// Chỉ có tác dụng khi <see cref="OwnsProcess"/> = true (test tự mở app, không
+    /// bám vào app người dùng đang chạy). Dùng từ <c>UiTestBase.TearDown</c> khi
+    /// <c>run.killOnFail = true</c> và testcase vừa đỏ — tránh treo app ở trạng thái
+    /// lệch chờ thao tác thật của người chạy.
+    ///
+    /// <para>Idempotent: gọi nhiều lần chỉ kill một lần. Dispose() sau đó an toàn.</para>
+    /// </summary>
+    public void ForceKill()
+    {
+        if (_disposed) return;
+        if (!OwnsProcess) return;
+
+        try { Application.Kill(); }
+        catch { /* app đã tự chết */ }
+    }
+
+    private void Dispose(bool forceKill)
+    {
+        if (_disposed) return;
+        _disposed = true;
+
         try
         {
-            if (OwnsProcess && TestSettings.Current.App.CloseOnFinish)
+            // forceKill ăn killOnFail và closeOnFinish; ngược lại thì tôn trọng
+            // cấu hình người dùng như trước.
+            var wantKill = forceKill || (OwnsProcess && TestSettings.Current.App.CloseOnFinish);
+            if (wantKill)
             {
                 // BaseForm bật CS_NOCLOSE nên nút X bị vô hiệu (BaseForm.cs:43-57);
                 // đóng "lịch sự" không được, phải kill.
