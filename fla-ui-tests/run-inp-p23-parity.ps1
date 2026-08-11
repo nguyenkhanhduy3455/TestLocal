@@ -32,7 +32,7 @@
 
     ⚠️ GHI DB: chỉ Tc7 ghi, và chỉ khi bật inpP1.allowSave. Nó bấm F9 trên 処置
     100-0 — master TOÀN PHÒNG KHÁM. Câu khôi phục in sẵn trong log:
-        UPDATE chkauto SET cd_2=108, sb_2=15 WHERE trt_cd=100 AND trt_sb=0;
+        UPDATE chkauto SET cd2=108, sb2=15 WHERE trt_cd=100 AND trt_sb=0;  -- SQL Server
     Tc0..Tc6 chỉ đọc (Tc3/Tc4 có gõ vào ô nhưng KHÔNG bấm F9, và đóng bằng F10).
 
     Tiền đề:
@@ -88,7 +88,7 @@ if ($ReadOnly) {
     Write-Host ""
     Write-Host "!! inpP1.allowSave = true -> Tc7 SE GHI THAT vao chkauto (master toan phong kham)." -ForegroundColor Yellow
     Write-Host "   Doi tuong: 処置 100-0. Khoi phuc sau khi chay:" -ForegroundColor Yellow
-    Write-Host "     UPDATE chkauto SET cd_2=108, sb_2=15 WHERE trt_cd=100 AND trt_sb=0;" -ForegroundColor Yellow
+    Write-Host "     UPDATE chkauto SET cd2=108, sb2=15 WHERE trt_cd=100 AND trt_sb=0;  -- SQL Server" -ForegroundColor Yellow
     Write-Host "   Dung ghi thi chay lai voi -ReadOnly." -ForegroundColor DarkGray
     Write-Host ""
 }

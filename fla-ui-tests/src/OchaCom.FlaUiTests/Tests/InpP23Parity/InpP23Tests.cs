@@ -298,15 +298,25 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
         var reg = OpenChkRegister(trace);
 
         SetBox(reg, InpP23Dialog.ChkCdBox(1), "99");
-        // Tab = rời ô, đúng cách người dùng gây ra Leave.
+
+        // Lần chạy 18:55 đọc ra 「99 / 7 / 外安全1(初診)」 — tức GIỮ NGUYÊN giá trị cũ
+        // của slot 1, nghĩa là Leave chưa hề chạy chứ không phải WinForm không xoá.
+        // Nên bây giờ đo TÁCH BẠCH hai việc: (a) Tab có dời focus không, (b) khi focus
+        // thật sự rời đi thì ô có bị xoá không.
+        Log($"=== KQ-3 === truoc Tab, focus = {FocusedId()}");
         Uia.SendKey(InpP23Dialog.VkTab);
         Waits.Step();
         Thread.Sleep(300);
+        Log($"=== KQ-3 === sau Tab,  focus = {FocusedId()}");
+        LogChkSlot("sau Tab", reg, 1);
 
-        Log("=== KQ-3 === sau khi go 99 roi Tab:");
-        Log($"   コード = 「{InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkCdBox(1))}」");
-        Log($"   枝番   = 「{InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkSbBox(1))}」");
-        Log($"   名称   = 「{InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkNmBox(1))}」");
+        // Ép rời ô bằng CHUỘT THẬT — cách này chắc chắn sinh Leave, không phụ thuộc
+        // form có nuốt phím Tab hay không.
+        FocusBox(reg, InpP23Dialog.ChkSbBox(1));
+        Thread.Sleep(400);
+        Log($"=== KQ-3 === sau khi CLICK sang o 枝番, focus = {FocusedId()}");
+        LogChkSlot("sau khi click sang o khac", reg, 1);
+
         Log("   ca ba RONG ⇒ dung nhu source (txtCd_Leave) — ban web phai lam theo");
         Log("   con 99     ⇒ chi kiem luc F9, ban web hien tai dang dung");
 
@@ -328,29 +338,26 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
 
         // 108-7 = 外安全１(初診), đo được là có thật trong version hôm nay.
         SetBox(reg, InpP23Dialog.ChkCdBox(2), "108");
-        Uia.SendKey(InpP23Dialog.VkTab);
-        Waits.Step();
         SetBox(reg, InpP23Dialog.ChkSbBox(2), "7");
-        Uia.SendKey(InpP23Dialog.VkTab);
-        Waits.Step();
-        Thread.Sleep(400);
+
+        // Rời ô bằng CHUỘT THẬT chứ không phải Tab — xem ghi chú ở Tc3. Click sang
+        // ô コード của slot 3 để 枝番 slot 2 chắc chắn mất focus.
+        FocusBox(reg, InpP23Dialog.ChkCdBox(3));
+        Thread.Sleep(500);
+        Log($"=== KQ-2 === sau khi click roi o, focus = {FocusedId()}");
 
         var nm = InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkNmBox(2));
-        Log($"=== KQ-2 === sau khi go 108 / 7 roi Tab: 名称 = 「{nm}」");
+        Log($"=== KQ-2 === slot 2 sau khi go 108 / 7 va roi o: 名称 = 「{nm}」");
         Log("   co ten ngay ⇒ WinForm tra master khi Leave. Ban web PHAI them endpoint");
         Log("                 tra ten theo (cd, sb), khong the doi toi F9");
         Log("   van rong    ⇒ ten chi hien sau khi luu + mo lai, ban web dang dung");
 
         // Thử luôn mã KHÔNG tồn tại để xem có bị xoá trắng không.
         SetBox(reg, InpP23Dialog.ChkCdBox(3), "999");
-        Uia.SendKey(InpP23Dialog.VkTab);
-        Waits.Step();
         SetBox(reg, InpP23Dialog.ChkSbBox(3), "9");
-        Uia.SendKey(InpP23Dialog.VkTab);
-        Waits.Step();
-        Thread.Sleep(400);
-        Log($"=== KQ-2 === ma khong ton tai 999/9: コード=「{InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkCdBox(3))}」 " +
-            $"名称=「{InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkNmBox(3))}」");
+        FocusBox(reg, InpP23Dialog.ChkCdBox(4));
+        Thread.Sleep(500);
+        LogChkSlot("ma khong ton tai 999/9", reg, 3);
 
         foreach (var d in ModalDialogs.All(App, reg)) { try { Dialogs.DismissOk(d); } catch { } }
         InpP23Dialog.Close(reg);
@@ -464,7 +471,7 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
         Log("=== KQ-7 === 処置 100-0 co chkauto = (108-7, 108-15); 108-15 KHONG con trong");
         Log("   version hom nay. Neu dspData xoa trang slot 2 va F9 ghi de thi 108-15 MAT.");
         Log("   ⚠️ KHOI PHUC thu cong sau khi chay:");
-        Log("   UPDATE chkauto SET cd_2=108, sb_2=15 WHERE trt_cd=100 AND trt_sb=0;");
+        Log("   UPDATE chkauto SET cd2=108, sb2=15 WHERE trt_cd=100 AND trt_sb=0;");
 
         var list = InpP23Dialog.OpenChkList(App, Screen.Window, trace);
         Search(list, ProbeTrtCd);
@@ -487,8 +494,8 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
         Waits.Step();
 
         Log("=== KQ-7 === da bam F9. Chay lai truy van nay va gui ket qua:");
-        Log("   SELECT cd_1,sb_1,cd_2,sb_2 FROM chkauto WHERE trt_cd=100 AND trt_sb=0;");
-        Log("   cd_2 = 0/NULL ⇒ tham chieu chet BI MAT — ban web lam giong, khong phai bug");
+        Log("   SELECT cd1,sb1,cd2,sb2 FROM chkauto WHERE trt_cd=100 AND trt_sb=0;");
+        Log("   cd2 = 0/NULL ⇒ tham chieu chet BI MAT — ban web lam giong, khong phai bug");
 
         trace.Step("F9 tren 処置 co tham chieu chet");
     }
@@ -496,6 +503,16 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
     // ═══════════════════════════════════════════════════════════════════════
     // Helper
     // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>In cả ba ô của một slot 算定処置 — luôn in cùng lúc để thấy được
+    /// WinForm xoá CẢ BA hay chỉ một.</summary>
+    private void LogChkSlot(string when, Window reg, int slot)
+    {
+        Log($"=== KQ-3 === slot{slot} {when}: " +
+            $"コード=「{InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkCdBox(slot))}」 " +
+            $"枝番=「{InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkSbBox(slot))}」 " +
+            $"名称=「{InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkNmBox(slot))}」");
+    }
 
     private Window OpenChkRegister(TestTrace trace)
     {
