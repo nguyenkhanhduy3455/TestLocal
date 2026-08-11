@@ -42,6 +42,13 @@
     từ INP.Lib.GetControl — phải xem cây thật rồi sửa lại, nếu không Tc2..Tc7 sẽ
     báo "khong thay o" chứ không phải WinForm sai.
 
+.PARAMETER ReadOnly
+    TẮT ghi DB. Mặc định runner này BẬT inpP1.allowSave (chỉ Tc7 dùng tới) bằng
+    biến môi trường OCHA_INP_P1_ALLOW_SAVE của riêng tiến trình dotnet test —
+    KHÔNG sửa testsettings.local.json. Cố ý làm vậy: cờ đó dùng chung với luồng
+    InpP1Dialogs, bật trong file cấu hình là vô tình cho phép luôn các testcase
+    ghi của luồng kia (TRTSTATE + chkprm) mà không ai yêu cầu.
+
 .PARAMETER Case
     Lọc theo tên testcase, vd "Tc4".
 
@@ -56,6 +63,7 @@ param(
     [string]$Case = "",
     [int]$StepMs = -1,
     [switch]$Diagnostics,
+    [switch]$ReadOnly,
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug"
 )
@@ -64,6 +72,22 @@ $ErrorActionPreference = "Stop"
 $project = Join-Path $PSScriptRoot "src\OchaCom.FlaUiTests\OchaCom.FlaUiTests.csproj"
 
 if ($StepMs -ge 0) { $env:OCHA_STEP_MS = "$StepMs" }
+
+# Tc7 phai bam F9 that thi moi tra loi duoc KQ-7. Bat qua bien moi truong cho
+# RIENG lan chay nay, khong sua testsettings.local.json (co do dung chung voi
+# luong InpP1Dialogs).
+if ($ReadOnly) {
+    $env:OCHA_INP_P1_ALLOW_SAVE = "false"
+    Write-Host "inpP1.allowSave = false  -> Tc7 se tu bo qua, khong ghi DB." -ForegroundColor DarkGray
+} else {
+    $env:OCHA_INP_P1_ALLOW_SAVE = "true"
+    Write-Host ""
+    Write-Host "!! inpP1.allowSave = true -> Tc7 SE GHI THAT vao chkauto (master toan phong kham)." -ForegroundColor Yellow
+    Write-Host "   Doi tuong: 処置 100-0. Khoi phuc sau khi chay:" -ForegroundColor Yellow
+    Write-Host "     UPDATE chkauto SET cd_2=108, sb_2=15 WHERE trt_cd=100 AND trt_sb=0;" -ForegroundColor Yellow
+    Write-Host "   Dung ghi thi chay lai voi -ReadOnly." -ForegroundColor DarkGray
+    Write-Host ""
+}
 
 $ns = "OchaCom.FlaUiTests.Tests.InpP23Parity"
 

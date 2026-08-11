@@ -142,6 +142,47 @@ public static class KarteAutoCalcDialog
         return null;
     }
 
+    /// <summary>
+    /// Như <see cref="FindChrome"/> nhưng khớp AutomationId HOẶC tên chứa
+    /// <paramref name="nameFragment"/>.
+    ///
+    /// <para>Sinh ra để thay <c>Uia.ByIdOrName</c> ở những chỗ gốc tìm kiếm là màn
+    /// CHÍNH: <c>frm203002</c> có lưới 診療 tới 2.864 dòng, mà
+    /// <c>Uia.ByIdOrName</c> duyệt SÂU nên lún vào đó trước khi tới thanh phím.
+    /// Đo 2026-08-11: mỗi lần tìm <c>btnF11</c> mất 10-20s; bề rộng thì thấy sau
+    /// vài chục nút vì thanh phím nằm nông.</para>
+    /// </summary>
+    public static AutomationElement? FindChromeIdOrName(
+        AutomationElement root, string automationId, string nameFragment, int maxNodes = 400)
+    {
+        var queue = new Queue<AutomationElement>();
+        queue.Enqueue(root);
+        var seen = 0;
+
+        while (queue.Count > 0 && seen < maxNodes)
+        {
+            var node = queue.Dequeue();
+            seen++;
+
+            try
+            {
+                if (!ReferenceEquals(node, root))
+                {
+                    if (Txt.Same(Uia.AutomationIdOf(node), automationId)) return node;
+                    if (!string.IsNullOrEmpty(nameFragment) &&
+                        Txt.Has(Uia.NameOf(node), nameFragment)) return node;
+                }
+
+                if (IsGrid(node)) continue; // đừng chui vào lưới
+            }
+            catch { continue; }
+
+            try { foreach (var c in Uia.Children(node)) queue.Enqueue(c); }
+            catch { /* nút vừa biến mất */ }
+        }
+        return null;
+    }
+
     /// <summary>Như <see cref="FindChrome"/> nhưng chờ tới khi thấy.</summary>
     public static AutomationElement RequireChrome(
         AutomationElement root, string automationId, string? skipId = null, TimeSpan? timeout = null) =>

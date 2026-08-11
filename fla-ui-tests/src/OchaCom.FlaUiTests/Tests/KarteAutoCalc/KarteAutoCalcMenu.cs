@@ -53,7 +53,10 @@ internal static class KarteAutoCalcMenu
     /// </summary>
     public static MenuOpenResult OpenSentakuMenu(OchaApp app, Window screen, TestTrace? trace = null)
     {
-        var btnF11 = Uia.ByIdOrName(screen, "btnF11", "選択", ControlType.Button);
+        // Bề RỘNG, không phải Uia.ByIdOrName: gốc tìm ở đây là frm203002 với lưới
+        // 診療 tới 2.864 dòng, duyệt sâu lún vào đó mất 10-20s mỗi lần gọi
+        // (đo 2026-08-11 trên luồng InpP23Parity: [01] 15.2s, [04] 22s).
+        var btnF11 = KarteAutoCalcDialog.FindChromeIdOrName(screen, "btnF11", "選択");
         if (btnF11 is null)
             return new(null, "man dang mo khong co btnF11 (選択) — co phai frm203002 khong?");
 

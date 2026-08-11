@@ -70,6 +70,25 @@ namespace OchaCom.FlaUiTests.Tests.InpP23Parity;
 [Category("inp-p23-parity")]
 public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
 {
+    /// <summary>
+    /// 処置コード dùng để lọc 一覧 trong mọi testcase.
+    ///
+    /// <para>100 = 初診: có cấu hình ở CẢ hai bảng (chk_auto 108-7/108-15,
+    /// inp_chk_10 cũng có dòng), nên một mã đủ cho cả hai cặp.</para>
+    ///
+    /// <para><b>Luôn lọc trước khi đụng lưới.</b> Không lọc thì lưới giữ 1.664 dòng
+    /// và mọi thao tác UIA trên nó — đổ cây, đếm cột, đọc dòng — đều phải liệt kê
+    /// hết chừng ấy phần tử trước.</para>
+    /// </summary>
+    private const string ProbeTrtCd = "100";
+
+    /// <summary>
+    /// 処置コード có NHIỀU 枝番 (116 = 18 dòng ở version hiện hành), dùng cho Tc6 khi
+    /// cần chọn một dòng ở giữa danh sách. Trước đây Tc6 bỏ lọc để có nhiều dòng —
+    /// đúng nhưng phải trả giá 1.664 dòng cho mỗi lần đọc.
+    /// </summary>
+    private const string MultiRowTrtCd = "116";
+
     private Window? _chkList;
     private Window? _disList;
 
@@ -124,11 +143,17 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
             var list = openList();
             Log($"=== KQ-0 === MO DUOC 一覧 {tag}: 「{Uia.NameOf(list)}」");
             if (tag == "chk") _chkList = list; else _disList = list;
+
+            // LỌC TRƯỚC RỒI MỚI ĐỔ CÂY. Đổ cây lúc lưới còn 1.664 dòng là phần
+            // chậm nhất của cả lần chạy — DumpTree liệt kê HẾT con của lưới rồi
+            // mới cắt còn 60, và 必要病名一覧 có 42 cột nên là 1.664 × 42 phần tử.
+            // Đo 2026-08-11: riêng bước đó ~90s. Lọc còn vài dòng thì gần như tức thì.
+            step = $"loc 一覧 ({tag}) ve 処置コード={ProbeTrtCd}";
+            Search(list, ProbeTrtCd);
+
+            step = $"do cay 一覧 ({tag})";
             InpP1Dialogs.InpP1MenuFlow.WriteArtifact(
                 $"p23-{tag}-list.uia.txt", Uia.DumpTree(list, maxDepth: 6, maxChildrenPerNode: 60));
-
-            step = $"loc 一覧 ({tag}) ve 処置コード=100";
-            Search(list, "100");
 
             step = $"F9 選択 ({tag})";
             var reg = InpP23Dialog.OpenRegister(App, list, registerId, registerTitle, trace);
@@ -161,8 +186,15 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
     {
         using var trace = TestTrace.Begin();
 
-        ReportColumns("自動算定一覧", InpP23Dialog.OpenChkList(App, Screen.Window, trace), 12);
-        ReportColumns("必要病名一覧", InpP23Dialog.OpenDisList(App, Screen.Window, trace), 42);
+        // Lọc trước: số CỘT không đổi theo bộ lọc, nhưng đọc tiêu đề trên lưới
+        // 1.664 dòng thì phải liệt kê hết dòng trước khi tới ô tiêu đề.
+        var chk = InpP23Dialog.OpenChkList(App, Screen.Window, trace);
+        Search(chk, ProbeTrtCd);
+        ReportColumns("自動算定一覧", chk, 12);
+
+        var dis = InpP23Dialog.OpenDisList(App, Screen.Window, trace);
+        Search(dis, ProbeTrtCd);
+        ReportColumns("必要病名一覧", dis, 42);
 
         Log("   Ban web dang hien 6 cot (2 算定処置) va 8 cot (3 病名) — neu so tren la");
         Log("   12/42 thi ban web THIEU cot va phai sua.");
@@ -197,7 +229,7 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
     {
         using var trace = TestTrace.Begin();
         var list = InpP23Dialog.OpenChkList(App, Screen.Window, trace);
-        Search(list, "100");
+        Search(list, ProbeTrtCd);
         var reg = InpP23Dialog.OpenRegister(
             App, list, InpP23Dialog.ChkRegisterId, InpP23Dialog.ChkRegisterTitle, trace);
 
@@ -332,7 +364,7 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
         InpP23Dialog.Close(reg);
 
         var disList = InpP23Dialog.OpenDisList(App, Screen.Window, trace);
-        Search(disList, "121");
+        Search(disList, ProbeTrtCd);
         var disReg = InpP23Dialog.OpenRegister(
             App, disList, InpP23Dialog.DisRegisterId, InpP23Dialog.DisRegisterTitle, trace);
         ProbeLabel(disReg, InpP23Dialog.DisCdLabel(1), InpP23Dialog.DisSearchId, "病名検索");
@@ -379,9 +411,9 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
     {
         using var trace = TestTrace.Begin();
         var list = InpP23Dialog.OpenChkList(App, Screen.Window, trace);
-        // Bỏ lọc để có nhiều dòng, rồi chọn một dòng ở GIỮA — nếu con trỏ nhảy về
-        // đầu thì mới thấy được.
-        Search(list, "");
+        // Cần nhiều dòng để chọn một dòng ở GIỮA (con trỏ nhảy về đầu thì mới
+        // thấy được), nhưng KHÔNG bỏ lọc: 処置 116 có 18 枝番, đủ dùng mà lưới vẫn nhỏ.
+        Search(list, MultiRowTrtCd);
 
         var grid = KarteAutoCalcDialog.FindChrome(list, InpP23Dialog.ListGridId);
         if (grid is null) { Log("=== KQ-5 === khong thay luoi"); Assert.Pass(); return; }
@@ -427,7 +459,7 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
         Log("   UPDATE chkauto SET cd_2=108, sb_2=15 WHERE trt_cd=100 AND trt_sb=0;");
 
         var list = InpP23Dialog.OpenChkList(App, Screen.Window, trace);
-        Search(list, "100");
+        Search(list, ProbeTrtCd);
         var reg = InpP23Dialog.OpenRegister(
             App, list, InpP23Dialog.ChkRegisterId, InpP23Dialog.ChkRegisterTitle, trace);
 
@@ -460,7 +492,7 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
     private Window OpenChkRegister(TestTrace trace)
     {
         var list = InpP23Dialog.OpenChkList(App, Screen.Window, trace);
-        Search(list, "100");
+        Search(list, ProbeTrtCd);
         return InpP23Dialog.OpenRegister(
             App, list, InpP23Dialog.ChkRegisterId, InpP23Dialog.ChkRegisterTitle, trace);
     }
