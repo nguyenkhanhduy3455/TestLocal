@@ -148,6 +148,84 @@ public static class KarteAutoCalcDialog
         Waits.For(() => FindChrome(root, automationId, skipId),
                   $"control AutomationId=「{automationId}」", timeout);
 
+    // ── Tìm cửa sổ dialog ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Tìm cửa sổ dialog theo AutomationId, có đường dự phòng theo TIÊU ĐỀ.
+    ///
+    /// <para><b>Vì sao không dùng thẳng <c>app.Window(id)</c>.</b> Nó lọc qua
+    /// <c>Application.GetAllTopLevelWindows</c>, tức chỉ thấy cửa sổ là CON CỦA
+    /// DESKTOP. Đo được ngày 2026-08-11: <c>frm203042</c> (modal do frm203002 mở)
+    /// thì thấy, nhưng <c>frm203043</c> (modal do frm203042 mở — modal LỒNG modal)
+    /// thì không, dù ảnh chụp cho thấy nó hiện rõ trên màn hình. Chờ 20s rồi
+    /// 「UIA Timeout」 trong khi dialog đang mở ngay đó.</para>
+    ///
+    /// <para>Nên tìm thêm ở hai chỗ nữa: quét desktop theo processId, và tìm theo
+    /// tiêu đề. Tiêu đề của các form này là hằng (<c>_title</c>) nên đủ ổn định để
+    /// làm đường lui — khác với dialog dùng chung, nơi bắt theo tiêu đề là bẫy.</para>
+    /// </summary>
+    public static Window? FindDialogWindow(OchaApp app, string automationId, string titleFragment)
+    {
+        // 1) Đường chuẩn.
+        var w = app.Window(automationId);
+        if (w is not null) return w;
+
+        // 2) Theo tiêu đề, vẫn trong danh sách top-level.
+        w = app.WindowByTitle(titleFragment);
+        if (w is not null) return w;
+
+        // 3) Quét desktop theo processId — bắt được modal lồng modal mà
+        //    GetAllTopLevelWindows bỏ sót.
+        try
+        {
+            var pid = app.ProcessId;
+            foreach (var child in OchaApp.SharedAutomation.GetDesktop().FindAllChildren())
+            {
+                try
+                {
+                    if (child.Properties.ProcessId.ValueOrDefault != pid) continue;
+                    if (!Uia.IsOnScreen(child)) continue;
+                    if (!Txt.Same(Uia.AutomationIdOf(child), automationId) &&
+                        !Txt.Has(Uia.NameOf(child), titleFragment)) continue;
+                    return child.AsWindow();
+                }
+                catch { /* cửa sổ vừa đóng */ }
+            }
+        }
+        catch { /* desktop bận */ }
+
+        return null;
+    }
+
+    /// <summary>Mọi cửa sổ đang hiện của app — dùng khi <see cref="FindDialogWindow"/> trượt.</summary>
+    public static string DescribeVisibleWindows(OchaApp app)
+    {
+        var lines = new List<string>();
+        try
+        {
+            foreach (var w in app.Windows())
+                lines.Add($"   top-level id='{Uia.AutomationIdOf(w)}' name='{Uia.NameOf(w)}'");
+        }
+        catch (Exception e) { lines.Add($"   (loi liet ke top-level: {e.Message})"); }
+
+        try
+        {
+            var pid = app.ProcessId;
+            foreach (var c in OchaApp.SharedAutomation.GetDesktop().FindAllChildren())
+            {
+                try
+                {
+                    if (c.Properties.ProcessId.ValueOrDefault != pid || !Uia.IsOnScreen(c)) continue;
+                    lines.Add($"   desktop-child id='{Uia.AutomationIdOf(c)}' name='{Uia.NameOf(c)}'");
+                }
+                catch { }
+            }
+        }
+        catch (Exception e) { lines.Add($"   (loi quet desktop: {e.Message})"); }
+
+        return lines.Count == 0 ? "   (khong thay cua so nao)" : string.Join("\n", lines);
+    }
+
     // ── Mở / đóng ───────────────────────────────────────────────────────────
 
     /// <summary>AutomationId của mục submenu mở <c>frm203042</c> (frm203002.Designer.cs).</summary>
@@ -164,7 +242,7 @@ public static class KarteAutoCalcDialog
     /// </summary>
     public static Window OpenList(OchaApp app, Window screen, TestTrace? trace = null)
     {
-        var already = app.Window(ListId);
+        var already = FindDialogWindow(app, ListId, ListTitleFragment);
         if (already is not null)
         {
             trace?.Note($"dialog {ListId} da mo san — dung lai");
@@ -182,9 +260,11 @@ public static class KarteAutoCalcDialog
             throw new InvalidOperationException(
                 $"Khong click duoc muc menu: {why}. Chay Tc0 (-Diagnostics) de xem ten thuc te.");
 
-        var dialog = Waits.For(() => app.Window(ListId),
-                               $"dialog {ListId} hien len sau khi click 「{MenuItemText}」",
-                               TestSettings.Current.Run.DefaultTimeout);
+        var dialog = Waits.TryFor(() => FindDialogWindow(app, ListId, ListTitleFragment),
+                                  TestSettings.Current.Run.DefaultTimeout)
+            ?? throw new InvalidOperationException(
+                $"Click 「{MenuItemText}」 xong nhung khong thay {ListId}. Cua so dang hien:\n" +
+                DescribeVisibleWindows(app));
 
         // initProc() nạp lưới xong chưa. Tìm bằng bề rộng — lưới nằm nông, còn
         // duyệt sâu sẽ lún vào 1.764 dòng của chính nó.
@@ -201,7 +281,7 @@ public static class KarteAutoCalcDialog
     /// </summary>
     public static Window OpenRegister(OchaApp app, Window list, TestTrace? trace = null)
     {
-        var already = app.Window(RegisterId);
+        var already = FindDialogWindow(app, RegisterId, RegisterTitleFragment);
         if (already is not null)
         {
             trace?.Note($"dialog {RegisterId} da mo san — dung lai");
@@ -216,9 +296,11 @@ public static class KarteAutoCalcDialog
         Uia.Click(f9);
         Waits.Step();
 
-        return Waits.For(() => app.Window(RegisterId),
-                         $"dialog {RegisterId} hien len sau F9 選択",
-                         TestSettings.Current.Run.DefaultTimeout);
+        return Waits.TryFor(() => FindDialogWindow(app, RegisterId, RegisterTitleFragment),
+                            TestSettings.Current.Run.DefaultTimeout)
+            ?? throw new InvalidOperationException(
+                $"F9 選択 xong nhung khong thay {RegisterId}. Cua so dang hien:\n" +
+                DescribeVisibleWindows(app));
     }
 
     /// <summary>F10 戻る — đóng mà không ghi gì.</summary>

@@ -29,13 +29,19 @@ namespace OchaCom.FlaUiTests.Tests.KarteAutoCalc;
 ///  KQ-2 一覧 lọc theo version của 処置マスタ như thế nào?
 ///        → demo có 35 version; bản web lấy version có hiệu lực HÔM NAY qua
 ///          mst_trt_ver. Cần số 該当件数 thật để đối chiếu (kỳ vọng ~1.764).
-///  KQ-3 確認画面不要 tick theo quy tắc nào?
-///        → bản web: chỉ tick khi CÓ ≥1 dòng VÀ MỌI dòng no_chk = 1.
-///          3 ca: all-1 / lẫn lộn / không dòng nào.
+///  KQ-3 ⏳ MỘT NỬA (2026-08-11) — 処置 100-0 có 6 dòng, DB cho thấy MỌI dòng
+///        no_chk = 0, và WinForm hiện 確認画面不要 KHÔNG tick. Khớp bản web ở vế
+///        "không phải tất cả đều 1 ⇒ không tick". Vế "tất cả đều 1 ⇒ tick" và
+///        vế "0 dòng ⇒ không tick" vẫn cần Tc3.
 ///  KQ-4 F9 登録 có giữ nguyên use_cnt không?
 ///        → bản web round-trip use_cnt. Nếu WinForm reset về 0 thì học máy mất.
 ///  KQ-5 登録 với lưới RỖNG có xoá sạch cấu hình không?
 ///        → bản web coi lines = [] là "xoá". Nếu WinForm chặn thì phải bỏ.
+///  KQ-6b ✅ THÊM (2026-08-11) — cột 名称 lấy từ mst_cmt2, KHÔNG phải bản sao
+///        trên cmt_auto. Ảnh chụp 処置 100-0 hiện 「次回予約ＴＥＬ待ち」「終了」…
+///        đúng mst_cmt2, trong khi cmt_auto.cmt_nm của chính các dòng đó là
+///        「*日位前から**の歯が痛い」… ⇒ COALESCE(master, shadow) của bản web đúng.
+///
 ///  KQ-6 cmt_nm bị cắt theo BYTE hay KÝ TỰ?
 ///        → WinForm dùng ComLibrary.LeftB = Shift-JIS BYTE (60B ≈ 30 chữ Nhật).
 ///          Bản web cắt theo KÝ TỰ (60 chữ). Cột Postgres là varchar(60) tính
@@ -93,7 +99,10 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
     {
         foreach (var id in new[] { KarteAutoCalcDialog.RegisterId, KarteAutoCalcDialog.ListId })
         {
-            var open = App?.Window(id);
+            var open = App is null ? null : KarteAutoCalcDialog.FindDialogWindow(
+                App, id, id == KarteAutoCalcDialog.RegisterId
+                    ? KarteAutoCalcDialog.RegisterTitleFragment
+                    : KarteAutoCalcDialog.ListTitleFragment);
             if (open is null) continue;
             try { KarteAutoCalcDialog.Close(App!, open); }
             catch (Exception e) { Log($"khong dong duoc {id}: {e.Message}"); }
@@ -532,7 +541,8 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
             : "   VAN CON ⇒ WinForm chan luu luoi rong; ban web phai chan theo");
 
         // Dialog có thể vẫn mở nếu WinForm chặn — đóng cho sạch.
-        var stillOpen = App.Window(KarteAutoCalcDialog.RegisterId);
+        var stillOpen = KarteAutoCalcDialog.FindDialogWindow(
+            App, KarteAutoCalcDialog.RegisterId, KarteAutoCalcDialog.RegisterTitleFragment);
         if (stillOpen is not null) KarteAutoCalcDialog.Close(App, stillOpen);
 
         Log("=== KQ-5 === KHOI PHUC: chay lai SQL insert tu snapshot o tren neu can.");
