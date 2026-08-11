@@ -87,6 +87,22 @@ vừa chạy được vừa tự tài liệu hoá.
 Luật then chốt: 「既に…会計処理…」 phải trả lời **いいえ** (modAcc.cs:567). Trả lời
 はい là tạo 会計 mới và không bao giờ tới được `ChgAccData`.
 
+### Chuỗi thật, đo ngày 2026-08-11
+
+```
+[1] 「処置データチェックでエラーがありました。このまま続けますか?」   OK / Cancel
+```
+
+Phát hiện quan trọng: **F8 chạy 処置データチェック TRƯỚC** khi vào cây quyết định của
+`LetAccData2`. Bệnh nhân test không có 部位・病名 nên luôn dính cảnh báo
+「当月に部位・病名がない可能性があります」.
+
+Hộp thoại này dùng **OK/Cancel**, không phải はい/いいえ. Lượt chạy đầu rơi vào luật
+mặc định "phủ định cho an toàn" → bấm Cancel → **huỷ cả chuỗi F8** trước khi tới 会計.
+
+> Bài học đã ghi vào `AccountingFlow.Rules`: với hộp thoại kiểu 「…続けますか？」 thì
+> phủ định = **bỏ cuộc**, không phải an toàn. Mọi hộp thoại dạng đó phải có luật riêng.
+
 Chuỗi trên máy bạn khác giả định thì chạy:
 
 ```powershell

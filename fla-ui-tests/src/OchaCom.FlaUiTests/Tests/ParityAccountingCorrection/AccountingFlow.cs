@@ -46,14 +46,35 @@ public static class AccountingFlow
     /// hộp thoại 「既に…会計処理…されています」 phải trả lời <b>いいえ</b> (modAcc.cs:567) —
     /// trả lời はい là tạo 会計 mới và không bao giờ tới được ChgAccData.</para>
     ///
-    /// <para>Khớp theo thứ tự trong mảng; cái nào khớp trước dùng cái đó.</para>
+    /// <para>Khớp theo thứ tự trong mảng; cái nào khớp trước dùng cái đó. Mỗi luật liệt
+    /// kê NHIỀU tên nút vì nhãn phụ thuộc ngôn ngữ giao diện Windows và kiểu MessageBox
+    /// (YesNo hay OKCancel) — đo thật: hộp thoại đầu chuỗi dùng <b>OK/Cancel</b>.</para>
+    ///
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// CHUỖI THẬT, đo bằng -Diagnostics ngày 2026-08-11
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// <code>
+    /// [1] 「処置データチェックでエラーがありました。このまま続けますか?」  OK / Cancel
+    /// </code>
+    /// F8 chạy 処置データチェック TRƯỚC khi vào cây quyết định 会計 của LetAccData2.
+    /// Bệnh nhân test không có 部位・病名 nên luôn dính cảnh báo
+    /// 「当月に部位・病名がない可能性があります」.
+    ///
+    /// <para><b>Phải đáp OK (tiếp tục).</b> Lượt chạy đầu rơi vào luật mặc định
+    /// "phủ định cho an toàn" → bấm Cancel → huỷ cả chuỗi F8 trước khi tới 会計.
+    /// Với hộp thoại dạng 「…続けますか？」 thì phủ định = bỏ cuộc, không phải an toàn.</para>
     /// </summary>
     private static readonly (string Contains, string[] Buttons, string Why)[] Rules =
     [
-        ("会計処理",   ["いいえ", "No"],  "giữ 会計 cũ ⇒ mới rẽ được sang nhánh G"),
-        ("既に",       ["いいえ", "No"],  "cùng ý trên, phòng khi câu chữ khác"),
-        ("増えています", ["いいえ", "No"], "không tạo dòng 差額 — nhánh F, không phải G"),
-        ("差額",       ["いいえ", "No"],  "cùng lý do"),
+        // Cảnh báo チェック trước khi vào 会計 — tiếp tục, nếu không thì dừng ngay ở đây.
+        ("続けますか",   ["OK", "はい", "Yes"], "canh bao チェック — tiep tuc de toi 会計"),
+        ("チェックで",   ["OK", "はい", "Yes"], "cung y tren, phong khi cau chu khac"),
+
+        // Cây quyết định của LetAccData2.
+        ("会計処理",     ["いいえ", "No", "Cancel"], "giu 会計 cu => moi re duoc sang nhanh G"),
+        ("既に",         ["いいえ", "No", "Cancel"], "cung y tren, phong khi cau chu khac"),
+        ("増えています", ["いいえ", "No", "Cancel"], "khong tao dong 差額 — nhanh F, khong phai G"),
+        ("差額",         ["いいえ", "No", "Cancel"], "cung ly do"),
     ];
 
     /// <summary>
@@ -94,8 +115,12 @@ public static class AccountingFlow
             var buttons = ButtonNames(any);
             var rule = Rules.FirstOrDefault(r => Txt.Has(text, r.Contains));
 
+            // Mặc định phủ định cho hộp thoại LẠ: an toàn với hộp thoại kiểu "có ghi
+            // không?", nhưng SAI với kiểu "có tiếp tục không?" — nên mọi hộp thoại
+            // 「…続けますか」 phải có luật riêng ở trên. Lượt chạy đầu đã vấp đúng chỗ này.
             var answer = rule.Buttons ?? ["いいえ", "No", "キャンセル", "Cancel"];
-            var why = rule.Why ?? "khong khop luat nao — tra loi phu dinh cho an toan";
+            var why = rule.Why ?? "KHONG KHOP LUAT NAO — tra loi phu dinh; neu day la hop " +
+                                  "thoai kieu 「…続けますか」 thi PHAI them luat rieng";
 
             trace?.Note($"hop thoai [{trail.Count + 1}]: 「{text}」 nut={string.Join("/", buttons)}");
             trace?.Note($"  -> tra loi 「{answer[0]}」 ({why})");
