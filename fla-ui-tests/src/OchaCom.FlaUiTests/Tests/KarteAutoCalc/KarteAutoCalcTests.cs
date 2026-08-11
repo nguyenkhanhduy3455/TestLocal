@@ -218,6 +218,20 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
             Log($"=== KQ-0 === dung o buoc 「{step}」: {e.GetType().Name}: {e.Message}");
             Log("=== KQ-0 === cua so cua app dang hien luc do:");
             Log(KarteAutoCalcDialog.DescribeVisibleWindows(App));
+
+            // Cây của 一覧 NGAY LÚC HỎNG. kac-02 chụp trước khi bấm F9 nên không có
+            // frm203043; muốn biết form con nằm ở đâu thì phải chụp lại lúc này.
+            if (_list is not null)
+            {
+                try
+                {
+                    InpP1Dialogs.InpP1MenuFlow.WriteArtifact(
+                        "kac-04-list-at-failure.uia.txt",
+                        Uia.DumpTree(_list, maxDepth: 5, maxChildrenPerNode: 40));
+                    Log("=== KQ-0 === da ghi kac-04-list-at-failure.uia.txt — gui ke ca file nay");
+                }
+                catch (Exception e2) { Log($"   (khong do duoc cay 一覧: {e2.Message})"); }
+            }
         }
 
         Log("=== KQ-0 === Gui lai: tat ca dong '=== KQ-0 ===' o tren + cac file " +
@@ -565,7 +579,7 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
 
         // Dialog có thể vẫn mở nếu WinForm chặn — đóng cho sạch.
         var stillOpen = KarteAutoCalcDialog.FindDialogWindow(
-            App, KarteAutoCalcDialog.RegisterId, KarteAutoCalcDialog.RegisterTitleFragment);
+            App, KarteAutoCalcDialog.RegisterId, KarteAutoCalcDialog.RegisterTitleFragment, _list);
         if (stillOpen is not null) KarteAutoCalcDialog.Close(App, stillOpen);
 
         Log("=== KQ-5 === KHOI PHUC: chay lai SQL insert tu snapshot o tren neu can.");

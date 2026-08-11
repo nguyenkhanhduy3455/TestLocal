@@ -151,18 +151,30 @@ public static class KarteAutoCalcDialog
     // ── Tìm cửa sổ dialog ───────────────────────────────────────────────────
 
     /// <summary>
-    /// Tìm cửa sổ dialog theo AutomationId, có đường dự phòng theo TIÊU ĐỀ và
-    /// theo processId.
+    /// Tìm cửa sổ dialog theo AutomationId, lần lượt qua bốn đường.
     ///
-    /// <para><b>Ghi chú sửa sai (2026-08-11).</b> Hàm này ra đời từ một chẩn đoán
-    /// SAI: rằng <c>app.Window(id)</c> bỏ sót modal-lồng-modal. Không phải —
-    /// <c>GetAllTopLevelWindows</c> chính là "con của desktop lọc theo processId",
-    /// mà modal của WinForms vẫn là cửa sổ top-level, nên nó thấy được
-    /// <c>frm203043</c>. Thủ phạm thật là <see cref="ClickModalOpener"/> (xem đó).
-    /// Giữ lại vì ba đường tìm vẫn rẻ và làm luồng đỡ giòn, nhưng ĐỪNG đọc nó như
-    /// bằng chứng về hành vi của UIA.</para>
+    /// <para><b>Ba lần đo, hai chẩn đoán sai — chép lại để đừng ai đi lại.</b></para>
+    /// <list type="number">
+    ///   <item>「Modal lồng modal không phải con của desktop」 — <b>sai về lý do</b>.
+    ///     <c>GetAllTopLevelWindows</c> chính là "con của desktop lọc theo processId",
+    ///     nên đường 1 và đường 3 nhìn cùng một tập; thêm đường 3 không giải quyết gì.</item>
+    ///   <item>Lần đo 16:41 cho thấy triệu chứng vẫn đúng dù lý do sai:
+    ///     <c>frm203043</c> đang mở rõ trên màn hình mà CẢ top-level LẪN desktop-child
+    ///     đều chỉ liệt kê được <c>frm203042</c>. Nghĩa là <b>frm203043 không phải cửa
+    ///     sổ top-level</b> — nó nằm TRONG cây UIA của <c>frm203042</c> (form con:
+    ///     <c>TopLevel = false</c> rồi <c>Controls.Add</c>, đúng kiểu <c>showForm()</c>
+    ///     mà app này dùng khắp nơi). Ảnh chụp cũng khớp: khung 登録 bị kẹp gọn trong
+    ///     vùng client của 一覧 chứ không tràn ra ngoài được.</item>
+    /// </list>
+    ///
+    /// <para>Vì thế mới có đường 4: duyệt cây con của <paramref name="searchInside"/>.
+    /// Ba đường đầu vẫn giữ vì rẻ và vì <c>frm203042</c> thì đúng là top-level thật.</para>
     /// </summary>
-    public static Window? FindDialogWindow(OchaApp app, string automationId, string titleFragment)
+    /// <param name="searchInside">
+    /// Cửa sổ cha để lục bên trong (thường là <c>frm203042</c> khi tìm <c>frm203043</c>).
+    /// </param>
+    public static Window? FindDialogWindow(
+        OchaApp app, string automationId, string titleFragment, AutomationElement? searchInside = null)
     {
         // 1) Đường chuẩn.
         var w = app.Window(automationId);
@@ -172,8 +184,7 @@ public static class KarteAutoCalcDialog
         w = app.WindowByTitle(titleFragment);
         if (w is not null) return w;
 
-        // 3) Quét desktop theo processId — bắt được modal lồng modal mà
-        //    GetAllTopLevelWindows bỏ sót.
+        // 3) Quét desktop theo processId.
         try
         {
             var pid = app.ProcessId;
@@ -192,17 +203,74 @@ public static class KarteAutoCalcDialog
         }
         catch { /* desktop bận */ }
 
+        // 4) Form con nằm trong cây của cửa sổ cha.
+        if (searchInside is not null)
+        {
+            var nested = FindNested(searchInside, automationId, titleFragment);
+            if (nested is not null) return nested.AsWindow();
+        }
+
         return null;
     }
 
-    /// <summary>Mọi cửa sổ đang hiện của app — dùng khi <see cref="FindDialogWindow"/> trượt.</summary>
+    /// <summary>
+    /// Tìm form con theo AutomationId hoặc tiêu đề trong cây con của
+    /// <paramref name="root"/>, duyệt THEO BỀ RỘNG và bỏ qua cây lưới.
+    ///
+    /// <para>Cùng lý do với <see cref="FindChrome"/>: lưới 一覧 có 1.764 dòng, duyệt
+    /// sâu vào đó là hết giờ UIA. Form con nằm ngay dưới form cha một hai tầng.</para>
+    /// </summary>
+    public static AutomationElement? FindNested(
+        AutomationElement root, string automationId, string titleFragment, int maxNodes = 400)
+    {
+        var queue = new Queue<AutomationElement>();
+        queue.Enqueue(root);
+        var seen = 0;
+
+        while (queue.Count > 0 && seen < maxNodes)
+        {
+            var node = queue.Dequeue();
+            seen++;
+
+            try
+            {
+                var id = Uia.AutomationIdOf(node);
+                if (!ReferenceEquals(node, root) &&
+                    (Txt.Same(id, automationId) || Txt.Has(Uia.NameOf(node), titleFragment)))
+                    return node;
+
+                // Đừng chui vào lưới: 1.764 dòng, chỉ riêng việc liệt kê con đã đủ
+                // hết giờ UIA. Chặn theo LOẠI control chứ không theo tên — form nào
+                // cũng có thể đặt tên lưới khác.
+                if (Txt.Same(id, ListGridId) || IsGrid(node)) continue;
+            }
+            catch { continue; }
+
+            try { foreach (var c in Uia.Children(node)) queue.Enqueue(c); }
+            catch { /* nút vừa biến mất */ }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Mọi cửa sổ đang hiện của app, KÈM con trực tiếp của chúng — dùng khi
+    /// <see cref="FindDialogWindow"/> trượt.
+    ///
+    /// <para>Phải in cả tầng con: lần đo 16:41 chỉ in top-level nên chỉ nói được
+    /// 「không thấy frm203043」 mà không nói được nó nằm ở đâu, tốn thêm một vòng.</para>
+    /// </summary>
     public static string DescribeVisibleWindows(OchaApp app)
     {
         var lines = new List<string>();
+        var roots = new List<AutomationElement>();
+
         try
         {
             foreach (var w in app.Windows())
+            {
                 lines.Add($"   top-level id='{Uia.AutomationIdOf(w)}' name='{Uia.NameOf(w)}'");
+                roots.Add(w);
+            }
         }
         catch (Exception e) { lines.Add($"   (loi liet ke top-level: {e.Message})"); }
 
@@ -215,13 +283,53 @@ public static class KarteAutoCalcDialog
                 {
                     if (c.Properties.ProcessId.ValueOrDefault != pid || !Uia.IsOnScreen(c)) continue;
                     lines.Add($"   desktop-child id='{Uia.AutomationIdOf(c)}' name='{Uia.NameOf(c)}'");
+                    roots.Add(c);
                 }
                 catch { }
             }
         }
         catch (Exception e) { lines.Add($"   (loi quet desktop: {e.Message})"); }
 
+        foreach (var r in roots)
+        {
+            string rid;
+            try { rid = Uia.AutomationIdOf(r); } catch { continue; }
+            try
+            {
+                foreach (var c in Uia.Children(r))
+                {
+                    try
+                    {
+                        var cid = Uia.AutomationIdOf(c);
+                        var cnm = Uia.NameOf(c);
+                        if (string.IsNullOrWhiteSpace(cid) && string.IsNullOrWhiteSpace(cnm)) continue;
+                        lines.Add($"      con cua '{rid}': id='{cid}' name='{cnm}' " +
+                                  $"type={SafeControlType(c)} onScreen={Uia.IsOnScreen(c)}");
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
         return lines.Count == 0 ? "   (khong thay cua so nao)" : string.Join("\n", lines);
+    }
+
+    private static string SafeControlType(AutomationElement e)
+    {
+        try { return e.Properties.ControlType.ValueOrDefault.ToString(); }
+        catch { return "?"; }
+    }
+
+    private static bool IsGrid(AutomationElement e)
+    {
+        try
+        {
+            var t = e.Properties.ControlType.ValueOrDefault;
+            return t == FlaUI.Core.Definitions.ControlType.DataGrid
+                || t == FlaUI.Core.Definitions.ControlType.Table;
+        }
+        catch { return false; }
     }
 
     // ── Bấm nút mở hộp thoại MODAL ──────────────────────────────────────────
@@ -328,7 +436,8 @@ public static class KarteAutoCalcDialog
     /// </summary>
     public static Window OpenRegister(OchaApp app, Window list, TestTrace? trace = null)
     {
-        var already = FindDialogWindow(app, RegisterId, RegisterTitleFragment);
+        // searchInside: frm203043 là form CON của frm203042, không phải top-level.
+        var already = FindDialogWindow(app, RegisterId, RegisterTitleFragment, list);
         if (already is not null)
         {
             trace?.Note($"dialog {RegisterId} da mo san — dung lai");
@@ -352,7 +461,7 @@ public static class KarteAutoCalcDialog
         ClickModalOpener(f9, trace);
         Waits.Step();
 
-        return Waits.TryFor(() => FindDialogWindow(app, RegisterId, RegisterTitleFragment),
+        return Waits.TryFor(() => FindDialogWindow(app, RegisterId, RegisterTitleFragment, list),
                             TestSettings.Current.Run.DefaultTimeout)
             ?? throw new InvalidOperationException(
                 $"F9 選択 xong nhung khong thay {RegisterId}. Cua so dang hien:\n" +
