@@ -179,10 +179,29 @@ Năm bài học, đều từ vấp thật:
    mở lại 診療入力 — trong khi hộp thoại xác nhận đang **chặn luồng UI**, nên mọi
    phép duyệt cửa sổ sau đó đi vào chỗ mù và app **đứng yên** ở màn 窓口精算.
 
-   `LeaveCounterPayment` giờ: click **chuột thật** (nút `GradientButton` tự vẽ, không
-   ăn `InvokePattern`) → trả lời hộp thoại qua `ModalDialogs` → **chờ 窓口精算 đóng
-   thật** rồi mới trả về. Chờ ở đây để lỗi nói đúng chỗ, thay vì để bước sau báo
-   「không thấy メインメニュー」.
+   `LeaveCounterPayment` giờ: đưa cửa sổ lên tiền cảnh → click **chuột thật** (nút
+   `GradientButton` tự vẽ, không ăn `InvokePattern`) → trả lời hộp thoại qua
+   `ModalDialogs` → **chờ 窓口精算 đóng thật** rồi mới trả về. Chờ ở đây để lỗi nói
+   đúng chỗ, thay vì để bước sau báo 「không thấy メインメニュー」.
+
+8. **Đừng hỏi một lần về một trạng thái đang chuyển tiếp.** Testcase kết thúc ngay
+   sau khi trả lời hộp thoại cuối, nhưng WinForm còn đang đóng 診療入力 và dựng
+   窓口精算 — mất vài giây. `EnsureTreatmentScreen` hỏi `app.Window("frm204002")` đúng
+   **0,9 giây** sau đó: chưa có gì cả, nên nó kết luận "không ở 窓口精算" rồi đi mở lại
+   診療入力 — trong lúc 窓口精算 hiện lên và chặn đường.
+
+   Giờ nó **chờ** app thật sự ở một trong hai màn đã biết rồi mới quyết.
+
+### Nhật ký phải hiện NGAY
+
+NUnit giữ `TestContext.Out` tới khi testcase kết thúc, nên nhật ký từng bước — thứ
+viết ra để biết hỏng ở đâu — chỉ xuất hiện khi mọi chuyện đã xong. Treo là **đúng lúc
+cần nó nhất**: ba lượt liền chỉ thấy Tc8-1 xanh rồi console im lặng, phải đoán mò.
+
+`TestTrace.Write` ghi ra ba chỗ: `TestContext.Out` (báo cáo NUnit),
+`TestContext.Progress` (hiện ngay trên console), và `_trace.log` (ghi ngay từng dòng,
+nên treo cứng vẫn còn log đọc được). Đổi xong thì lượt sau chỉ ra ngay dòng cuối cùng
+là `mo lai man 診療入力` — đủ để biết chính xác chỗ hỏng.
 
 ### F8 để lại ba thứ, và còn đóng cả màn hình
 

@@ -235,9 +235,29 @@ public sealed class ChgAccDataTests : UiTestBase
     ///
     /// <para>Đặt ở ĐẦU testcase chứ không ở cuối testcase trước: testcase trước có thể
     /// đã ném lỗi giữa chừng, và dọn ở đầu thì trạng thái nào cũng về được.</para>
+    ///
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// ⚠️ PHẢI CHỜ APP ỔN ĐỊNH TRƯỚC KHI HỎI NÓ ĐANG Ở ĐÂU
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// Testcase trước kết thúc ngay sau khi trả lời hộp thoại cuối, nhưng WinForm còn
+    /// đang đóng 診療入力 và dựng 窓口精算 — mất vài giây. Bản đầu hỏi
+    /// <c>app.Window("frm204002")</c> đúng <b>0,9 giây</b> sau đó: chưa có gì cả, nên
+    /// nó kết luận "không ở 窓口精算" rồi đi mở lại 診療入力 — trong lúc 窓口精算 hiện lên
+    /// và chặn đường. Tc8-2 treo ở đó ba lượt liền.
+    ///
+    /// <para>Cái bẫy ở đây là <b>hỏi một lần</b> về một trạng thái đang chuyển tiếp.
+    /// Nên: chờ tới khi app thật sự ở MỘT TRONG HAI màn đã biết rồi mới quyết.</para>
     /// </summary>
     private void EnsureTreatmentScreen(TestTrace trace)
     {
+        var settled = Waits.TryUntil(
+            () => App.Window("frm203002") is not null || App.Window("frm204002") is not null,
+            TimeSpan.FromSeconds(20));
+
+        trace.Note(settled
+            ? $"app dang o: {(App.Window("frm203002") is not null ? "診療入力" : "窓口精算")}"
+            : "CANH BAO — sau 20s app khong o 診療入力 lan 窓口精算; van thu mo lai");
+
         var closed = AccountingFlow.LeaveCounterPayment(App, trace);
         if (!closed && TreatmentScreenAlive()) return;
 
