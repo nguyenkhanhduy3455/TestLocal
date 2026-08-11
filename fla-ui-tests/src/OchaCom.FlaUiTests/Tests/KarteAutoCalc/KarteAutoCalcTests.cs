@@ -185,6 +185,7 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
             "(sua KarteAutoCalcDialog.MenuItemId cho khop ten thuc te o tren).");
 
         // ── Bước 7: nếu tới được thì mở luôn 2 form để lấy cây UIA ─────────
+        var step = "mo 一覧 tu menu";
         try
         {
             var list = KarteAutoCalcDialog.OpenList(App, screen, trace);
@@ -195,16 +196,28 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
 
             // Thu nhỏ lưới TRƯỚC khi đụng F9. 1.764 dòng làm mọi thao tác UIA
             // trên form này chậm tới mức hết giờ — lọc còn vài dòng thì nhanh.
+            step = "loc 一覧 ve 処置コード=100";
             Search(list, "100", "");
+
+            step = "F9 選択 tren 一覧 (mo frm203043)";
             var reg = KarteAutoCalcDialog.OpenRegister(App, list, trace);
             Log($"=== KQ-0 === MO DUOC 登録: title 「{Uia.NameOf(reg)}」");
+
+            step = "do cay UIA cua 登録";
             InpP1Dialogs.InpP1MenuFlow.WriteArtifact(
                 "kac-03-register.uia.txt", Uia.DumpTree(reg, maxDepth: 6, maxChildrenPerNode: 60));
+
+            step = "F10 戻る dong 登録";
             KarteAutoCalcDialog.Close(App, reg);
         }
         catch (Exception e)
         {
-            Log($"=== KQ-0 === dung o buoc mo form: {e.Message}");
+            // In cả KIỂU lỗi lẫn bước đang làm. Ba lần chạy trước chỉ có mỗi
+            // e.Message ("UIA Timeout") — không đủ để biết treo ở click hay ở tìm
+            // cửa sổ, mỗi vòng đoán mất nguyên một lượt gửi log qua lại.
+            Log($"=== KQ-0 === dung o buoc 「{step}」: {e.GetType().Name}: {e.Message}");
+            Log("=== KQ-0 === cua so cua app dang hien luc do:");
+            Log(KarteAutoCalcDialog.DescribeVisibleWindows(App));
         }
 
         Log("=== KQ-0 === Gui lai: tat ca dong '=== KQ-0 ===' o tren + cac file " +
@@ -275,8 +288,17 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
     {
         var names = new List<string>();
         var roots = new List<AutomationElement>();
+        var pid = App.ProcessId;
 
-        try { roots.AddRange(OchaCom.FlaUiTests.App.OchaApp.SharedAutomation.GetDesktop().FindAllChildren()); }
+        // Chỉ cửa sổ CỦA APP. Lần chạy 2026-08-11 không lọc nên vớt cả menu của
+        // VS Code đang mở cạnh bên (File / Edit / Terminal…) — 34 mục, quá nửa là
+        // rác, đọc log rất dễ tưởng menu オプション đã bung trong khi chưa.
+        try
+        {
+            roots.AddRange(OchaCom.FlaUiTests.App.OchaApp.SharedAutomation.GetDesktop()
+                .FindAllChildren()
+                .Where(c => { try { return c.Properties.ProcessId.ValueOrDefault == pid; } catch { return false; } }));
+        }
         catch { /* desktop ban */ }
         try { roots.AddRange(App.Windows()); }
         catch { /* app ban */ }
@@ -476,7 +498,8 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
         trace.Step("F9 登録 (khong sua gi)");
         var f9 = KarteAutoCalcDialog.FindChrome(reg, "btnF9", KarteAutoCalcDialog.RegisterGridId);
         Assert.That(f9, Is.Not.Null, "khong thay btnF9 tren frm203043");
-        Uia.Click(f9!);
+        // F9 登録 bung hộp xác nhận ⇒ modal ⇒ phải chuột vật lý (ClickModalOpener).
+        KarteAutoCalcDialog.ClickModalOpener(f9!, trace);
         Waits.Step();
         DismissAnyDialog();
         Waits.Step();
@@ -523,13 +546,13 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
         trace.Step("F2 全行削除");
         var f2 = KarteAutoCalcDialog.FindChrome(reg, "btnF2", KarteAutoCalcDialog.RegisterGridId);
         Assert.That(f2, Is.Not.Null, "khong thay btnF2 (全行削除) tren frm203043");
-        Uia.Click(f2!);
+        KarteAutoCalcDialog.ClickModalOpener(f2!, trace);
         Waits.Step();
         DismissAnyDialog();
 
         trace.Step("F9 登録 voi luoi rong");
         var f9 = KarteAutoCalcDialog.FindChrome(reg, "btnF9", KarteAutoCalcDialog.RegisterGridId);
-        if (f9 is not null) Uia.Click(f9);
+        if (f9 is not null) KarteAutoCalcDialog.ClickModalOpener(f9, trace);
         Waits.Step();
         DismissAnyDialog();
         Waits.Step();
@@ -623,7 +646,9 @@ public sealed class KarteAutoCalcTests : InpP1Dialogs.InpP1TestBase
         if (nm is not null) Uia.SetText(nm, trtNm);
 
         var btn = KarteAutoCalcDialog.FindChrome(list, KarteAutoCalcDialog.ListSearchButtonId, KarteAutoCalcDialog.ListGridId);
-        if (btn is not null) Uia.Click(btn);
+        // 検索 CÓ THỂ bung E00003 (0 件) — tức là modal ⇒ Invoke sẽ treo tới khi hết
+        // giờ, và chính testcase định đo cái 0 件 đó (Tc2) là testcase chết.
+        if (btn is not null) KarteAutoCalcDialog.ClickModalOpener(btn);
         Waits.Step();
         // 0 件 thì WinForm bung E00003; đóng đi rồi đọc lưới rỗng như bình thường.
         DismissAnyDialog();

@@ -151,18 +151,16 @@ public static class KarteAutoCalcDialog
     // ── Tìm cửa sổ dialog ───────────────────────────────────────────────────
 
     /// <summary>
-    /// Tìm cửa sổ dialog theo AutomationId, có đường dự phòng theo TIÊU ĐỀ.
+    /// Tìm cửa sổ dialog theo AutomationId, có đường dự phòng theo TIÊU ĐỀ và
+    /// theo processId.
     ///
-    /// <para><b>Vì sao không dùng thẳng <c>app.Window(id)</c>.</b> Nó lọc qua
-    /// <c>Application.GetAllTopLevelWindows</c>, tức chỉ thấy cửa sổ là CON CỦA
-    /// DESKTOP. Đo được ngày 2026-08-11: <c>frm203042</c> (modal do frm203002 mở)
-    /// thì thấy, nhưng <c>frm203043</c> (modal do frm203042 mở — modal LỒNG modal)
-    /// thì không, dù ảnh chụp cho thấy nó hiện rõ trên màn hình. Chờ 20s rồi
-    /// 「UIA Timeout」 trong khi dialog đang mở ngay đó.</para>
-    ///
-    /// <para>Nên tìm thêm ở hai chỗ nữa: quét desktop theo processId, và tìm theo
-    /// tiêu đề. Tiêu đề của các form này là hằng (<c>_title</c>) nên đủ ổn định để
-    /// làm đường lui — khác với dialog dùng chung, nơi bắt theo tiêu đề là bẫy.</para>
+    /// <para><b>Ghi chú sửa sai (2026-08-11).</b> Hàm này ra đời từ một chẩn đoán
+    /// SAI: rằng <c>app.Window(id)</c> bỏ sót modal-lồng-modal. Không phải —
+    /// <c>GetAllTopLevelWindows</c> chính là "con của desktop lọc theo processId",
+    /// mà modal của WinForms vẫn là cửa sổ top-level, nên nó thấy được
+    /// <c>frm203043</c>. Thủ phạm thật là <see cref="ClickModalOpener"/> (xem đó).
+    /// Giữ lại vì ba đường tìm vẫn rẻ và làm luồng đỡ giòn, nhưng ĐỪNG đọc nó như
+    /// bằng chứng về hành vi của UIA.</para>
     /// </summary>
     public static Window? FindDialogWindow(OchaApp app, string automationId, string titleFragment)
     {
@@ -226,12 +224,58 @@ public static class KarteAutoCalcDialog
         return lines.Count == 0 ? "   (khong thay cua so nao)" : string.Join("\n", lines);
     }
 
+    // ── Bấm nút mở hộp thoại MODAL ──────────────────────────────────────────
+
+    /// <summary>
+    /// Bấm một nút mà trình xử lý của nó gọi <c>ShowDialog()</c>.
+    ///
+    /// <para><b>Phải là chuột VẬT LÝ, không được dùng <see cref="Uia.Click"/>.</b>
+    /// Uia.Click ưu tiên <c>InvokePattern.Invoke()</c>, và provider UIA của WinForms
+    /// thực thi Invoke ĐỒNG BỘ trên luồng UI của app: lời gọi chỉ trả về khi
+    /// <c>btnF9_Click</c> chạy xong. Mà <c>btnF9_Click</c> gọi <c>ShowDialog()</c> —
+    /// nó chỉ xong khi NGƯỜI DÙNG đóng hộp thoại. Kết quả: bên test đứng chờ tới
+    /// khi UIA hết giờ rồi ném 「UIA Timeout」, trong khi hộp thoại đã mở ngon lành
+    /// từ giây đầu. Đo được ngày 2026-08-11: mất đúng 20s (run.defaultTimeout) rồi
+    /// ném, ảnh chụp cho thấy frm203043 đang mở.</para>
+    ///
+    /// <para>Chuột vật lý (<c>mouse_event</c>) chỉ đẩy sự kiện vào hàng đợi thông
+    /// điệp của Windows rồi trả về ngay — không có lời gọi chéo tiến trình nào để
+    /// mà treo. Đây cũng là lý do F11 (mở <c>ContextMenuStrip</c> bằng
+    /// <c>Show()</c>, không chặn) thì Uia.Click lại chạy tốt: khác nhau ở
+    /// <c>Show()</c> hay <c>ShowDialog()</c>, không phải ở nút nào.</para>
+    /// </summary>
+    public static void ClickModalOpener(AutomationElement button, TestTrace? trace = null)
+    {
+        var (x, y) = Uia.Center(button);
+        if (x <= 0 && y <= 0)
+        {
+            // Không có toạ độ dùng được (nút bị che / chưa vẽ) — đành chịu rủi ro
+            // treo còn hơn click trượt ra nền màn hình.
+            trace?.Note("nut khong co toa do man hinh — dung Uia.Click (co the treo)");
+            Uia.Click(button);
+            return;
+        }
+        Uia.LeftClickPhysical(x, y);
+    }
+
     // ── Mở / đóng ───────────────────────────────────────────────────────────
 
-    /// <summary>AutomationId của mục submenu mở <c>frm203042</c> (frm203002.Designer.cs).</summary>
+    /// <summary>
+    /// AutomationId của mục submenu mở <c>frm203042</c> (frm203002.Designer.cs).
+    ///
+    /// <para><b>Thực tế không bao giờ khớp.</b> Đo ngày 2026-08-11: MỌI
+    /// <c>ToolStripMenuItem</c> của form này đều có AutomationId RỖNG trong cây UIA
+    /// (cầu MSAA→UIA của WinForms không đẩy <c>Name</c> của designer sang). Nên
+    /// <see cref="MenuItemText"/> mới là đường đi thật, còn hằng này chỉ là đường
+    /// thử đầu tiên cho rẻ.</para>
+    /// </summary>
     public const string MenuItemId = "IDM_CmtAuto";
 
-    /// <summary>Chữ trên mục menu — đường dự phòng khi UIA không có AutomationId.</summary>
+    /// <summary>
+    /// Chữ trên mục menu. Đây là cách nhận diện DUY NHẤT chạy được — xem
+    /// <see cref="MenuItemId"/>. Khớp theo "chứa" nên tiền tố số của WinForms
+    /// (「６ コメント自動入力登録」) không làm hỏng.
+    /// </summary>
     public const string MenuItemText = "コメント自動入力登録";
 
     /// <summary>
@@ -278,6 +322,9 @@ public static class KarteAutoCalcDialog
     /// <para>Bấm bằng nút F9 thật của thanh phím chứ không gửi VK_F9: form dùng
     /// <c>btnF9_Click</c> (frm203042.cs:117-124) và nút luôn có mặt, còn phím chỉ tới
     /// được khi tiêu điểm nằm đúng chỗ.</para>
+    ///
+    /// <para>Và bấm bằng CHUỘT VẬT LÝ — xem <see cref="ClickModalOpener"/> giải
+    /// thích vì sao Invoke sẽ treo ở đây.</para>
     /// </summary>
     public static Window OpenRegister(OchaApp app, Window list, TestTrace? trace = null)
     {
@@ -293,7 +340,16 @@ public static class KarteAutoCalcDialog
         var f9 = FindChrome(list, "btnF9", ListGridId)
             ?? throw new InvalidOperationException(
                 $"Khong thay btnF9 tren {ListId}. Chay Tc0 (-Diagnostics) roi sua ten nut.");
-        Uia.Click(f9);
+
+        // Chuột vật lý cần đúng cửa sổ nằm trên: 一覧 phải đang là foreground.
+        try
+        {
+            var hwnd = list.Properties.NativeWindowHandle.ValueOrDefault;
+            if (hwnd != IntPtr.Zero) Uia.ForceForeground(hwnd);
+        }
+        catch (Exception ex) { trace?.Note($"canh bao khi dua 一覧 len foreground: {ex.Message}"); }
+
+        ClickModalOpener(f9, trace);
         Waits.Step();
 
         return Waits.TryFor(() => FindDialogWindow(app, RegisterId, RegisterTitleFragment),
@@ -306,8 +362,10 @@ public static class KarteAutoCalcDialog
     /// <summary>F10 戻る — đóng mà không ghi gì.</summary>
     public static void Close(OchaApp app, Window dialog)
     {
+        // Cũng chuột vật lý: 戻る có thể hỏi 「破棄しますか？」 khi lưới đang bẩn, và
+        // lúc đó Invoke lại treo y như F9.
         var f10 = FindChrome(dialog, "btnF10", ListGridId);
-        if (f10 is not null) { Uia.Click(f10); }
+        if (f10 is not null) { ClickModalOpener(f10); }
         else { Uia.SendKey(InpP1Dialogs.Vk.F10); }
         Waits.Step();
     }

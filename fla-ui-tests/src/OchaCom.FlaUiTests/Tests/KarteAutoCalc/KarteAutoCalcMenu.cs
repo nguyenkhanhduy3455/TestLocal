@@ -145,17 +145,28 @@ internal static class KarteAutoCalcMenu
     /// Mọi cửa sổ popup menu đang hiện: quét CẢ desktop (<c>#32768</c> do Windows
     /// quản lý) lẫn cửa sổ top-level của app (<c>ContextMenuStrip</c> của .NET tạo
     /// cửa sổ thuộc tiến trình form, không phải lúc nào cũng nằm dưới desktop root).
+    ///
+    /// <para><b>Lọc theo processId.</b> <c>#32768</c> là lớp popup CHUNG của Windows —
+    /// mọi app đều dùng. Lần chạy 2026-08-11 quét được cả menu của VS Code đang mở
+    /// bên cạnh (File / Edit / View / Terminal…). Không lọc thì
+    /// <see cref="FindMenuItemAnywhere"/> có thể trúng mục menu của app KHÁC và test
+    /// đi bấm nhầm vào đó.</para>
     /// </summary>
     public static IEnumerable<AutomationElement> AllPopups(OchaApp app)
     {
         var found = new List<AutomationElement>();
+        var pid = app.ProcessId;
 
         try
         {
             foreach (var m in OchaApp.SharedAutomation.GetDesktop()
                                      .FindAllChildren(cf => cf.ByClassName("#32768")))
             {
-                try { if (Uia.IsOnScreen(m)) found.Add(m); }
+                try
+                {
+                    if (m.Properties.ProcessId.ValueOrDefault != pid) continue;
+                    if (Uia.IsOnScreen(m)) found.Add(m);
+                }
                 catch { /* vừa đóng */ }
             }
         }
