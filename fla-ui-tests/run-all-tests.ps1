@@ -1,6 +1,11 @@
 <#
 .SYNOPSIS
-    Chạy bộ test FlaUI cho app WinForm お茶コン.
+    Chạy TOÀN BỘ test FlaUI của app WinForm お茶コン.
+
+    Các luồng có tiền đề riêng và rủi ro riêng thì có runner riêng, đặt tên theo
+    HÀM WinForm mà chúng lái:
+      .\run-save-treatment-data.ps1   F9 登録  → modSave.SaveData   (処置データ登録)
+      .\run-fix-accounting-data.ps1   F8 会計  → modAcc.ChgAccData  (会計データ修正)
 
 .DESCRIPTION
     PHẢI chạy trên Windows, trong một phiên đăng nhập CÓ MÀN HÌNH THẬT (không RDP thu
@@ -10,10 +15,10 @@
     Đừng đụng chuột/bàn phím trong lúc test chạy — cửa sổ bị mất focus là hỏng kết quả.
 
 .EXAMPLE
-    .\run-tests.ps1
-    .\run-tests.ps1 -Filter "Tc1"
-    .\run-tests.ps1 -StepMs 1500          # chạy chậm lại để ngồi nhìn
-    .\run-tests.ps1 -Diagnostics          # đổ cây UIA để dò locator
+    .\run-all-tests.ps1
+    .\run-all-tests.ps1 -Filter "Tc1"
+    .\run-all-tests.ps1 -StepMs 1500          # chạy chậm lại để ngồi nhìn
+    .\run-all-tests.ps1 -Diagnostics          # đổ cây UIA để dò locator
 #>
 [CmdletBinding()]
 param(
@@ -39,7 +44,7 @@ $testArgs = @(
     "test", $project,
     "-c", $Configuration,
     "--logger", "console;verbosity=detailed",
-    "--logger", "trx;LogFileName=fla-ui-tests.trx"
+    "--logger", "trx;LogFileName=all-tests.trx"
 )
 
 if ($Diagnostics) {

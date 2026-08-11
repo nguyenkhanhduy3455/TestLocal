@@ -1,7 +1,7 @@
 # Luồng ParityAccountingCorrection — xác minh 会計データ修正 (lô 8)
 
-Chạy: **`.\run-parity-accounting.ps1`** — runner riêng, **không** dùng
-`run-tests.ps1` cũng **không** dùng `run-parity-savedata.ps1`.
+Chạy: **`.\run-fix-accounting-data.ps1`** — runner riêng, **không** dùng
+`run-all-tests.ps1` cũng **không** dùng `run-save-treatment-data.ps1`.
 
 ---
 
@@ -143,9 +143,7 @@ vừa chạy được vừa tự tài liệu hoá.
 Luật then chốt: 「既に…会計処理…」 phải trả lời **いいえ** (modAcc.cs:567). Trả lời
 はい là tạo 会計 mới và không bao giờ tới được `ChgAccData`.
 
-### Chuỗi thật, đo ngày 2026-08-11
-
-**Đã đi trọn chuỗi, đo 2026-08-11 11:44 — `toi duoc 会計データ修正: True`:**
+### Chuỗi thật, đo ngày 2026-08-11 — đi trọn tới đích
 
 ```
 [1] 「処置データチェックでエラーがありました。このまま続けますか?」        OK / Cancel → OK
@@ -163,7 +161,7 @@ test không có 部位・病名 nên luôn dính cảnh báo 「当月に部位�
 [1] và [2] là MessageBox **OK/Cancel**, [3] là **Yes/No** — trên Windows tiếng Anh nhãn
 ra tiếng Anh, nên mọi luật đều liệt kê cả hai thứ tiếng.
 
-Năm bài học, đều từ vấp thật:
+Tám bài học, đều từ vấp thật:
 
 1. **Với 「…続けますか？」 / 「…よろしいですか。」 thì phủ định = BỎ CUỘC**, không phải an
    toàn. Luật mặc định "trả lời phủ định" bấm Cancel và huỷ cả chuỗi F8.
@@ -271,7 +269,7 @@ DELETE FROM UNPAID WHERE pat_no = 10 AND trt_dt = '2026-08-03';
 Chuỗi trên máy bạn khác giả định thì chạy:
 
 ```powershell
-.\run-parity-accounting.ps1 -Diagnostics
+.\run-fix-accounting-data.ps1 -Diagnostics
 ```
 
 Nó dựng **cùng tiền đề** với testcase (nên cần `parity.allowSave`, và tự xoá dòng đã

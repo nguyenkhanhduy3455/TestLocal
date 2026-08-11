@@ -1,10 +1,13 @@
 ﻿<#
 .SYNOPSIS
-    Chay luong ParityAccountingCorrection — xac minh 会計データ修正 (ChgAccData, lo 8).
+    Lai 診療入力 F8 会計 → modAcc.ChgAccData (会計データ修正) tren WinForm that,
+    de xac minh phep ghi ACCDAT / PERSON_EXP cua lo 8.
+
+    Ma nguon: Tests/ParityAccountingCorrection/
 
 .DESCRIPTION
-    Runner RIENG cua luong nay. KHONG dung run-tests.ps1 va cung khong dung
-    run-parity-savedata.ps1 — moi luong co tien de rieng, rui ro rieng va cong cu
+    Runner RIENG cua luong nay. KHONG dung run-all-tests.ps1 va cung khong dung
+    run-save-treatment-data.ps1 — moi luong co tien de rieng, rui ro rieng va cong cu
     chan doan rieng.
 
     ⚠️ Luong nay GHI VAO SO TIEN: sua ACCDAT (会計 da chot) va PERSON_EXP
@@ -35,10 +38,10 @@
     Loc theo ten testcase, vd "Tc8_2".
 
 .EXAMPLE
-    .\run-parity-accounting.ps1
-    .\run-parity-accounting.ps1 -Case Tc8_2
-    .\run-parity-accounting.ps1 -StepMs 1200
-    .\run-parity-accounting.ps1 -Diagnostics
+    .\run-fix-accounting-data.ps1
+    .\run-fix-accounting-data.ps1 -Case Tc8_2
+    .\run-fix-accounting-data.ps1 -StepMs 1200
+    .\run-fix-accounting-data.ps1 -Diagnostics
 #>
 [CmdletBinding()]
 param(
@@ -69,7 +72,7 @@ $testArgs = @(
     "-c", $Configuration,
     "--filter", $filter,
     "--logger", "console;verbosity=detailed",
-    "--logger", "trx;LogFileName=parity-accounting.trx"
+    "--logger", "trx;LogFileName=fix-accounting-data.trx"
 )
 
 Write-Host "dotnet $($testArgs -join ' ')" -ForegroundColor Cyan

@@ -27,7 +27,7 @@ namespace OchaCom.FlaUiTests.Tests.ParityAccountingCorrection;
 /// <c>parity.allowSave</c> như testcase thật, và teardown xoá phần đã seed.</para>
 ///
 /// <code>
-///   .\run-parity-accounting.ps1 -Diagnostics
+///   .\run-fix-accounting-data.ps1 -Diagnostics
 /// </code>
 /// </summary>
 [TestFixture]

@@ -1,7 +1,7 @@
 # Luồng ParitySaveData — xác minh bug parity của `modSave.SaveData`
 
-Chạy: **`.\run-parity-savedata.ps1`** (ở thư mục gốc `fla-ui-tests`), **không** dùng
-`run-tests.ps1`.
+Chạy: **`.\run-save-treatment-data.ps1`** (ở thư mục gốc `fla-ui-tests`), **không** dùng
+`run-all-tests.ps1`.
 
 ---
 
@@ -110,7 +110,7 @@ lượt chạy đỏ vô ích.
 
 ### ✅ Đã có cây UIA của `frm902003` — giải mã 2026-08-10
 
-Chạy `.\run-parity-savedata.ps1 -Diagnostics` (2/2 passed, 139 phần tử).
+Chạy `.\run-save-treatment-data.ps1 -Diagnostics` (2/2 passed, 139 phần tử).
 
 **Mở dialog**: click ô cột `部位` (ô index **1**) của **bất kỳ dòng 処置 nào** —
 `grdRegi_CellClick` chỉ đòi cột đúng và `BuiDispFlg != 99`, KHÔNG đòi 処置 phải cần 部位.

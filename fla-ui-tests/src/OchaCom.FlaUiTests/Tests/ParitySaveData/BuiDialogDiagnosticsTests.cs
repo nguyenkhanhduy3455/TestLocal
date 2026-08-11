@@ -25,7 +25,7 @@ namespace OchaCom.FlaUiTests.Tests.ParitySaveData;
 /// Nên: chạy công cụ này MỘT lần, gửi lại 2 file .txt sinh ra, rồi tôi viết tiếp
 /// 2a/2b/2c bằng locator thật.
 ///
-///   .\run-tests.ps1 -Filter "ParityDiagnostics"
+///   .\run-all-tests.ps1 -Filter "ParityDiagnostics"
 ///   (hoặc)  dotnet test --filter "FullyQualifiedName~ParityDiagnostics"
 ///
 /// File ra nằm ở  bin\Debug\net8.0-windows\artifacts\  và cũng được đính vào báo cáo NUnit.

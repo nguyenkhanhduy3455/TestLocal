@@ -1,9 +1,12 @@
 ﻿<#
 .SYNOPSIS
-    Chạy luồng ParitySaveData — xác minh các bug parity của modSave.SaveData trên WinForm.
+    Lái 診療入力 F9 登録 → modSave.SaveData (処置データ登録) trên WinForm thật,
+    để xác minh các bug parity của hàm đó.
+
+    Mã nguồn: Tests/ParitySaveData/
 
 .DESCRIPTION
-    Runner RIÊNG của luồng này, không dùng chung với run-tests.ps1.
+    Runner RIÊNG của luồng này, không dùng chung với run-all-tests.ps1.
 
     Lý do tách: đây là luồng DUY NHẤT bấm F9 登録 nên GHI THẬT xuống DB, có tiền đề
     riêng (parity.allowSave, bệnh nhân test) và có cả công cụ chẩn đoán riêng. Gộp vào
@@ -24,10 +27,10 @@
     Lọc theo tên testcase, vd "Tc2d1".
 
 .EXAMPLE
-    .\run-parity-savedata.ps1
-    .\run-parity-savedata.ps1 -Case Tc2d1
-    .\run-parity-savedata.ps1 -StepMs 1200      # chạy chậm để ngồi nhìn
-    .\run-parity-savedata.ps1 -Diagnostics      # đổ cây UIA dialog 部位選択
+    .\run-save-treatment-data.ps1
+    .\run-save-treatment-data.ps1 -Case Tc2d1
+    .\run-save-treatment-data.ps1 -StepMs 1200      # chạy chậm để ngồi nhìn
+    .\run-save-treatment-data.ps1 -Diagnostics      # đổ cây UIA dialog 部位選択
 #>
 [CmdletBinding()]
 param(
@@ -60,7 +63,7 @@ $testArgs = @(
     "-c", $Configuration,
     "--filter", $filter,
     "--logger", "console;verbosity=detailed",
-    "--logger", "trx;LogFileName=parity-savedata.trx"
+    "--logger", "trx;LogFileName=save-treatment-data.trx"
 )
 
 Write-Host "dotnet $($testArgs -join ' ')" -ForegroundColor Cyan

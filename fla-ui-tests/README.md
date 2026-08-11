@@ -71,10 +71,10 @@ Khoá hay dùng:
 ## 4. Chạy
 
 ```powershell
-.\run-tests.ps1                    # cả bộ
-.\run-tests.ps1 -Filter Tc1        # một testcase
-.\run-tests.ps1 -StepMs 1500       # chậm lại để nhìn
-.\run-tests.ps1 -Diagnostics       # đổ cây UIA (xem mục 7)
+.\run-all-tests.ps1                    # cả bộ
+.\run-all-tests.ps1 -Filter Tc1        # một testcase
+.\run-all-tests.ps1 -StepMs 1500       # chậm lại để nhìn
+.\run-all-tests.ps1 -Diagnostics       # đổ cây UIA (xem mục 7)
 ```
 
 Hoặc trực tiếp:
@@ -136,7 +136,7 @@ src/OchaCom.FlaUiTests/
 
 > Một luồng có tiền đề riêng / rủi ro riêng thì để trong thư mục con của `Tests/` cùng
 > với helper của chính nó, kèm README và runner riêng — thay vì rải vào `Screens/`,
-> `Data/` rồi thêm một nhánh `-Filter` nữa vào `run-tests.ps1`. Đọc thư mục là biết
+> `Data/` rồi thêm một nhánh `-Filter` nữa vào `run-all-tests.ps1`. Đọc thư mục là biết
 > luồng gồm những gì và chạy bằng cách nào.
 
 ### Vài quyết định đáng biết
@@ -172,7 +172,7 @@ khác (bản Windows cũ, control tuỳ biến), test sẽ đỏ với thông b�
 AutomationId=…"*. Cách xử lý:
 
 ```powershell
-.\run-tests.ps1 -Diagnostics
+.\run-all-tests.ps1 -Diagnostics
 ```
 
 Nó mở app, đi tới 診療入力, rồi đổ cây UIA thật ra
@@ -202,12 +202,20 @@ phải giữ nguyên hành vi.
 ## 8b. Các luồng có runner riêng
 
 Một số luồng có tiền đề riêng, rủi ro riêng, hoặc công cụ chẩn đoán riêng — chúng nằm
-trong thư mục con của `Tests/` và có script chạy riêng, KHÔNG đi qua `run-tests.ps1`.
+trong thư mục con của `Tests/` và có script chạy riêng, KHÔNG đi qua `run-all-tests.ps1`.
 
-| Luồng | Thư mục | Chạy | Ghi DB? |
+Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên thư mục test —
+đọc tên file là biết chạy nó thì cái gì trong app chạy theo.
+
+| Chạy | Phím → hàm WinForm | Thư mục | Ghi DB? |
 |---|---|---|---|
-| ParitySaveData | `Tests/ParitySaveData/` | `.\run-parity-savedata.ps1` | ⚠️ **CÓ** — `trn_trn` |
-| ParityAccountingCorrection | `Tests/ParityAccountingCorrection/` | `.\run-parity-accounting.ps1` | ⚠️ **CÓ** — `acc_dat` + `person_exp` (**sổ tiền**) |
+| `.\run-save-treatment-data.ps1` | F9 登録 → `modSave.SaveData` (処置データ登録) | `Tests/ParitySaveData/` | ⚠️ **CÓ** — `trn_trn` |
+| `.\run-fix-accounting-data.ps1` | F8 会計 → `modAcc.ChgAccData` (会計データ修正) | `Tests/ParityAccountingCorrection/` | ⚠️ **CÓ** — `acc_dat` + `person_exp` (**sổ tiền**) |
+
+> Thêm luồng mới thì giữ đúng quy ước này: `run-<động từ>-<đối tượng>.ps1` mô tả việc
+> mà WinForm làm, chứ không phải `run-<tên thư mục test>.ps1`. Tên cũ
+> (`run-parity-savedata` / `run-parity-accounting`) chỉ nói "đây là test parity" —
+> thứ mà mọi luồng ở đây đều là, nên không phân biệt được gì.
 
 **ParitySaveData** xác minh các bug parity của `modSave.SaveData` trên WinForm thật. Nó
 là luồng DUY NHẤT bấm F9 登録 nên **ghi thật xuống DB** (F9 ghi lại toàn bộ 処置行 của
