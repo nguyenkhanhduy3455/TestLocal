@@ -53,6 +53,8 @@ public sealed class TestTrace : IDisposable
         _dir = Path.Combine(baseDir, Safe(name));
         Directory.CreateDirectory(_dir);
         _logPath = Path.Combine(_dir, "_trace.log");
+        // Xoá log của lượt trước: Write nối thêm từng dòng nên không tự cắt.
+        try { File.Delete(_logPath); } catch { /* chưa có, hoặc đang bị giữ */ }
 
         Write($"=== {name} - bat dau {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
         Write($"    anh + log: {_dir}");
@@ -126,10 +128,32 @@ public sealed class TestTrace : IDisposable
         }
     }
 
+    /// <summary>
+    /// Ghi một dòng ra <b>ba</b> chỗ, và lý do cần cả ba:
+    ///
+    /// <list type="bullet">
+    ///   <item><c>TestContext.Out</c> — vào báo cáo NUnit, nhưng NUnit <b>giữ lại</b> tới
+    ///     khi testcase kết thúc.</item>
+    ///   <item><c>TestContext.Progress</c> — <b>hiện NGAY</b> trên console.</item>
+    ///   <item>File <c>_trace.log</c> — ghi ngay từng dòng.</item>
+    /// </list>
+    ///
+    /// <para>Hai chỗ sau là bài học từ 2026-08-11: một testcase treo giữa chừng và console
+    /// <b>không in ra một dòng nào</b> của nó — chỉ thấy testcase trước đó xanh rồi im
+    /// lặng. Nhật ký đầy đủ nhưng chỉ xuất hiện khi testcase kết thúc thì vô dụng đúng
+    /// vào lúc cần nhất. Treo là lúc phải biết nó dừng ở bước nào, nên mỗi dòng phải ra
+    /// khỏi bộ đệm ngay.</para>
+    /// </summary>
     private void Write(string line)
     {
         _buffer.AppendLine(line);
         TestContext.Out.WriteLine(line);
+
+        try { TestContext.Progress.WriteLine(line); }
+        catch { /* không có console (chạy trong IDE) */ }
+
+        try { File.AppendAllText(_logPath, line + Environment.NewLine); }
+        catch { /* ghi log hỏng thì cũng không được làm hỏng testcase */ }
     }
 
     public void Dispose()

@@ -297,6 +297,15 @@ public static class AccountingFlow
 
         trace?.Note("F8 da dong 診療入力 va mo 窓口精算 — bam 「F10 戻る」 de lui");
 
+        // ⚠️ ĐƯA CỬA SỔ LÊN TRƯỚC RỒI MỚI CLICK.
+        // Uia.MouseClick di chuột thật tới giữa nút rồi bấm. Cửa sổ chưa ở tiền cảnh thì
+        // cú bấm đầu tiên chỉ KÍCH HOẠT cửa sổ, không tới được nút — nhìn từ ngoài là
+        // "bấm rồi mà không có gì xảy ra". TriggerAccounting đã gọi screen.Focus() vì
+        // đúng lý do này; ở đây tôi quên, và Tc8-2 đứng im ở màn 窓口精算 hai lượt liền.
+        try { seisan.SetForeground(); } catch { /* chưa nhận foreground cũng vẫn thử click */ }
+        try { seisan.Focus(); } catch { /* như trên */ }
+        Waits.Step();
+
         // Click CHUỘT THẬT: nút của app là GradientButton tự vẽ, cùng lý do với btnF8
         // ở TriggerAccounting. Uia.Click (InvokePattern) có thể "thành công" mà không
         // có gì xảy ra, và khi đó chỗ hỏng lộ ra ở tận bước sau.
@@ -304,6 +313,7 @@ public static class AccountingFlow
             ?? throw new InvalidOperationException(
                 "Màn 窓口精算 đang mở nhưng không thấy nút 「F10 戻る」 (btnF10) để lui. " +
                 "Không đóng được thì testcase sau không mở lại được 診療入力.");
+        trace?.Note($"bam nut 「{Uia.NameOf(back).Replace("\n", " ")}」 (btnF10)");
         Uia.MouseClick(back);
         Waits.Step();
 
@@ -325,7 +335,10 @@ public static class AccountingFlow
         }
 
         Waits.Until(() => app.Window("frm204002") is null,
-                    "man 窓口精算 dong lai sau khi bam 「F10 戻る」", TimeSpan.FromSeconds(20));
+                    "man 窓口精算 dong lai sau khi bam 「F10 戻る」 " +
+                    "(nut co the khong nhan cu bam vi cua so chua o tien canh)",
+                    TimeSpan.FromSeconds(20));
+        trace?.Note("man 窓口精算 da dong");
         return true;
     }
 
