@@ -28,6 +28,9 @@
     Còn mở — testcase duy nhất còn ở chế độ đo, không assert:
       Tc8  Lưới 42 cột cuộn ngang thế nào? Có ghim cột 処置コード không?
 
+    Tc0 (đổ cây UIA) mang [Explicit] nên lần chạy đủ KHÔNG gọi tới — nó tốn 2 phút
+    mà không assert gì. Chỉ chạy qua -Diagnostics.
+
     KHÔNG CÒN TESTCASE NÀO GHI DB. Bản trước có Tc7 bấm F9 để xem tham chiếu chết
     có mất khi lưu không — đã đo xong (chkauto 100-0 còn (108-7, 0-0)), giữ lại
     chỉ là phá dữ liệu thêm lần nữa cho cùng một đáp án. Vì thế cờ allowSave và

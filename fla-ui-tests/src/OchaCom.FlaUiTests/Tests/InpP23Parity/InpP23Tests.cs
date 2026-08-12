@@ -64,9 +64,12 @@ namespace OchaCom.FlaUiTests.Tests.InpP23Parity;
 /// ═══════════════════════════════════════════════════════════════════════════
 /// CHẠY
 /// ═══════════════════════════════════════════════════════════════════════════
-///   .\run-inp-p23-parity.ps1              ← chạy đủ, không cần cờ gì
+///   .\run-inp-p23-parity.ps1              ← chạy đủ (Tc1..Tc8), không cần cờ gì
 ///   .\run-inp-p23-parity.ps1 -Case Tc8
 ///   .\run-inp-p23-parity.ps1 -Diagnostics ← chỉ Tc0, khi một Tc khác đỏ
+///
+/// Tc0 mang <c>[Explicit]</c> nên KHÔNG chạy trong lần chạy đủ: nó tốn 2 phút mà
+/// không assert gì, chỉ hữu ích khi cần đối chiếu cây UIA thật.
 /// </summary>
 [TestFixture]
 [Category("inp-p23-parity")]
@@ -115,8 +118,11 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
     // Tc0 — chẩn đoán, KHÔNG assert
     // ═══════════════════════════════════════════════════════════════════════
 
-    [Test, Order(0)]
-    [Description("Tc0 — mở cả 4 form và đổ cây UIA; dùng khi Tc khác đỏ")]
+    // [Explicit]: lần chạy đủ KHÔNG gọi Tc0 nữa. Nó tốn 2 phút (mở + đổ cây 4 form)
+    // mà không assert gì — chỉ hữu ích khi một Tc khác đỏ vì Designer đổi tên
+    // control. -Diagnostics lọc đích danh Tc0 nên vẫn chạy được.
+    [Test, Order(0), Explicit]
+    [Description("Tc0 — mở cả 4 form và đổ cây UIA; chỉ chạy qua -Diagnostics")]
     public void Tc0_DumpUiaTree()
     {
         using var trace = TestTrace.Begin();
@@ -506,48 +512,90 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
         var grid = KarteAutoCalcDialog.FindChrome(list, InpP23Dialog.ListGridId);
         if (grid is null) { Log("=== KQ-8 === khong thay luoi"); Assert.Pass(); return; }
 
-        var scroll = grid.Patterns.Scroll.PatternOrDefault;
-        if (scroll is null)
+        // Lần chạy 09:53 hỏng vì tôi hỏi ScrollPattern trên CHÍNH lưới. Cầu MSAA→UIA
+        // của WinForms không phơi pattern đó trên DataGridView; thanh cuộn là phần
+        // tử CON riêng (ControlType.ScrollBar). Tìm nó rồi mới cuộn được.
+        var bars = Uia.Children(grid)
+            .Where(c => Uia.ControlTypeOf(c) == FlaUI.Core.Definitions.ControlType.ScrollBar)
+            .ToList();
+        Log($"=== KQ-8 === luoi co {bars.Count} thanh cuon");
+        foreach (var b in bars)
         {
-            Log("=== KQ-8 === luoi khong co ScrollPattern — khong do duoc bang UIA");
-            Assert.Pass("khong do duoc");
+            var r = b.BoundingRectangle;
+            Log($"   id='{Uia.AutomationIdOf(b)}' name='{Uia.NameOf(b)}' " +
+                $"{(int)r.Width}x{(int)r.Height} @({(int)r.X},{(int)r.Y})");
+        }
+
+        // Thanh NGANG = rộng hơn cao.
+        var hBar = bars.FirstOrDefault(b => b.BoundingRectangle.Width > b.BoundingRectangle.Height);
+        if (hBar is null)
+        {
+            Log("=== KQ-8 === KHONG co thanh cuon ngang ⇒ luoi 42 cot van vua man hinh?");
+            Log("   Neu dung vay thi ban web cung khong can ghim cot.");
+            Assert.Pass("khong co thanh cuon ngang");
             return;
         }
 
-        Log($"=== KQ-8 === cuon ngang duoc? {scroll.HorizontallyScrollable.ValueOrDefault}");
+        LogHeaderPositions("TRUOC khi cuon", grid);
 
-        // Toạ độ X của ô 処置コード trên dòng tiêu đề, trước và sau khi cuộn hết sang
-        // phải. Giữ nguyên X ⇒ cột bị GHIM; trôi đi ⇒ cuộn bình thường.
-        var beforeX = HeaderCellX(grid, 0);
-        Log($"=== KQ-8 === truoc khi cuon: 処置コード o X = {beforeX}");
+        // Ưu tiên RangeValue (đặt thẳng về max); không có thì đẩy bằng chuột thật
+        // vào nửa phải của thanh — mỗi cú là một trang.
+        var range = hBar.Patterns.RangeValue.PatternOrDefault;
+        if (range is not null)
+        {
+            try
+            {
+                range.SetValue(range.Maximum.ValueOrDefault);
+                Log("=== KQ-8 === da cuon bang RangeValue.SetValue(max)");
+            }
+            catch (Exception e) { Log($"=== KQ-8 === RangeValue loi: {e.Message}"); }
+        }
+        else
+        {
+            var r = hBar.BoundingRectangle;
+            var x = (int)(r.X + r.Width - 12);
+            var y = (int)(r.Y + r.Height / 2);
+            for (var i = 0; i < 12; i++) { Uia.LeftClickPhysical(x, y); Thread.Sleep(120); }
+            Log("=== KQ-8 === da cuon bang 12 cu click vao dau phai thanh cuon");
+        }
 
-        try { scroll.SetScrollPercent(100, -1); }
-        catch (Exception e) { Log($"=== KQ-8 === khong cuon duoc: {e.Message}"); }
         Waits.Step();
-        Thread.Sleep(700);
+        Thread.Sleep(800);
+        LogHeaderPositions("SAU khi cuon het phai", grid);
 
-        var afterX = HeaderCellX(grid, 0);
-        Log($"=== KQ-8 === sau khi cuon het phai: 処置コード o X = {afterX}");
-        Log("   X GIU NGUYEN ⇒ WinForm GHIM cot dau — ban web phai ghim theo");
-        Log("   X doi nhieu / am ⇒ cuon binh thuong — ban web dang dung");
+        Log("   Cot dau GIU NGUYEN X, cac cot sau doi ⇒ WinForm GHIM cot — web phai ghim theo");
+        Log("   Cot dau cung troi di ⇒ cuon binh thuong — web dang dung");
 
         // CÒN MỞ nên KHÔNG assert: lần chạy này chính là phép đo. Chốt được rồi thì
         // đổi thành assert như các Tc trên.
         trace.Step("cuon ngang");
     }
 
-    /// <summary>Toạ độ X của ô thứ <paramref name="index"/> trên dòng tiêu đề.</summary>
-    private static string HeaderCellX(AutomationElement grid, int index)
+    /// <summary>
+    /// Toạ độ X của vài ô đầu và ô cuối trên dòng tiêu đề, kèm số ô đang thấy được.
+    ///
+    /// <para>So sánh X của ô ĐẦU trước/sau khi cuộn là cách duy nhất phân biệt
+    /// 「ghim cột」 với 「cuộn bình thường」: cả hai đều làm các cột sau đổi chỗ.</para>
+    /// </summary>
+    private void LogHeaderPositions(string when, AutomationElement grid)
     {
         try
         {
             var header = new WinFormsGrid(grid).Rows(limit: 1).FirstOrDefault();
-            if (header is null) return "(khong doc duoc dong tieu de)";
+            if (header is null) { Log($"=== KQ-8 === {when}: khong doc duoc dong tieu de"); return; }
+
             var cells = Uia.Children(header.Element).ToList();
-            if (index >= cells.Count) return "(khong du o)";
-            return ((int)cells[index].BoundingRectangle.X).ToString();
+            var onScreen = cells.Count(Uia.IsOnScreen);
+            var parts = new List<string>();
+            foreach (var i in new[] { 0, 1, 2, cells.Count - 1 })
+            {
+                if (i < 0 || i >= cells.Count) continue;
+                parts.Add($"[{i}] {Txt.N(Uia.ValueOf(cells[i]))} X={(int)cells[i].BoundingRectangle.X}");
+            }
+            Log($"=== KQ-8 === {when}: {cells.Count} o, {onScreen} o dang thay duoc");
+            Log("   " + string.Join("  |  ", parts));
         }
-        catch (Exception e) { return $"(loi: {e.Message})"; }
+        catch (Exception e) { Log($"=== KQ-8 === {when}: loi doc — {e.Message}"); }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
