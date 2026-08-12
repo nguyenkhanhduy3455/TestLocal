@@ -11,29 +11,32 @@
     Runner RIÊNG của luồng này. KHÔNG dùng run-all-tests.ps1, KHÔNG sửa
     run-karte-auto-calc.ps1 hay run-inp-p1-dialog.ps1.
 
-    ⚠️ ĐÂY LÀ LUỒNG ĐIỀU TRA, KHÔNG PHẢI HỒI QUY.
-    Phần lớn testcase GHI LOG rồi Pass, không assert. Chạy xong lấy TOÀN BỘ các
-    dòng chứa "=== KQ-" gửi lại; mỗi khối trả lời đúng một câu.
+    ĐÂY LÀ LUỒNG HỒI QUY. Bản đầu là luồng ĐIỀU TRA — ghi log rồi Pass, để người
+    đọc tự luận. Bảy câu đó đã có đáp án (đo 2026-08-11) nên giờ mỗi testcase
+    ASSERT đúng con số đã đo: WinForm đổi, hoặc ai đó sửa harness làm phép đo
+    lệch đi, thì test đỏ ngay.
 
-    Bảy câu — và CHỈ bảy, vì mọi thứ khác đã đọc thẳng ra từ source rồi:
+    Đã ghim:
+      Tc1  一覧 có 12 cột (自動算定) và 42 cột (必要病名)
+      Tc2  ESC và Enter KHÔNG làm gì trên form 登録
+      Tc3  Rời ô với mã < 100 → xoá trắng cả ba ô, im lặng
+      Tc4  Rời ô mã hợp lệ → 算定処置名 hiện NGAY; mã không có → xoá trắng
+      Tc5  Click NHÃN コード mở 処置検索 / 病名検索
+      Tc6  Đóng dialog → con trỏ 一覧 về dòng đầu
+      Tc7  Tham chiếu chết mở ra TRẮNG (chỉ đọc)
 
-      KQ-1  ESC / Enter trên form 登録 làm gì?   ← quan trọng nhất
-      KQ-2  Rời ô 枝番 có tra tên NGAY không?
-      KQ-3  Rời ô コード với mã < 100 có xoá trắng 3 ô không?
-      KQ-4  Click NHÃN コード có mở popup tìm kiếm (frm902011 / frm902010) không?
-      KQ-5  Đóng dialog xong 一覧 có giữ dòng đang chọn không?
-      KQ-6  一覧 hiện đủ 5 算定処置 / 20 病名 chứ? (source nói 12 và 42 cột)
-      KQ-7  Lưu 処置 có tham chiếu chết thì nó biến mất thật chứ? (GHI DB)
+    Còn mở — testcase duy nhất còn ở chế độ đo, không assert:
+      Tc8  Lưới 42 cột cuộn ngang thế nào? Có ghim cột 処置コード không?
 
-    Vì sao KQ-1 quan trọng nhất: repo có luật 「ESC = phím End (登録/確定), KHÔNG
-    phải cancel」, nhưng frm203039/frm203037 kế thừa OchaFramework.Forms.BaseDialog
-    — DLL ngoài, không có source trong repo nên KHÔNG đọc ra được. Nếu ESC thật sự
-    là 登録 mà dialog bên web đang ĐÓNG thì người dùng bấm ESC là mất dữ liệu.
+    KHÔNG CÒN TESTCASE NÀO GHI DB. Bản trước có Tc7 bấm F9 để xem tham chiếu chết
+    có mất khi lưu không — đã đo xong (chkauto 100-0 còn (108-7, 0-0)), giữ lại
+    chỉ là phá dữ liệu thêm lần nữa cho cùng một đáp án. Vì thế cờ allowSave và
+    tham số -ReadOnly đã bỏ.
 
-    ⚠️ GHI DB: chỉ Tc7 ghi, và chỉ khi bật inpP1.allowSave. Nó bấm F9 trên 処置
-    100-0 — master TOÀN PHÒNG KHÁM. Câu khôi phục in sẵn trong log:
-        UPDATE chkauto SET cd2=108, sb2=15 WHERE trt_cd=100 AND trt_sb=0;  -- SQL Server
-    Tc0..Tc6 chỉ đọc (Tc3/Tc4 có gõ vào ô nhưng KHÔNG bấm F9, và đóng bằng F10).
+    Chỉ nên THÊM testcase vào đây khi hành vi nằm trong DLL không có source
+    (phím, focus, thứ tự Tab), khi source có nhánh bị comment-out, hoặc khi cần
+    nhìn tận mắt trước một thay đổi phá dữ liệu. Đếm cả đợt: 14 câu hỏi thì 13
+    câu đọc source hoặc query DB là ra.
 
     Tiền đề:
       - App đang chạy ở màn 診療入力 (UiTestBase tự dựng).
@@ -41,25 +44,20 @@
         không RDP thu nhỏ). Đừng đụng chuột/bàn phím trong lúc chạy.
 
 .PARAMETER Diagnostics
-    CHẠY CÁI NÀY TRƯỚC TIÊN. Chỉ chạy Tc0: mở cả 4 form rồi đổ cây UIA ra artifact.
-    Tên control trong InpP23Dialog.cs (txtCd1 / txtSb1 / lblDisCd1…) mới là SUY ĐOÁN
-    từ INP.Lib.GetControl — phải xem cây thật rồi sửa lại, nếu không Tc2..Tc7 sẽ
-    báo "khong thay o" chứ không phải WinForm sai.
+    Chỉ chạy Tc0: mở cả 4 form rồi đổ cây UIA ra artifact. KHÔNG cần chạy trước
+    nữa — tên control đã chốt (txtCd01 / txtSb01 / txtDisCd01, đệm 0 hai chữ số
+    theo INP.Lib.GetControl; nhãn thì lblCd1 / lblDisCd1, không đệm).
 
-.PARAMETER ReadOnly
-    TẮT ghi DB. Mặc định runner này BẬT inpP1.allowSave (chỉ Tc7 dùng tới) bằng
-    biến môi trường OCHA_INP_P1_ALLOW_SAVE của riêng tiến trình dotnet test —
-    KHÔNG sửa testsettings.local.json. Cố ý làm vậy: cờ đó dùng chung với luồng
-    InpP1Dialogs, bật trong file cấu hình là vô tình cho phép luôn các testcase
-    ghi của luồng kia (TRTSTATE + chkprm) mà không ai yêu cầu.
+    Dùng khi một testcase đỏ với 「khong thay o …」: nghĩa là Designer đã đổi, và
+    cây UIA thật là thứ duy nhất nói được tên mới.
 
 .PARAMETER Case
     Lọc theo tên testcase, vd "Tc4".
 
 .EXAMPLE
-    .\run-inp-p23-parity.ps1 -Diagnostics
-    .\run-inp-p23-parity.ps1
-    .\run-inp-p23-parity.ps1 -Case Tc2
+    .\run-inp-p23-parity.ps1                 # chay du 9 testcase
+    .\run-inp-p23-parity.ps1 -Case Tc8       # chi cau con mo
+    .\run-inp-p23-parity.ps1 -Diagnostics    # chi Tc0, khi mot Tc khac do
     .\run-inp-p23-parity.ps1 -StepMs 1500
 #>
 [CmdletBinding()]
@@ -67,7 +65,6 @@ param(
     [string]$Case = "",
     [int]$StepMs = -1,
     [switch]$Diagnostics,
-    [switch]$ReadOnly,
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug"
 )
@@ -76,22 +73,6 @@ $ErrorActionPreference = "Stop"
 $project = Join-Path $PSScriptRoot "src\OchaCom.FlaUiTests\OchaCom.FlaUiTests.csproj"
 
 if ($StepMs -ge 0) { $env:OCHA_STEP_MS = "$StepMs" }
-
-# Tc7 phai bam F9 that thi moi tra loi duoc KQ-7. Bat qua bien moi truong cho
-# RIENG lan chay nay, khong sua testsettings.local.json (co do dung chung voi
-# luong InpP1Dialogs).
-if ($ReadOnly) {
-    $env:OCHA_INP_P1_ALLOW_SAVE = "false"
-    Write-Host "inpP1.allowSave = false  -> Tc7 se tu bo qua, khong ghi DB." -ForegroundColor DarkGray
-} else {
-    $env:OCHA_INP_P1_ALLOW_SAVE = "true"
-    Write-Host ""
-    Write-Host "!! inpP1.allowSave = true -> Tc7 SE GHI THAT vao chkauto (master toan phong kham)." -ForegroundColor Yellow
-    Write-Host "   Doi tuong: 処置 100-0. Khoi phuc sau khi chay:" -ForegroundColor Yellow
-    Write-Host "     UPDATE chkauto SET cd2=108, sb2=15 WHERE trt_cd=100 AND trt_sb=0;  -- SQL Server" -ForegroundColor Yellow
-    Write-Host "   Dung ghi thi chay lai voi -ReadOnly." -ForegroundColor DarkGray
-    Write-Host ""
-}
 
 $ns = "OchaCom.FlaUiTests.Tests.InpP23Parity"
 
@@ -119,9 +100,10 @@ $artifacts = Join-Path $PSScriptRoot "src\OchaCom.FlaUiTests\bin\$Configuration\
 
 Write-Host ""
 Write-Host "=== Sau khi chay, gui lai ===" -ForegroundColor Yellow
-Write-Host "1. TAT CA cac dong chua '=== KQ-' trong log tren  <- QUAN TRONG NHAT"
-Write-Host "2. $artifacts\p23-*.uia.txt   (cay UIA cua 4 form)"
-Write-Host "3. $artifacts   - nhat ky tung buoc + anh man hinh"
+Write-Host "1. Testcase nao DO — thong bao assert noi ro cho lech"
+Write-Host "2. Cac dong '=== KQ-8' — cau con mo (cuon ngang)"
+Write-Host "3. $artifacts\p23-*.uia.txt   (cay UIA cua 4 form, chi khi chay -Diagnostics)"
+Write-Host "4. $artifacts   - nhat ky tung buoc + anh man hinh"
 
 # Lọc sẵn các dòng KQ- ra một file cho dễ copy.
 $trx = Get-ChildItem -Path (Join-Path $PSScriptRoot "src\OchaCom.FlaUiTests") -Filter "inp-p23-parity.trx" -Recurse -ErrorAction SilentlyContinue |

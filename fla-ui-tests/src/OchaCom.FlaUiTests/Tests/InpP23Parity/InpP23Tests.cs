@@ -6,88 +6,88 @@ using OchaCom.FlaUiTests.Tests.KarteAutoCalc;
 namespace OchaCom.FlaUiTests.Tests.InpP23Parity;
 
 /// <summary>
-/// <b>自動算定 (frm203038/039) + 必要病名 (frm203036/037)</b> — luồng ĐIỀU TRA cho
-/// cặp 2 và cặp 3, không phải luồng hồi quy.
+/// <b>自動算定 (frm203038/039) + 必要病名 (frm203036/037)</b> — luồng HỒI QUY.
 ///
 /// ═══════════════════════════════════════════════════════════════════════════
-/// VÌ SAO CHỈ CÒN NHỮNG CÂU NÀY
+/// VÌ SAO ĐỔI TỪ ĐIỀU TRA SANG HỒI QUY
 /// ═══════════════════════════════════════════════════════════════════════════
-/// Phần lớn hành vi của hai cặp đã đọc thẳng ra được từ source và KHÔNG cần đo:
+/// Bản đầu của file này ghi log rồi Pass, kèm mấy dòng 「nếu X thì kết luận Y」 để
+/// người đọc tự luận. Bảy câu đó ĐÃ CÓ ĐÁP ÁN (đo 2026-08-11), nên giữ nguyên kiểu
+/// ấy thì mỗi lần chạy chỉ in lại thứ đã biết — tốn 4 phút mà không phát hiện
+/// được gì.
 ///
-///   · số cột 一覧          — <c>_viewItem</c>: frm203038 có 12 cột, frm203036 có 42
-///   · tra tên 2 nhánh      — <c>getTrtNm</c> / <c>getDisNm</c>
-///   · dồn slot khi lưu     — <c>setInputData</c> 「空行は詰める」
-///   · xoá khi rỗng         — <c>updateProc</c> 「1件も存在しない場合、登録しない」
-///   · 算定内容             — nhãn TĨNH ở frm203039.Designer.cs:460, không bind dữ liệu
-///
-/// Còn lại đúng bảy câu, và tất cả đều rơi vào một trong hai loại:
-/// <list type="bullet">
-///   <item>nằm trong <c>OchaFramework.dll</c> — KHÔNG có source trong repo (phím);</item>
-///   <item>là hành vi tương tác chỉ thấy khi chạy (Leave, popup, con trỏ lưới).</item>
-/// </list>
-///
-/// <para><b>Cách đọc kết quả</b>: chạy xong lấy toàn bộ dòng <c>=== KQ-</c> gửi lại.</para>
+/// Giờ mỗi testcase ASSERT đúng con số đã đo. WinForm đổi (nâng cấp bản master,
+/// sửa Designer) hoặc ai đó sửa harness làm phép đo lệch đi thì test đỏ ngay, thay
+/// vì im lặng in ra một con số khác.
 ///
 /// ═══════════════════════════════════════════════════════════════════════════
-/// BẢY CÂU
+/// ĐÃ CHỐT — các testcase dưới đây GHIM lại, không hỏi lại nữa
 /// ═══════════════════════════════════════════════════════════════════════════
-///  KQ-1 Bàn phím trên form 登録: ESC làm gì? Enter làm gì?
-///        → Repo có luật 「ESC = phím End (登録/確定), KHÔNG phải cancel」. Nhưng
-///          frm203039/frm203037 kế thừa <c>OchaFramework.Forms.BaseDialog</c> — DLL
-///          ngoài, không có source. Nếu ESC thật sự là 登録 mà bản web đang đóng
-///          dialog thì người dùng bấm ESC là MẤT dữ liệu vừa nhập.
-///  KQ-2 Rời ô 枝番 (Leave) có tra tên NGAY không?
-///        → source nói có (<c>txtSb_Leave</c>, frm203039.cs:186-200). Bản web hiện
-///          chỉ biết đúng/sai lúc bấm F9 ⇒ gõ xong không thấy tên. Cần xác nhận
-///          để biết phải thêm endpoint tra tên theo (cd, sb).
-///  KQ-3 Rời ô コード với mã &lt; 100 có XOÁ TRẮNG 3 ô không?
-///        → <c>txtCd_Leave</c> (frm203039.cs:177-185) nói có, và im lặng không báo lỗi.
-///  KQ-4 CLICK vào NHÃN 算定処置コード có mở 処置検索 (frm902011) không?
-///        → nhãn chứ không phải nút — hiếm, dễ bỏ sót. Tương tự 病名コード → frm902010.
-///  KQ-5 Đóng dialog xong, 一覧 có giữ nguyên dòng đang chọn không?
-///        → frm203038.defData gọi lại <c>getViewData()</c>, phần giữ vị trí dòng bị
-///          COMMENT OUT (frm203038.cs:233-238). Nếu con trỏ nhảy về đầu thì bản web
-///          cũng phải nhảy về đầu.
-///  KQ-6 一覧 hiện ĐỦ 5 算定処置 / 20 病名 chứ? Cuộn ngang thế nào?
-///        → source nói 12 và 42 cột. Bản web đang hiện 2 và 3 — SAI, sẽ sửa; đo để
-///          biết WinForm có freeze cột 処置コード khi cuộn hay không.
-///  KQ-7 Lưu một 処置 có tham chiếu CHẾT thì tham chiếu đó biến mất thật chứ?
-///        → 100-0 trỏ tới 108-15, mã này không còn trong version hôm nay. dspData xoá
-///          trắng slot đó khi mở ⇒ F9 ghi đè là MẤT. Đây là hành vi phá dữ liệu nên
-///          phải nhìn tận mắt. GHI DB — chỉ chạy khi bật inpP1.allowSave.
+///  Tc1  一覧 có 12 cột (自動算定) và 42 cột (必要病名) — đủ 5 算定処置 / 20 病名
+///  Tc2  ESC và Enter KHÔNG làm gì trên form 登録
+///  Tc3  Rời ô với mã &lt; 100 → xoá trắng CẢ BA ô, im lặng
+///  Tc4  Rời ô với mã hợp lệ → điền 算定処置名 NGAY; mã không có → xoá trắng
+///  Tc5  Click NHÃN コード mở 処置検索 (frm902011) / 病名検索 (frm902010)
+///  Tc6  Đóng dialog → con trỏ 一覧 về DÒNG ĐẦU
+///  Tc7  Mở 処置 có tham chiếu chết → slot đó hiện TRẮNG (nửa chỉ-đọc của KQ-7)
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+/// CÒN MỞ — chỉ còn một câu
+/// ═══════════════════════════════════════════════════════════════════════════
+///  Tc8  Lưới 42 cột cuộn ngang thế nào? Có ghim (freeze) cột 処置コード không?
+///        Chuyện HIỂN THỊ, đọc source không ra, chỉ quan sát được. Đây là testcase
+///        DUY NHẤT còn ở chế độ đo — không assert.
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+/// KHI NÀO NÊN THÊM TESTCASE VÀO ĐÂY
+/// ═══════════════════════════════════════════════════════════════════════════
+/// Đếm lại cả đợt: 14 câu hỏi thì 13 câu đọc source hoặc query DB là ra, chỉ MỘT
+/// câu bắt buộc phải chạy app — Tc2, vì <c>BaseDialog</c> nằm trong
+/// <c>OchaFramework.dll</c> và repo không có source của DLL đó.
+///
+/// Nên mặc định là KHÔNG dựng testcase ở đây. Chỉ dựng khi:
+///   · hành vi nằm trong DLL không có source (phím, focus, thứ tự Tab);
+///   · source có nhánh bị comment-out hoặc phụ thuộc trạng thái runtime;
+///   · cần nhìn tận mắt trước khi làm một thay đổi PHÁ DỮ LIỆU.
+/// Còn lại thì mở <c>userapp/src/OCHACOM/</c> hoặc query thẳng Postgres — rẻ hơn
+/// nhiều và cho cùng đáp án.
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+/// GHI DB
+/// ═══════════════════════════════════════════════════════════════════════════
+/// KHÔNG còn testcase nào ghi, và cờ <c>inpP1.allowSave</c> không còn ý nghĩa với
+/// luồng này. Bản trước có Tc7 bấm F9 để xem tham chiếu chết có mất khi lưu không
+/// — đã đo xong (chkauto 100-0 còn (108-7, 0-0), 108-15 biến mất), nên giữ lại chỉ
+/// là phá dữ liệu thêm một lần cho cùng một đáp án. Nửa chỉ-đọc của phép thử đó —
+/// dialog hiện slot chết thành TRẮNG — vẫn được ghim ở Tc7.
 ///
 /// ═══════════════════════════════════════════════════════════════════════════
 /// CHẠY
 /// ═══════════════════════════════════════════════════════════════════════════
-///   .\run-inp-p23-parity.ps1 -Diagnostics   ← CHẠY CÁI NÀY TRƯỚC TIÊN
-///   .\run-inp-p23-parity.ps1
-///   .\run-inp-p23-parity.ps1 -Case Tc4
-///
-/// Tên control (<c>txtCd1</c>, <c>lblDisCd1</c>…) mới là SUY ĐOÁN từ
-/// <c>INP.Lib.GetControl</c>; Tc0 đổ cây UIA thật để sửa lại trước.
+///   .\run-inp-p23-parity.ps1              ← chạy đủ, không cần cờ gì
+///   .\run-inp-p23-parity.ps1 -Case Tc8
+///   .\run-inp-p23-parity.ps1 -Diagnostics ← chỉ Tc0, khi một Tc khác đỏ
 /// </summary>
 [TestFixture]
 [Category("inp-p23-parity")]
 public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
 {
     /// <summary>
-    /// 処置コード dùng để lọc 一覧 trong mọi testcase.
+    /// 処置コード dùng để lọc 一覧. 100 = 初診: có cấu hình ở CẢ hai bảng nên một mã đủ
+    /// cho cả hai cặp.
     ///
-    /// <para>100 = 初診: có cấu hình ở CẢ hai bảng (chk_auto 108-7/108-15,
-    /// inp_chk_10 cũng có dòng), nên một mã đủ cho cả hai cặp.</para>
-    ///
-    /// <para><b>Luôn lọc trước khi đụng lưới.</b> Không lọc thì lưới giữ 1.664 dòng
-    /// và mọi thao tác UIA trên nó — đổ cây, đếm cột, đọc dòng — đều phải liệt kê
-    /// hết chừng ấy phần tử trước.</para>
+    /// <para><b>Luôn lọc trước khi đụng lưới.</b> Không lọc thì lưới giữ 1.664 dòng và
+    /// mọi thao tác UIA trên nó đều phải liệt kê hết chừng ấy phần tử trước.</para>
     /// </summary>
     private const string ProbeTrtCd = "100";
 
-    /// <summary>
-    /// 処置コード có NHIỀU 枝番 (116 = 18 dòng ở version hiện hành), dùng cho Tc6 khi
-    /// cần chọn một dòng ở giữa danh sách. Trước đây Tc6 bỏ lọc để có nhiều dòng —
-    /// đúng nhưng phải trả giá 1.664 dòng cho mỗi lần đọc.
-    /// </summary>
+    /// <summary>処置コード có nhiều 枝番 (116 = 18 dòng) — cho Tc6 và Tc8.</summary>
     private const string MultiRowTrtCd = "116";
+
+    /// <summary>算定処置 có thật trong version hiện hành: 108-7 =「外安全1(初診)」.</summary>
+    private const int KnownCd = 108;
+    private const int KnownSb = 7;
+    private const string KnownNm = "外安全1(初診)";
 
     private Window? _chkList;
     private Window? _disList;
@@ -112,26 +112,25 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Tc0 — chẩn đoán: mở đủ 4 form, đổ cây UIA
+    // Tc0 — chẩn đoán, KHÔNG assert
     // ═══════════════════════════════════════════════════════════════════════
 
     [Test, Order(0)]
-    [Description("Tc0 — mở cả 4 form và đổ cây UIA để chốt tên control")]
+    [Description("Tc0 — mở cả 4 form và đổ cây UIA; dùng khi Tc khác đỏ")]
     public void Tc0_DumpUiaTree()
     {
         using var trace = TestTrace.Begin();
         var screen = Screen.Window;
         Log($"=== KQ-0 === man dang mo: '{Uia.AutomationIdOf(screen)}' / '{Uia.NameOf(screen)}'");
 
-        // Không ném ở bất kỳ bước nào: một lần chạy phải ra đủ bức tranh dù hỏng
-        // giữa chừng. Bài học từ luồng KarteAutoCalc — mỗi lần ném là mất một vòng
-        // gửi log qua lại.
+        // Testcase DUY NHẤT không ném: khi một Tc khác đỏ vì đổi tên control, chạy
+        // riêng cái này là có cây UIA thật để đối chiếu.
         DumpPair("chk", () => InpP23Dialog.OpenChkList(App, screen, trace),
                  InpP23Dialog.ChkRegisterId, InpP23Dialog.ChkRegisterTitle, trace);
         DumpPair("dis", () => InpP23Dialog.OpenDisList(App, screen, trace),
                  InpP23Dialog.DisRegisterId, InpP23Dialog.DisRegisterTitle, trace);
 
-        Log("=== KQ-0 === Gui lai: moi dong '=== KQ-' + cac file artifacts\\p23-*.uia.txt");
+        Log("=== KQ-0 === artifact: p23-{chk,dis}-{list,register}.uia.txt");
     }
 
     private void DumpPair(
@@ -144,11 +143,10 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
             Log($"=== KQ-0 === MO DUOC 一覧 {tag}: 「{Uia.NameOf(list)}」");
             if (tag == "chk") _chkList = list; else _disList = list;
 
-            // LỌC TRƯỚC RỒI MỚI ĐỔ CÂY. Đổ cây lúc lưới còn 1.664 dòng là phần
-            // chậm nhất của cả lần chạy — DumpTree liệt kê HẾT con của lưới rồi
-            // mới cắt còn 60, và 必要病名一覧 có 42 cột nên là 1.664 × 42 phần tử.
-            // Đo 2026-08-11: riêng bước đó ~90s. Lọc còn vài dòng thì gần như tức thì.
-            step = $"loc 一覧 ({tag}) ve 処置コード={ProbeTrtCd}";
+            // LỌC TRƯỚC RỒI MỚI ĐỔ CÂY. Đổ cây lúc lưới còn 1.664 dòng là phần chậm
+            // nhất của cả lần chạy (~90s cho 必要病名一覧 42 cột); lọc còn vài dòng thì
+            // gần như tức thì.
+            step = $"loc 一覧 ({tag})";
             Search(list, ProbeTrtCd);
 
             step = $"do cay 一覧 ({tag})";
@@ -163,9 +161,6 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
 
             step = $"F10 dong 登録 ({tag})";
             InpP23Dialog.Close(reg);
-
-            // Đóng luôn 一覧: nó MODAL trên frm203002, để mở thì cặp sau không với
-            // tới được menu オプション nữa.
             step = $"F10 dong 一覧 ({tag})";
             InpP23Dialog.Close(list);
         }
@@ -177,55 +172,63 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Tc1 — KQ-6 số cột của hai 一覧
+    // Tc1 — số cột của hai 一覧
     // ═══════════════════════════════════════════════════════════════════════
 
     [Test, Order(1)]
-    [Description("Tc1 — KQ-6: 一覧 hiện đủ 5 算定処置 / 20 病名 chứ?")]
-    public void Tc1_ListColumnCount()
+    [Description("Tc1 — 一覧 phải có đủ 12 cột (5 算定処置) và 42 cột (20 病名)")]
+    public void Tc1_ListShowsEverySlotColumn()
     {
         using var trace = TestTrace.Begin();
 
-        // Lọc trước: số CỘT không đổi theo bộ lọc, nhưng đọc tiêu đề trên lưới
-        // 1.664 dòng thì phải liệt kê hết dòng trước khi tới ô tiêu đề.
         var chk = InpP23Dialog.OpenChkList(App, Screen.Window, trace);
         Search(chk, ProbeTrtCd);
-        ReportColumns("自動算定一覧", chk, 12);
+        var chkHeaders = ReadHeaders("自動算定一覧", chk);
 
         var dis = InpP23Dialog.OpenDisList(App, Screen.Window, trace);
         Search(dis, ProbeTrtCd);
-        ReportColumns("必要病名一覧", dis, 42);
+        var disHeaders = ReadHeaders("必要病名一覧", dis);
 
-        Log("   Ban web dang hien 6 cot (2 算定処置) va 8 cot (3 病名) — neu so tren la");
-        Log("   12/42 thi ban web THIEU cot va phai sua.");
+        // 12 và 42 lấy từ _viewItem (frm203038.cs:47-58, frm203036.cs:49-90). Bản web
+        // từng chỉ hiện 6 và 8 cột — giấu mất slot đã cấu hình.
+        Assert.Multiple(() =>
+        {
+            Assert.That(chkHeaders, Has.Count.EqualTo(12), "自動算定一覧 phai co 12 cot");
+            Assert.That(disHeaders, Has.Count.EqualTo(42), "必要病名一覧 phai co 42 cot");
+            Assert.That(chkHeaders, Does.Contain("算定処置名5"), "phai co du 5 算定処置");
+            Assert.That(disHeaders, Does.Contain("病名20"), "phai co du 20 病名");
+        });
+
         trace.Step("dem cot");
     }
 
-    private void ReportColumns(string what, Window list, int expected)
+    private IReadOnlyList<string> ReadHeaders(string what, Window list)
     {
         var grid = KarteAutoCalcDialog.FindChrome(list, InpP23Dialog.ListGridId);
-        if (grid is null) { Log($"=== KQ-6 === {what}: khong thay luoi"); return; }
+        Assert.That(grid, Is.Not.Null, $"{what}: khong thay luoi 「{InpP23Dialog.ListGridId}」");
 
-        var headers = new WinFormsGrid(grid).Headers();
-        // Lưới này không dựng ô tiêu đề bằng HeaderItem (đo được ở luồng
-        // KarteAutoCalc), nên Headers() có thể rỗng — khi đó đọc dòng 0.
+        var wf = new WinFormsGrid(grid!);
+        var headers = wf.Headers();
+        // Lưới này không dựng ô tiêu đề bằng HeaderItem nên Headers() trả rỗng —
+        // dòng 0 CHÍNH LÀ tiêu đề.
         if (headers.Count == 0)
         {
-            var rows = new WinFormsGrid(grid).Rows(limit: 1);
+            var rows = wf.Rows(limit: 1);
             if (rows.Count > 0) headers = rows[0].Cells;
         }
 
-        Log($"=== KQ-6 === {what}: {headers.Count} cot (ky vong {expected})");
-        Log("   " + string.Join(" | ", headers.Take(45)));
+        Log($"=== KQ-6 === {what}: {headers.Count} cot");
+        Log("   " + string.Join(" | ", headers));
+        return headers;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Tc2 — KQ-1 bàn phím trên form 登録
+    // Tc2 — bàn phím (câu DUY NHẤT không đọc được từ source)
     // ═══════════════════════════════════════════════════════════════════════
 
     [Test, Order(2)]
-    [Description("Tc2 — KQ-1: ESC và Enter làm gì trên 自動算定登録")]
-    public void Tc2_KeyBehaviourOnRegister()
+    [Description("Tc2 — ESC và Enter không làm gì trên 自動算定登録")]
+    public void Tc2_EscapeAndEnterDoNothing()
     {
         using var trace = TestTrace.Begin();
         var list = InpP23Dialog.OpenChkList(App, Screen.Window, trace);
@@ -235,63 +238,48 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
 
         // ── Enter ────────────────────────────────────────────────────────
         FocusBox(reg, InpP23Dialog.ChkCdBox(1));
-        Log($"=== KQ-1 === truoc Enter, focus = {FocusedId()}");
+        var beforeEnter = FocusedId();
         Uia.SendKey(InpP23Dialog.VkEnter);
         Waits.Step();
-        Log($"=== KQ-1 === sau Enter,  focus = {FocusedId()}");
-        Log("   doi sang o ke tiep ⇒ Enter = di chuyen (web phai bat chuoc)");
-        Log("   khong doi / dialog dong ⇒ Enter = 確定 hoac khong lam gi");
+        Thread.Sleep(300);
+        var afterEnter = FocusedId();
+        Log($"=== KQ-1 === Enter: focus {beforeEnter} → {afterEnter}");
 
         // ── ESC ──────────────────────────────────────────────────────────
-        // KHÔNG sửa gì trước khi bấm, để nếu ESC = 登録 thì cũng chỉ ghi lại
-        // đúng dữ liệu cũ.
-        var stillOpenBefore = KarteAutoCalcDialog.FindDialogWindow(
-            App, InpP23Dialog.ChkRegisterId, InpP23Dialog.ChkRegisterTitle, list) is not null;
-        Log($"=== KQ-1 === truoc ESC: dialog dang mo = {stillOpenBefore}");
-
+        // Không sửa gì trước khi bấm: nếu hoá ra ESC = 登録 thì cũng chỉ ghi lại đúng
+        // dữ liệu cũ.
         Uia.SendKey(InpP23Dialog.VkEscape);
         Waits.Step();
-        Thread.Sleep(400);
+        Thread.Sleep(500);
 
-        // Bỏ chính form 登録 ra khỏi danh sách: ModalDialogs.All coi nó là hộp thoại
-        // (đúng về mặt kỹ thuật — nó modal trên 一覧), nên lần chạy 18:43 in ra
-        // 「自動算定登録」 và trông y như một hộp Q00002 vừa bung. Cái ta cần biết là
-        // có hộp XÁC NHẬN nào MỚI hay không.
-        var dialogs = ModalDialogs.All(App, list)
+        // Bỏ chính form 登録 khỏi danh sách: nó modal trên 一覧 nên ModalDialogs.All
+        // luôn kể tên nó, trông y như một hộp Q00002 vừa bung.
+        var newDialogs = ModalDialogs.All(App, list)
             .Where(d => !Txt.Same(Uia.AutomationIdOf(d), InpP23Dialog.ChkRegisterId))
             .ToList();
-        if (dialogs.Count == 0) Log("=== KQ-1 === sau ESC: KHONG co hop thoai xac nhan nao moi");
-        foreach (var d in dialogs) Log($"=== KQ-1 === sau ESC, hop thoai: 「{Uia.NameOf(d)}」 {Trim(Txt.N(Dialogs.TextOf(d)), 80)}");
+        foreach (var d in newDialogs) Log($"=== KQ-1 === sau ESC co hop thoai: 「{Uia.NameOf(d)}」");
 
-        var stillOpenAfter = KarteAutoCalcDialog.FindDialogWindow(
+        var stillOpen = KarteAutoCalcDialog.FindDialogWindow(
             App, InpP23Dialog.ChkRegisterId, InpP23Dialog.ChkRegisterTitle, list) is not null;
-        Log($"=== KQ-1 === sau ESC:  dialog dang mo = {stillOpenAfter}");
-        Log("   van mo + co hop thoai Q00002 ⇒ ESC = 登録 (bản web đang ĐÓNG ⇒ SAI, mat du lieu)");
-        Log("   dong han, khong hoi gi        ⇒ ESC = 戻る (bản web đúng)");
-        Log("   khong doi gi                  ⇒ ESC bi nuot");
+        Log($"=== KQ-1 === sau ESC: dialog con mo = {stillOpen}");
 
-        // Dọn: đóng hộp xác nhận nếu ESC bung ra, rồi đóng dialog.
-        foreach (var d in ModalDialogs.All(App, list)
-                     .Where(d => !Txt.Same(Uia.AutomationIdOf(d), InpP23Dialog.ChkRegisterId)))
+        Assert.Multiple(() =>
         {
-            // Chỉ có DismissOk trong Infrastructure; hộp Q00002 mà ESC bung ra sẽ
-            // được OK — tức là GHI. Không mong muốn, nên chỉ log rồi để người chạy
-            // tự quyết; test này không được tự ý ghi DB.
-            Log($"   ⚠️ hop thoai dang mo: 「{Uia.NameOf(d)}」 — DONG BANG TAY (Cancel) roi chay tiep");
-        }
-        var reg2 = KarteAutoCalcDialog.FindDialogWindow(
-            App, InpP23Dialog.ChkRegisterId, InpP23Dialog.ChkRegisterTitle, list);
-        if (reg2 is not null) InpP23Dialog.Close(reg2);
+            Assert.That(afterEnter, Is.EqualTo(beforeEnter), "Enter KHONG duoc doi focus");
+            Assert.That(stillOpen, Is.True, "ESC KHONG duoc dong form 登録");
+            Assert.That(newDialogs, Is.Empty, "ESC KHONG duoc bung hop thoai xac nhan");
+        });
 
+        InpP23Dialog.Close(reg);
         trace.Step("do phim");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Tc3 — KQ-3 rời ô コード với mã < 100
+    // Tc3 — rời ô với mã < 100
     // ═══════════════════════════════════════════════════════════════════════
 
     [Test, Order(3)]
-    [Description("Tc3 — KQ-3: gõ mã < 100 rồi rời ô có xoá trắng 3 ô không")]
+    [Description("Tc3 — mã < 100 rồi rời ô → xoá trắng cả ba ô, im lặng")]
     public void Tc3_LeaveClearsCodeBelowHundred()
     {
         using var trace = TestTrace.Begin();
@@ -299,220 +287,278 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
 
         SetBox(reg, InpP23Dialog.ChkCdBox(1), "99");
 
-        // Lần chạy 18:55 đọc ra 「99 / 7 / 外安全1(初診)」 — tức GIỮ NGUYÊN giá trị cũ
-        // của slot 1, nghĩa là Leave chưa hề chạy chứ không phải WinForm không xoá.
-        // Nên bây giờ đo TÁCH BẠCH hai việc: (a) Tab có dời focus không, (b) khi focus
-        // thật sự rời đi thì ô có bị xoá không.
-        Log($"=== KQ-3 === truoc Tab, focus = {FocusedId()}");
-        Uia.SendKey(InpP23Dialog.VkTab);
-        Waits.Step();
-        Thread.Sleep(300);
-        Log($"=== KQ-3 === sau Tab,  focus = {FocusedId()}");
-        LogChkSlot("sau Tab", reg, 1);
-
-        // Ép rời ô bằng CHUỘT THẬT — cách này chắc chắn sinh Leave, không phụ thuộc
-        // form có nuốt phím Tab hay không.
+        // PHẢI rời ô bằng CHUỘT THẬT. Phím Tab bị form nuốt (đo 2026-08-11: focus
+        // không đổi sau Tab), nên Leave không bao giờ bắn và số đọc ra sẽ là giá trị
+        // GỐC của slot — trông hệt như 「WinForm không xoá」.
         FocusBox(reg, InpP23Dialog.ChkSbBox(1));
-        Thread.Sleep(400);
-        Log($"=== KQ-3 === sau khi CLICK sang o 枝番, focus = {FocusedId()}");
-        LogChkSlot("sau khi click sang o khac", reg, 1);
+        Thread.Sleep(500);
+        LogChkSlot("sau khi roi o", reg, 1);
 
-        Log("   ca ba RONG ⇒ dung nhu source (txtCd_Leave) — ban web phai lam theo");
-        Log("   con 99     ⇒ chi kiem luc F9, ban web hien tai dang dung");
+        var cd = InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkCdBox(1));
+        var sb = InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkSbBox(1));
+        var nm = InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkNmBox(1));
+        var dialogs = ModalDialogs.All(App, reg).ToList();
 
-        foreach (var d in ModalDialogs.All(App, reg)) { try { Dialogs.DismissOk(d); } catch { } }
+        Assert.Multiple(() =>
+        {
+            Assert.That(cd, Is.Empty, "コード phai bi xoa trang");
+            Assert.That(sb, Is.Empty, "枝番 phai bi xoa trang");
+            Assert.That(nm, Is.Empty, "名称 phai bi xoa trang");
+            Assert.That(dialogs, Is.Empty,
+                "WinForm KHONG bao loi o buoc nay — chi toi F9 moi bung E00002");
+        });
+
         InpP23Dialog.Close(reg);
-        trace.Step("do Leave < 100");
+        trace.Step("Leave < 100");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Tc4 — KQ-2 rời ô 枝番 có tra tên ngay không
+    // Tc4 — rời ô tra tên ngay
     // ═══════════════════════════════════════════════════════════════════════
 
     [Test, Order(4)]
-    [Description("Tc4 — KQ-2: gõ コード+枝番 hợp lệ rồi Tab, tên có hiện NGAY không")]
+    [Description("Tc4 — mã hợp lệ → 算定処置名 hiện NGAY; mã không có → xoá trắng")]
     public void Tc4_LeaveResolvesNameImmediately()
     {
         using var trace = TestTrace.Begin();
         var reg = OpenChkRegister(trace);
 
-        // 108-7 = 外安全１(初診), đo được là có thật trong version hôm nay.
-        SetBox(reg, InpP23Dialog.ChkCdBox(2), "108");
-        SetBox(reg, InpP23Dialog.ChkSbBox(2), "7");
-
-        // Rời ô bằng CHUỘT THẬT chứ không phải Tab — xem ghi chú ở Tc3. Click sang
-        // ô コード của slot 3 để 枝番 slot 2 chắc chắn mất focus.
+        SetBox(reg, InpP23Dialog.ChkCdBox(2), KnownCd.ToString());
+        SetBox(reg, InpP23Dialog.ChkSbBox(2), KnownSb.ToString());
         FocusBox(reg, InpP23Dialog.ChkCdBox(3));
-        Thread.Sleep(500);
-        Log($"=== KQ-2 === sau khi click roi o, focus = {FocusedId()}");
+        Thread.Sleep(600);
 
-        var nm = InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkNmBox(2));
-        Log($"=== KQ-2 === slot 2 sau khi go 108 / 7 va roi o: 名称 = 「{nm}」");
-        Log("   co ten ngay ⇒ WinForm tra master khi Leave. Ban web PHAI them endpoint");
-        Log("                 tra ten theo (cd, sb), khong the doi toi F9");
-        Log("   van rong    ⇒ ten chi hien sau khi luu + mo lai, ban web dang dung");
+        var resolved = InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkNmBox(2));
+        Log($"=== KQ-2 === slot2 sau khi go {KnownCd}/{KnownSb}: 名称 =「{resolved}」");
 
-        // Thử luôn mã KHÔNG tồn tại để xem có bị xoá trắng không.
+        // Mã KHÔNG tồn tại: WinForm xoá trắng, cũng im lặng.
         SetBox(reg, InpP23Dialog.ChkCdBox(3), "999");
         SetBox(reg, InpP23Dialog.ChkSbBox(3), "9");
         FocusBox(reg, InpP23Dialog.ChkCdBox(4));
-        Thread.Sleep(500);
+        Thread.Sleep(600);
         LogChkSlot("ma khong ton tai 999/9", reg, 3);
 
-        foreach (var d in ModalDialogs.All(App, reg)) { try { Dialogs.DismissOk(d); } catch { } }
+        var badCd = InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkCdBox(3));
+        var badNm = InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkNmBox(3));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(resolved, Is.EqualTo(KnownNm),
+                "名称 phai hien NGAY khi roi o, khong doi toi F9");
+            Assert.That(badCd, Is.Empty, "ma khong tra duoc thi コード bi xoa trang");
+            Assert.That(badNm, Is.Empty, "ma khong tra duoc thi 名称 bi xoa trang");
+        });
+
         InpP23Dialog.Close(reg);
-        trace.Step("do Leave tra ten");
+        trace.Step("Leave tra ten");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Tc5 — KQ-4 click NHÃN mở popup tìm kiếm
+    // Tc5 — click NHÃN mở popup tìm kiếm
     // ═══════════════════════════════════════════════════════════════════════
 
     [Test, Order(5)]
-    [Description("Tc5 — KQ-4: click nhãn 算定処置コード / 病名コード có mở popup tìm kiếm không")]
+    [Description("Tc5 — click nhãn コード mở 処置検索 / 病名検索")]
     public void Tc5_LabelClickOpensSearchDialog()
     {
         using var trace = TestTrace.Begin();
-        var reg = OpenChkRegister(trace);
 
-        ProbeLabel(reg, InpP23Dialog.ChkCdLabel(1), InpP23Dialog.TrtSearchId, "処置検索");
+        var reg = OpenChkRegister(trace);
+        var trtSearch = ProbeLabel(
+            reg, InpP23Dialog.ChkCdLabel(1), InpP23Dialog.TrtSearchId, "処置検索");
         InpP23Dialog.Close(reg);
 
         var disList = InpP23Dialog.OpenDisList(App, Screen.Window, trace);
         Search(disList, ProbeTrtCd);
         var disReg = InpP23Dialog.OpenRegister(
             App, disList, InpP23Dialog.DisRegisterId, InpP23Dialog.DisRegisterTitle, trace);
-        ProbeLabel(disReg, InpP23Dialog.DisCdLabel(1), InpP23Dialog.DisSearchId, "病名検索");
+        var disSearch = ProbeLabel(
+            disReg, InpP23Dialog.DisCdLabel(1), InpP23Dialog.DisSearchId, "病名検索");
         InpP23Dialog.Close(disReg);
 
-        trace.Step("do popup tim kiem");
+        Assert.Multiple(() =>
+        {
+            Assert.That(trtSearch, Is.True, "click lblCd1 phai mo 処置検索 (frm902011)");
+            Assert.That(disSearch, Is.True, "click lblDisCd1 phai mo 病名検索 (frm902010)");
+        });
+
+        trace.Step("popup tim kiem");
     }
 
-    private void ProbeLabel(Window reg, string labelId, string expectedId, string what)
+    private bool ProbeLabel(Window reg, string labelId, string expectedId, string what)
     {
         var label = KarteAutoCalcDialog.FindChrome(reg, labelId, InpP23Dialog.ListGridId);
         if (label is null)
         {
-            Log($"=== KQ-4 === khong thay nhan 「{labelId}」 — xem p23-*-register.uia.txt roi sua ten");
-            return;
+            Log($"=== KQ-4 === khong thay nhan 「{labelId}」 — chay Tc0 roi doi chieu cay UIA");
+            return false;
         }
 
-        // Nhãn mở form bằng showDialog ⇒ MODAL ⇒ phải chuột vật lý, Invoke sẽ treo.
+        // Nhãn mở form bằng showDialog ⇒ MODAL ⇒ chuột vật lý, Invoke sẽ treo 20s.
         KarteAutoCalcDialog.ClickModalOpener(label);
         Waits.Step();
-        Thread.Sleep(600);
+        Thread.Sleep(700);
 
         var found = KarteAutoCalcDialog.FindDialogWindow(App, expectedId, what, reg);
-        Log($"=== KQ-4 === click nhan 「{labelId}」 → {what} ({expectedId}) mo? {found is not null}");
-        if (found is not null)
-        {
-            Log($"   title = 「{Uia.NameOf(found)}」");
-            InpP23Dialog.Close(found);
-        }
-        else
-        {
-            Log("   khong mo ⇒ hoac nhan khong click duoc, hoac ten form khac suy doan.");
-            Log(KarteAutoCalcDialog.DescribeVisibleWindows(App));
-        }
+        Log($"=== KQ-4 === click 「{labelId}」 → {what} ({expectedId}): {found is not null}");
+        if (found is null) { Log(KarteAutoCalcDialog.DescribeVisibleWindows(App)); return false; }
+
+        InpP23Dialog.Close(found);
+        return true;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Tc6 — KQ-5 con trỏ dòng của 一覧 sau khi đóng dialog
+    // Tc6 — con trỏ dòng sau khi đóng dialog
     // ═══════════════════════════════════════════════════════════════════════
 
     [Test, Order(6)]
-    [Description("Tc6 — KQ-5: đóng dialog xong 一覧 có giữ dòng đang chọn không")]
-    public void Tc6_ListKeepsSelectedRow()
+    [Description("Tc6 — đóng dialog → con trỏ 一覧 về DÒNG ĐẦU")]
+    public void Tc6_ClosingDialogResetsCursorToFirstRow()
     {
         using var trace = TestTrace.Begin();
         var list = InpP23Dialog.OpenChkList(App, Screen.Window, trace);
-        // Cần nhiều dòng để chọn một dòng ở GIỮA (con trỏ nhảy về đầu thì mới
-        // thấy được), nhưng KHÔNG bỏ lọc: 処置 116 có 18 枝番, đủ dùng mà lưới vẫn nhỏ.
+        // 116 có 18 枝番 — đủ dòng để chọn một dòng ở giữa mà lưới vẫn nhỏ.
         Search(list, MultiRowTrtCd);
 
         var grid = KarteAutoCalcDialog.FindChrome(list, InpP23Dialog.ListGridId);
-        if (grid is null) { Log("=== KQ-5 === khong thay luoi"); Assert.Pass(); return; }
+        Assert.That(grid, Is.Not.Null, "khong thay luoi");
 
-        var rows = new WinFormsGrid(grid).Rows(limit: 12);
-        if (rows.Count < 6) { Log($"=== KQ-5 === chi co {rows.Count} dong, khong du de do"); Assert.Pass(); return; }
+        // rows[0] là dòng TIÊU ĐỀ (lưới này không dùng HeaderItem), nên rows[1] mới là
+        // dòng dữ liệu đầu tiên.
+        var rows = new WinFormsGrid(grid!).Rows(limit: 12);
+        Assert.That(rows, Has.Count.GreaterThanOrEqualTo(7), "can it nhat 6 dong du lieu");
 
+        var firstDataRow = string.Join(" | ", rows[1].Cells.Take(2));
         var target = rows[5];
         var (x, y) = Uia.Center(target.Element);
         Uia.LeftClickPhysical(x, y);
         Waits.Step();
-        Log($"=== KQ-5 === da chon dong 6: {string.Join(" | ", target.Cells.Take(2))}");
+        Log($"=== KQ-5 === da chon: {string.Join(" | ", target.Cells.Take(2))}");
 
         var reg = InpP23Dialog.OpenRegister(
             App, list, InpP23Dialog.ChkRegisterId, InpP23Dialog.ChkRegisterTitle, trace);
         InpP23Dialog.Close(reg);
-        Thread.Sleep(600);
+        Thread.Sleep(800);
 
         var focused = new WinFormsGrid(
             KarteAutoCalcDialog.FindChrome(list, InpP23Dialog.ListGridId)!).FocusedRow(App.Automation);
-        Log($"=== KQ-5 === sau khi dong dialog, dong dang focus: " +
-            (focused is null ? "(khong doc duoc)" : string.Join(" | ", focused.Cells.Take(2))));
-        Log("   van la dong 6 ⇒ WinForm giu con tro, ban web phai giu theo");
-        Log("   ve dong 1     ⇒ WinForm nap lai tu dau, ban web dang dung");
+        var focusedText = focused is null
+            ? "(khong doc duoc)"
+            : string.Join(" | ", focused.Cells.Take(2));
+        Log($"=== KQ-5 === sau khi dong dialog, dong focus: {focusedText}");
+        Log($"=== KQ-5 === dong du lieu dau tien la: {firstDataRow}");
 
-        trace.Step("do con tro dong");
+        // defData chỉ gọi lại getViewData; đoạn khôi phục vị trí dòng bị comment out
+        // (frm203038.cs:233-238).
+        Assert.That(focusedText, Is.EqualTo(firstDataRow),
+            "con tro phai ve dong dau — ban web cung phai reset selectedIndex");
+
+        trace.Step("con tro dong");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Tc7 — KQ-7 lưu 処置 có tham chiếu chết (GHI DB)
+    // Tc7 — tham chiếu chết hiện trắng (CHỈ ĐỌC)
     // ═══════════════════════════════════════════════════════════════════════
 
     [Test, Order(7)]
-    [Description("Tc7 — KQ-7: F9 trên 処置 có tham chiếu chết có làm MẤT nó không (GHI DB)")]
-    public void Tc7_SavingDropsDanglingReference()
+    [Description("Tc7 — 処置 có tham chiếu chết mở ra với slot đó TRẮNG (chỉ đọc)")]
+    public void Tc7_DanglingReferenceOpensBlank()
     {
-        RequireAllowSave("F9 tren 100-0 se ghi that vao chkauto (master TOAN PHONG KHAM)");
         using var trace = TestTrace.Begin();
 
-        Log("=== KQ-7 === 処置 100-0 co chkauto = (108-7, 108-15); 108-15 KHONG con trong");
-        Log("   version hom nay. Neu dspData xoa trang slot 2 va F9 ghi de thi 108-15 MAT.");
-        Log("   ⚠️ KHOI PHUC thu cong sau khi chay:");
-        Log("   UPDATE chkauto SET cd2=108, sb2=15 WHERE trt_cd=100 AND trt_sb=0;");
+        // 100-0 có chkauto = (108-7, 108-15); 108-15 không còn trong version hôm nay.
+        // Bản trước bấm F9 để xem nó có mất khi lưu không — ĐÃ ĐO XONG (mất thật,
+        // chkauto còn (108-7, 0-0)), nên giờ chỉ giữ nửa CHỈ ĐỌC. Bấm F9 lần nữa chỉ
+        // phá thêm dữ liệu cho cùng một đáp án.
+        Log("=== KQ-7 === 100-0 co (108-7, 108-15); 108-15 khong con trong version hom nay");
 
-        var list = InpP23Dialog.OpenChkList(App, Screen.Window, trace);
-        Search(list, ProbeTrtCd);
-        var reg = InpP23Dialog.OpenRegister(
-            App, list, InpP23Dialog.ChkRegisterId, InpP23Dialog.ChkRegisterTitle, trace);
+        var reg = OpenChkRegister(trace);
+        for (var i = 1; i <= InpP23Dialog.ChkSlotCount; i++) LogChkSlot("luc MO", reg, i);
 
-        for (var i = 1; i <= InpP23Dialog.ChkSlotCount; i++)
+        var slot1Cd = InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkCdBox(1));
+        var slot1Nm = InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkNmBox(1));
+        var slot2Cd = InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkCdBox(2));
+
+        Assert.Multiple(() =>
         {
-            Log($"=== KQ-7 === luc MO: slot{i} = 「{InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkCdBox(i))}」-" +
-                $"「{InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkSbBox(i))}」 " +
-                $"「{InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkNmBox(i))}」");
+            Assert.That(slot1Cd, Is.EqualTo(KnownCd.ToString()), "slot1 phai giu 108");
+            Assert.That(slot1Nm, Is.EqualTo(KnownNm), "slot1 phai co ten");
+            Assert.That(slot2Cd, Is.Empty,
+                "slot2 (108-15, khong con ton tai) phai hien TRANG — luu lai la mat han");
+        });
+
+        InpP23Dialog.Close(reg);
+        trace.Step("tham chieu chet");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Tc8 — CÂU CÒN MỞ: lưới 42 cột cuộn ngang thế nào
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Test, Order(8)]
+    [Description("Tc8 — CÒN MỞ: 必要病名一覧 cuộn ngang, có ghim cột 処置コード không?")]
+    public void Tc8_HorizontalScrollFreezesFirstColumns()
+    {
+        using var trace = TestTrace.Begin();
+        var list = InpP23Dialog.OpenDisList(App, Screen.Window, trace);
+        Search(list, MultiRowTrtCd);
+
+        var grid = KarteAutoCalcDialog.FindChrome(list, InpP23Dialog.ListGridId);
+        if (grid is null) { Log("=== KQ-8 === khong thay luoi"); Assert.Pass(); return; }
+
+        var scroll = grid.Patterns.Scroll.PatternOrDefault;
+        if (scroll is null)
+        {
+            Log("=== KQ-8 === luoi khong co ScrollPattern — khong do duoc bang UIA");
+            Assert.Pass("khong do duoc");
+            return;
         }
-        Log("   slot2 RONG ⇒ dspData da xoa trang tham chieu chet (dung nhu ban web)");
 
-        var f9 = KarteAutoCalcDialog.FindChrome(reg, "btnF9", InpP23Dialog.ListGridId);
-        if (f9 is null) { Log("=== KQ-7 === khong thay btnF9"); Assert.Pass(); return; }
-        KarteAutoCalcDialog.ClickModalOpener(f9);
+        Log($"=== KQ-8 === cuon ngang duoc? {scroll.HorizontallyScrollable.ValueOrDefault}");
+
+        // Toạ độ X của ô 処置コード trên dòng tiêu đề, trước và sau khi cuộn hết sang
+        // phải. Giữ nguyên X ⇒ cột bị GHIM; trôi đi ⇒ cuộn bình thường.
+        var beforeX = HeaderCellX(grid, 0);
+        Log($"=== KQ-8 === truoc khi cuon: 処置コード o X = {beforeX}");
+
+        try { scroll.SetScrollPercent(100, -1); }
+        catch (Exception e) { Log($"=== KQ-8 === khong cuon duoc: {e.Message}"); }
         Waits.Step();
-        foreach (var d in ModalDialogs.All(App, list)) { try { Dialogs.DismissOk(d); } catch { } }
-        Waits.Step();
+        Thread.Sleep(700);
 
-        Log("=== KQ-7 === da bam F9. Chay lai truy van nay va gui ket qua:");
-        Log("   SELECT cd1,sb1,cd2,sb2 FROM chkauto WHERE trt_cd=100 AND trt_sb=0;");
-        Log("   cd2 = 0/NULL ⇒ tham chieu chet BI MAT — ban web lam giong, khong phai bug");
+        var afterX = HeaderCellX(grid, 0);
+        Log($"=== KQ-8 === sau khi cuon het phai: 処置コード o X = {afterX}");
+        Log("   X GIU NGUYEN ⇒ WinForm GHIM cot dau — ban web phai ghim theo");
+        Log("   X doi nhieu / am ⇒ cuon binh thuong — ban web dang dung");
 
-        trace.Step("F9 tren 処置 co tham chieu chet");
+        // CÒN MỞ nên KHÔNG assert: lần chạy này chính là phép đo. Chốt được rồi thì
+        // đổi thành assert như các Tc trên.
+        trace.Step("cuon ngang");
+    }
+
+    /// <summary>Toạ độ X của ô thứ <paramref name="index"/> trên dòng tiêu đề.</summary>
+    private static string HeaderCellX(AutomationElement grid, int index)
+    {
+        try
+        {
+            var header = new WinFormsGrid(grid).Rows(limit: 1).FirstOrDefault();
+            if (header is null) return "(khong doc duoc dong tieu de)";
+            var cells = Uia.Children(header.Element).ToList();
+            if (index >= cells.Count) return "(khong du o)";
+            return ((int)cells[index].BoundingRectangle.X).ToString();
+        }
+        catch (Exception e) { return $"(loi: {e.Message})"; }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
     // Helper
     // ═══════════════════════════════════════════════════════════════════════
 
-    /// <summary>In cả ba ô của một slot 算定処置 — luôn in cùng lúc để thấy được
-    /// WinForm xoá CẢ BA hay chỉ một.</summary>
-    private void LogChkSlot(string when, Window reg, int slot)
-    {
-        Log($"=== KQ-3 === slot{slot} {when}: " +
+    private void LogChkSlot(string when, Window reg, int slot) =>
+        Log($"=== KQ === slot{slot} {when}: " +
             $"コード=「{InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkCdBox(slot))}」 " +
             $"枝番=「{InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkSbBox(slot))}」 " +
             $"名称=「{InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkNmBox(slot))}」");
-    }
 
     private Window OpenChkRegister(TestTrace trace)
     {
@@ -538,16 +584,16 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
     private void SetBox(Window root, string automationId, string value)
     {
         var el = KarteAutoCalcDialog.FindChrome(root, automationId, InpP23Dialog.ListGridId);
-        if (el is null) { Log($"   (khong thay o 「{automationId}」)"); return; }
-        try { el.Focus(); } catch { /* */ }
-        Uia.SetText(el, value);
+        Assert.That(el, Is.Not.Null, $"khong thay o 「{automationId}」 — chay Tc0 roi doi chieu cay UIA");
+        try { el!.Focus(); } catch { /* focus la best-effort */ }
+        Uia.SetText(el!, value);
     }
 
     private void FocusBox(Window root, string automationId)
     {
         var el = KarteAutoCalcDialog.FindChrome(root, automationId, InpP23Dialog.ListGridId);
-        if (el is null) { Log($"   (khong thay o 「{automationId}」)"); return; }
-        var (x, y) = Uia.Center(el);
+        Assert.That(el, Is.Not.Null, $"khong thay o 「{automationId}」");
+        var (x, y) = Uia.Center(el!);
         Uia.LeftClickPhysical(x, y);
         Waits.Step();
     }
@@ -557,10 +603,8 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
         try
         {
             var el = App.Automation.FocusedElement();
-            return $"id='{Uia.AutomationIdOf(el)}' name='{Uia.NameOf(el)}'";
+            return $"id='{Uia.AutomationIdOf(el)}'";
         }
         catch (Exception e) { return $"(khong doc duoc: {e.Message})"; }
     }
-
-    private static string Trim(string s, int max) => s.Length <= max ? s : s[..max] + "…";
 }
