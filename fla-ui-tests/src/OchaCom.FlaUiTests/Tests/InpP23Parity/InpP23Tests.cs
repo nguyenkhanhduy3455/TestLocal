@@ -30,13 +30,16 @@ namespace OchaCom.FlaUiTests.Tests.InpP23Parity;
 ///  Tc5  Click NHÃN コード mở 処置検索 (frm902011) / 病名検索 (frm902010)
 ///  Tc6  Đóng dialog → con trỏ 一覧 về DÒNG ĐẦU
 ///  Tc7  Mở 処置 có tham chiếu chết → slot đó hiện TRẮNG (nửa chỉ-đọc của KQ-7)
+///  Tc8  Lưới 42 cột KHÔNG ghim cột nào — cuộn sang phải thì 処置コード cũng trôi
 ///
 /// ═══════════════════════════════════════════════════════════════════════════
-/// CÒN MỞ — chỉ còn một câu
+/// KHÔNG CÒN CÂU NÀO ĐỂ MỞ
 /// ═══════════════════════════════════════════════════════════════════════════
-///  Tc8  Lưới 42 cột cuộn ngang thế nào? Có ghim (freeze) cột 処置コード không?
-///        Chuyện HIỂN THỊ, đọc source không ra, chỉ quan sát được. Đây là testcase
-///        DUY NHẤT còn ở chế độ đo — không assert.
+/// Tc8 là câu cuối, chốt ngày 2026-08-12: trước khi cuộn 7/42 ô thấy được và
+/// 処置コード ở X=472; sau khi cuộn 12 cột thì chính nó cũng ra ngoài màn hình.
+/// Bản web dùng cuộn ngang thường (overflow-auto + min-w-max) nên đã đúng.
+///
+/// Từ đây file này thuần hồi quy. Thêm testcase mới thì đọc mục dưới trước.
 ///
 /// ═══════════════════════════════════════════════════════════════════════════
 /// KHI NÀO NÊN THÊM TESTCASE VÀO ĐÂY
@@ -292,12 +295,14 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
         var reg = OpenChkRegister(trace);
 
         SetBox(reg, InpP23Dialog.ChkCdBox(1), "99");
+        Snapshot("Tc3-1-vua-go-99");
 
         // PHẢI rời ô bằng CHUỘT THẬT. Phím Tab bị form nuốt (đo 2026-08-11: focus
         // không đổi sau Tab), nên Leave không bao giờ bắn và số đọc ra sẽ là giá trị
         // GỐC của slot — trông hệt như 「WinForm không xoá」.
         FocusBox(reg, InpP23Dialog.ChkSbBox(1));
         Thread.Sleep(500);
+        Snapshot("Tc3-2-sau-khi-roi-o");
         LogChkSlot("sau khi roi o", reg, 1);
 
         var cd = InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkCdBox(1));
@@ -334,6 +339,7 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
         FocusBox(reg, InpP23Dialog.ChkCdBox(3));
         Thread.Sleep(600);
 
+        Snapshot("Tc4-1-ten-hien-ngay");
         var resolved = InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkNmBox(2));
         Log($"=== KQ-2 === slot2 sau khi go {KnownCd}/{KnownSb}: 名称 =「{resolved}」");
 
@@ -342,6 +348,7 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
         SetBox(reg, InpP23Dialog.ChkSbBox(3), "9");
         FocusBox(reg, InpP23Dialog.ChkCdBox(4));
         Thread.Sleep(600);
+        Snapshot("Tc4-2-ma-khong-ton-tai-bi-xoa");
         LogChkSlot("ma khong ton tai 999/9", reg, 3);
 
         var badCd = InpP23Dialog.ReadBox(reg, InpP23Dialog.ChkCdBox(3));
@@ -502,52 +509,35 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
     // ═══════════════════════════════════════════════════════════════════════
 
     [Test, Order(8)]
-    [Description("Tc8 — CÒN MỞ: 必要病名一覧 cuộn ngang, có ghim cột 処置コード không?")]
-    public void Tc8_HorizontalScrollFreezesFirstColumns()
+    [Description("Tc8 — 一覧 42 cột KHÔNG ghim cột: cuộn phải thì 処置コード cũng trôi")]
+    public void Tc8_HorizontalScrollDoesNotFreezeFirstColumn()
     {
         using var trace = TestTrace.Begin();
         var list = InpP23Dialog.OpenDisList(App, Screen.Window, trace);
         Search(list, MultiRowTrtCd);
 
         var grid = KarteAutoCalcDialog.FindChrome(list, InpP23Dialog.ListGridId);
-        if (grid is null) { Log("=== KQ-8 === khong thay luoi"); Assert.Pass(); return; }
+        Assert.That(grid, Is.Not.Null, "khong thay luoi");
 
-        // Lần chạy 09:53 hỏng vì tôi hỏi ScrollPattern trên CHÍNH lưới. Cầu MSAA→UIA
-        // của WinForms không phơi pattern đó trên DataGridView; thanh cuộn là phần
-        // tử CON riêng (ControlType.ScrollBar). Tìm nó rồi mới cuộn được.
-        var bars = Uia.Children(grid)
+        // Hỏi ScrollPattern trên CHÍNH lưới là sai — cầu MSAA→UIA của WinForms không
+        // phơi nó trên DataGridView. Thanh cuộn là phần tử CON.
+        var bars = Uia.Children(grid!)
             .Where(c => Uia.ControlTypeOf(c) == FlaUI.Core.Definitions.ControlType.ScrollBar)
             .ToList();
-        Log($"=== KQ-8 === luoi co {bars.Count} thanh cuon");
-        foreach (var b in bars)
-        {
-            var r = b.BoundingRectangle;
-            Log($"   id='{Uia.AutomationIdOf(b)}' name='{Uia.NameOf(b)}' " +
-                $"{(int)r.Width}x{(int)r.Height} @({(int)r.X},{(int)r.Y})");
-        }
-
-        // Thanh NGANG = rộng hơn cao.
         var hBar = bars.FirstOrDefault(b => b.BoundingRectangle.Width > b.BoundingRectangle.Height);
-        if (hBar is null)
-        {
-            Log("=== KQ-8 === KHONG co thanh cuon ngang ⇒ luoi 42 cot van vua man hinh?");
-            Log("   Neu dung vay thi ban web cung khong can ghim cot.");
-            Assert.Pass("khong co thanh cuon ngang");
-            return;
-        }
+        Assert.That(hBar, Is.Not.Null, "luoi 42 cot phai co thanh cuon ngang");
 
-        LogHeaderPositions("TRUOC khi cuon", grid);
+        var before = HeaderCells(grid!);
+        LogHeaderPositions("TRUOC khi cuon", before);
+        Snapshot("Tc8-1-truoc-khi-cuon");
+        var firstVisibleBefore = Uia.IsOnScreen(before[0]);
 
-        // Ưu tiên RangeValue (đặt thẳng về max); không có thì đẩy bằng chuột thật
-        // vào nửa phải của thanh — mỗi cú là một trang.
-        var range = hBar.Patterns.RangeValue.PatternOrDefault;
+        // RangeValue nếu có; không thì đẩy bằng chuột thật vào đầu phải thanh cuộn.
+        // 12 cú là đủ đưa cột 0 ra khỏi khung — không cần tới cuối bảng.
+        var range = hBar!.Patterns.RangeValue.PatternOrDefault;
         if (range is not null)
         {
-            try
-            {
-                range.SetValue(range.Maximum.ValueOrDefault);
-                Log("=== KQ-8 === da cuon bang RangeValue.SetValue(max)");
-            }
+            try { range.SetValue(range.Maximum.ValueOrDefault); }
             catch (Exception e) { Log($"=== KQ-8 === RangeValue loi: {e.Message}"); }
         }
         else
@@ -556,35 +546,45 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
             var x = (int)(r.X + r.Width - 12);
             var y = (int)(r.Y + r.Height / 2);
             for (var i = 0; i < 12; i++) { Uia.LeftClickPhysical(x, y); Thread.Sleep(120); }
-            Log("=== KQ-8 === da cuon bang 12 cu click vao dau phai thanh cuon");
         }
 
         Waits.Step();
         Thread.Sleep(800);
-        LogHeaderPositions("SAU khi cuon het phai", grid);
+        var after = HeaderCells(grid!);
+        LogHeaderPositions("SAU khi cuon", after);
+        Snapshot("Tc8-2-sau-khi-cuon");
+        var firstVisibleAfter = Uia.IsOnScreen(after[0]);
 
-        Log("   Cot dau GIU NGUYEN X, cac cot sau doi ⇒ WinForm GHIM cot — web phai ghim theo");
-        Log("   Cot dau cung troi di ⇒ cuon binh thuong — web dang dung");
+        Assert.Multiple(() =>
+        {
+            // Nếu cột 0 vẫn thấy được sau khi cuộn thì HOẶC là WinForm ghim cột,
+            // HOẶC là phép cuộn không chạy — cả hai đều đáng đỏ.
+            Assert.That(firstVisibleBefore, Is.True, "truoc khi cuon 処置コード phai thay duoc");
+            Assert.That(firstVisibleAfter, Is.False,
+                "sau khi cuon 処置コード phai TROI RA NGOAI — WinForm khong ghim cot");
+        });
 
-        // CÒN MỞ nên KHÔNG assert: lần chạy này chính là phép đo. Chốt được rồi thì
-        // đổi thành assert như các Tc trên.
         trace.Step("cuon ngang");
+    }
+
+    private static IReadOnlyList<AutomationElement> HeaderCells(AutomationElement grid)
+    {
+        var header = new WinFormsGrid(grid).Rows(limit: 1).FirstOrDefault();
+        Assert.That(header, Is.Not.Null, "khong doc duoc dong tieu de");
+        return Uia.Children(header!.Element).ToList();
     }
 
     /// <summary>
     /// Toạ độ X của vài ô đầu và ô cuối trên dòng tiêu đề, kèm số ô đang thấy được.
     ///
-    /// <para>So sánh X của ô ĐẦU trước/sau khi cuộn là cách duy nhất phân biệt
-    /// 「ghim cột」 với 「cuộn bình thường」: cả hai đều làm các cột sau đổi chỗ.</para>
+    /// <para><c>X = 0</c> nghĩa là ô KHÔNG được vẽ — cầu MSAA→UIA trả rect rỗng cho
+    /// phần tử ngoài khung. Đó chính là dấu hiệu dùng để kết luận: sau khi cuộn,
+    /// ô [0] về X=0 tức là 処置コード đã trôi ra ngoài, không hề được ghim.</para>
     /// </summary>
-    private void LogHeaderPositions(string when, AutomationElement grid)
+    private void LogHeaderPositions(string when, IReadOnlyList<AutomationElement> cells)
     {
         try
         {
-            var header = new WinFormsGrid(grid).Rows(limit: 1).FirstOrDefault();
-            if (header is null) { Log($"=== KQ-8 === {when}: khong doc duoc dong tieu de"); return; }
-
-            var cells = Uia.Children(header.Element).ToList();
             var onScreen = cells.Count(Uia.IsOnScreen);
             var parts = new List<string>();
             foreach (var i in new[] { 0, 1, 2, cells.Count - 1 })
@@ -601,6 +601,30 @@ public sealed class InpP23Tests : InpP1Dialogs.InpP1TestBase
     // ═══════════════════════════════════════════════════════════════════════
     // Helper
     // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Chụp màn hình GIỮA testcase và đính vào kết quả test.
+    ///
+    /// <para><c>UiTestBase</c> đã tự chụp một ảnh khi testcase kết thúc, nhưng đó là
+    /// trạng thái CUỐI. Những gì cần nhìn ở đây lại là khoảnh khắc giữa chừng —
+    /// ô vừa bị xoá trắng, lưới trước/sau khi cuộn — nên phải chụp thêm.</para>
+    ///
+    /// <para>Tự dựng đường dẫn thay vì gọi <c>ScreenshotDirectory()</c> của base: hàm
+    /// đó private và base là file dùng chung của luồng khác.</para>
+    /// </summary>
+    private void Snapshot(string label)
+    {
+        try
+        {
+            var dir = Settings.Run.ScreenshotDir;
+            var root = Path.IsPathRooted(dir) ? dir : Path.Combine(AppContext.BaseDirectory, dir);
+            var name = $"p23_{label}_{DateTime.Now:HHmmss}";
+            var path = ScreenCapture.CaptureToFile(root, name);
+            TestContext.AddTestAttachment(path, label);
+            Log($"=== ANH === {label}: {path}");
+        }
+        catch (Exception e) { Log($"khong chup duoc man hinh ({label}): {e.Message}"); }
+    }
 
     private void LogChkSlot(string when, Window reg, int slot) =>
         Log($"=== KQ === slot{slot} {when}: " +
