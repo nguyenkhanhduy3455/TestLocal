@@ -90,6 +90,9 @@ const AGENT_CONFIG_URL = /\/v1\/config(\?|$)/
 // ── Nhãn lấy nguyên văn từ source (đừng gõ lại bằng tay) ─────────────────────
 const TAB_LABELS = ['表示設定', '入力形態・動作1', '入力形態・動作2', '学習機能', 'その他'] as const
 
+/** Toast báo lưu xong — `toast.success('登録しました。')` cuối handleRegister. */
+const TOAST_SAVED = '登録しました。'
+
 /** Tab 表示設定 — 8 check trên + 2 check dưới, xen giữa là 2 combo 連携先. */
 const DISPLAY_CHECKS_TOP = [
     '過去データを表示する',
@@ -293,6 +296,16 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
      * Trả về body PUT đã gửi để testcase soi, và ném ngay nếu agent từ chối.
      */
     async function saveAndProveAgentAccepted(): Promise<AgentConfigPutBody> {
+        // Toast XẾP CHỒNG và chỉ tự tắt sau 4s (shared/ui/toast.tsx: `duration = 4_000`,
+        // Toaster render mỗi item thành một <span class="flex-1">). Testcase trước đó vừa
+        // bắn 「登録しました。」 xong thì nó còn nằm trên màn, cái của lần lưu này ra là
+        // getByText khớp 2 phần tử → Playwright nổ strict mode, che mất kết quả thật của
+        // lần lưu đang xét. Đợi màn sạch trước khi bấm, rồi mới chốt đúng 1 toast mới.
+        await expect(
+            page.getByText(TOAST_SAVED),
+            'toast lần lưu trước chưa tắt hết',
+        ).toHaveCount(0, { timeout: 15000 })
+
         const putReq = page.waitForRequest(
             (r) => AGENT_CONFIG_URL.test(r.url()) && r.method() === 'PUT',
             { timeout: 60000 },
@@ -314,7 +327,7 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
             `agent TỪ CHỐI cấu hình do F11 gửi lên — ${res!.status()}: ${detail}`,
         ).toBeLessThan(300)
 
-        await expect(page.getByText('登録しました。')).toBeVisible({ timeout: 60000 })
+        await expect(page.getByText(TOAST_SAVED)).toHaveCount(1, { timeout: 60000 })
         await expect(dialog).toBeHidden({ timeout: 30000 })
         return sent
     }
