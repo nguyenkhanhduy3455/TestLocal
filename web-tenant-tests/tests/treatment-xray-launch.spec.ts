@@ -26,9 +26,20 @@
  *   Trong 4 mã hiện レントゲン chỉ PIC_LINK_MODES_LAUNCH_EXE {12,15} gọi agent;
  *   5 và 6 vẫn là 開発中 vì hai cơ chế đó chưa port.
  * `treatment-entry-detail.tsx handleRoentgen` → `lib/agent-xray.ts`
- *   → `POST /v1/xray/launch { patientId }` → 204 là xong.
+ *   → `POST /v1/xray/launch { patientId }` → 200 `{ reused }` là xong.
  * Agent `XrayEndpoints.cs` tự đọc `imgEditSoft` từ settings của MÁY nó và tự dựng
  *   `Arguments = "1 " + patientId`.
+ *
+ * ── Hai hành vi THÊM so với WinForm ─────────────────────────────────────────
+ * `XrayLauncher.cs` — WinForm chỉ Process.Start, không kéo cửa sổ lên và không biết
+ *   chương trình đã chạy hay chưa, nên thu nhỏ rồi bấm lại là ra cái thứ hai.
+ *   Bản web: kéo cửa sổ lên trước trình duyệt (phá foreground lock bằng
+ *   AttachThreadInput, đúng cách NativeDialogHost đã làm), và bấm lại khi CÙNG bệnh
+ *   nhân thì dựng lại cửa sổ cũ thay vì mở tiến trình mới.
+ *   Khoá theo CẢ bệnh nhân: đối số là cách duy nhất báo cho chương trình biết mở hồ
+ *   sơ nào, nên đổi bệnh nhân bắt buộc phải gọi lại.
+ *   Cả hai nằm TRỌN trong agent — spec này chỉ chốt được rằng SPA không tự chặn lần
+ *   bấm thứ hai (TC-REUSE-1); phần cửa sổ phải kiểm bằng mắt, xem TC-REAL-1.
  *
  * ── Vì sao chặn GET /v1/config ──────────────────────────────────────────────
  * 連携先 nằm trong cấu hình agent của TỪNG MÁY. Muốn chạy đủ 4 nhánh switch thì
@@ -129,8 +140,10 @@ test.describe('診療入力 — レントゲンボタン（画像編集ソフト
     let launchCalls = 0
     /** Body của lần gọi gần nhất. */
     let lastLaunch: XrayLaunchBody | null = null
-    /** Agent stub sẽ trả gì: 204 · 400 chưa cấu hình · 500 khởi chạy hỏng. */
+    /** Agent stub sẽ trả gì: 200 · 400 chưa cấu hình · 500 khởi chạy hỏng. */
     let launchOutcome: 'ok' | 'notConfigured' | 'failed' = 'ok'
+    /** Cờ `reused` trong body 200 — agent dựng lại cửa sổ cũ thay vì mở tiến trình mới. */
+    let launchReused = false
 
     /** Thông báo lỗi agent trả về ở nhánh 'failed' — TC-ERR-2 soi nguyên văn. */
     const LAUNCH_ERROR_DETAIL = 'The system cannot find the file specified'
@@ -236,7 +249,13 @@ test.describe('診療入力 — レントゲンボタン（画像編集ソフト
             lastLaunch = route.request().postDataJSON() as XrayLaunchBody
 
             if (launchOutcome === 'ok') {
-                return route.fulfill({ status: 204, body: '' })
+                // 200 + { reused } — agent tự quyết mở tiến trình mới hay dựng lại cửa sổ
+                // đang thu nhỏ. SPA KHÔNG rẽ nhánh theo cờ này (xem TC-REUSE-1).
+                return route.fulfill({
+                    status: 200,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ reused: launchReused }),
+                })
             }
             if (launchOutcome === 'notConfigured') {
                 return route.fulfill({
@@ -375,9 +394,10 @@ test.describe('診療入力 — レントゲンボタン（画像編集ソフト
 
     // ═══ Đường lỗi ═══════════════════════════════════════════════════════════
 
-    test('TC-OK-1 — agent trả 204: KHÔNG hiện hộp thoại nào', async () => {
+    test('TC-OK-1 — agent trả 200: KHÔNG hiện hộp thoại nào', async () => {
         await openWithPicLink(PIC_LINK.np2NeoLink, BTN_ROENTGEN)
         launchOutcome = 'ok'
+        launchReused = false
 
         const req = page.waitForRequest(
             (r) => XRAY_LAUNCH_URL.test(r.url()) && r.method() === 'POST',
@@ -390,6 +410,37 @@ test.describe('診療入力 — レントゲンボタン（画像編集ソフト
         await expect(
             page.getByRole('alertdialog'),
             'TC-OK-1 FAIL: khởi chạy thành công mà vẫn báo gì đó',
+        ).toHaveCount(0)
+        await step()
+    })
+
+    test('TC-REUSE-1 — bấm lần hai VẪN gọi agent; SPA không tự chặn trùng', async () => {
+        launchOutcome = 'ok'
+        // Lần này agent báo nó chỉ dựng lại cửa sổ đang thu nhỏ chứ không mở tiến trình
+        // mới. Việc quyết định trùng hay không là của agent — chỉ nó nhìn thấy cái gì
+        // đang chạy, và trạng thái đó sống sót qua reload trang, thứ mà biến trong SPA
+        // thì không. Nếu SPA tự chặn lần bấm thứ hai thì cửa sổ bị thu nhỏ sẽ không bao
+        // giờ nổi lên lại.
+        launchReused = true
+        launchCalls = 0
+
+        const req = page.waitForRequest(
+            (r) => XRAY_LAUNCH_URL.test(r.url()) && r.method() === 'POST',
+            { timeout: 30000 },
+        )
+        await roentgenBtn().click()
+        await req
+
+        expect(
+            launchCalls,
+            'TC-REUSE-1 FAIL: SPA nuốt lần bấm thứ hai — cửa sổ đã minimize sẽ không nổi lên',
+        ).toBe(1)
+        expect(lastLaunch!.patientId, 'lần bấm lại vẫn phải gửi đúng 患者番号').toBe(PAT_NO)
+        // `reused` chỉ để ghi log / hỗ trợ khách hàng, không được đổi giao diện.
+        await page.waitForTimeout(1500)
+        await expect(
+            page.getByRole('alertdialog'),
+            'TC-REUSE-1 FAIL: reused=true mà lại bung hộp thoại',
         ).toHaveCount(0)
         await step()
     })
