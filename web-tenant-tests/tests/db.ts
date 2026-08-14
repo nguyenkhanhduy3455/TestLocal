@@ -1077,6 +1077,187 @@ export async function restoreKon(patNo: number, snap: KonSnapshot): Promise<void
     })
 }
 
+// ─── trt_state (tiến trình STEP của bệnh nhân) ───────────────────────────────
+//
+// Bảng CHUẨN HOÁ: mỗi ô một dòng `(pat_no, bui_idx, pos_idx, value)`, ô = 0 thì
+// KHÔNG có dòng (SaveGridAsync bỏ qua ô 0, GetAsync mặc định ô thiếu là 0). Vì
+// vậy đọc phải dựng lại vector 32 ô chứ không `SELECT *` rồi đếm.
+
+/** MouthConstants.AdultBuiCount — số 部位 của một 種別. */
+export const TRT_STATE_POS_COUNT = 32
+
+/** Vector 32 ô của một 種別 (bui_idx 1..15); ô không có dòng = 0. */
+export async function readTrtStateRow(patNo: number, buiIdx: number): Promise<number[]> {
+    return withDb(async (c) => {
+        const r = await c.query<{ pos_idx: number; value: number }>(
+            `SELECT pos_idx, value
+               FROM view_trt_state_active
+              WHERE pat_no = $1 AND bui_idx = $2`,
+            [patNo, buiIdx],
+        )
+        const row = Array<number>(TRT_STATE_POS_COUNT).fill(0)
+        for (const x of r.rows) {
+            const i = Number(x.pos_idx) - 1
+            if (i >= 0 && i < TRT_STATE_POS_COUNT) row[i] = Number(x.value)
+        }
+        return row
+    })
+}
+
+/**
+ * Ghi giá trị cho MỘT SỐ ô của một 種別 — dùng ở `afterAll` để trả lại nguyên
+ * trạng những ô mà spec đã sửa qua UI.
+ *
+ * Bắt chước `TrtStateCommands.SaveGridAsync`: ô đã có dòng thì UPDATE (kể cả về
+ * 0 — BE cũng để lại dòng value=0 chứ không xoá), ô chưa có dòng và giá trị khác
+ * 0 thì INSERT. KHÔNG xoá dòng nào, nên không làm mất `id`/`created_at` của dữ
+ * liệu có sẵn.
+ */
+export async function writeTrtStateCells(
+    patNo: number,
+    buiIdx: number,
+    cells: ReadonlyArray<{ posIdx: number; value: number }>,
+): Promise<number> {
+    if (cells.length === 0) return 0
+    return withDb(async (c) => {
+        let n = 0
+        for (const cell of cells) {
+            const upd = await c.query(
+                `UPDATE trt_state SET value = $4, updated_at = now()
+                  WHERE pat_no = $1 AND bui_idx = $2 AND pos_idx = $3 AND deleted_at IS NULL`,
+                [patNo, buiIdx, cell.posIdx, cell.value],
+            )
+            if ((upd.rowCount ?? 0) > 0) {
+                n += upd.rowCount ?? 0
+                continue
+            }
+            if (cell.value === 0) continue
+            const ins = await c.query(
+                `INSERT INTO trt_state (pat_no, bui_idx, pos_idx, value) VALUES ($1, $2, $3, $4)`,
+                [patNo, buiIdx, cell.posIdx, cell.value],
+            )
+            n += ins.rowCount ?? 0
+        }
+        return n
+    })
+}
+
+// ─── ガイド STEP (pac_nam + pag_trt + pac_tbl) — seed tạm ─────────────────────
+//
+// Vì sao cần: mắt xích 「số gõ trong Ｓｔｅｐ編集 → danh sách Shift+F4」 chỉ quan
+// sát được từ ngoài khi có ÍT NHẤT HAI ガイド STEP hiện được, với `pac_step` khác
+// nhau. Master thật của tenant chỉ có một dòng trong dải STEP, lại thêm nhánh
+// fallback (`GuidQueries.ListStepAsync` :139-160, port modGuid1.cs:134-138 — lọc
+// ra rỗng thì BỎ lọc và trả cả dải) nên MỌI giá trị đều cho cùng một danh sách:
+// không kết luận được gì. Seed hai ガイド là cách duy nhất dựng được trạng thái
+// phân biệt được.
+//
+// Một ガイド STEP 「hiện được」 phải đủ BA bảng (ListStepAsync):
+//   pac_nam   guid_cd ∈ [1000,1999] + pac_step_01 = mã bước dẫn TỚI nó
+//   pag_trt   ≥ 1 dòng            → thoả `EXISTS view_pag_trt_active`
+//   pac_tbl   1 dòng dis_cd       → thoả điều kiện phạm vi 病名
+//
+// dis_cd của pac_tbl để 9999 (`PacGuideCodeRange.UniversalDisCdWildcard`):
+// `BuildDisPredicate` luôn nối 9999 vào danh sách 病名 nên ガイド seed hiện với
+// MỌI 病名 — spec khỏi phụ thuộc hồ sơ test có đúng 病名 nào.
+//
+// LUÔN dọn bằng `deleteStepGuides()` ở afterAll. Nếu một lần chạy bị kill giữa
+// chừng thì dòng seed còn lại; dọn tay:
+//   DELETE FROM t_tenant1.pac_nam WHERE guid_cd BETWEEN 1900 AND 1999;
+//   DELETE FROM t_tenant1.pag_trt WHERE guid_cd BETWEEN 1900 AND 1999;
+//   DELETE FROM t_tenant1.pac_tbl WHERE guid_cd BETWEEN 1900 AND 1999;
+
+/** Dải guid_cd dành riêng cho ガイド seed — nằm cuối dải STEP để né master thật. */
+export const SEED_STEP_GUID_MIN = 1900
+export const SEED_STEP_GUID_MAX = 1999
+
+export interface SeedStepGuideInput {
+    /** Phải nằm trong [SEED_STEP_GUID_MIN, SEED_STEP_GUID_MAX]. */
+    guidCd: number
+    /** 名称 hiện ở cột 名称 của tab ガイド (pac_nam.guid_nm, varchar 50). */
+    guidNm: string
+    /** Giá trị trt_state sẽ trỏ tới ガイド này — ghi vào `pac_step_01`. */
+    stepFrom: number
+}
+
+/**
+ * Seed các ガイド STEP tạm. Ném lỗi nếu guid_cd nằm ngoài dải seed, hoặc dải đó
+ * đang bị master THẬT chiếm (tránh xoá nhầm dữ liệu của tenant).
+ * Trả về số ガイド đã tạo.
+ */
+export async function seedStepGuides(rows: readonly SeedStepGuideInput[]): Promise<number> {
+    if (rows.length === 0) return 0
+    for (const r of rows) {
+        if (r.guidCd < SEED_STEP_GUID_MIN || r.guidCd > SEED_STEP_GUID_MAX) {
+            throw new Error(
+                `seedStepGuides: guid_cd ${r.guidCd} ngoài dải seed ` +
+                    `[${SEED_STEP_GUID_MIN}, ${SEED_STEP_GUID_MAX}] — từ chối để không đụng master thật.`,
+            )
+        }
+    }
+    return withDb(async (c) => {
+        // Dòng pag_trt nguồn: chỉ cần TỒN TẠI để thoả EXISTS. Chép trt_cd/trt_sb
+        // của một dòng có thật thay vì bịa số, để nếu ai đó mở thử
+        // ガイド処置選択 thì nó vẫn tra được master chứ không nổ.
+        const src = await c.query<{ trt_cd: number; trt_sb: number }>(
+            `SELECT trt_cd, trt_sb FROM view_pag_trt_active
+              WHERE trt_cd IS NOT NULL AND trt_sb IS NOT NULL
+              ORDER BY pag_id LIMIT 1`,
+        )
+        const srcRow = src.rows[0]
+        if (!srcRow) return 0
+
+        let n = 0
+        for (const r of rows) {
+            const clash = await c.query<{ guid_nm: string | null }>(
+                'SELECT guid_nm FROM pac_nam WHERE guid_cd = $1 AND deleted_at IS NULL LIMIT 1',
+                [r.guidCd],
+            )
+            const existing = clash.rows[0]
+            if (existing && (existing.guid_nm ?? '') !== r.guidNm) {
+                throw new Error(
+                    `seedStepGuides: guid_cd ${r.guidCd} đã có trong pac_nam với tên ` +
+                        `「${existing.guid_nm}」 — dải seed đang bị master thật chiếm. ` +
+                        'Đổi TEST_STEP_GUID_BASE sang dải trống rồi chạy lại.',
+                )
+            }
+
+            // Dọn tàn dư của lần chạy trước (bị kill giữa chừng) rồi tạo mới.
+            await c.query('DELETE FROM pac_nam WHERE guid_cd = $1', [r.guidCd])
+            await c.query('DELETE FROM pag_trt WHERE guid_cd = $1', [r.guidCd])
+            await c.query('DELETE FROM pac_tbl WHERE guid_cd = $1', [r.guidCd])
+
+            await c.query(
+                'INSERT INTO pac_nam (guid_cd, guid_nm, pac_step_01) VALUES ($1, $2, $3)',
+                [r.guidCd, r.guidNm, r.stepFrom],
+            )
+            await c.query(
+                'INSERT INTO pag_trt (guid_cd, trt_cd, trt_sb, flg1) VALUES ($1, $2, $3, 1)',
+                [r.guidCd, srcRow.trt_cd, srcRow.trt_sb],
+            )
+            await c.query('INSERT INTO pac_tbl (dis_cd, dis_sb, guid_cd) VALUES (9999, 0, $1)', [
+                r.guidCd,
+            ])
+            n++
+        }
+        return n
+    })
+}
+
+/** Xoá HẲN các ガイド đã seed khỏi cả ba bảng. Bỏ qua guid_cd ngoài dải seed. */
+export async function deleteStepGuides(guidCds: readonly number[]): Promise<number> {
+    const safe = guidCds.filter((cd) => cd >= SEED_STEP_GUID_MIN && cd <= SEED_STEP_GUID_MAX)
+    if (safe.length === 0) return 0
+    return withDb(async (c) => {
+        let n = 0
+        for (const table of ['pac_nam', 'pag_trt', 'pac_tbl']) {
+            const r = await c.query(`DELETE FROM ${table} WHERE guid_cd = ANY($1::int[])`, [safe])
+            n += r.rowCount ?? 0
+        }
+        return n
+    })
+}
+
 // ─── mst_trt lookup (đọc, KHÔNG seed) ────────────────────────────────────────
 //
 // Master 処置 chia theo BẢN hiệu lực theo ngày (`view_mst_trt_ver_active`), và

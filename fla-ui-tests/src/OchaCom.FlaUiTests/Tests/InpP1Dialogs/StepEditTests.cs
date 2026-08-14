@@ -5,8 +5,9 @@ using OchaCom.FlaUiTests.Infrastructure;
 namespace OchaCom.FlaUiTests.Tests.InpP1Dialogs;
 
 /// <summary>
-/// <b>A. Ｓｔｅｐ編集 (frm203050)</b> — bản WinForm của nhóm TC-STEP-* trong
-/// <c>web-tenant-tests/tests/inp-p1-ported-dialogs.spec.ts</c>.
+/// <b>Ｓｔｅｐ編集 (frm203050)</b> — bản WinForm của nhóm TC-STEP-* trong
+/// <c>web-tenant-tests/tests/step-edit-dialog.spec.ts</c> (tách khỏi
+/// <c>inp-p1-ported-dialogs.spec.ts</c> ngày 2026-08-14).
 ///
 /// <para>Bộ này đo <b>đáp án</b>: bản web phải khớp cái mà WinForm làm ở đây. Mỗi
 /// testcase ghi rõ nó ứng với TC nào bên Playwright để hai bên còn đối chiếu được.</para>

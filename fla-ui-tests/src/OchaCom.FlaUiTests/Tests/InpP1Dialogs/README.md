@@ -15,7 +15,8 @@ Chạy: **`.\run-inp-p1-dialog.ps1`** — runner riêng, **không** đi qua `run
 Đối chiếu với spec của bản web:
 
 ```
-../../../../web-tenant-tests/tests/inp-p1-ported-dialogs.spec.ts
+../../../../web-tenant-tests/tests/step-edit-dialog.spec.ts        (TC-STEP-*)
+../../../../web-tenant-tests/tests/inp-p1-ported-dialogs.spec.ts   (TC-CHK-* / TC-BR-*)
 ```
 
 Spec bên đó viết **sau khi port**, dựa trên đọc source WinForm. Bộ này chạy **chính

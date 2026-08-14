@@ -5,59 +5,26 @@ import { makeStep, skipWithReason } from './step'
 import { ADMIN_USER, JA } from './test-data'
 
 /**
- * 診療入力 — BA dialog vừa được port khỏi trạng thái shell / sample data:
+ * 診療入力 — HAI dialog vừa được port khỏi trạng thái shell / sample data:
  *
- *   A. Ｓｔｅｐ編集        (frm203050) — F11 → 「9 オプション」 → 「Step」
- *   B. チェック項目設定   (frm203044) — F11 → 「9 オプション」 → 「1 チェック項目設定」
- *   C. Ｂｒサンプル       (frm203049) — 部位選択 → F9 「Br例」
+ *   A. チェック項目設定   (frm203044) — F11 → 「9 オプション」 → 「1 チェック項目設定」
+ *   B. Ｂｒサンプル       (frm203049) — 部位選択 → F9 「Br例」
  *
- * Gộp một file vì cả ba đều xuất phát từ MỘT màn `/treatments/{patNo}`: app chặn
- * ~10 login mỗi khung giờ (Rule 10.1), tách ba file là ba lần login cho cùng một
+ * Gộp một file vì cả hai đều xuất phát từ MỘT màn `/treatments/{patNo}`: app chặn
+ * ~10 login mỗi khung giờ (Rule 10.1), tách hai file là hai lần login cho cùng một
  * hành trình. Cả file chạy `serial` trên MỘT page tạo ở `beforeAll`.
+ *
+ * ⚠️ Ｓｔｅｐ編集 (frm203050) TỪNG là nhóm A của file này; đã tách sang
+ * `step-edit-dialog.spec.ts` (2026-08-14) vì nó có thêm cả một nhóm testcase
+ * liên thông với tab ガイド (trt_state → Shift+F4 / 前回 / リセット) và cần seed
+ * ガイド master mới chạy được. Đừng thêm testcase STEP vào đây nữa.
  *
  * File này KHÁC `treatment-f11-menu-ported-actions.spec.ts`: file kia lo menu có
  * đúng 8 mục và bấm vào thì điều hướng tới đâu; file này lo NỘI DUNG bên trong
- * ba dialog. Đừng nhét testcase menu vào đây.
+ * dialog. Đừng nhét testcase menu vào đây.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * A. Ｓｔｅｐ編集 — nguồn WinForm (INP/Forms/frm203050.cs)
- * ═══════════════════════════════════════════════════════════════════════════
- *  - initProc (:195-214)   nạp CẢ 15 種別 một lần (`TrtState.getTrtState`), rồi
- *                          `dspData(1)` + `_bkIdx = 1` + `_epp[0].Focus()`.
- *  - _stsBui (:31)         `new int[15 * 32]` — buffer phẳng 15 種別 × 32 部位.
- *  - dspData (:244-250)    đổi 種別 chỉ ĐỔ LẠI 32 ô trên màn, KHÔNG nạp lại DB.
- *  - cboKind_SelectedValueChanged (:130-142)
- *                          đổi 種別 = `saveData(_bkIdx)` TRƯỚC; sai giá trị thì
- *                          KHÔNG đổi (dspData không chạy) ⇒ combo đứng yên.
- *  - saveData (:255-271)   ô > 30000 → E00100 「STEPの値が正しくありません。」+
- *                          「30000以下の値を入力して下さい。」 rồi focus lại ô đó.
- *  - txtEpp_KeyDown (:149-170)
- *                          ↑/↓ nhảy giữa hàm trên/dưới CÙNG CỘT (±16);
- *                          →/← đi hết 32 ô và VÒNG LẠI (31→0, 0→31).
- *  - btnF9_Click (:119-123) → updateProc (:276-321) ghi CẢ 15 hàng trong 1
- *                          transaction; hỏng thì E00026 và KHÔNG đóng màn.
- *  - cboKind               `makeCodMstCombo(con, cboKind, 70, COMBO_SPC_OFF)`
- *                          ⇒ 15 mục lấy từ mst_cod cd_type 70.
- *
- *  Web port — components/step-edit-dialog.tsx:
- *      · `DraggableDialog` ⇒ role="dialog"; tiêu đề có DẤU CÁCH THẬT trong
- *        source: 'S t e p 編 集'.
- *      · 32 ô là `<Input type="number">` ⇒ role **spinbutton**, KHÔNG phải
- *        textbox (Rule 12.5). Mỗi ô mang `aria-label="STEP {種別}-{部位}"`
- *        (1-based cả hai) — cách duy nhất trỏ đúng một ô.
- *      · Buffer là `draft ?? loadedGrid`: chưa sửa gì thì màn hình đọc THẲNG dữ
- *        liệu server. Reset (draft = null, 種別 về mục đầu) chạy khi `open` đổi
- *        HOẶC `loadedGrid` đổi identity, bằng adjust-during-render.
- *      · F9 lỗi → `ja.E00026('更新')` = 「更新に失敗しました。」 và GIỮ dialog.
- *  queries/trt-state-queries.ts: `enabled: open && patNo > 0`,
- *      `staleTime: Infinity`, `refetchOnWindowFocus: false`.
- *      ⚠️ HỆ QUẢ CHO TEST: GET chỉ bay ở lần mở ĐẦU TIÊN. Mở lại lần 2 KHÔNG có
- *      request ⇒ đừng `waitForResponse` ở các testcase sau, sẽ treo hết timeout
- *      rồi đỏ ở chỗ chẳng liên quan. Chỉ sau khi F9 lưu THÀNH CÔNG (mutation
- *      invalidate) thì lần mở kế mới nạp lại.
- *
- * ═══════════════════════════════════════════════════════════════════════════
- * B. チェック項目設定 — nguồn WinForm (INP/Forms/frm203044.cs)
+ * A. チェック項目設定 — nguồn WinForm (INP/Forms/frm203044.cs)
  * ═══════════════════════════════════════════════════════════════════════════
  *  - _param (:25)          `new ComboBox[19]` — 19 mục, param_20 KHÔNG dùng.
  *  - setItemData (:134-158) mục 7 → mst_cod 63; mục 17/18 → 64; còn lại → 62.
@@ -79,7 +46,7 @@ import { ADMIN_USER, JA } from './test-data'
  *      trong 5 phút KHÔNG có request mới (trừ sau khi lưu → invalidate).
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * C. Ｂｒサンプル — nguồn WinForm (INP/Forms/frm203049.cs)
+ * B. Ｂｒサンプル — nguồn WinForm (INP/Forms/frm203049.cs)
  * ═══════════════════════════════════════════════════════════════════════════
  *  - getViewData (:219-264) chỉ ô mang 1 / 4 / 6 mới tính là "đã chọn";
  *                          WHERE ghép `bui{n} = <giá trị>` cho từng ô đã chọn,
@@ -121,10 +88,10 @@ import { ADMIN_USER, JA } from './test-data'
  * ═══════════════════════════════════════════════════════════════════════════
  * Ghi DB
  * ═══════════════════════════════════════════════════════════════════════════
- *  Mặc định KHÔNG ghi gì: các TC-*-SAVE-1 chặn PUT bằng `page.route` để soi
- *  payload. Hai testcase ghi thật (A: trt_state, B: chk_prm) nằm sau
+ *  Mặc định KHÔNG ghi gì: TC-CHK-SAVE-1 chặn PUT bằng `page.route` để soi
+ *  payload. Testcase ghi thật duy nhất (TC-CHK-SAVE-2, chk_prm) nằm sau
  *  TEST_ALLOW_SAVE=1 (Rule 18.1) và tự trả lại giá trị cũ; `afterAll` in cảnh
- *  báo nếu chúng đỏ giữa chừng và giá trị còn lệch.
+ *  báo nếu nó đỏ giữa chừng và giá trị còn lệch.
  *  Spec KHÔNG bao giờ bấm F9 登録 của màn 診療入力 ⇒ không đụng lưới 処置.
  *
  * ═══════════════════════════════════════════════════════════════════════════
@@ -134,14 +101,9 @@ import { ADMIN_USER, JA } from './test-data'
  *     ĐÈ và nuốt cả phím F11 ⇒ vét bằng `drainBlockingDialogs()` TRƯỚC mỗi lần
  *     bấm F11. `addLocatorHandler` chỉ chạy khi Playwright đang làm một ACTION,
  *     không giúp gì cho `keyboard.press`.
- *  2. Ô STEP là `type="number"`: ↑/↓ mặc định tăng/giảm giá trị. Component
- *     `preventDefault` để biến chúng thành điều hướng ⇒ TC-STEP-NAV-1 soi CẢ
- *     focus mới LẪN giá trị ô cũ không đổi.
- *  3. `fill('')` trên input number cho `value = ''`, component quy về 0. Muốn
- *     kiểm "xoá trắng → ghi 0" thì đọc payload PUT, đừng đọc lại ô.
- *  4. `locator.isVisible({ timeout })` KHÔNG chờ — nó soi DOM ngay lúc gọi. Hộp
+ *  2. `locator.isVisible({ timeout })` KHÔNG chờ — nó soi DOM ngay lúc gọi. Hộp
  *     nào cần một vòng gọi API mới bung ra thì phải dùng `appeared()`.
- *  5. Ba dialog dùng chung role="dialog" với AgentOfflineDialog và SanteiConfirm
+ *  3. Hai dialog dùng chung role="dialog" với AgentOfflineDialog và SanteiConfirm
  *     ⇒ luôn lọc bằng `hasText` của tiêu đề, đừng `.first()`.
  *
  * ═══════════════════════════════════════════════════════════════════════════
@@ -156,14 +118,12 @@ import { ADMIN_USER, JA } from './test-data'
  *
  * ⚠️ KHÔNG dùng `--repeat-each` với file này (ngoại lệ của Rule 16).
  * `--repeat-each=N` lặp TỪNG TESTCASE N lần liên tiếp, không lặp cả file — nó
- * phá đúng cái mà `serial` xây: TC-STEP-VALID-2 lượt 1 kết thúc bằng việc trả ô
- * về giá trị HỢP LỆ, nên lượt 2 của chính nó chạy với ô sạch, F9 gửi PUT thật và
- * `expect(putSeen).toBe(false)` đỏ. Triệu chứng trông hệt như flaky của app
- * nhưng không phải. Muốn kiểm độ ổn định thì lặp CẢ FILE:
+ * phá đúng cái mà `serial` xây: mỗi testcase ở đây kết thúc bằng việc dọn trạng
+ * thái cho testcase SAU, nên lượt 2 của chính nó chạy trên một trạng thái khác
+ * hẳn và đỏ. Triệu chứng trông hệt như flaky của app nhưng không phải. Muốn kiểm
+ * độ ổn định thì lặp CẢ FILE:
  *
  *   for i in 1 2 3; do npx playwright test tests/inp-p1-ported-dialogs.spec.ts --retries=0; done
- *
- * Đã chạy 3 lượt như trên (2026-08-11): 25/25 xanh cả ba.
  */
 
 const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
@@ -177,40 +137,25 @@ const TRT_DT =
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     })()
 
-/** Cho phép GHI THẬT trt_state / chk_prm. Mặc định tắt (Rule 18.1). */
+/** Cho phép GHI THẬT chk_prm. Mặc định tắt (Rule 18.1). */
 const ALLOW_SAVE = process.env.TEST_ALLOW_SAVE === '1'
 
 const GRID_LOAD_TIMEOUT = 60_000
 
-// ── URL các endpoint ba màn này đụng tới ─────────────────────────────────────
-const TRT_STATE_GET_URL = /\/tenant\/guids\/trt-state\?/
-const TRT_STATE_PUT_URL = /\/tenant\/guids\/\d+\/trt-state(\?|$)/
+// ── URL các endpoint hai màn này đụng tới ────────────────────────────────────
 const CHK_PRM_URL = /\/tenant\/chk-prm(\?|$)/
 const BR_SAMPLES_URL = /\/tenant\/br-samples\?/
 
 // ── Nhãn menu, lấy nguyên văn từ F11_MENU_ITEMS ──────────────────────────────
 const MENU_OPTIONS = '9 オプション'
-const MENU_STEP = 'Step'
 const MENU_CHECK_ITEM = '1 チェック項目設定'
 
-// ── A. Ｓｔｅｐ編集 ──────────────────────────────────────────────────────────
-/** MouthConstants.StepBuiRowCount — số 種別. */
-const STEP_ROW_COUNT = 15
-/** MouthConstants.AdultBuiCount — số 部位. */
+/** MouthConstants.AdultBuiCount — số 部位 của một vector 歯式. */
 const BUI_COLUMN_COUNT = 32
-/** step-edit-dialog.tsx HALF_ARCH — ranh giới hàm trên / hàm dưới. */
+/** Ranh giới hàm trên / hàm dưới trong vector 32 ô. */
 const HALF_ARCH = BUI_COLUMN_COUNT / 2
-/** MouthConstants.StepValueMax. */
-const STEP_VALUE_MAX = 30_000
-/** Ô dùng để gõ thử — 種別 1, 部位 1. Không đụng ô nào khác. */
-const PROBE_ROW = 1
-const PROBE_COL = 1
-/** Giá trị thử: hợp lệ, khác 0. */
-const PROBE_VALUE = 7
-/** 種別 thứ hai dùng để kiểm buffer (index 1 trong danh sách). */
-const OTHER_KIND_INDEX = 1
 
-// ── B. チェック項目設定 ──────────────────────────────────────────────────────
+// ── A. チェック項目設定 ──────────────────────────────────────────────────────
 /** CheckItemSettings.ItemCount. */
 const CHK_ITEM_COUNT = 19
 /** check-item-setting-dialog.tsx LEFT_COLUMN_LAST_ITEM. */
@@ -249,7 +194,7 @@ const CHK_VAL_SECOND_ONWARDS = 2
 /** Mục dùng để đổi thử (mục duy nhất có cd_type 63). */
 const CHK_PROBE_NO = 7
 
-// ── C. Ｂｒサンプル ──────────────────────────────────────────────────────────
+// ── B. Ｂｒサンプル ──────────────────────────────────────────────────────────
 /**
  * Hai răng của vùng LU (hàm trên bên trái) sẽ được chọn để tìm mẫu Br.
  * LU răng N nằm ở bui index `8 + (N-1)` ⇒ vị trí 1-based `9 + (N-1)`.
@@ -259,9 +204,6 @@ const BR_TEETH = (process.env.TEST_BR_TEETH ?? '5,6').split(',').map((s) => s.tr
 /** ListBrSamplesHandler.BridgeBuiValues — chỉ 3 giá trị này tính là "đã chọn". */
 const BRIDGE_BUI_VALUES = [1, 4, 6]
 
-interface SaveGridBody {
-    rows: number[][]
-}
 interface SaveChkPrmBody {
     values: number[]
 }
@@ -274,25 +216,19 @@ interface ChkPrmItem {
 
 test.describe.configure({ mode: 'serial', timeout: 300_000 })
 
-test.describe('診療入力 — 3 dialog vừa port (Step / チェック項目設定 / Brサンプル)', () => {
+test.describe('診療入力 — 2 dialog vừa port (チェック項目設定 / Brサンプル)', () => {
     let page: Page
     let step: () => Promise<void>
 
     /** Menu 選択 của F11. Lọc theo '1 メニュー' để không dính submenu. */
     let rowMenu: Locator
-    /** A. Ｓｔｅｐ編集 — tiêu đề có dấu cách thật nên match nguyên văn. */
-    let stepDialog: Locator
-    /** B. チェック項目設定. */
+    /** A. チェック項目設定. */
     let chkDialog: Locator
-    /** C. Ｂｒサンプル. */
+    /** B. Ｂｒサンプル. */
     let brDialog: Locator
     /** 部位選択 (frm902003) — dialog cha của Ｂｒサンプル. */
     let toothDialog: Locator
 
-    /** Lưới STEP bắt được ở lần mở ĐẦU TIÊN (staleTime Infinity — xem đầu file). */
-    let loadedGrid: number[][] | null = null
-    /** Giá trị gốc ô STEP thử, để trả lại. */
-    let stepProbeBefore: number | null = null
     /** Payload chk_prm bắt được lúc mở lần đầu. */
     let loadedChkItems: ChkPrmItem[] | null = null
     /** Giá trị gốc của mục 7, để trả lại. */
@@ -415,17 +351,6 @@ test.describe('診療入力 — 3 dialog vừa port (Step / チェック項目�
         await expect(target).toBeHidden({ timeout: 10_000 })
     }
 
-    /** Đóng hộp `alertDialog` đang mở và trả về nội dung của nó. */
-    async function readAndDismissAlert(): Promise<string> {
-        // alertDialog ⇒ role="alertdialog" (Rule 13), tách hẳn khỏi role="dialog".
-        const alert = page.getByRole('alertdialog')
-        await expect(alert, 'không có hộp cảnh báo nào bung ra').toBeVisible({ timeout: 15_000 })
-        const text = (await alert.innerText()).trim()
-        await alert.getByRole('button', { name: /^(OK|はい)$/ }).click()
-        await expect(alert).toBeHidden({ timeout: 10_000 })
-        return text
-    }
-
     /** Mở combo Radix, trả nhãn mọi mục, rồi đóng mà KHÔNG chọn gì. */
     async function optionsOf(combo: Locator): Promise<string[]> {
         await combo.click()
@@ -464,31 +389,7 @@ test.describe('診療入力 — 3 dialog vừa port (Step / チェック項目�
         return label
     }
 
-    // ── A. Ｓｔｅｐ編集 ──────────────────────────────────────────────────────
-    /**
-     * Ô STEP theo (種別, 部位) 1-based — khớp `aria-label` của component.
-     *
-     * `exact: true` là BẮT BUỘC: mặc định `name` khớp CHUỖI CON, nên
-     * 「STEP 1-1」 trúng luôn 1-10…1-19 (11 phần tử) và Playwright ném strict
-     * mode violation. Đã vấp một lượt chạy vì chỗ này.
-     */
-    const stepCell = (row: number, col: number) =>
-        stepDialog.getByRole('spinbutton', { name: `STEP ${row}-${col}`, exact: true })
-    const stepKindSelect = () => stepDialog.getByRole('combobox')
-
-    /** Đọc một ô trt_state thẳng từ DB. Không có dòng = 0 (BE mặc định vậy). */
-    async function readTrtStateCell(buiIdx: number, posIdx: number): Promise<number> {
-        return withDb(async (c) => {
-            const r = await c.query<{ value: number | null }>(
-                `SELECT value FROM view_trt_state_active
-                  WHERE pat_no = $1 AND bui_idx = $2 AND pos_idx = $3 LIMIT 1`,
-                [Number(PAT_NO), buiIdx, posIdx],
-            )
-            return Number(r.rows[0]?.value ?? 0)
-        })
-    }
-
-    // ── B. チェック項目設定 ─────────────────────────────────────────────────
+    // ── A. チェック項目設定 ─────────────────────────────────────────────────
     /** Hàng của một mục = CHA của phần tử mang đúng nhãn đó (Rule 12.1). */
     const chkRowOf = (label: string) => chkDialog.getByText(label, { exact: true }).locator('..')
     const chkComboOf = (label: string) => chkRowOf(label).getByRole('combobox')
@@ -504,7 +405,7 @@ test.describe('診療入力 — 3 dialog vừa port (Step / チェック項目�
         })
     }
 
-    // ── C. Ｂｒサンプル ──────────────────────────────────────────────────────
+    // ── B. Ｂｒサンプル ──────────────────────────────────────────────────────
 
     /**
      * Mở 部位選択 qua panel 病検 → 変更 → click dòng đầu.
@@ -585,7 +486,6 @@ test.describe('診療入力 — 3 dialog vừa port (Step / チェック項目�
         await expect(page).toHaveURL(/\/$/)
 
         rowMenu = page.getByRole('menu').filter({ hasText: '1 メニュー' })
-        stepDialog = page.getByRole('dialog').filter({ hasText: 'S t e p 編 集' })
         chkDialog = page.getByRole('dialog').filter({ hasText: 'チ ェ ッ ク 項 目 設 定' })
         brDialog = page.getByRole('dialog').filter({ hasText: 'B r サ ン プ ル' })
         toothDialog = page.getByRole('dialog').filter({ hasText: /部\s*位\s*選\s*択/ })
@@ -596,15 +496,6 @@ test.describe('診療入力 — 3 dialog vừa port (Step / チェック項目�
     test.afterAll(async () => {
         // Lưới an toàn: testcase ghi thật đỏ giữa chừng thì giá trị nằm lại ở bản thử.
         if (ALLOW_SAVE && dbEnabled) {
-            if (stepProbeBefore !== null) {
-                const now = await readTrtStateCell(PROBE_ROW, PROBE_COL).catch(() => null)
-                if (now !== null && now !== stepProbeBefore) {
-                    console.log(
-                        `afterAll: trt_state(${PROBE_ROW},${PROBE_COL}) = ${now}, ` +
-                            `gốc là ${stepProbeBefore} — KHÔI PHỤC THỦ CÔNG.`,
-                    )
-                }
-            }
             if (chkProbeBefore !== null) {
                 const now = await readChkPrmParam(CHK_PROBE_NO).catch(() => null)
                 if (now !== null && now !== chkProbeBefore) {
@@ -619,319 +510,7 @@ test.describe('診療入力 — 3 dialog vừa port (Step / チェック項目�
     })
 
     // ═════════════════════════════════════════════════════════════════════════
-    // A. Ｓｔｅｐ編集 (frm203050)
-    // ═════════════════════════════════════════════════════════════════════════
-
-    test('TC-STEP-OPEN-1 — mở dialog và nạp CẢ 15×32 ô của bệnh nhân', async () => {
-        // Query gate bằng `enabled: open` ⇒ request CHỈ bay khi dialog mở. Bắt
-        // response TRƯỚC rồi mới mở. Đây là lần mở ĐẦU TIÊN nên chắc chắn có
-        // request (staleTime Infinity — các lần sau thì không, xem đầu file).
-        const gridRes = page.waitForResponse(
-            (res) => TRT_STATE_GET_URL.test(res.url()) && res.request().method() === 'GET',
-            { timeout: 60_000 },
-        )
-
-        await openFromOptions(MENU_STEP, stepDialog)
-
-        const res = await gridRes
-        expect(
-            new URL(res.url()).searchParams.get('patNo'),
-            'phải hỏi đúng bệnh nhân đang mở',
-        ).toBe(PAT_NO)
-
-        const body = (await res.json()) as { data?: { rows?: number[][] } }
-        loadedGrid = (body.data?.rows ?? []).map((r) => r.map(Number))
-        expect(loadedGrid, `phải trả đủ ${STEP_ROW_COUNT} 種別`).toHaveLength(STEP_ROW_COUNT)
-        for (const [i, row] of loadedGrid.entries()) {
-            expect(row, `種別 ${i + 1} phải đủ ${BUI_COLUMN_COUNT} 部位`).toHaveLength(
-                BUI_COLUMN_COUNT,
-            )
-        }
-        await step()
-    })
-
-    test('TC-STEP-OPEN-2 — combo 種別 lấy đủ 15 mục của mst_cod 70', async () => {
-        const options = await optionsOf(stepKindSelect())
-        expect(
-            options,
-            'combo 種別 phải đổ từ mst_cod cd_type 70 — hardcode 15 nhãn là sai',
-        ).toHaveLength(STEP_ROW_COUNT)
-
-        // Nhãn mst_cod 70 là '{số}-{tên}' (' 1-Ｃ関連' … '15-'); component trim
-        // khoảng trắng đệm. Soi theo TẬP HỢP số đầu dòng: phải đủ 1..15, không
-        // trùng, không thiếu.
-        const numbers = options.map((o) => Number(o.split('-')[0])).sort((a, b) => a - b)
-        expect(
-            numbers,
-            `nhãn 種別 phải là 1..15, đang có: ${options.join(' / ')}`,
-        ).toEqual(Array.from({ length: STEP_ROW_COUNT }, (_, i) => i + 1))
-
-        // …và phải HIỆN theo đúng thứ tự 1..15.
-        //
-        // Đây là chỗ đã bắt được một lỗi thật (2026-08-11): combo mở ra với
-        // 「12-」 đứng đầu. `GetMstCodHandler` chỉ `.OrderBy(c => c.SortOrder)`,
-        // mà cd_type 70 — như hầu hết cd_type — có sort_order = 0 trên MỌI dòng,
-        // nên Postgres tự do trả 12, 3, 7… WinForm cũng chỉ `ORDER BY SORT_ORDER`
-        // (CodMst.cs:41) nhưng clustered PK (CD_TYPE, CD_VAL) của SQL Server phá
-        // hoà bằng cd_val. Đã sửa hai lớp: `.ThenBy(c => c.CdVal)` ở BE, và
-        // component tự `.sort(cdVal)` để không phụ thuộc thứ tự server trả.
-        expect(
-            numbers,
-            `種別 phải hiện theo thứ tự 1..15, đang là: ${options.join(' / ')}`,
-        ).toEqual(options.map((o) => Number(o.split('-')[0])))
-
-        // Trigger phải mang 種別 1 (WinForm `dspData(1); _bkIdx = 1`).
-        await expect(stepKindSelect(), 'mở màn phải đứng ở 種別 1').toContainText(options[0] ?? '')
-        await step()
-    })
-
-    test('TC-STEP-GRID-1 — đúng 32 ô nhập', async () => {
-        await expect(stepDialog.getByRole('spinbutton')).toHaveCount(BUI_COLUMN_COUNT)
-        for (const col of [1, HALF_ARCH, HALF_ARCH + 1, BUI_COLUMN_COUNT]) {
-            await expect(stepCell(PROBE_ROW, col), `thiếu ô 部位 ${col}`).toBeVisible()
-        }
-        await step()
-    })
-
-    test('TC-STEP-LOAD-1 — 32 ô khớp payload của 種別 đang chọn', async () => {
-        expect(loadedGrid, 'TC-STEP-OPEN-1 chưa bắt được response').not.toBeNull()
-        const row = loadedGrid![PROBE_ROW - 1]!
-        // Soi cả 32 ô: chỗ duy nhất chứng minh thứ tự 部位 không bị lệch.
-        for (let col = 1; col <= BUI_COLUMN_COUNT; col++) {
-            await expect(
-                stepCell(PROBE_ROW, col),
-                `種別 ${PROBE_ROW} / 部位 ${col} lệch so với payload`,
-            ).toHaveValue(String(row[col - 1]!))
-        }
-        await step()
-    })
-
-    test('TC-STEP-BUFFER-1 — đổi 種別 rồi quay lại: số vừa gõ VẪN CÒN', async () => {
-        // Đây là lý do BE trả cả 15 hàng trong một lần: WinForm giữ nguyên
-        // `_stsBui` khi đổi 種別 (dspData chỉ đổ lại màn hình). Nếu port đi theo
-        // hướng "mỗi 種別 một request" thì testcase này đỏ.
-        expect(loadedGrid, 'TC-STEP-OPEN-1 chưa bắt được response').not.toBeNull()
-        stepProbeBefore = loadedGrid![PROBE_ROW - 1]![PROBE_COL - 1]!
-
-        await stepCell(PROBE_ROW, PROBE_COL).fill(String(PROBE_VALUE))
-        await expect(stepCell(PROBE_ROW, PROBE_COL)).toHaveValue(String(PROBE_VALUE))
-
-        // Sang 種別 khác — màn hình phải đổ giá trị của 種別 MỚI.
-        await pickOption(stepKindSelect(), OTHER_KIND_INDEX)
-        await expect(
-            stepCell(OTHER_KIND_INDEX + 1, PROBE_COL),
-            'đổi 種別 mà ô vẫn mang số của 種別 cũ — dspData không chạy',
-        ).toHaveValue(String(loadedGrid![OTHER_KIND_INDEX]![PROBE_COL - 1]!))
-        await step()
-
-        // Quay lại 種別 đầu: số vừa gõ phải còn nguyên trong buffer.
-        await pickOption(stepKindSelect(), 0)
-        await expect(
-            stepCell(PROBE_ROW, PROBE_COL),
-            'quay lại 種別 cũ mà mất số đã gõ — buffer 15 種別 không được giữ',
-        ).toHaveValue(String(PROBE_VALUE))
-        await step()
-    })
-
-    test('TC-STEP-NAV-1 — ↑/↓ nhảy giữa hai hàm CÙNG CỘT, không tăng/giảm giá trị', async () => {
-        // Ô là <input type="number">: mặc định ↑/↓ đổi giá trị. Component
-        // preventDefault để biến chúng thành điều hướng ⇒ soi CẢ hai vế.
-        const upper = stepCell(PROBE_ROW, PROBE_COL)
-        const lower = stepCell(PROBE_ROW, PROBE_COL + HALF_ARCH)
-        const upperBefore = await upper.inputValue()
-
-        await upper.focus()
-        await page.keyboard.press('ArrowDown')
-        await expect(lower, '↓ phải nhảy xuống hàm dưới CÙNG CỘT').toBeFocused()
-        await expect(upper, '↓ không được tăng/giảm giá trị ô cũ').toHaveValue(upperBefore)
-
-        await page.keyboard.press('ArrowUp')
-        await expect(upper, '↑ phải quay lại hàm trên CÙNG CỘT').toBeFocused()
-        await step()
-    })
-
-    test('TC-STEP-NAV-2 — →/← đi hết 32 ô và VÒNG LẠI ở hai đầu', async () => {
-        await stepCell(PROBE_ROW, BUI_COLUMN_COUNT).focus()
-        await page.keyboard.press('ArrowRight')
-        await expect(
-            stepCell(PROBE_ROW, 1),
-            '→ ở ô CUỐI phải vòng về ô ĐẦU (frm203050.cs:162)',
-        ).toBeFocused()
-
-        await page.keyboard.press('ArrowLeft')
-        await expect(
-            stepCell(PROBE_ROW, BUI_COLUMN_COUNT),
-            '← ở ô ĐẦU phải vòng về ô CUỐI (frm203050.cs:166)',
-        ).toBeFocused()
-        await step()
-    })
-
-    test('TC-STEP-VALID-1 — quá 30000 thì KHÔNG cho đổi 種別', async () => {
-        await stepCell(PROBE_ROW, PROBE_COL).fill(String(STEP_VALUE_MAX + 1))
-
-        const kindBefore = (await stepKindSelect().innerText()).trim()
-        await stepKindSelect().click()
-        const listbox = page.getByRole('listbox')
-        await expect(listbox).toBeVisible({ timeout: 10_000 })
-        await listbox.getByRole('option').nth(OTHER_KIND_INDEX).click()
-        await expect(listbox).toBeHidden({ timeout: 10_000 })
-
-        const alertText = await readAndDismissAlert()
-        expect(alertText, 'thiếu câu đầu của E00100').toContain('STEPの値が正しくありません。')
-        expect(alertText, 'thiếu ngưỡng trong thông báo').toContain(
-            `${STEP_VALUE_MAX}以下の値を入力して下さい。`,
-        )
-
-        await expect(
-            stepKindSelect(),
-            'giá trị sai mà vẫn đổi được 種別 — WinForm chặn ở cboKind_SelectedValueChanged',
-        ).toContainText(kindBefore)
-        await expect(
-            stepCell(PROBE_ROW, PROBE_COL),
-            'phải focus lại đúng ô sai (frm203050.cs:262)',
-        ).toBeFocused()
-        await step()
-    })
-
-    test('TC-STEP-VALID-2 — quá 30000 thì F9 KHÔNG gửi PUT và KHÔNG đóng dialog', async () => {
-        // Ô vẫn đang mang giá trị sai từ TC-STEP-VALID-1.
-        let putSeen = false
-        await page.route(TRT_STATE_PUT_URL, async (route: Route) => {
-            putSeen = true
-            await route.abort()
-        })
-
-        try {
-            await stepDialog.getByRole('button', { name: 'F9 確定' }).click()
-            await readAndDismissAlert()
-        } finally {
-            await page.unroute(TRT_STATE_PUT_URL)
-        }
-
-        expect(putSeen, 'giá trị sai mà vẫn bắn PUT — validate chạy SAU khi gửi').toBe(false)
-        await expect(stepDialog, 'lưu hỏng mà đóng dialog thì mất hết chỉnh sửa').toBeVisible()
-
-        // Trả ô về giá trị hợp lệ cho các testcase sau.
-        await stepCell(PROBE_ROW, PROBE_COL).fill(String(PROBE_VALUE))
-        await step()
-    })
-
-    test('TC-STEP-SAVE-1 — F9 gửi ĐỦ 15×32 ô, ô để trống gửi 0', async () => {
-        // Ô để trống PHẢI đi lên thành 0: BE suy ra "người dùng xoá" từ số 0 trong
-        // payload; bỏ ô đó khỏi body thì giá trị cũ nằm lại trong DB.
-        const blankCol = PROBE_COL + 1
-        await stepCell(PROBE_ROW, blankCol).fill('')
-
-        let sent: SaveGridBody | null = null
-        // CHẶN request ⇒ KHÔNG ghi DB, chạy hằng ngày được.
-        await page.route(TRT_STATE_PUT_URL, async (route: Route) => {
-            const req = route.request()
-            if (req.method() !== 'PUT') return route.fallback()
-            sent = req.postDataJSON() as SaveGridBody
-            await route.fulfill({
-                status: 200,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ success: true, data: true }),
-            })
-        })
-
-        try {
-            await stepDialog.getByRole('button', { name: 'F9 確定' }).click()
-            await expect(stepDialog, 'lưu xong thì dialog phải đóng').toBeHidden({ timeout: 30_000 })
-        } finally {
-            await page.unroute(TRT_STATE_PUT_URL)
-        }
-
-        expect(sent, 'không bắt được PUT /tenant/guids/{patNo}/trt-state').not.toBeNull()
-        expect(sent!.rows, `phải gửi đủ ${STEP_ROW_COUNT} 種別`).toHaveLength(STEP_ROW_COUNT)
-        for (const [i, row] of sent!.rows.entries()) {
-            expect(row, `種別 ${i + 1} phải đủ ${BUI_COLUMN_COUNT} 部位`).toHaveLength(
-                BUI_COLUMN_COUNT,
-            )
-        }
-        const sentRow = sent!.rows[PROBE_ROW - 1]!
-        expect(sentRow[PROBE_COL - 1], 'số vừa gõ không tới được payload').toBe(PROBE_VALUE)
-        expect(
-            sentRow[blankCol - 1],
-            'ô để trống phải gửi 0 — bỏ qua thì BE giữ nguyên giá trị cũ',
-        ).toBe(0)
-        await step()
-    })
-
-    test('TC-STEP-SAVE-2 — ghi THẬT trt_state rồi mở lại vẫn còn (TEST_ALLOW_SAVE=1)', async () => {
-        skipWithReason(
-            !ALLOW_SAVE,
-            'ghi thật trt_state của bệnh nhân test — đặt TEST_ALLOW_SAVE=1 để chạy',
-        )
-        expect(stepProbeBefore, 'TC-STEP-BUFFER-1 chưa chốt được giá trị gốc').not.toBeNull()
-
-        await openFromOptions(MENU_STEP, stepDialog)
-        await stepCell(PROBE_ROW, PROBE_COL).fill(String(PROBE_VALUE))
-
-        const putRes = page.waitForResponse(
-            (res) => TRT_STATE_PUT_URL.test(res.url()) && res.request().method() === 'PUT',
-            { timeout: 60_000 },
-        )
-        await stepDialog.getByRole('button', { name: 'F9 確定' }).click()
-        expect((await putRes).status(), 'PUT trt-state phải 2xx').toBeLessThan(300)
-        await expect(stepDialog).toBeHidden({ timeout: 30_000 })
-
-        if (dbEnabled) {
-            expect(
-                await readTrtStateCell(PROBE_ROW, PROBE_COL),
-                'PUT trả 2xx nhưng DB không đổi — write không tới bảng',
-            ).toBe(PROBE_VALUE)
-        }
-
-        // Mở lại: mutation đã invalidate nên lần này CÓ request mới.
-        await openFromOptions(MENU_STEP, stepDialog)
-        await expect(
-            stepCell(PROBE_ROW, PROBE_COL),
-            'lưu xong mở lại phải thấy giá trị vừa ghi',
-        ).toHaveValue(String(PROBE_VALUE))
-        await step()
-
-        // Trả lại giá trị gốc.
-        await stepCell(PROBE_ROW, PROBE_COL).fill(String(stepProbeBefore))
-        await stepDialog.getByRole('button', { name: 'F9 確定' }).click()
-        await expect(stepDialog).toBeHidden({ timeout: 30_000 })
-        if (dbEnabled) {
-            expect(
-                await readTrtStateCell(PROBE_ROW, PROBE_COL),
-                'khôi phục giá trị gốc thất bại',
-            ).toBe(stepProbeBefore!)
-        }
-        await step()
-    })
-
-    test('TC-STEP-CLOSE-1 — F10 戻る không lưu, mở lại bỏ hết chỉnh sửa dở', async () => {
-        await openFromOptions(MENU_STEP, stepDialog)
-        const seeded = await stepCell(PROBE_ROW, PROBE_COL).inputValue()
-
-        await stepCell(PROBE_ROW, PROBE_COL).fill(String(Number(seeded) + 1))
-        let putSeen = false
-        await page.route(TRT_STATE_PUT_URL, async (route: Route) => {
-            putSeen = true
-            await route.abort()
-        })
-        try {
-            await closeWithF10(stepDialog)
-        } finally {
-            await page.unroute(TRT_STATE_PUT_URL)
-        }
-        expect(putSeen, 'F10 戻る mà vẫn ghi — 戻る không được lưu gì').toBe(false)
-
-        await openFromOptions(MENU_STEP, stepDialog)
-        await expect(
-            stepCell(PROBE_ROW, PROBE_COL),
-            'mở lại phải seed lại từ dữ liệu server, không giữ chỉnh sửa dở',
-        ).toHaveValue(seeded)
-        await closeWithF10(stepDialog)
-        await step()
-    })
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // B. チェック項目設定 (frm203044)
+    // A. チェック項目設定 (frm203044)
     // ═════════════════════════════════════════════════════════════════════════
 
     test('TC-CHK-OPEN-1 — mở dialog và nạp 19 mục từ GET /tenant/chk-prm', async () => {
@@ -1164,7 +743,7 @@ test.describe('診療入力 — 3 dialog vừa port (Step / チェック項目�
     })
 
     // ═════════════════════════════════════════════════════════════════════════
-    // C. Ｂｒサンプル (frm203049)
+    // B. Ｂｒサンプル (frm203049)
     // ═════════════════════════════════════════════════════════════════════════
 
     test('TC-BR-OPEN-1 — 部位選択 → F9 Br例 mở dialog, gửi ĐỦ 32 ô lên BE', async () => {

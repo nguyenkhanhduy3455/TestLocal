@@ -15,8 +15,9 @@ import { cells, emptyState, rows as gridRows, scroller } from './virtual-grid'
  * file là hai lần login cho cùng một hành trình (Rule 10.1). Cả file chạy
  * `serial` trên MỘT page tạo ở `beforeAll` (Rule 19).
  *
- * File này KHÁC `inp-p1-ported-dialogs.spec.ts`: file kia lo Step / チェック項目設定
- * / Brサンプル. Ở đây chỉ có hai popup tra master và chỗ chúng ĐỔ DỮ LIỆU RA.
+ * File này KHÁC `inp-p1-ported-dialogs.spec.ts` (チェック項目設定 / Brサンプル) và
+ * `step-edit-dialog.spec.ts` (Ｓｔｅｐ編集). Ở đây chỉ có hai popup tra master và
+ * chỗ chúng ĐỔ DỮ LIỆU RA.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * A. 処置検索 — nguồn WinForm (INP/Forms/frm902011.cs)
@@ -80,7 +81,7 @@ import { cells, emptyState, rows as gridRows, scroller } from './virtual-grid'
  *  1. `getByRole(..., { name })` khớp CHUỖI CON ⇒ `'病名検索 1'` trúng luôn
  *     11..19 (11 phần tử) và Playwright ném strict mode violation. Mọi locator
  *     theo aria-label ở đây đều `exact: true`. Đã có tiền lệ ở
- *     inp-p1-ported-dialogs (「STEP 1-1」).
+ *     step-edit-dialog (「STEP 1-1」).
  *  2. `F10 戻る` có mặt ở CẢ popup lẫn dialog 登録 ⇒ luôn scope theo dialog, đừng
  *     `page.getByRole('button', { name: 'F10 戻る' })`. Ngược lại `F9` thì tách
  *     được vì nhãn khác nhau: popup là 「F9 選択」, 登録 là 「F9 登録」.

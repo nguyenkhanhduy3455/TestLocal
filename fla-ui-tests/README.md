@@ -236,7 +236,9 @@ nó sửa **sổ tiền** — 会計 đã chốt và số dư 預り金/未収�
 dựng được (ngày đã 窓口精算, `tre_acc_link = 1`).
 
 **InpP1Dialogs** đo **đáp án** cho spec Playwright của bản web
-(`../web-tenant-tests/tests/inp-p1-ported-dialogs.spec.ts`): ba dialog vừa được port —
+(`../web-tenant-tests/tests/step-edit-dialog.spec.ts` cho TC-STEP-*,
+`../web-tenant-tests/tests/inp-p1-ported-dialogs.spec.ts` cho TC-CHK-* / TC-BR-*):
+ba dialog vừa được port —
 `frm203050`「Ｓｔｅｐ編集」, `frm203044`「チェック項目設定」, `frm203049`「Ｂｒサンプル」.
 Mỗi testcase ghi rõ nó ứng với TC nào bên kia. Hai dialog đầu vào bằng **mục menu**
 (`IDM_Step` / `IDM_ChkPrm`), locator khác hẳn nút `btnF*` của các luồng trên. Nhánh ghi

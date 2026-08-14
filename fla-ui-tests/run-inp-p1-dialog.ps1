@@ -26,7 +26,8 @@
     sai — hai chuyện đó nhìn giống hệt nhau trong log. Nên: chạy -Diagnostics TRƯỚC.
 
     Bộ này đo đáp án cho spec Playwright của bản web:
-        ../web-tenant-tests/tests/inp-p1-ported-dialogs.spec.ts   (TC-STEP-* / TC-CHK-* / TC-BR-*)
+        ../web-tenant-tests/tests/step-edit-dialog.spec.ts        (TC-STEP-*)
+        ../web-tenant-tests/tests/inp-p1-ported-dialogs.spec.ts   (TC-CHK-* / TC-BR-*)
     Mỗi testcase ghi rõ nó ứng với TC nào bên kia. Bảng tương ứng: README.md mục 2.
 
     Chạy xong hãy lấy TOÀN BỘ các dòng chứa "=== KQ-" trong log và gửi lại — script đã

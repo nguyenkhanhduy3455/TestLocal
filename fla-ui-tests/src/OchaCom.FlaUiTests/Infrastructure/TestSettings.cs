@@ -139,7 +139,8 @@ public sealed class TestSettings
     /// đúng một bệnh nhân và <c>chkprm</c>. Trộn hai cờ thì bật cái này là mở luôn cái kia.</para>
     ///
     /// <para>Tương đương <c>TEST_ALLOW_SAVE=1</c> bên bộ Playwright
-    /// (<c>web-tenant-tests/tests/inp-p1-ported-dialogs.spec.ts</c>).</para>
+    /// (<c>web-tenant-tests/tests/step-edit-dialog.spec.ts</c> +
+    /// <c>inp-p1-ported-dialogs.spec.ts</c>).</para>
     /// </summary>
     public sealed class InpP1Section
     {
