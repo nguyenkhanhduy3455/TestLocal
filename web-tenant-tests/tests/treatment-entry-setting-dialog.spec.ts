@@ -417,6 +417,18 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
         // Định danh máy đi bằng HEADER chứ không phải query param: nó áp cho mọi
         // route đọc setting và không thuộc contract của riêng endpoint nào.
         loadedDeviceId = (await res.request().allHeaders())[DEVICE_ID_HEADER] ?? null
+        if (AGENT_AVAILABLE) {
+            // Máy CÓ agent thì request ĐẦU TIÊN đã phải mang định danh máy. Từng hỏng
+            // đúng chỗ này: dialog bắn song song GET /v1/agent và GET /tenant/settings/inp,
+            // browser mới toanh (localStorage rỗng) nên lần đọc đầu bay đi trống, rồi
+            // mới đọc lại lần hai. Hậu quả không phải thừa một round-trip mà là form
+            // seed bằng mặc định legacy rồi seed đè lần nữa — gõ gì vào giữa là mất.
+            expect(
+                loadedDeviceId,
+                'máy có agent mà request đầu tiên KHÔNG mang định danh máy — ' +
+                    'lần đọc setting đang chạy đua với lần hỏi agent',
+            ).not.toBeNull()
+        }
         if (loadedDeviceId !== null) {
             expect(
                 loadedDeviceId,
