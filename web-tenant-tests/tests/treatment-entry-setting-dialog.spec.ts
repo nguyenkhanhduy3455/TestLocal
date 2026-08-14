@@ -21,24 +21,30 @@ import { ADMIN_USER, JA } from './test-data'
  *        không auto: tab 表示設定 cao nhất cần ~596px, để 550px thì mở ra đã có
  *        thanh cuộn. TC-LAYOUT-1 canh đúng chỗ này.
  *      · Chia kho lưu 32 field:
- *          - 5 field TOÀN PHÒNG KHÁM → tenant_setting namespace "inp", qua
- *            PUT /tenant/settings/inp. Gồm 2 flag BE Dapper đọc (intelliPac /
- *            intelliCmtAuto) và 3 field đổi cái được GHI vào dữ liệu phòng khám
- *            (dispEiseisi / dcondMode / kensaOrder).
- *          - 25 field RIÊNG MÁY → bảng inp_settings trong agent.db, đi trong
- *            nhóm `inpSettings` của /v1/config. KHÔNG còn nằm trong `settings`:
- *            map đó bị ghi đè toàn bộ mỗi lần lưu nên chỉ giữ 画像基本設定.
+ *          - 30 field đi CHUNG MỘT request GET/PUT /tenant/settings/inp, thân
+ *            request tách sẵn 2 nhánh:
+ *              · `clinic` — 5 field TOÀN PHÒNG KHÁM (tenant_setting namespace
+ *                "inp"): 2 flag BE Dapper đọc (intelliPac / intelliCmtAuto) và
+ *                3 field đổi cái được GHI vào dữ liệu phòng khám (dispEiseisi /
+ *                dcondMode / kensaOrder).
+ *              · `device` — 25 field RIÊNG MÁY, lưu ở bảng device_config trong
+ *                schema tenant, KHOÁ THEO ĐỊNH DANH MÁY. Không còn ở agent.db.
  *          - picLink / medicalSupportLink → connector_config.linkCode của
- *            category xray / medical-support (KHÔNG lưu lại thành setting).
- *        25 + 2 sau đều đi chung MỘT lệnh PUT /v1/config của agent.
+ *            category xray / medical-support, vẫn ở agent qua PUT /v1/config
+ *            (KHÔNG lưu lại thành setting).
+ *      · Định danh máy đi bằng header `X-Ochacom-Device-Id` (64 hex thường), lấy
+ *        từ GET /v1/agent, cache ở localStorage['ochacom.agent-id']. Thiếu header
+ *        thì ĐỌC vẫn được (trả giá trị phòng khám + mặc định) nhưng GHI bị BE từ
+ *        chối — không cho lưu 5 field mà bỏ rơi 25 field.
  *      · Flag theo quy ước WinForm 1 = bật, 9 = tắt.
- *      · F9 登録 lưu 2 chặng: tenant_setting BẮT BUỘC (lỗi → toast đỏ, dialog KHÔNG
- *        đóng), agent BEST-EFFORT (lỗi → toast info, vẫn đóng).
+ *      · F9 登録 lưu 2 chặng: /tenant/settings/inp BẮT BUỘC (lỗi → toast đỏ, dialog
+ *        KHÔNG đóng), agent BEST-EFFORT cho 2 mã 連携先 (lỗi → toast info, vẫn đóng).
  *      · Agent không chạy → bung AgentOfflineDialog 「エージェントが起動していません」
- *        NGAY LÚC MỞ (không đợi tới 登録), vì lúc đó form chỉ hiện được giá trị
- *        mặc định và 登録 sẽ ghi ngược mặc định đó xuống.
- *  - queries/agent-treatment-config-queries.ts: đọc CHUNG query ['agent','config']
- *    với màn 機器連携設定 / プリンター設定, tức GET /v1/config.
+ *        NGAY LÚC MỞ. Agent giờ chỉ còn lo 2 mã 連携先 và việc khai tên máy, nhưng
+ *        thiếu tên máy là không lưu được, nên vẫn phải báo trước khi tick.
+ *  - queries/agent-treatment-config-queries.ts: `useDeviceLinkConfig` đọc CHUNG
+ *    query ['agent','config'] với màn 機器連携設定 / プリンター設定 (GET /v1/config),
+ *    nhưng CHỈ để lấy 2 mã 連携先.
  *
  * CHẠY TUẦN TỰ (`describe.serial`) và dùng CHUNG một page: app giới hạn số lần
  * login nên login + vào /treatments làm đúng một lần ở beforeAll. Các testcase
@@ -52,8 +58,9 @@ import { ADMIN_USER, JA } from './test-data'
  * 起動 cả; dialog đó nếu có bung ra thì `openDialog()` chỉ bấm キャンセル cho khuất,
  * xem chú thích tại chỗ.
  *
- * Nhóm TC-AGENT-* cần agent thật nên tự skip khi không có (macOS/Linux) — xem
- * khối AGENT_AVAILABLE bên dưới.
+ * Nhóm TC-AGENT-* và TC-LINK-* cần agent thật nên tự skip khi không có
+ * (macOS/Linux) — xem khối AGENT_AVAILABLE bên dưới. Nhóm TC-LOAD-* thì KHÔNG:
+ * 25 field máy trạm đã rời agent.db sang device_config nên đọc được ở mọi nền tảng.
  */
 
 const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
@@ -76,14 +83,19 @@ const AGENT_SKIP_REASON =
     `cần agent (net48/SQLCipher, chỉ Windows) — đang chạy trên ${process.platform}. ` +
     'Đặt TEST_AGENT=1 nếu agent chạy ở máy khác.'
 
-/** Cho phép GHI THẬT tenant_setting ở TC-SAVE-3. Mặc định tắt (Rule 18.1). */
+/** Cho phép GHI THẬT setting ở TC-SAVE-3. Mặc định tắt (Rule 18.1). */
 const ALLOW_SAVE = process.env.TEST_ALLOW_SAVE === '1'
 
 // ── URL các endpoint của màn này ─────────────────────────────────────────────
-/** GET bundle 5 key toàn phòng khám. `keys=` phân tách bằng dấu phẩy THÔ. */
-const SETTINGS_GET_URL = /\/tenant\/settings\?keys=/
-/** PUT namespace "inp" — F9 登録 chặng 1. */
-const SETTINGS_PUT_URL = /\/tenant\/settings\/inp(\?|$)/
+/**
+ * 診療入力設定 — GET nạp màn, PUT của F9 登録. CÙNG một đường dẫn, phân biệt bằng
+ * method, nên mọi `page.route` trên nó phải `fallback()` khi method không khớp.
+ */
+const SETTINGS_INP_URL = /\/tenant\/settings\/inp(\?|$)/
+/** Giữ tên cũ cho các testcase chỉ quan tâm chặng ghi. */
+const SETTINGS_PUT_URL = SETTINGS_INP_URL
+/** Header mang định danh máy — BE đọc bằng `DeviceConfigHeaders.DeviceId`. */
+const DEVICE_ID_HEADER = 'x-ochacom-device-id'
 /** Agent: cả cấu hình máy trạm trong 1 tài nguyên. */
 const AGENT_CONFIG_URL = /\/v1\/config(\?|$)/
 
@@ -133,15 +145,15 @@ const TENANT_COMBOS = [
     { key: 'kensaOrder', label: '基本・精密検査', tab: '入力形態・動作1' },
 ] as const
 
-/** 5 key của bundle tenant_setting "inp" mà dialog hỏi lúc mở. */
+/** 5 key nằm ở nhánh `clinic` của /tenant/settings/inp. */
 const TENANT_KEYS = [...TENANT_FLAGS, ...TENANT_COMBOS].map((f) => f.key as string)
 
 /**
- * 25 key máy trạm nằm trong nhóm `inpSettings` của PUT /v1/config
- * (TREATMENT_SETTING_KEYS). Giá trị là SỐ — inp_settings là bảng cột INTEGER,
- * không phải map key/value TEXT như `settings`.
+ * 25 key máy trạm nằm ở nhánh `device` của /tenant/settings/inp — tương ứng
+ * `InpDeviceSettings` phía BE. Giá trị là SỐ: device_config lưu POCO đã
+ * serialize, không phải map key/value TEXT.
  */
-const AGENT_SETTING_KEYS = [
+const DEVICE_SETTING_KEYS = [
     'firstDispMode',
     'disList',
     'dispByoken',
@@ -170,15 +182,22 @@ const AGENT_SETTING_KEYS = [
 ] as const
 
 // ── Kiểu body, chỉ khai các field testcase soi tới ───────────────────────────
-interface TenantSettingsGetBody {
-    data?: { values?: Record<string, unknown> }
-}
-interface InpPutBody {
+/** 5 field toàn phòng khám — cùng hình dạng ở cả chiều đọc và chiều ghi. */
+interface InpClinicSection {
     intelliPac: number
     intelliCmtAuto: number
     dispEiseisi: number
     dcondMode: number
     kensaOrder: number
+}
+/** Thân GET /tenant/settings/inp. */
+interface InpScreenGetBody {
+    data?: { clinic?: InpClinicSection; device?: Record<string, number> }
+}
+/** Thân PUT /tenant/settings/inp — 2 nhánh, KHÔNG phẳng. */
+interface InpPutBody {
+    clinic: InpClinicSection
+    device: Record<string, number>
 }
 interface AgentConnector {
     category: string
@@ -190,14 +209,12 @@ interface AgentConfigBody {
     connectors: AgentConnector[]
     printMappings: unknown[]
     settings: Record<string, string>
-    inpSettings: Record<string, number>
     configVersion: number
 }
 interface AgentConfigPutBody {
     connectors: AgentConnector[]
     printMappings: unknown[]
     settings: Record<string, string>
-    inpSettings: Record<string, number>
     syncTicket?: string
     expectedConfigVersion?: number
 }
@@ -226,8 +243,11 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
     /** Checkbox của một CheckRow — Radix render `<button role=checkbox>` trong `<label>`. */
     let checkOf: (label: string) => Locator
 
-    /** Body GET /tenant/settings bắt được lúc mở dialog (TC-LOAD-1 dùng lại). */
-    let loadedTenantValues: Record<string, unknown> | null = null
+    /** Body GET /tenant/settings/inp bắt được lúc mở dialog (nhóm TC-LOAD-* dùng lại). */
+    let loadedInpSettings: { clinic?: InpClinicSection; device?: Record<string, number> } | null =
+        null
+    /** Định danh máy mà request lúc mở dialog đã gửi, hoặc null nếu máy không có agent. */
+    let loadedDeviceId: string | null = null
     /** Body GET /v1/config bắt được lúc mở dialog (nhóm TC-AGENT-* dùng lại). */
     let loadedAgentConfig: AgentConfigBody | null = null
 
@@ -380,11 +400,11 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
 
     // ── Mở màn ───────────────────────────────────────────────────────────────
 
-    test('TC-OPEN-1 — F11 mở dialog và nạp đúng bundle 5 key của tenant_setting', async () => {
+    test('TC-OPEN-1 — F11 mở dialog, nạp 30 field trong 1 request kèm định danh máy', async () => {
         // Query gate bằng `enabled: open` nên request CHỈ bay khi bấm F11 — bắt
         // response trước rồi mới nhấn.
         const settingsRes = page.waitForResponse(
-            (res) => SETTINGS_GET_URL.test(res.url()) && res.request().method() === 'GET',
+            (res) => SETTINGS_INP_URL.test(res.url()) && res.request().method() === 'GET',
             { timeout: 60000 },
         )
         const agentRes = page
@@ -394,18 +414,30 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
         await openDialog()
 
         const res = await settingsRes
-        const url = new URL(res.url())
-        // So như TẬP HỢP, không theo thứ tự: tenantSettingsQueryOptions cố ý
-        // sort + dedupe (shared/queries/tenant-settings.ts) để queryKey ổn định
-        // giữa các caller truyền cùng bộ key theo thứ tự khác nhau. Thứ tự trên
-        // URL vì thế là alphabet, không phải thứ tự khai TENANT_FLAG_KEYS.
-        expect(
-            (url.searchParams.get('keys') ?? '').split(','),
-            'chỉ được hỏi ĐÚNG 5 key toàn phòng khám, 25 field còn lại là của agent',
-        ).toEqual(TENANT_KEYS.map((k) => `inp.${k}`).sort())
+        // Định danh máy đi bằng HEADER chứ không phải query param: nó áp cho mọi
+        // route đọc setting và không thuộc contract của riêng endpoint nào.
+        loadedDeviceId = (await res.request().allHeaders())[DEVICE_ID_HEADER] ?? null
+        if (loadedDeviceId !== null) {
+            expect(
+                loadedDeviceId,
+                'định danh máy phải là 64 hex thường — BE kiểm bằng AgentIdFormat',
+            ).toMatch(/^[0-9a-f]{64}$/)
+        }
 
-        const body = (await res.json()) as TenantSettingsGetBody
-        loadedTenantValues = body.data?.values ?? {}
+        const body = (await res.json()) as InpScreenGetBody
+        loadedInpSettings = body.data ?? {}
+        // Hai nhánh chứ không phẳng: màn hình phải phân biệt được cái nào đang đổi
+        // cho cả phòng khám và cái nào chỉ cho máy này.
+        expect(loadedInpSettings.clinic, 'thiếu nhánh `clinic` (5 field phòng khám)').toBeTruthy()
+        expect(loadedInpSettings.device, 'thiếu nhánh `device` (25 field máy trạm)').toBeTruthy()
+        expect(
+            Object.keys(loadedInpSettings.clinic!).sort(),
+            'nhánh `clinic` phải đúng 5 key toàn phòng khám',
+        ).toEqual([...TENANT_KEYS].sort())
+        expect(
+            Object.keys(loadedInpSettings.device!).sort(),
+            'nhánh `device` phải đúng 25 key máy trạm',
+        ).toEqual([...DEVICE_SETTING_KEYS].sort())
 
         const agent = await agentRes
         if (agent && agent.ok()) loadedAgentConfig = (await agent.json()) as AgentConfigBody
@@ -536,16 +568,17 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
 
     // ── Nạp giá trị ──────────────────────────────────────────────────────────
 
-    test('TC-LOAD-1 — 5 field toàn phòng khám khớp tenant_setting (1 = bật, 9 = tắt)', async () => {
-        expect(loadedTenantValues, 'TC-OPEN-1 chưa bắt được response').not.toBeNull()
+    test('TC-LOAD-1 — 5 field toàn phòng khám khớp nhánh `clinic` (1 = bật, 9 = tắt)', async () => {
+        expect(loadedInpSettings, 'TC-OPEN-1 chưa bắt được response').not.toBeNull()
+        const clinic = loadedInpSettings!.clinic! as unknown as Record<string, number>
 
         for (const { key, label, tab } of TENANT_FLAGS) {
             await selectTab(tab)
-            const raw = loadedTenantValues![`inp.${key}`]
+            const raw = clinic[key]
             const expected = Number(raw) === 1 ? 'checked' : 'unchecked'
             await expect(
                 checkOf(label),
-                `${label}: tenant_setting inp.${key} = ${String(raw)} → phải ${expected}`,
+                `${label}: clinic.${key} = ${String(raw)} → phải ${expected}`,
             ).toHaveAttribute('data-state', expected)
         }
 
@@ -554,41 +587,50 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
             await selectTab(tab)
             await expect(
                 rowOf(label).getByRole('combobox'),
-                `${label} phải mang cd_val của tenant_setting inp.${key}`,
+                `${label} phải mang cd_val của clinic.${key}`,
             ).toBeVisible()
         }
         await step()
     })
 
-    test('TC-AGENT-1 — 25 field máy trạm khớp nhóm `inpSettings` của GET /v1/config', async () => {
-        test.skip(!AGENT_AVAILABLE, AGENT_SKIP_REASON)
-        expect(loadedAgentConfig, 'TC-OPEN-1 chưa bắt được GET /v1/config').not.toBeNull()
+    test('TC-LOAD-2 — 25 field máy trạm khớp nhánh `device`, KHÔNG cần agent', async () => {
+        // Cố ý KHÔNG có `test.skip(!AGENT_AVAILABLE)`: 25 field này đã rời agent.db
+        // sang device_config trên tenant, nên đọc được cả trên máy không có agent.
+        expect(loadedInpSettings, 'TC-OPEN-1 chưa bắt được response').not.toBeNull()
+        const device = loadedInpSettings!.device!
 
-        // `inpSettings`, KHÔNG phải `settings`: 25 field này đã dời sang bảng riêng
-        // inp_settings trong agent.db.
-        const settings = loadedAgentConfig!.inpSettings ?? {}
-        // Soi 3 đại diện của 3 kiểu control: flag / combo / số. Toàn bộ 25 key đã
-        // được TC-AGENT-3 kiểm ở chiều GHI.
+        // Soi 3 đại diện của 3 kiểu control: flag / số / số. Toàn bộ 25 key đã được
+        // TC-SAVE-1 kiểm ở chiều GHI.
         await selectTab('表示設定')
-        const firstDisp = Number(settings.firstDispMode ?? 9)
         await expect(checkOf('過去データを表示する')).toHaveAttribute(
             'data-state',
-            firstDisp === 1 ? 'checked' : 'unchecked',
+            Number(device.firstDispMode) === 1 ? 'checked' : 'unchecked',
         )
 
         await selectTab('入力形態・動作2')
         await expect(rowOf('画面表示').getByRole('textbox')).toHaveValue(
-            String(Number(settings.gamen ?? 1)),
+            String(Number(device.gamen)),
         )
 
         await selectTab('その他')
         await expect(rowOf('デフォルトＤｒ番号').getByRole('textbox')).toHaveValue(
-            String(Number(settings.defaultDrId ?? 0)),
+            String(Number(device.defaultDrId)),
         )
         await step()
     })
 
-    test('TC-AGENT-2 — 連携先 lấy từ connector_config.linkCode, không phải setting', async () => {
+    test('TC-LOAD-3 — 連携先 KHÔNG nằm trong setting, chúng là connector_config', async () => {
+        // Lưu 2 nơi thì màn 機器連携設定 và màn này sẽ nói khác nhau về thiết bị mà
+        // máy trạm đang chạy.
+        expect(loadedInpSettings, 'TC-OPEN-1 chưa bắt được response').not.toBeNull()
+        const device = loadedInpSettings!.device!
+
+        expect(Object.keys(device)).not.toContain('picLink')
+        expect(Object.keys(device)).not.toContain('medicalSupportLink')
+        await step()
+    })
+
+    test('TC-AGENT-2 — 連携先 lấy từ connector_config.linkCode của agent', async () => {
         test.skip(!AGENT_AVAILABLE, AGENT_SKIP_REASON)
         expect(loadedAgentConfig, 'TC-OPEN-1 chưa bắt được GET /v1/config').not.toBeNull()
 
@@ -596,16 +638,10 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
         const linkCodeOf = (category: string) =>
             connectors.find((c) => c.category === category)?.linkCode ?? 0
 
-        // picLink / medicalSupportLink KHÔNG được nằm trong inpSettings — lưu 2 nơi
-        // thì màn 機器連携設定 và màn này sẽ nói khác nhau về thiết bị đang chạy.
-        const settings = loadedAgentConfig!.inpSettings ?? {}
-        expect(Object.keys(settings)).not.toContain('picLink')
-        expect(Object.keys(settings)).not.toContain('medicalSupportLink')
-
         await selectTab('表示設定')
         // Radix Select đặt giá trị lên trigger qua thuộc tính nội bộ; đọc bằng
         // cách so nhãn hiển thị thì phải tra mst_cod, nên chỉ chốt "có render".
-        // Giá trị được kiểm chính xác ở chiều GHI (TC-AGENT-3).
+        // Giá trị được kiểm chính xác ở chiều GHI (TC-LINK-1).
         await expect(rowOf('レントゲンシステム連携').getByRole('combobox')).toBeVisible()
         await expect(rowOf('診療支援システム連携').getByRole('combobox')).toBeVisible()
         console.log(
@@ -616,7 +652,7 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
 
     // ── F9 登録 ──────────────────────────────────────────────────────────────
 
-    test('TC-SAVE-1 — F9 登録 gửi tenant_setting đúng 5 key, 1/9 khớp checkbox', async () => {
+    test('TC-SAVE-1 — F9 登録 gửi 1 request, 2 nhánh: 5 clinic + 25 device', async () => {
         await selectTab('学習機能')
 
         // Lật 処置パック学習機能 để payload không thể trùng giá trị cũ một cách tình cờ.
@@ -630,19 +666,21 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
             (await checkOf('コメント自動入力学習機能').getAttribute('data-state')) === 'checked'
 
         let sent: InpPutBody | null = null
+        let sentDeviceId: string | undefined
         // CHẶN request → KHÔNG ghi DB, chạy hằng ngày được. Trả đúng envelope của
         // API để FE đi tiếp sang chặng agent như thật.
         await page.route(SETTINGS_PUT_URL, async (route: Route) => {
             const req = route.request()
             if (req.method() !== 'PUT') return route.fallback()
             sent = req.postDataJSON() as InpPutBody
+            sentDeviceId = (await req.allHeaders())[DEVICE_ID_HEADER]
             await route.fulfill({
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ success: true, data: sent }),
             })
         })
-        // Chặn LUÔN chặng 2. Testcase này chỉ soi payload tenant, nhưng chặng tenant
+        // Chặn LUÔN chặng 2. Testcase này chỉ soi payload setting, nhưng chặng 1
         // thành công là handleRegister đi tiếp sang PUT /v1/config — trên máy CÓ
         // agent nó sẽ ghi thật agent.db và đẩy lên cloud mirror, đồng thời bump
         // configVersion làm TC-AGENT-3 (so với bản chụp ở TC-OPEN-1) đỏ oan.
@@ -664,17 +702,51 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
         }
 
         expect(sent, 'không bắt được PUT /tenant/settings/inp').not.toBeNull()
-        expect(sent!.intelliPac, 'intelliPac phải theo checkbox vừa lật').toBe(expectedPac)
-        expect(sent!.intelliCmtAuto).toBe(cmtChecked ? 1 : 9)
-        // 25 field máy trạm KHÔNG được lẫn vào body của tenant_setting.
-        expect(Object.keys(sent!).sort()).toEqual([...TENANT_KEYS].sort())
+        // Đúng 2 nhánh, không field nào rơi ra ngoài.
+        expect(Object.keys(sent!).sort(), 'body phải đúng 2 nhánh clinic/device').toEqual([
+            'clinic',
+            'device',
+        ])
+
+        // ── nhánh clinic ─────────────────────────────────────────────────────
+        const clinic = sent!.clinic
+        expect(clinic.intelliPac, 'intelliPac phải theo checkbox vừa lật').toBe(expectedPac)
+        expect(clinic.intelliCmtAuto).toBe(cmtChecked ? 1 : 9)
+        expect(Object.keys(clinic).sort()).toEqual([...TENANT_KEYS].sort())
         // 4 field flag phải là 1/9; kensaOrder là cd_val nên chỉ cần không âm.
         for (const { key } of TENANT_FLAGS) {
             expect([1, 9], `${key} phải theo quy ước WinForm 1/9`).toContain(
-                (sent as unknown as Record<string, number>)[key],
+                (clinic as unknown as Record<string, number>)[key],
             )
         }
-        expect(sent!.kensaOrder, 'kensaOrder là cd_val mst_cod 68').toBeGreaterThanOrEqual(0)
+        expect(clinic.kensaOrder, 'kensaOrder là cd_val mst_cod 68').toBeGreaterThanOrEqual(0)
+
+        // ── nhánh device ─────────────────────────────────────────────────────
+        // Đủ 25 key và đều là SỐ. BE bind nhánh này vào một record mà thuộc tính
+        // vắng mặt sẽ lấy MẶC ĐỊNH LEGACY — thiếu 1 key là âm thầm reset field đó
+        // chứ không phải để nguyên.
+        const device = sent!.device
+        for (const key of DEVICE_SETTING_KEYS) {
+            expect(device, `thiếu key máy trạm 「${key}」`).toHaveProperty(key)
+            expect(typeof device[key], `${key} phải là số`).toBe('number')
+        }
+        expect(Object.keys(device).length, 'nhánh device phải đúng 25 key').toBe(
+            DEVICE_SETTING_KEYS.length,
+        )
+        // 5 field toàn phòng khám KHÔNG được lẫn xuống nhánh device.
+        for (const key of TENANT_KEYS) {
+            expect(Object.keys(device), `${key} là của phòng khám`).not.toContain(key)
+        }
+        // 2 mã 連携先 cũng không — chúng là connector_config của agent.
+        expect(Object.keys(device)).not.toContain('picLink')
+        expect(Object.keys(device)).not.toContain('medicalSupportLink')
+
+        // ── định danh máy ────────────────────────────────────────────────────
+        // Thiếu header là BE từ chối CẢ request: lưu được 5 field mà mất 25 field
+        // là kết cục tệ nhất, nên nó là điều kiện của cả lần lưu.
+        if (loadedDeviceId !== null) {
+            expect(sentDeviceId, 'PUT phải mang định danh máy giống GET').toBe(loadedDeviceId)
+        }
         await step()
     })
 
@@ -685,17 +757,15 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
         const before = loadedAgentConfig
         expect(before, 'TC-OPEN-1 chưa bắt được GET /v1/config').not.toBeNull()
 
-        let tenantSent: InpPutBody | null = null
         let agentSent: AgentConfigPutBody | null = null
 
         await page.route(SETTINGS_PUT_URL, async (route: Route) => {
             const req = route.request()
             if (req.method() !== 'PUT') return route.fallback()
-            tenantSent = req.postDataJSON() as InpPutBody
             await route.fulfill({
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ success: true, data: tenantSent }),
+                body: JSON.stringify({ success: true, data: req.postDataJSON() }),
             })
         })
         // CHẶN luôn PUT /v1/config: chỉ soi payload, KHÔNG ghi agent.db của máy
@@ -719,28 +789,18 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
             await page.unroute(AGENT_CONFIG_URL)
         }
 
-        expect(tenantSent, 'không bắt được PUT /tenant/settings/inp').not.toBeNull()
         expect(agentSent, 'không bắt được PUT /v1/config').not.toBeNull()
 
-        // Đủ 25 key trong nhóm inpSettings, đều là SỐ — inp_settings là bảng cột
-        // INTEGER, khác `settings` (map key/value TEXT của 画像基本設定).
-        expect(agentSent!.inpSettings, 'thiếu hẳn nhóm inpSettings').toBeTruthy()
-        for (const key of AGENT_SETTING_KEYS) {
-            expect(agentSent!.inpSettings, `thiếu key máy trạm 「${key}」`).toHaveProperty(key)
-            expect(typeof agentSent!.inpSettings[key], `${key} phải là số`).toBe('number')
-        }
+        // Nhóm `inpSettings` đã bị GỠ khỏi tài liệu của agent — 25 field giờ nằm ở
+        // device_config trên tenant. Còn gửi lên là agent 400 (nó chặn key lạ).
         expect(
-            Object.keys(agentSent!.inpSettings).length,
-            'nhóm inpSettings phải đúng 25 key',
-        ).toBe(AGENT_SETTING_KEYS.length)
-        // 5 field toàn phòng khám KHÔNG được lẫn xuống agent.
-        for (const key of TENANT_KEYS) {
-            expect(Object.keys(agentSent!.inpSettings), `${key} là của tenant`).not.toContain(key)
-        }
+            agentSent as unknown as Record<string, unknown>,
+            '`inpSettings` phải biến mất khỏi payload của agent',
+        ).not.toHaveProperty('inpSettings')
+
         // PUT /v1/config có ngữ nghĩa SNAPSHOT: nhóm nào vắng là agent xoá nhóm đó.
-        // Màn này chỉ sở hữu inpSettings + connectors, nên 2 nhóm kia phải được
-        // chuyển tiếp nguyên xi — kể cả `settings` của 画像基本設定, thứ mà màn này
-        // từng ghi chung và giờ không còn đụng tới.
+        // Màn này giờ chỉ sở hữu `connectors`, nên 2 nhóm kia phải được chuyển tiếp
+        // nguyên xi — kể cả `settings` của 画像基本設定.
         expect(agentSent!.printMappings, 'printMappings phải được chuyển tiếp').toEqual(
             before!.printMappings,
         )
@@ -767,7 +827,15 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
 
         try {
             await dialog.getByRole('button', { name: 'F9 登録' }).click()
-            await expect(page.getByText('登録に失敗しました。')).toBeVisible({ timeout: 30000 })
+            // Hai câu khác nhau: máy KHÔNG xác định được thì lỗi nằm chỗ khác và
+            // handleRegister nói thẳng, thay vì để người dùng bấm lại vô ích.
+            await expect(
+                page.getByText(
+                    loadedDeviceId === null
+                        ? '端末を特定できないため登録できません。エージェントを起動してください。'
+                        : '登録に失敗しました。',
+                ),
+            ).toBeVisible({ timeout: 30000 })
             // handleRegister return sớm → người dùng còn nguyên chỗ để thử lại.
             await expect(dialog, 'lưu hỏng mà vẫn đóng thì mất hết chỉnh sửa').toBeVisible()
         } finally {
@@ -777,8 +845,9 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
     })
 
     /**
-     * Testcase DUY NHẤT không chặn request nào: F9 đi thẳng xuống tenant_setting,
-     * và trên máy CÓ agent thì chặng 2 cũng ghi thật agent.db + đẩy cloud mirror
+     * Testcase DUY NHẤT không chặn request nào: F9 ghi thật CẢ HAI kho —
+     * tenant_setting của phòng khám VÀ device_config của chính máy đang chạy test —
+     * rồi trên máy CÓ agent chặng 2 còn ghi thật agent.db + đẩy cloud mirror
      * (configVersion tăng 1). Không sửa gì trước khi lưu nên giá trị ghi xuống
      * đúng bằng giá trị vừa đọc lên — nhưng vẫn là ghi thật, nên phải bật cờ.
      *
@@ -787,11 +856,11 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
      * testcase sẽ đỏ ở dòng "dialog chưa đóng" với thông báo không nói gì về việc
      * agent mới là bên từ chối — đúng thứ đã xảy ra một lần.
      */
-    test('TC-SAVE-3 — ghi THẬT tenant_setting (chỉ khi TEST_ALLOW_SAVE=1)', async () => {
+    test('TC-SAVE-3 — ghi THẬT cả 2 kho setting (chỉ khi TEST_ALLOW_SAVE=1)', async () => {
         skipWithReason(
             !ALLOW_SAVE,
-            'ghi thật tenant_setting của cả phòng khám (và agent.db nếu có agent) — ' +
-                'đặt TEST_ALLOW_SAVE=1 để chạy',
+            'ghi thật tenant_setting của cả phòng khám + device_config của máy này ' +
+                '(và agent.db nếu có agent) — đặt TEST_ALLOW_SAVE=1 để chạy',
         )
 
         await selectTab('学習機能')
@@ -809,7 +878,7 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
         await saved
 
         // Mở lại: giá trị vừa ghi phải quay về đúng như thế (mutation invalidate
-        // tenantSettingsBaseKey nên bundle được nạp lại).
+        // inpScreenSettingsBaseKey nên màn được nạp lại).
         await openDialog()
         await selectTab('学習機能')
         await expect(checkOf('処置パック学習機能')).toHaveAttribute('data-state', before!)
