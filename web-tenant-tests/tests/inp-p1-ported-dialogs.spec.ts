@@ -42,8 +42,13 @@ import { ADMIN_USER, JA } from './test-data'
  *      · Cột trái = mục 1-10, cột phải = 11-19 (LEFT_COLUMN_LAST_ITEM).
  *      · Combo là Radix Select ⇒ role="combobox", listbox mở qua PORTAL ở body
  *        (Rule 12.6) nên phải tìm từ `page`.
- *  queries/chk-prm-queries.ts: `enabled: open`, `staleTime: 5 phút` ⇒ mở lại
- *      trong 5 phút KHÔNG có request mới (trừ sau khi lưu → invalidate).
+ *  queries/chk-prm-queries.ts có HAI người đọc trên CÙNG cache key:
+ *      · `chkPrmQueryOptions` (panel 病検, mục 17 Ｐ部位分割) — `staleTime: 5 phút`,
+ *        bật SẴN, nên vào màn 診療入力 là cache đã nóng.
+ *      · `useChkPrmQuery` (chính dialog này) — `staleTime: 0` ⇒ MỞ LÀ ĐỌC LẠI.
+ *      TC-CHK-OPEN-1 chờ đúng request đó nên nó là chốt giữ: gộp hai người đọc về
+ *      một staleTime > 0 là dialog sửa cài đặt hiện bản chụp cũ của panel, và
+ *      testcase đỏ ngay (đã xảy ra thật khi panel mới thêm read này).
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * B. Ｂｒサンプル — nguồn WinForm (INP/Forms/frm203049.cs)
@@ -211,8 +216,12 @@ interface ChkPrmItem {
     no: number
     label: string
     cdType: number
+    /** Giá trị HIỂN THỊ — dspData đã ép 0 thành する. */
     value: number
+    /** Giá trị THÔ mà mọi cổng gate so sánh — ModCommon.ChkPrm[] giữ y nguyên. */
+    runtimeValue: number
 }
+
 
 test.describe.configure({ mode: 'serial', timeout: 300_000 })
 
@@ -528,8 +537,20 @@ test.describe('診療入力 — 2 dialog vừa port (チェック項目設定 / 
             label: i.label,
             cdType: Number(i.cdType),
             value: Number(i.value),
+            runtimeValue: Number(i.runtimeValue),
         }))
         expect(loadedChkItems, `phải trả đủ ${CHK_ITEM_COUNT} mục`).toHaveLength(CHK_ITEM_COUNT)
+
+        // BE gửi HAI cách đọc của cùng một giá trị (CheckItemSettings.Unset):
+        // `value` là bản dspData đã ép 0 → する để hiện lên combo, `runtimeValue`
+        // là bản thô mà mọi cổng gate so sánh. Thiếu `runtimeValue` là panel 病検
+        // sẽ đọc nhầm sang bản đã ép và Ｐ部位分割 chia sai với dữ liệu migrate.
+        for (const item of loadedChkItems) {
+            expect(
+                Number.isFinite(item.runtimeValue),
+                `mục ${item.no} thiếu runtimeValue — hợp đồng BE (ChkPrmItemResponse) đã đổi`,
+            ).toBe(true)
+        }
         console.log(
             `chk_prm isConfigured=${String(body.data?.isConfigured)} — ` +
                 `false nghĩa là đang hiện GIÁ TRỊ MẶC ĐỊNH của WinForm, chưa từng lưu.`,
@@ -910,4 +931,5 @@ test.describe('診療入力 — 2 dialog vừa port (チェック項目設定 / 
         await expect(toothDialog).toBeHidden({ timeout: 15_000 })
         await step()
     })
+
 })
