@@ -33,9 +33,16 @@ import { ADMIN_USER, JA } from './test-data'
  *
  * ─── Web port (apps/web-tenant/src/features/treatments/components) ───────────
  *  - check-rule-menu-screen.tsx
- *      · Takeover toàn màn `role="dialog"` + `style={{ left: '240px' }}`, KHÔNG
- *        phải DraggableDialog. role="dialog" là thứ window-key-guard đọc để bắt
- *        診療入力 bên dưới đứng im.
+ *      · Hub là DraggableDialog thật (700x500, bám ClientSize 694x473 của
+ *        frm601001.Designer.cs:175) — frm601001 vốn là BaseDialog. Trước đây
+ *        port dựng nó thành takeover toàn màn; đã đổi. `closeOnEscape={false}`
+ *        vì BaseDialog.cs:320 chỉ chuyển ESC sang btnF9_Click khi btnF9.Enabled,
+ *        mà F9 của form này là OCHA_OFF ⇒ WinForm ESC không làm gì.
+ *      · Init focus: frm601001 KHÔNG gọi `.Focus()`, con trỏ rơi vào TabIndex
+ *        nhỏ nhất là btnInpChk4 (frm601001.Designer.cs:78) ⇒ port đặt autoFocus
+ *        lên nút đầu.
+ *      · Màn con vẫn là takeover toàn màn: frm601001 mở chúng bằng `showForm`
+ *        (điều hướng) nên KHÔNG được xếp chồng dialog lên hub.
  *      · Hub và màn con mount LOẠI TRỪ nhau (`if (sub === …) return <…/>`), nên
  *        khi 一覧 đang mở thì tiêu đề hub KHÔNG còn trong DOM.
  *      · `MENU_ENTRIES` — 6 nhãn, đúng thứ tự Designer (y = 48…283).
@@ -406,6 +413,27 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
             '検索 bằng tên vô nghĩa mà lưới vẫn còn dòng',
         ).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
         await expect(list.getByText(/該当件数:\s*0\s*件/)).toBeVisible()
+    }
+
+    /**
+     * Trả về class của những vùng ĐANG THỰC SỰ tràn dọc bên trong `root`.
+     *
+     * Không quan tâm có bao nhiêu lớp `overflow-auto` lồng nhau — chỉ quan tâm
+     * người dùng có nhìn thấy thanh cuộn hay không (Rule 23.2).
+     */
+    async function overflowingRegions(root: Locator): Promise<string[]> {
+        return root.evaluate((el) => {
+            const hits: string[] = []
+            // `Array.from` chứ không `for…of` thẳng: tsconfig của repo không bật
+            // downlevelIteration nên NodeListOf chưa có Symbol.iterator.
+            for (const node of Array.from(el.querySelectorAll<HTMLElement>('*'))) {
+                const oy = getComputedStyle(node).overflowY
+                if (oy !== 'auto' && oy !== 'scroll') continue
+                // +1: dung sai làm tròn sub-pixel.
+                if (node.scrollHeight > node.clientHeight + 1) hits.push(node.className)
+            }
+            return hits
+        })
     }
 
     /** 一覧 → hub. */
@@ -836,22 +864,9 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
         const dialog = byTitle(pair.dialogTitle)
         await expect(dialog).toBeVisible({ timeout: 30_000 })
 
-        // Đếm số vùng THỰC SỰ tràn dọc. Không quan tâm có bao nhiêu lớp
-        // `overflow-auto` — chỉ quan tâm người dùng có nhìn thấy thanh cuộn
-        // không. Dialog này chỉ có 9 ô nhập trong 520px thì không được có cái nào;
+        // Dialog này chỉ có 9 ô nhập trong 520px thì không được cuộn dòng nào;
         // còn thừa chỗ mà vẫn cuộn nghĩa là chiều cao dialog đặt hụt (Rule 23.2).
-        const overflowing = await dialog.evaluate((root) => {
-            const hits: string[] = []
-            // `Array.from` chứ không `for…of` thẳng: tsconfig của repo không bật
-            // downlevelIteration nên NodeListOf chưa có Symbol.iterator.
-            for (const el of Array.from(root.querySelectorAll<HTMLElement>('*'))) {
-                const oy = getComputedStyle(el).overflowY
-                if (oy !== 'auto' && oy !== 'scroll') continue
-                // +1: dung sai làm tròn sub-pixel.
-                if (el.scrollHeight > el.clientHeight + 1) hits.push(el.className)
-            }
-            return hits
-        })
+        const overflowing = await overflowingRegions(dialog)
 
         expect(
             overflowing,
@@ -962,6 +977,62 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
     })
 
     // ── Thoát ────────────────────────────────────────────────────────────────
+
+    // ── Rule 23 cho chính hub — frm601001 là BaseDialog nên port là hộp thoại ─
+
+    test('TC-HUB-FOCUS-1 — mở hub: con trỏ nằm ở nút đầu 歯数・ブロックチェック登録', async () => {
+        // Mở lại từ đầu vì các test trước đã kéo focus đi khắp nơi.
+        await hub.getByRole('button', { name: 'F10 戻る' }).click()
+        await expect(hub).toBeHidden({ timeout: 10_000 })
+        await openHub()
+
+        // frm601001 không gọi Focus() nên WinForm rơi vào TabIndex nhỏ nhất,
+        // tức btnInpChk4 (frm601001.Designer.cs:78).
+        await expect(
+            hub.getByRole('button', { name: HUB_BUTTONS[0], exact: true }),
+            'mở hub mà con trỏ không nằm ở nút đầu',
+        ).toBeFocused()
+        await step()
+    })
+
+    test('TC-HUB-SCROLL-1 — hub mở lên không được có thanh cuộn dọc', async () => {
+        const overflowing = await overflowingRegions(hub)
+        expect(
+            overflowing,
+            `hub chỉ có 6 nút mà vẫn cuộn dọc — tăng height thay vì để thanh cuộn. ` +
+                `Vùng đang cuộn: ${JSON.stringify(overflowing)}`,
+        ).toEqual([])
+        await step()
+    })
+
+    test('TC-HUB-ESC-1 — ESC KHÔNG đóng hub', async () => {
+        await page.keyboard.press('Escape')
+
+        // BaseDialog.cs:320 chỉ chuyển ESC sang btnF9_Click khi btnF9.Enabled,
+        // mà F9 của frm601001 là OCHA_OFF ⇒ bên WinForm ESC không làm gì cả.
+        await expect(hub, 'ESC đóng mất hub — WinForm không có hành vi đó').toBeVisible()
+        await step()
+    })
+
+    test('TC-HUB-RESET-1 — vào 一覧 rồi thoát hub, mở lại phải về đúng hub', async () => {
+        const list = await openList(PAIRS[0])
+        await waitRowsLoaded(list)
+        await backToHub(list)
+
+        await hub.getByRole('button', { name: 'F10 戻る' }).click()
+        await expect(hub).toBeHidden({ timeout: 10_000 })
+        await openHub()
+
+        // Mở lại phải là hub chứ không phải 一覧 vừa xem, và con trỏ về nút đầu.
+        await expect(
+            byTitle(PAIRS[0].listTitle),
+            'mở lại mà rơi thẳng vào 一覧 — hub phải reset về chính nó',
+        ).toHaveCount(0)
+        await expect(
+            hub.getByRole('button', { name: HUB_BUTTONS[0], exact: true }),
+        ).toBeFocused()
+        await step()
+    })
 
     test('TC-EXIT-1 — F10 ở hub trả về 診療入力', async () => {
         await hub.getByRole('button', { name: 'F10 戻る' }).click()
