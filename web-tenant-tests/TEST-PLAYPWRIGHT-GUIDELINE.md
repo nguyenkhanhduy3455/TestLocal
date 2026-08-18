@@ -325,6 +325,94 @@ Kiểm tra ngược lại cũng quan trọng: locator cũ `svg g[transform^="tra
 
 ---
 
+## Rule 23 — Spec cho HỘP THOẠI phải có đủ 4 testcase bắt buộc
+
+Áp dụng cho **mọi dialog** (`DraggableDialog`, dialog portal, và cả màn takeover
+`role="dialog"`). Bốn thứ dưới đây là nơi bản port lệch WinForm nhiều nhất mà
+lại **không lộ ra khi đọc source** — thiếu testcase là thiếu thật, không phải
+"chưa cần".
+
+### 23.1 — Init focus: mở lên con trỏ nằm ở đâu
+
+WinForm gọi `.Focus()` tường minh trong `initProc` / `dspData`, và chỗ đó **đổi
+theo chế độ Insert / Update**. Người nhập liệu quen gõ ngay không nhìn màn hình,
+nên sai focus = sai dữ liệu.
+
+```ts
+// FACT: frm601013.initProc — Insert → txtGrpCd.Focus(), Update → txtTrtCd01.Focus()
+await expect(dialog.getByLabel('グループコード')).toBeFocused()
+```
+
+Tìm FACT bằng `grep -n "\.Focus()" frmXXXXXX.cs` rồi đọc nhánh bao quanh nó.
+**Không có `.Focus()` trong init cũng là một FACT** — ghi vào doc-comment là
+"WinForm không set focus, con trỏ theo TabIndex" và assert theo đúng thế, đừng
+bịa ra một ô để assert.
+
+### 23.2 — Không được có thanh cuộn dọc thừa
+
+Dialog vừa mở mà đã có scrollbar dọc trong khi màn hình còn chỗ = lỗi bố cục.
+Quy ước: **nếu tăng thêm một chút `height` mà dialog vẫn nằm gọn trong viewport
+thì phải tăng, không được để scrollbar xuất hiện.**
+
+```ts
+const box = dialog.locator('[data-dialog-body]')   // hoặc phần thân tương ứng
+const { scrollH, clientH } = await box.evaluate((el) => ({
+    scrollH: el.scrollHeight,
+    clientH: el.clientHeight,
+}))
+expect(scrollH, 'thân dialog bị cuộn dọc dù còn chỗ trong viewport').toBeLessThanOrEqual(clientH + 1)
+```
+
+`+1` là dung sai làm tròn sub-pixel. Nếu nội dung THẬT SỰ dài hơn viewport
+(lưới 20-30 dòng), cuộn là đúng — khi đó assert ngược lại: dialog phải nằm trong
+viewport và **thân** cuộn, chứ không phải cả trang cuộn.
+
+### 23.3 — Thông báo sau khi bấm nút phải trùng WinForm
+
+Thành công / thất bại / cảnh báo đều lấy nguyên văn từ `MSGTBL` qua
+`MsgDialog.ShowXxxMsg(code, param)`. Web port để chuỗi trong `locales/ja.ts`.
+Testcase phải so **nguyên văn theo mã**, không so "có chữ 失敗 là được":
+
+```ts
+// FACT: locales/ja.ts — Q00002 「更新してよろしいですか？」, I00005 「{proc}が完了しました。」
+await expect(page.getByText('更新してよろしいですか？')).toBeVisible()
+```
+
+Kèm hai thứ hay bị bỏ sót:
+- **Đúng loại hộp**: `ShowErrorMsg` → icon đỏ, `ShowInfoMsg` → icon info,
+  `ShowOKCancelMsg` → 2 nút. Port dùng `alertDialog(msg, { severity })` /
+  `confirmDialog` — sai `severity` thì thông báo thành công hiện dấu ✗ đỏ.
+- **Đúng thứ tự**: WinForm hỏi rồi mới làm (`Q00047` trước khi mở hộp lưu file,
+  `Q00002` trước khi ghi). Assert cả thứ tự, đừng chỉ assert hộp cuối.
+
+### 23.4 — Đóng rồi mở lại phải reset đúng như WinForm
+
+Đây là chỗ web **mặc định sai**. WinForm dùng singleton kiểu
+`if (_instance == null || _instance.IsDisposed) _instance = new frmXXX()`: đóng
+dialog là `Dispose`, nên lần mở sau luôn là form MỚI — mọi thứ gõ dở biến mất.
+Component React thì thường **vẫn mount** và giữ nguyên state.
+
+```ts
+// Gõ dở rồi đóng bằng 戻る
+await dialog.getByLabel('名称').fill('XXX-nháp')
+await dialog.getByRole('button', { name: 'F10 戻る' }).click()
+
+// Mở lại: WinForm dựng form mới ⇒ giá trị nháp KHÔNG được sống sót
+await list.getByRole('button', { name: 'F9 選択' }).click()
+await expect(dialog.getByLabel('名称')).not.toHaveValue('XXX-nháp')
+```
+
+Kiểm cả những thứ dễ quên cùng nhóm: **ô tìm kiếm đã gõ**, **sort đang bật
+(glyph ▲/▼)**, **dòng đang chọn**, **tab đang mở**. Với màn 一覧 thì WinForm
+`Instance` cũng dispose khi bấm 戻る ⇒ mở lại phải là 検索 trắng, con trỏ dòng 1,
+không còn glyph sort.
+
+> Ba trong bốn mục trên chỉ đỏ khi CHẠY THẬT (focus, scrollbar, state sống sót
+> qua lần mở lại). Xem "Ghi chú về Rule 6" bên dưới — đây đúng loại spec nên
+> chạy thử trước khi giao.
+
+---
+
 ## Ghi chú về Rule 6 (`Viết nhanh, KHÔNG tự chạy thử`)
 
 Lần viết spec này **có chạy thử**, và mỗi lỗi dưới đây đều **không thể phát hiện bằng đọc source**:

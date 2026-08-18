@@ -55,8 +55,10 @@ import { ADMIN_USER, JA } from './test-data'
  *        và KHÔNG gọi `goToCounterPayment()`.
  *
  * ─── Đang CỐ Ý để nguyên, đừng viết testcase đè lên ──────────────────────────
- *  - 「9-8 チェックルール登録」 vẫn bung toast 開発中: đích của nó là cả module CHKRULE
- *    (frm601001 + 6 màn con) và chưa được port.
+ *  - 「9-8 チェックルール登録」: module CHKRULE (frm601001 + 6 cặp màn con) ĐÃ được
+ *    port — nó KHÔNG còn bung toast 開発中 nữa. Ở đây chỉ kiểm đường dẫn menu →
+ *    hub, đúng như mục 9-2. Nội dung hub, 6 màn 一覧 và các dialog 登録 thuộc
+ *    `check-rule-registration.spec.ts` — đừng chép sang đây.
  *  - 「9-2 処置入力設定」: ở đây CHỈ kiểm phần điều hướng menu → dialog. Nội dung 32
  *    field, chia kho tenant_setting / agent, và F9 登録 thuộc
  *    `treatment-entry-setting-dialog.spec.ts` — đừng chép sang đây.
@@ -470,6 +472,28 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
 
         await dialog.getByRole('button', { name: 'F10 戻る' }).click()
         await expect(dialog).toBeHidden({ timeout: 10_000 })
+        await step()
+    })
+
+    test('TC-MENU-3 — 9-8 チェックルール登録 mở hub CHKRULE, không còn toast 開発中', async () => {
+        await openMenu()
+        const sub = await openSubmenu(MENU_OPTIONS, 'options')
+        await sub.getByRole('button', { name: '8 チェックルール登録' }).click()
+        await expect(rowMenu).toBeHidden({ timeout: 10_000 })
+
+        // Hub là TAKEOVER toàn màn (không phải DraggableDialog) nhưng vẫn mang
+        // role="dialog" — check-rule-menu-screen.tsx đặt thế để window-key-guard
+        // biết 診療入力 bên dưới phải đứng im. Tiêu đề giãn chữ, dấu cách THẬT.
+        const hub = page.getByRole('dialog').filter({ hasText: 'チ ェ ッ ク ル ー ル 登 録' })
+        await expect(hub, 'menu 9-8 phải mở frm601001 chứ không bung toast 開発中').toBeVisible({
+            timeout: 30_000,
+        })
+        await expect(page.getByText('開発中')).toHaveCount(0)
+
+        // Trả màn hình về 診療入力 cho các testcase sau — hub che hết lưới nên F11
+        // của testcase kế tiếp sẽ không tới được menu nếu để nguyên.
+        await hub.getByRole('button', { name: 'F10 戻る' }).click()
+        await expect(hub).toBeHidden({ timeout: 10_000 })
         await step()
     })
 
