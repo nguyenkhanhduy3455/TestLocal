@@ -62,9 +62,18 @@ import { ADMIN_USER, JA } from './test-data'
  *        Update → `txtTrtCd01.Focus()` (ô mã thành viên ĐẦU TIÊN).
  *      · frm601009/011.dspData:323 — Insert → `txtTrtSeq.Focus()`.
  *        Update KHÔNG set focus (chỉ khoá txtTrtSeq).
- *      · frm601003 / 601005 / 601007 — KHÔNG có `.Focus()` lúc init; mọi lời gọi
- *        `.Focus()` trong 3 file đó đều nằm trong `chkInputData` (đưa con trỏ về
- *        ô sai). Tức là con trỏ đi theo TabIndex, KHÔNG assert ô cụ thể.
+ *      · frm601003 / 601005 / 601007 — KHÔNG gọi `.Focus()` lúc init, NHƯNG
+ *        WinForm vẫn đặt con trỏ: nó rơi vào control có TabIndex nhỏ nhất mà
+ *        còn Enabled. Suy ra ô cụ thể, KHÔNG phải "không assert được":
+ *          · frm601003 → `txtSMin` (TabIndex 2) = 支台歯有 下限. 処置コード /
+ *            枝番 / 処置名 đều `Enabled = false` trong Designer (:305,:323,:344).
+ *          · frm601005 → `txtDayLimit` (TabIndex 3) = ô số đầu tiên. `cboUnit`
+ *            tuy TabIndex 2 nhưng frm601005.cs:166 vô hiệu hoá ngay sau khi nạp.
+ *          · frm601007 → `txtTrtCd01` (TabIndex 2) = 対象処置コード dòng 1.
+ *      · frm601009/011 nhánh Update cũng vậy: `dspData:328` đặt
+ *        `txtTrtSeq.Enabled = false` ⇒ con trỏ rơi xuống `txtTrtCd01`.
+ *        (Bản ghi chú đầu tiên của spec này kết luận "đi theo TabIndex nên
+ *        không assert ô cụ thể" — SAI, và đã để lọt 4 nhánh thiếu focus.)
  *  23.2 Cuộn dọc — `draggable-dialog.tsx:209-219`: thân dialog `flex-1 min-h-0
  *      overflow-auto` ĐÃ tự cuộn. Comment ở đó nói *"Callers should NOT add
  *      their own overflow-y-auto wrapper"*, nhưng mọi dialog dạng lưới của app
@@ -260,6 +269,17 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
 
     /** Màn 一覧 / dialog 登録 theo tiêu đề — xem BẪY 7. */
     const byTitle = (title: string) => page.getByRole('dialog').filter({ hasText: title })
+
+    /**
+     * Dialog 登録 của một cặp.
+     *
+     * ĐÃ ĐO ĐƯỢC: 「組 み 合 わ せ 算 定 不 可」 là TIỀN TỐ của tiêu đề 一覧
+     * 「組 み 合 わ せ 算 定 不 可 一 覧」, mà 一覧 (takeover) vẫn nằm trong DOM
+     * khi dialog mở đè lên ⇒ `byTitle` trơ khớp 2 phần tử và vỡ strict mode.
+     * Loại 一覧 ra bằng `hasNotText`.
+     */
+    const byDialog = (pair: (typeof PAIRS)[number]) =>
+        byTitle(pair.dialogTitle).filter({ hasNotText: pair.listTitle })
 
     /** Về lại 診療入力 và chờ lưới dựng xong. */
     async function backToEntry() {
@@ -595,7 +615,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
 
         await list.getByRole('button', { name: 'F9 選択' }).click()
 
-        const dialog = byTitle(pair.dialogTitle)
+        const dialog = byDialog(pair)
         await expect(dialog, 'F9 選択 không mở được dialog 登録').toBeVisible({ timeout: 30_000 })
         for (const key of ['F8 削除', 'F9 登録', 'F10 戻る']) {
             await expect(dialog.getByRole('button', { name: key })).toBeVisible()
@@ -613,7 +633,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
         await waitRowsLoaded(list)
 
         await list.getByRole('button', { name: 'F9 選択' }).click()
-        const dialog = byTitle(pair.dialogTitle)
+        const dialog = byDialog(pair)
         await expect(dialog).toBeVisible({ timeout: 30_000 })
 
         // BaseDialog.cs:314-324 — Escape chạy btnF9_Click. Port giữ nguyên bằng
@@ -649,7 +669,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
         await waitRowsLoaded(list)
 
         await list.getByRole('button', { name: 'F9 選択' }).click()
-        const dialog = byTitle(pair.dialogTitle)
+        const dialog = byDialog(pair)
         await expect(dialog).toBeVisible({ timeout: 30_000 })
 
         // frm601005: txtTrtCd / txtTrtSb / txtTrtNm đều Enabled = false, và cboUnit
@@ -694,7 +714,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
 
         await list.getByRole('button', { name: 'F8 新規' }).click()
 
-        const dialog = byTitle(pair.dialogTitle)
+        const dialog = byDialog(pair)
         await expect(dialog, 'F8 新規 không mở được dialog').toBeVisible({ timeout: 30_000 })
 
         // frm601013.initProc: chế độ Insert BỎ QUA dspData và để txtGrpCd nhập
@@ -721,7 +741,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
         await waitRowsLoaded(list)
 
         await list.getByRole('button', { name: 'F9 選択' }).click()
-        const dialog = byTitle(pair.dialogTitle)
+        const dialog = byDialog(pair)
         await expect(dialog).toBeVisible({ timeout: 30_000 })
 
         await expect(
@@ -746,7 +766,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
 
         await list.getByRole('button', { name: 'F8 追加' }).click()
 
-        const dialog = byTitle(pair.dialogTitle)
+        const dialog = byDialog(pair)
         await expect(dialog, 'F8 追加 không mở được dialog').toBeVisible({ timeout: 30_000 })
 
         // frm601009.dspData: Insert cho sửa txtTrtSeq và tắt F8; Update thì khoá
@@ -772,7 +792,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
         await waitRowsLoaded(list)
 
         await list.getByRole('button', { name: 'F9 選択' }).click()
-        const dialog = byTitle(pair.dialogTitle)
+        const dialog = byDialog(pair)
         await expect(dialog).toBeVisible({ timeout: 30_000 })
 
         await expect(
@@ -795,7 +815,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
         await waitRowsLoaded(list)
 
         await list.getByRole('button', { name: 'F8 新規' }).click()
-        const dialog = byTitle(pair.dialogTitle)
+        const dialog = byDialog(pair)
         await expect(dialog).toBeVisible({ timeout: 30_000 })
 
         // frm601013.initProc:240 — nhánh Insert gọi txtGrpCd.Focus().
@@ -816,7 +836,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
         await waitRowsLoaded(list)
 
         await list.getByRole('button', { name: 'F9 選択' }).click()
-        const dialog = byTitle(pair.dialogTitle)
+        const dialog = byDialog(pair)
         await expect(dialog).toBeVisible({ timeout: 30_000 })
 
         // frm601013.initProc:247 — nhánh Update gọi txtTrtCd01.Focus(), KHÔNG phải
@@ -838,7 +858,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
         await waitRowsLoaded(list)
 
         await list.getByRole('button', { name: 'F8 追加' }).click()
-        const dialog = byTitle(pair.dialogTitle)
+        const dialog = byDialog(pair)
         await expect(dialog).toBeVisible({ timeout: 30_000 })
 
         // frm601009.dspData:323 — nhánh Insert gọi txtTrtSeq.Focus().
@@ -855,13 +875,100 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
 
     // ── Rule 23.2 — không có thanh cuộn dọc thừa ─────────────────────────────
 
+    test('TC-FOCUS-4 — 歯数・ブロック F9 選択: con trỏ vào 支台歯有 下限', async () => {
+        const pair = PAIRS[0]
+        const list = await openList(pair)
+        await waitRowsLoaded(list)
+
+        await list.getByRole('button', { name: 'F9 選択' }).click()
+        const dialog = byDialog(pair)
+        await expect(dialog).toBeVisible({ timeout: 30_000 })
+
+        // frm601003 không gọi Focus(); TabIndex nhỏ nhất còn Enabled là txtSMin.
+        await expect(
+            dialog.getByLabel('支台歯有 下限', { exact: true }),
+            'F9 選択 phải đặt con trỏ vào ô 支台歯有 下限 (txtSMin, TabIndex 2)',
+        ).toBeFocused()
+
+        await dialog.getByRole('button', { name: 'F10 戻る' }).click()
+        await expect(dialog).toBeHidden({ timeout: 10_000 })
+        await backToHub(list)
+        await step()
+    })
+
+    test('TC-FOCUS-5 — 期間・回数制限 F9 選択: con trỏ vào ô số đầu tiên', async () => {
+        const pair = PAIRS[1]
+        const list = await openList(pair)
+        await waitRowsLoaded(list)
+
+        await list.getByRole('button', { name: 'F9 選択' }).click()
+        const dialog = byDialog(pair)
+        await expect(dialog).toBeVisible({ timeout: 30_000 })
+
+        // cboUnit là TabIndex 2 nhưng frm601005.cs:166 vô hiệu hoá nó ngay sau
+        // khi nạp ⇒ con trỏ rơi xuống txtDayLimit (TabIndex 3).
+        await expect(
+            dialog.getByLabel('日数-回数 範囲', { exact: true }),
+            'F9 選択 phải đặt con trỏ vào ô số đầu tiên (txtDayLimit, TabIndex 3)',
+        ).toBeFocused()
+
+        await dialog.getByRole('button', { name: 'F10 戻る' }).click()
+        await expect(dialog).toBeHidden({ timeout: 10_000 })
+        await backToHub(list)
+        await step()
+    })
+
+    test('TC-FOCUS-6 — 組み合わせ算定不可 F9 選択: con trỏ vào 対象処置コード 1', async () => {
+        const pair = PAIRS[2]
+        const list = await openList(pair)
+        await waitRowsLoaded(list)
+
+        await list.getByRole('button', { name: 'F9 選択' }).click()
+        const dialog = byDialog(pair)
+        await expect(dialog).toBeVisible({ timeout: 30_000 })
+
+        // frm601007 không có サブコード nên txtTrtCd01 (TabIndex 2) là ô đầu tiên.
+        // `exact` vì 「対象処置コード 1」 khớp chuỗi con với 10..19 (BẪY 8c).
+        await expect(
+            dialog.getByLabel('対象処置コード 1', { exact: true }),
+            'F9 選択 phải đặt con trỏ vào 対象処置コード dòng 1 (txtTrtCd01)',
+        ).toBeFocused()
+
+        await dialog.getByRole('button', { name: 'F10 戻る' }).click()
+        await expect(dialog).toBeHidden({ timeout: 10_000 })
+        await backToHub(list)
+        await step()
+    })
+
+    test('TC-FOCUS-7 — 必要処置 F9 選択: サブコード bị khoá nên con trỏ xuống 対象処置コード 1', async () => {
+        const pair = PAIRS[3]
+        const list = await openList(pair)
+        await waitRowsLoaded(list)
+
+        await list.getByRole('button', { name: 'F9 選択' }).click()
+        const dialog = byDialog(pair)
+        await expect(dialog).toBeVisible({ timeout: 30_000 })
+
+        // Khác hẳn TC-FOCUS-3 (F8 追加 → サブコード): dspData:328 tắt txtTrtSeq ở
+        // nhánh Update nên TabIndex nhỏ nhất còn Enabled là txtTrtCd01.
+        await expect(
+            dialog.getByLabel('対象処置コード 1', { exact: true }),
+            'F9 選択 phải bỏ qua サブコード đã khoá và xuống 対象処置コード dòng 1',
+        ).toBeFocused()
+
+        await dialog.getByRole('button', { name: 'F10 戻る' }).click()
+        await expect(dialog).toBeHidden({ timeout: 10_000 })
+        await backToHub(list)
+        await step()
+    })
+
     test('TC-SCROLL-1 — dialog 登録 mở lên không được có thanh cuộn dọc', async () => {
         const pair = PAIRS[1]
         const list = await openList(pair)
         await waitRowsLoaded(list)
 
         await list.getByRole('button', { name: 'F9 選択' }).click()
-        const dialog = byTitle(pair.dialogTitle)
+        const dialog = byDialog(pair)
         await expect(dialog).toBeVisible({ timeout: 30_000 })
 
         // Dialog này chỉ có 9 ô nhập trong 520px thì không được cuộn dòng nào;
@@ -917,7 +1024,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
         await waitRowsLoaded(list)
 
         await list.getByRole('button', { name: 'F9 選択' }).click()
-        const dialog = byTitle(pair.dialogTitle)
+        const dialog = byDialog(pair)
         await expect(dialog).toBeVisible({ timeout: 30_000 })
 
         const box = dialog.getByRole('textbox').first()
