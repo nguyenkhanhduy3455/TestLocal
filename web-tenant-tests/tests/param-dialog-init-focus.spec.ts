@@ -10,6 +10,16 @@
  *  - frm203048.cs:113-121 (_Shown)  → getAsta(txtValue.Text, 0): focus txtValue
  *    và select cụm `*` đầu tiên.
  *  - frm203048.cs:159-246 (btnF9)   → còn `*` thì KHÔNG 確定, chỉ nhảy sang cụm kế.
+ *  - frm203048.cs:46 (_title)         → tiêu đề là 「パラメータ」, KHÔNG có 入力.
+ *  - frm203048.cs:186-197 (txtValue_KeyDown)
+ *      · Enter quét `*` TỪ CARET (không phải từ 0) → nhảy sang cụm kế tiếp; hết cụm
+ *        sau caret thì 確定 luôn.
+ *  - BaseDialog.cs:314-326 (KeyPreview) → End và Escape đều chạy btnF9_Click, mà
+ *    btnF9_Click chỉ 確定 KHI không còn `*` nào (quét từ 0, :159-166). Nghĩa là ESC
+ *    không huỷ: còn `*` thì nó chỉ bôi đen lại cụm ĐẦU.
+ *  - frm203048.Designer.cs:45 → customLabel1 mặc định
+ *    「パラメータを入力してください」, initProc chỉ ghi đè khi pack CÓ remarks
+ *    (:135-137). A000-5-2 có remarks nên nhánh mặc định để unit test lo.
  *  - components/comment-param-dialog.tsx
  *      · nextAsterisk() nhận CẢ `*` nửa thân (mẫu trong DB) và `＊` toàn thân
  *        (chuỗi do BE dựng cho pack_type 42/51/53).
@@ -40,9 +50,17 @@ const SANTEI_CONFIRM = /を算定しますか？/
 const anyDialog = (page: Page) => page.locator('[role="dialog"]')
 /** 摘要欄記載選択 — nhận diện bằng tên tab, KHÔNG bằng title (title giãn space). */
 const summaryDialog = (page: Page) => anyDialog(page).filter({ hasText: '摘要コメント一覧' })
-/** frm203048 — dialog duy nhất mang tiêu đề パラメータ入力. */
-const paramDialog = (page: Page) => anyDialog(page).filter({ hasText: 'パラメータ入力' })
+/**
+ * frm203048 — `_title = "パラメータ"` (frm203048.cs:46), render giãn space thành
+ * 「パ ラ メ ー タ」. Regex chịu được cả space nên không phụ thuộc cách giãn.
+ *
+ * ⚠️ Bản trước lọc `hasText: 'パラメータ入力'` — đó là tiêu đề SAI của web, đã sửa ở
+ * commit `61122398d` (Rule 22: source đổi thì locator đi theo).
+ */
+const paramDialog = (page: Page) => anyDialog(page).filter({ hasText: /パ\s*ラ\s*メ\s*ー\s*タ/ })
 const paramInput = (page: Page) => paramDialog(page).locator('input')
+/** Ô 摘要記載事項 của F7 (txtValuePack) — nơi 確定 của パラメータ đổ chữ vào. */
+const packBox = (page: Page) => summaryDialog(page).locator('textarea').last()
 
 /** [start, end] của cụm `*`/`＊` đầu tiên trong chuỗi — bản JS của getAsta. */
 function firstRun(text: string): [number, number] | null {
@@ -189,5 +207,93 @@ test.describe('パラメータ入力 — 初期フォーカス (frm203048)', () 
     ).toBe(`${value.slice(0, run[0])}08${value.slice(run[1])}`)
 
     await closeParamDialog()
+  })
+
+  test('TC-4 tiêu đề là 「パラメータ」, không phải 「パラメータ入力」', async () => {
+    await openParamDialog()
+    const heading = (await paramDialog(page).getByRole('heading').first().innerText())
+      .replace(/\s/g, '')
+      .trim()
+    expect(heading, '_title = "パラメータ" (frm203048.cs:46)').toBe('パラメータ')
+    await closeParamDialog()
+  })
+
+  test('TC-5 Enter nhảy sang cụm `＊` KẾ TIẾP tính từ caret', async () => {
+    await openParamDialog()
+    const value = await paramInput(page).inputValue()
+    const run1 = firstRun(value)!
+
+    // Gõ đè cụm 1 → caret nằm ngay sau chỗ vừa gõ; Enter phải tìm cụm KẾ TIẾP
+    // (txtValue_KeyDown quét từ SelectionStart, không phải từ 0).
+    await page.keyboard.type('08')
+    const filled = await paramInput(page).inputValue()
+    const caret = run1[0] + 2
+    const nextRun = firstRun(filled.slice(caret))
+    expect(nextRun, `mẫu câu 「${filled}」 phải còn ≥2 cụm ＊ để đo`).not.toBeNull()
+
+    await page.keyboard.press('Enter')
+    await step()
+    expect(
+      await readSel(page),
+      'Enter phải bôi đen cụm ＊ kế tiếp sau caret (frm203048.cs:186-197)',
+    ).toEqual({ start: caret + nextRun![0], end: caret + nextRun![1], focused: true })
+
+    await closeParamDialog()
+  })
+
+  test('TC-6 ESC là 確定 (btnF9): còn `＊` thì không đóng, bôi đen lại cụm đầu', async () => {
+    await openParamDialog()
+    const value = await paramInput(page).inputValue()
+    const run1 = firstRun(value)!
+
+    // Đưa caret về cuối để chắc chắn không phải "vẫn đang chọn cụm 1".
+    await paramInput(page).evaluate((el) => {
+      const i = el as HTMLInputElement
+      i.setSelectionRange(i.value.length, i.value.length)
+    })
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(600)
+    await step()
+
+    await expect(
+      paramDialog(page),
+      'ESC bị hiểu là huỷ — WinForm đưa ESC vào btnF9_Click, mà btnF9 không 確定 khi còn ＊',
+    ).toHaveCount(1)
+    expect(
+      await readSel(page),
+      'btnF9_Click quét từ index 0 nên phải bôi đen lại cụm ＊ ĐẦU',
+    ).toEqual({ start: run1[0], end: run1[1], focused: true })
+
+    await closeParamDialog()
+  })
+
+  test('TC-7 điền hết `＊` rồi End thì 確定 và chữ vào ô 摘要記載事項', async () => {
+    await openParamDialog()
+    const before = await packBox(page).evaluate((el) => (el as HTMLTextAreaElement).value)
+
+    // Điền lần lượt từng cụm: gõ đè → Enter nhảy cụm kế (TC-5), tối đa 8 vòng.
+    const FILL = ['08', '00', '17', '30', '00', '00', '00', '00']
+    let text = await paramInput(page).inputValue()
+    for (let i = 0; i < FILL.length && firstRun(text) !== null; i++) {
+      await page.keyboard.type(FILL[i]!)
+      text = await paramInput(page).inputValue()
+      if (firstRun(text) === null) break
+      await page.keyboard.press('Enter')
+    }
+    expect(firstRun(text), `còn ＊ chưa điền: 「${text}」`).toBeNull()
+    const expected = text
+
+    await page.keyboard.press('End')
+    await page.waitForTimeout(800)
+    await step()
+
+    await expect(paramDialog(page), 'End không 確定 — dialog パラメータ còn mở').toHaveCount(0, {
+      timeout: 10000,
+    })
+    const after = await packBox(page).evaluate((el) => (el as HTMLTextAreaElement).value)
+    expect(
+      after.replace(before, '').trim(),
+      'chữ đã điền phải rơi vào ô 摘要記載事項 của F7 (sink summaryPack)',
+    ).toContain(expected)
   })
 })

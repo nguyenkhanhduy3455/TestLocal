@@ -115,8 +115,16 @@ const cells = (page: Page, colId: string) =>
 const rows = (page: Page) => dialogBox(page).locator('[data-testid^="row-"]')
 const header = (page: Page, colId: string) =>
   dialogBox(page).locator(`[data-testid="header-${colId}"]`)
-/** exact — nếu không sẽ match cả 「ユーザー摘要コメント選択」 (frm203019). */
-const title = (page: Page) => page.getByText('摘要コメント選択', { exact: true })
+/**
+ * Tiêu đề = `_title + "（" + pack_nm + "）"` (frm203018.cs:54 + :121), ví dụ
+ * 「摘要選択（除去-困難）」. Regex neo đầu-cuối nên không thể match
+ * 「ユーザー摘要コメント選択」 (frm203019) — cái bẫy substring của bản cũ.
+ *
+ * ⚠️ Bản trước dùng `getByText('摘要コメント選択', { exact: true })`: đó là tiêu đề
+ * SAI của web (lệch parity), đã sửa ở commit `47ed1fecc` nên locator phải đi theo
+ * (Rule 22).
+ */
+const title = (page: Page) => page.getByText(/^摘要選択（.+）$/)
 
 /** Alert お茶コン THẬT (loại trừ div giả của TC-2). */
 const realAlert = (page: Page) => page.locator('[role="alertdialog"]:not(#tc2-fake-alert)')
@@ -137,6 +145,26 @@ const realAlert = (page: Page) => page.locator('[role="alertdialog"]:not(#tc2-fa
  * addLocatorHandler để Playwright tự dọn trước MỖI actionability check, vì
  * confirm này bung ra sau khi grid nạp xong, thời điểm không đoán được (Rule 14).
  */
+/**
+ * カルテ記載選択 (CmtAutoPickerDialog, frm203012 gType.Auto) — popup XEN NGANG.
+ *
+ * `Chk_CmtAuto` của chính 処置 vừa nhập có thể bung dialog này ra, và nó nằm ĐÈ lên
+ * 処置選択 / #7 (đo được: dblclick vào dòng 処置選択 bị `cell-cmtNm` của nó chặn
+ * pointer event). `clearOverlays` chỉ chạy ở đầu mỗi TC nên không cứu được cái bung
+ * ra giữa flow ⇒ dùng addLocatorHandler để Playwright tự dọn trước MỖI actionability
+ * check (Rule 14). F10 = 戻る của dialog đó, không ghi gì.
+ */
+const installKarteAutoPickerClose = async (page: Page) => {
+  await page.addLocatorHandler(
+    page.getByText('カルテ記載選択', { exact: true }).first(),
+    async () => {
+      await page.keyboard.press('F10')
+      await page.waitForTimeout(300)
+    },
+    { times: 30 },
+  )
+}
+
 const SANTEI_CONFIRM = /を算定しますか？/
 const installSanteiNo = async (page: Page) => {
   await page.addLocatorHandler(
@@ -451,6 +479,7 @@ test.describe('摘要コメント選択 — Enter window-level (frm203018)', () 
 
     // Cắm TRƯỚC mọi điều hướng: confirm 算定 bung ngay sau khi grid nạp xong.
     await installSanteiNo(page)
+    await installKarteAutoPickerClose(page)
 
     await page.goto('/login', { waitUntil: 'domcontentloaded' })
     await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
@@ -616,6 +645,7 @@ test.describe('摘要コメント選択 — Enter window-level (frm203018)', () 
 
     const displayedFirst = (await cells(page, 'dispText').first().innerText()).trim()
     const expected = multiSelect ? pickedBeforeSort : displayedFirst
+    const titleBefore = (await title(page).innerText()).trim()
 
     if (!multiSelect) {
       await rows(page).first().click()
@@ -637,9 +667,13 @@ test.describe('摘要コメント選択 — Enter window-level (frm203018)', () 
     // KHÔNG đọc `body.innerText()`: dialog nằm trong body nên chữ của chính dialog
     // sẽ làm assert pass giả.
     await clearOverlays(page)
-    await expect(title(page), 'TC-4: 摘要コメント選択 không đóng sau 確定').toHaveCount(0, {
-      timeout: 15000,
-    })
+    // 処置 153 kích BA pack (mst_cmt_pack: I019-0 除去-簡単 / I019-1 除去-困難 /
+    // I019-2 除去-著しく困難) nên 確定 xong là pack KẾ TIẾP mở ngay ⇒ "không còn
+    // dialog 摘要選択" KHÔNG phải tín hiệu đúng. Chỉ pack vừa 確定 phải biến mất.
+    await expect(
+      page.getByText(titleBefore, { exact: true }),
+      `TC-4: pack 「${titleBefore}」 không đóng sau 確定`,
+    ).toHaveCount(0, { timeout: 15000 })
 
     const ryoTexts = (await ryoCell(page).allInnerTexts()).join('\n')
     expect(
@@ -647,6 +681,86 @@ test.describe('摘要コメント選択 — Enter window-level (frm203018)', () 
       `TC-4 FAIL: commit nhầm dòng — tra theo mảng gốc thay vì mảng đã sort (mode=${
         multiSelect ? 'multiSelect' : 'single'
       }, chờ "${expected}", dòng hiển thị đầu sau sort desc = "${displayedFirst}")`,
+    ).toContain(expected)
+  })
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Chrome + phím đóng — FACT bổ sung sau khi sửa parity (commit 47ed1fecc):
+  //   · Title  = _title + "（" + pack_nm + "）"          (frm203018.cs:54 / :121)
+  //   · 見出し  = "処置名称 " + mst_trt.cct_nm của 処置 KÍCH HOẠT pack (:219-223)
+  //             → KHÔNG phải tên pack (chỗ web port sai trước đây)
+  //   · lblRemarks.Text = _param.remarks nguyên văn (:201) → không nhãn <<備考>>
+  //   · BaseDialog: End và Escape đều chạy btnF9_Click, mà ở form này btnF9_Click
+  //     = defData (:135-138) ⇒ cả hai đều 確定, ESC KHÔNG bỏ pack
+  //     (BaseDialog.cs:314-326)
+  // ───────────────────────────────────────────────────────────────────────────
+  test('TC-5 — tiêu đề mang tên pack, 見出し là 処置名称 <処置>, 備考 nguyên văn', async () => {
+    await openDialog()
+
+    const heading = (await title(page).innerText()).replace(/\s/g, '')
+    expect(heading, 'tiêu đề phải là 摘要選択（<pack_nm>）').toMatch(/^摘要選択（.+）$/)
+    const packNm = heading.replace(/^摘要選択（/, '').replace(/）$/, '')
+
+    const banner = (
+      await dialogBox(page)
+        .getByText(/^処置名称\s/)
+        .first()
+        .innerText()
+    ).trim()
+    const trtNm = banner.replace(/^処置名称\s*/, '').trim()
+    expect(trtNm, '見出し 処置名称 đang trống').not.toBe('')
+    expect(trtNm, '見出し phải là 処置名 (mst_trt.cct_nm), KHÔNG phải tên pack').not.toBe(packNm)
+
+    // 処置名 đó phải chính là dòng vừa nhập ở lưới 診療入力 (cột 療法・処置).
+    const ryoTexts = (await ryoCell(page).allInnerTexts()).map((t) => t.trim())
+    expect(
+      ryoTexts.some((t) => t === trtNm),
+      `処置名称 "${trtNm}" không khớp dòng nào ở cột 療法・処置 (${ryoTexts
+        .filter(Boolean)
+        .join(' / ')})`,
+    ).toBe(true)
+
+    expect(
+      await dialogBox(page).getByText('<<備考>>').count(),
+      'initProc ghi remarks thẳng vào lblRemarks → không được thêm nhãn <<備考>>',
+    ).toBe(0)
+  })
+
+  test('TC-6 — End 確定 như F9', async () => {
+    await openDialog()
+    const expected = (await cells(page, 'dispText').first().innerText()).trim()
+    const titleBefore = (await title(page).innerText()).trim()
+    await focusGridOfDialog()
+    await page.keyboard.press('End')
+    await page.waitForTimeout(800)
+    await step()
+
+    await clearOverlays(page)
+    // Xem ghi chú ở TC-4: queue còn pack khác nên chỉ pack vừa 確定 phải đóng.
+    await expect(
+      page.getByText(titleBefore, { exact: true }),
+      `TC-6: End không 確定 — pack 「${titleBefore}」 còn mở`,
+    ).toHaveCount(0, { timeout: 15000 })
+    expect((await ryoCell(page).allInnerTexts()).join('\n')).toContain(expected)
+  })
+
+  test('TC-7 — Escape 確定 chứ không bỏ pack', async () => {
+    await openDialog()
+    const expected = (await cells(page, 'dispText').first().innerText()).trim()
+    const titleBefore = (await title(page).innerText()).trim()
+    await focusGridOfDialog()
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(800)
+    await step()
+
+    await clearOverlays(page)
+    await expect(
+      page.getByText(titleBefore, { exact: true }),
+      `TC-7: ESC không đóng pack 「${titleBefore}」`,
+    ).toHaveCount(0, { timeout: 15000 })
+    expect(
+      (await ryoCell(page).allInnerTexts()).join('\n'),
+      'TC-7 FAIL: ESC bị hiểu là huỷ — dòng đã chọn không vào lưới (BaseDialog.cs:320-326)',
     ).toContain(expected)
   })
 })
