@@ -163,4 +163,30 @@ test('カルテ記載選択 — Enter window-level (TC-1/2/3/4)', async ({ page 
     (await textarea(page).inputValue()).trim(),
     'TC-4 FAIL: commit nhầm dòng — tra theo mảng gốc thay vì mảng đã sort',
   ).toContain(displayedFirst)
+
+  // ───────────────────────────────────────────────────────────────────────
+  // TC-5 — con trỏ phải TIẾN sau mỗi Enter, kể cả khi row đang giữ focus
+  //
+  // Click vào row đẩy DOM focus vào chính div của row (VirtualListTable gán
+  // tabIndex cho row), nên Enter do onKeyDown của row xử lý và nó
+  // preventDefault ⇒ listener window của dialog bị isWindowKeyBlocked chặn.
+  // Trước đây phần "nhảy dòng kế" CHỈ nằm ở listener window, nên sau khi click
+  // thì Enter lần 2 lặp lại đúng dòng cũ. WinForm dgvView_KeyDown không set
+  // e.Handled nên DataGridView vẫn tự hạ con trỏ 1 dòng.
+  // ───────────────────────────────────────────────────────────────────────
+  await textarea(page).fill('')
+  const displayed = (await cells(page, 'cmtNm').allTextContents()).map((t) => t.trim())
+  expect(displayed.length, 'TC-5 cần ≥2 dòng hiển thị').toBeGreaterThan(1)
+
+  await dialog(page).locator('[data-testid^="row-"]').first().click()
+  await step()
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(400)
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(400)
+  await step()
+  expect(
+    await textarea(page).inputValue(),
+    'TC-5 FAIL: con trỏ không tiến sau Enter → hai lần Enter chèn cùng một dòng',
+  ).toBe(`${displayed[0]}\n${displayed[1]}`)
 })

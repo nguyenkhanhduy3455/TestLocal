@@ -445,6 +445,44 @@ test.describe('カルテ記載選択 — F6 (frm203011 → frm203012 Cult)', () 
     await closeCmtList()
   })
 
+  test('TC-6b click dòng rồi Enter: vẫn phải tự nhảy dòng kế', async () => {
+    await openGroupList()
+    await expect(rows(page).first()).toBeVisible({ timeout: 20000 })
+
+    const names = (await cells(page, 'cmtNm').allTextContents()).map((s) => s.trim())
+    if (names.length < 2) {
+      console.log(`TC-6b: chỉ thấy ${names.length} dòng → BỎ QUA (cần ≥2 để kiểm con trỏ nhảy)`)
+      await closeCmtList()
+      return
+    }
+
+    // TC-6 cố tình KHÔNG click (focus nằm ở khung lưới, do app tự focus khi mở),
+    // nên nó chỉ đo được nhánh listener Enter mức window của dialog. Click vào
+    // dòng lại đẩy DOM focus vào chính `div` của row (VirtualListTable cho row
+    // tabIndex), từ đó Enter do onKeyDown của row xử lý và nó preventDefault →
+    // listener window bị `isWindowKeyBlocked` chặn. Đây chính là nhánh từng bị
+    // sót: comment vẫn được chèn nhưng con trỏ đứng yên nên Enter lần 2 lặp lại
+    // đúng dòng cũ. WinForm dgvView_KeyDown không set e.Handled nên DataGridView
+    // vẫn tự hạ con trỏ 1 dòng ⇒ hai nhánh phải cho cùng kết quả.
+    await cells(page, 'cmtNm').first().click()
+    await expect(textBox(page), 'click đơn KHÔNG được chèn').toHaveValue('')
+
+    await page.keyboard.press('Enter')
+    await step()
+    await expect(textBox(page), 'Enter sau khi click phải chèn dòng đang chọn').toHaveValue(
+      `${names[0]}\n`,
+    )
+
+    await page.keyboard.press('Enter')
+    await step()
+    await expect(
+      textBox(page),
+      'Enter lần 2 phải chèn dòng KẾ TIẾP — nếu ra 2 dòng giống nhau tức là con trỏ không tiến',
+    ).toHaveValue(`${names[0]}\n${names[1]}\n`)
+
+    await closeCmtList()
+  })
+
   test('TC-7 chèn comment có `*` thì cụm `*` được bôi đen sẵn (getAsta)', async () => {
     await openGroupList()
     await expect(rows(page).first()).toBeVisible({ timeout: 20000 })
