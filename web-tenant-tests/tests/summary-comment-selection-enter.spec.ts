@@ -659,29 +659,46 @@ test.describe('摘要コメント選択 — Enter window-level (frm203018)', () 
     await focusGridOfDialog()
     await step()
 
+    // Alert お茶コン có thể bung ra SAU khi #7 mở (bẫy 1 ở docblock) và guard
+    // `isWindowKeyBlocked` sẽ nuốt Enter ⇒ đo thành "không 確定" oan. Dọn và chốt
+    // lại ngay trước cú Enter, không chỉ ở openDialog.
+    await drainAlerts(page)
+    expect(
+      await realAlert(page).count(),
+      'còn alert お茶コン đè lên #7 ngay trước Enter → phép đo vô nghĩa',
+    ).toBe(0)
+
     await page.keyboard.press('Enter')
     await page.waitForTimeout(800)
     await step()
-
     // Cascade có thể nối tiếp sang frm203019 / pack kế tiếp — dọn hết rồi mới đọc.
     // KHÔNG đọc `body.innerText()`: dialog nằm trong body nên chữ của chính dialog
     // sẽ làm assert pass giả.
+    // ⚠️ KHÔNG đo bằng "không còn dialog 摘要選択": 処置 153 kích BA pack
+    // (mst_cmt_pack: I019-0 除去-簡単 / I019-1 除去-困難 / I019-2 除去-著しく困難) nên
+    // 確定 xong là pack KẾ TIẾP mở ngay, và title của nó cũng khớp mọi locator dạng
+    // 摘要選択（…）. Đo bằng THỨ ĐÁNG ĐO: dòng đã chọn có vào lưới 診療入力 hay không.
+    //
+    // ⚠️ TC NÀY ĐANG ĐỎ với dữ liệu hiện tại. Đã đo bằng probe ngay sau cú Enter:
+    //   dialogs=1, title#7=1, checked=1, alerts=0  ⇒ dialog KHÔNG đóng, vệt tick vẫn
+    //   còn, không có alert nào chặn. Tức Enter không 確定 trong browser.
+    //   Trong khi đó TC-6/TC-7 (End/ESC → cùng handleConfirm, KHÔNG sort) xanh, và
+    //   unit test tương đương cũng xanh (bắn keydown vào đúng grid wrapper:
+    //   web-tenant `summary-comment-selection-winform-parity.test.tsx`).
+    //   ⇒ nghi chuỗi "click header sort → trả focus → Enter" trong browser: phần tử
+    //   nhận Enter hoặc `e.defaultPrevented` khác với jsdom. Cần một lần probe riêng
+    //   khi setup TC-0 ổn định (TC-0 hiện phải retry mới vào được 処置選択).
     await clearOverlays(page)
-    // 処置 153 kích BA pack (mst_cmt_pack: I019-0 除去-簡単 / I019-1 除去-困難 /
-    // I019-2 除去-著しく困難) nên 確定 xong là pack KẾ TIẾP mở ngay ⇒ "không còn
-    // dialog 摘要選択" KHÔNG phải tín hiệu đúng. Chỉ pack vừa 確定 phải biến mất.
-    await expect(
-      page.getByText(titleBefore, { exact: true }),
-      `TC-4: pack 「${titleBefore}」 không đóng sau 確定`,
-    ).toHaveCount(0, { timeout: 15000 })
-
-    const ryoTexts = (await ryoCell(page).allInnerTexts()).join('\n')
-    expect(
-      ryoTexts,
-      `TC-4 FAIL: commit nhầm dòng — tra theo mảng gốc thay vì mảng đã sort (mode=${
-        multiSelect ? 'multiSelect' : 'single'
-      }, chờ "${expected}", dòng hiển thị đầu sau sort desc = "${displayedFirst}")`,
-    ).toContain(expected)
+    await expect
+      .poll(async () => (await ryoCell(page).allInnerTexts()).join('\n'), {
+        timeout: 15000,
+        message:
+          `TC-4 FAIL: commit nhầm dòng — tra theo mảng gốc thay vì mảng đã sort (mode=${
+            multiSelect ? 'multiSelect' : 'single'
+          }, chờ "${expected}", dòng hiển thị đầu sau sort desc = "${displayedFirst}", ` +
+          `pack đang đo "${titleBefore}")`,
+      })
+      .toContain(expected)
   })
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -735,13 +752,14 @@ test.describe('摘要コメント選択 — Enter window-level (frm203018)', () 
     await page.waitForTimeout(800)
     await step()
 
+    // Xem ghi chú ở TC-4: queue còn pack khác nên "hết dialog" không đo được gì.
     await clearOverlays(page)
-    // Xem ghi chú ở TC-4: queue còn pack khác nên chỉ pack vừa 確定 phải đóng.
-    await expect(
-      page.getByText(titleBefore, { exact: true }),
-      `TC-6: End không 確定 — pack 「${titleBefore}」 còn mở`,
-    ).toHaveCount(0, { timeout: 15000 })
-    expect((await ryoCell(page).allInnerTexts()).join('\n')).toContain(expected)
+    await expect
+      .poll(async () => (await ryoCell(page).allInnerTexts()).join('\n'), {
+        timeout: 15000,
+        message: `TC-6: End không 確定 — "${expected}" không vào lưới (pack "${titleBefore}")`,
+      })
+      .toContain(expected)
   })
 
   test('TC-7 — Escape 確定 chứ không bỏ pack', async () => {
@@ -754,13 +772,13 @@ test.describe('摘要コメント選択 — Enter window-level (frm203018)', () 
     await step()
 
     await clearOverlays(page)
-    await expect(
-      page.getByText(titleBefore, { exact: true }),
-      `TC-7: ESC không đóng pack 「${titleBefore}」`,
-    ).toHaveCount(0, { timeout: 15000 })
-    expect(
-      (await ryoCell(page).allInnerTexts()).join('\n'),
-      'TC-7 FAIL: ESC bị hiểu là huỷ — dòng đã chọn không vào lưới (BaseDialog.cs:320-326)',
-    ).toContain(expected)
+    await expect
+      .poll(async () => (await ryoCell(page).allInnerTexts()).join('\n'), {
+        timeout: 15000,
+        message:
+          `TC-7 FAIL: ESC bị hiểu là huỷ — "${expected}" không vào lưới ` +
+          `(BaseDialog.cs:320-326, pack "${titleBefore}")`,
+      })
+      .toContain(expected)
   })
 })
