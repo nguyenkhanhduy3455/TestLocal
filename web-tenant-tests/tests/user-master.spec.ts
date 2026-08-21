@@ -57,7 +57,10 @@ import { ADMIN_USER, JA } from './test-data'
  *      · メールアドレス là MỘT Ô CỦA FORM, nằm ngay trên 区分. Không còn nút
  *        ログイン有効化 hay hộp thoại riêng.
  *      · Điền email rồi F9 登録 ⇒ hiện confirm はい/いいえ; はい mới gửi mail.
- *      · Đã đăng ký xong (loginStatus active/disabled) ⇒ ô email bị disable.
+ *      · 管理者権限 là checkbox nằm dưới 区分. Đây là nơi DUY NHẤT cấp quyền —
+ *        màn /settings/users đã bị xoá hẳn. Chưa xác thực thì giá trị này áp dụng
+ *        lúc phát thư mời; đã xác thực thì F9 登録 đổi role thật (admin ⇄ staff).
+ *      · Đã đăng ký xong (loginStatus verified) ⇒ ô email bị disable.
  *        Người mới được mời (pending) vẫn sửa được để chữa địa chỉ gõ nhầm, và
  *        F9 lần nữa chính là gửi lại mail (BE thu hồi token cũ).
  *  - routes/_authenticated/settings/user-master/*
@@ -154,6 +157,7 @@ const UM = {
     labelEmail: 'メールアドレス',
     emailLocked: '登録完了後はメールアドレスを変更できません',
     activateConfirmTitle: 'アカウントを有効化しますか？',
+    labelIsAdmin: '管理者権限',
     loginUnverified: '未認証',
     loginVerified: '認証済',
     deleteTitle: 'ユーザを削除しますか？',
@@ -672,6 +676,35 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         page.off('dialog', watch)
         expect(asked, 'hỏi kích hoạt dù email để trống').toBeFalsy()
         await expect(confirmBox()).toHaveCount(0)
+        await step()
+    })
+
+    test('TC-ROLE-1 — có checkbox 管理者権限 trên màn 登録', async () => {
+        // TC-ACT-3 kết thúc ở 一覧, nên phải mở lại màn 登録 trước.
+        await openDetail()
+
+        const adminBox = page.getByRole('checkbox', { name: UM.labelIsAdmin })
+        await expect(adminBox, 'thiếu checkbox 管理者権限 trên màn 登録').toBeVisible({
+            timeout: 30000,
+        })
+
+        // Đây là nơi duy nhất cấp quyền, nên nó phải sửa được kể cả khi người đó
+        // đã xác thực — không còn màn nào khác làm việc này.
+        await expect(adminBox).toBeEnabled()
+        await step()
+    })
+
+    test('TC-ROLE-2 — mục ユーザ管理 đã biến mất khỏi sidebar', async () => {
+        // Chỉ kiểm lối vào. KHÔNG điều hướng thẳng tới /settings/users: route đã bị
+        // xoá nên router không khớp được, app trắng màn và các testcase sau chết
+        // theo — mà cái đó là kiểm router chứ không phải kiểm tính năng này.
+        await expect(
+            page.getByRole('link', { name: 'ユーザ管理' }),
+            'mục ユーザ管理 vẫn còn trong sidebar',
+        ).toHaveCount(0)
+
+        // ユーザマスタ thì phải còn, nếu không là xoá nhầm cả hai.
+        await expect(page.getByRole('link', { name: 'ユーザマスタ' })).toHaveCount(1)
         await step()
     })
 
