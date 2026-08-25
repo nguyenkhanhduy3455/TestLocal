@@ -43,15 +43,68 @@ public sealed class TreatmentGridOps
 
     // ── Đọc ──────────────────────────────────────────────────────────────────
 
-    /// <summary>Tiêu đề 5 cột đang hiển thị (frm203002.Designer.cs:1148-1206).</summary>
-    public IReadOnlyList<string> Headers() => Regi.Grid.Headers();
+    /// <summary>
+    /// Tiêu đề 5 cột đang hiển thị (frm203002.Designer.cs:1148-1206).
+    ///
+    /// <para>KHÔNG dùng được <see cref="WinFormsGrid.Headers"/>: lớp đó tìm dòng mà mọi ô
+    /// con là <c>HeaderItem</c>, còn cầu MSAA của <c>grdRegi</c> phơi ra kiểu KHÁC — đo
+    /// thật ngày 2026-08-25 (artifacts\treatment-grid.uia.txt):</para>
+    /// <code>
+    /// Table id="grdRegi"
+    ///   Unknown  name="Top Row"          ← dòng tiêu đề, kiểu Unknown chứ không phải Header
+    ///     Header name="日" / "部位" / "療法・処置" / "点" / "回"   ← Header, KHÔNG phải HeaderItem
+    ///   Unknown  name="Row 1"            ← dòng dữ liệu
+    ///     DataItem name="日 Row 1" …     ← DataItem, KHÔNG phải Cell
+    /// </code>
+    /// <para>Hai hệ quả, cả hai đều đã cắn: <c>Headers()</c> trả RỖNG, và 「Top Row」 bị
+    /// đếm NHẦM thành một dòng dữ liệu (lần chạy đầu báo 17 dòng trong khi lưới chỉ có
+    /// 16). Vì thế luồng này tự lọc lấy, không sửa <see cref="WinFormsGrid"/> — lớp đó
+    /// đang phục vụ các fixture khác trên những lưới có hình dạng khác.</para>
+    /// </summary>
+    public IReadOnlyList<string> Headers()
+    {
+        foreach (var child in Uia.Children(Regi.Grid.Element))
+        {
+            if (!IsHeaderRow(child)) continue;
+            return Uia.Children(child).Select(c => Txt.N(Uia.NameOf(c))).ToList();
+        }
+        return Regi.Grid.Headers();
+    }
+
+    /// <summary>
+    /// Dòng tiêu đề: ô con là <c>Header</c> (grdRegi) hoặc <c>HeaderItem</c> (lưới khác).
+    /// Chỉ nhìn 3 ô đầu là đủ và rẻ hơn hẳn đọc cả dòng.
+    /// </summary>
+    private static bool IsHeaderRow(AutomationElement row)
+    {
+        var cells = Uia.Children(row).Take(3).ToList();
+        if (cells.Count == 0) return false;
+        return cells.All(c => Uia.ControlTypeOf(c)
+                              is FlaUI.Core.Definitions.ControlType.Header
+                              or FlaUI.Core.Definitions.ControlType.HeaderItem);
+    }
+
+    /// <summary>
+    /// Các dòng DỮ LIỆU — đã loại 「Top Row」 (xem <see cref="Headers"/>) VÀ ô đang sửa.
+    ///
+    /// <para>Ô đang sửa của <c>DataGridView</c> là một <c>Edit</c> con của CHÍNH LƯỚI,
+    /// không phải con của dòng — nên nó lọt vào danh sách "dòng" và làm số dòng đếm
+    /// được tăng thêm 1 mỗi khi có editor mở. Đã vấp thật 2026-08-25: TC-6 đọc ra
+    /// 「19 → 19」 rồi kết luận oan là Insert không chạy, trong khi thật ra editor của
+    /// testcase trước còn mở. Dòng thật có 5 ô con; ô editor không có con nào.</para>
+    /// </summary>
+    private IReadOnlyList<AutomationElement> DataRowElements(int limit = ScanLimit) =>
+        Regi.Grid.RowElements(limit)
+            .Where(r => !IsHeaderRow(r))
+            .Where(r => Uia.Children(r).Take(2).Count() >= 2)
+            .ToList();
 
     /// <summary>Chụp lại lưới trong MỘT lượt duyệt — rẻ hơn gọi Column() năm lần.</summary>
     public IReadOnlyList<RegiRow> Snapshot(int limit = ScanLimit)
     {
         var rows = new List<RegiRow>();
         var index = 0;
-        foreach (var element in Regi.Grid.RowElements(limit))
+        foreach (var element in DataRowElements(limit))
         {
             var cells = Uia.Children(element).Select(c => Txt.N(Uia.ValueOf(c))).ToList();
             rows.Add(new RegiRow(
@@ -68,11 +121,25 @@ public sealed class TreatmentGridOps
         static string At(IReadOnlyList<string> cells, int i) => i < cells.Count ? cells[i] : "";
     }
 
-    public int RowCount(int limit = ScanLimit) => Regi.Grid.RowElements(limit).Count;
+    public int RowCount(int limit = ScanLimit) => DataRowElements(limit).Count;
 
     /// <summary>Dòng CUỐI có 療法・処置 chứa một trong các chuỗi; không có → null.</summary>
     public RegiRow? LastRowMatching(params string[] anyOf) =>
         Snapshot().LastOrDefault(r => anyOf.Any(w => Txt.Has(r.Ryo, w)));
+
+    /// <summary>
+    /// Số dòng có 療法・処置 chứa MỘT TRONG các chuỗi cho trước.
+    ///
+    /// <para>Đây là mốc DUY NHẤT đáng tin để biết "app vừa thêm dòng": UIA của
+    /// <c>DataGridView</c> chỉ phơi ra những dòng ĐANG NHÌN THẤY, mà chèn xong app lại
+    /// cuộn lưới — nên cả chỉ số dòng lẫn TỔNG số dòng đọc được đều đổi theo vị trí
+    /// cuộn, không theo dữ liệu. Đếm theo nội dung thì miễn nhiễm với cuộn.</para>
+    ///
+    /// <para>Bản sao của <see cref="RegiGrid.CountRyoContaining"/> nhưng đi qua
+    /// <see cref="Snapshot"/> nên KHÔNG đếm nhầm dòng tiêu đề 「Top Row」.</para>
+    /// </summary>
+    public int CountRyoContaining(params string[] anyOf) =>
+        Snapshot().Count(r => anyOf.Any(w => Txt.Has(r.Ryo, w)));
 
     /// <summary>
     /// Dòng ĐẦU TIÊN mà hai lượt chụp khác nhau — tức là dòng vừa được chèn vào.

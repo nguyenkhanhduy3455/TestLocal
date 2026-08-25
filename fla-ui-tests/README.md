@@ -277,6 +277,12 @@ riêng `inpP1.allowSave` và tự trả lại giá trị cũ. Ｂｒサンプル
 
 ## 9. Thêm testcase mới
 
+> **Đọc [`PROBE-GUIDELINE.md`](./PROBE-GUIDELINE.md) TRƯỚC.** Luật số một: chưa biết
+> app thật hành xử ra sao thì **chụp màn hình → đọc ảnh → rồi mới viết assert**, chứ
+> không viết assert theo phỏng đoán rồi chạy cả fixture để xem nó đỏ ở đâu. File đó
+> còn ghi bảy cái bẫy đã trả giá (UIA chỉ thấy dòng trong khung nhìn, ESC = 戻る,
+> dòng tiêu đề lọt vào danh sách dữ liệu, …).
+
 1. Kế thừa `UiTestBase` → có sẵn `App`, `Screen`, `Db`, ảnh chụp, watcher hộp thoại.
 2. Thao tác qua `Screens/*`, đừng gọi thẳng FlaUI trong testcase — locator gom một chỗ.
 3. Cần đọc cột ẩn (acc_unit, f1, 処置日…) thì thêm truy vấn vào `Data/OchaDb.cs`; **chỉ đọc**.

@@ -30,6 +30,9 @@ namespace OchaCom.FlaUiTests.Tests.TreatmentGrid;
 ///  · <b>frm203002.Designer.cs:1148-1206</b> — HeaderText 5 cột hiển thị:
 ///    日 / 部位 / 療法・処置 / 点 / 回. <c>RegiBui.ReadOnly = true</c> (:1169) ⇒ cột
 ///    部位 KHÔNG sửa trực tiếp được.
+///  · <b>modAcc.cs:132</b> — <c>DispDayPoint</c> chèn 日計行 (<c>linekbn</c> 10..15) vào
+///    CUỐI mỗi ngày, nội dung cột 療法・処置 là 「[負担金 n円]  [日計 n点]」 ⇒ dòng cuối
+///    lưới là 日計行 của ngày cuối, KHÔNG phải dòng trống (đo thật 2026-08-25).
 ///  · <b>frm203002.Designer.cs:1088-1121</b> — tính chất của lưới:
 ///      <c>AllowUserToAddRows = false</c> (:1088) ⇒ KHÔNG có dòng trống mời nhập ở cuối;
 ///      <c>MultiSelect = false</c> + <c>SelectionMode = CellSelect</c> (:1114/:1119) ⇒
@@ -126,6 +129,55 @@ public sealed class TreatmentGridBasicTests : UiTestBase
     /// <summary>Dòng ĐÁP ÁN — runner lọc riêng các dòng này ra file.</summary>
     private static void LogKq(int no, string line) => Log($"=== KQ-{no} === {line}");
 
+    /// <summary>
+    /// Dẹp hộp thoại modal đang chắn lưới, và GHI LẠI nguyên văn nó.
+    ///
+    /// <para>Vì sao cần: chốt 回数 ở TC-2 làm app bung các câu hỏi 算定 (SingleChk,
+    /// 加算…). <see cref="NuisanceDialogWatcher"/> tự bấm 「いいえ」 cho những câu đã khai
+    /// trong <c>run.nuisanceDialogs</c>, nhưng câu NÀO KHÁC thì nằm lại — và mọi thao
+    /// tác bàn phím sau đó rơi vào hộp thoại chứ không vào lưới.</para>
+    ///
+    /// <para>Đã vấp thật 2026-08-25: TC-4 đọc ô đang giữ con trỏ ra 「Yes」 rồi 「No」 —
+    /// đó là hai NÚT của hộp thoại, không phải ô lưới. Testcase đỏ với thông điệp
+    /// 「Tab đã dời con trỏ」 trong khi Tab chưa bao giờ tới được lưới.</para>
+    ///
+    /// <para>Chỉ bấm 「いいえ」/「No」 — cùng chính sách với watcher: nhánh phủ định không
+    /// kéo theo hộp thoại tiếp theo và không thêm 加算 vào lưới.</para>
+    /// </summary>
+    private bool DismissBlockingDialog()
+    {
+        var open = Dialogs.Open(App.Automation, App.ProcessId);
+        if (open.Count == 0) return false;
+
+        foreach (var dialog in open)
+        {
+            var text = Txt.N(Dialogs.TextOf(dialog));
+            LogKq(0, $"HỘP THOẠI đang chắn lưới: 「{text}」");
+            if (!Dialogs.ClickButton(dialog, "いいえ", "No", "OK", "N"))
+                LogKq(0, "   → KHÔNG bấm được nút nào của hộp thoại này");
+        }
+
+        // Chờ tắt hẳn: hộp thoại còn đó thì phím vẫn rơi vào nó.
+        Waits.TryUntil(() => Dialogs.Open(App.Automation, App.ProcessId).Count == 0);
+        return true;
+    }
+
+    /// <summary>
+    /// Rời khỏi editor mà KHÔNG đóng màn hình — click sang MỘT Ô KHÁC.
+    ///
+    /// <para>ĐO THẬT 2026-08-25 (probe P1/P2): đây là cách DUY NHẤT an toàn.
+    /// <b>ESC là 戻る</b> — nó bung 「処置データは、変更されています。保存しますか？」 rồi đóng
+    /// màn hình (<c>GradientDataGridView.ProcessDialogKey</c> trả false khi
+    /// <c>RegularOperationEnterKeyDisable = true</c>, GradientDataGridView.cs:645-668).
+    /// Còn click lại CHÍNH ô đang đứng thì DataGridView hiểu là click lần hai và MỞ
+    /// editor. Rời ô kiểu này KHÔNG chốt giá trị gõ dở — ô quay về giá trị cũ.</para>
+    /// </summary>
+    private void LeaveEditor(RegiRow row, int awayFromColumn)
+    {
+        var target = awayFromColumn == RegiGrid.Col.Ryo ? RegiGrid.Col.Day : RegiGrid.Col.Ryo;
+        _grid.FocusCell(row, target);
+    }
+
     /// <summary>Dòng mà TC-2 chèn; chưa có thì Ignore chứ không đỏ oan.</summary>
     private RegiRow RequireAddedRow()
     {
@@ -206,22 +258,28 @@ public sealed class TreatmentGridBasicTests : UiTestBase
                 "(Designer.cs:1148-1206 + RegiCol frm203002.cs:158-169). Lệch thứ tự tức là bản web " +
                 "đang đánh số cột khác — mọi phép so theo data-grid-cell|n giữa hai bên sẽ vô nghĩa.");
 
-            // Lưới LUÔN kết thúc bằng MỘT dòng trống, và đó là dòng do CHÍNH APP giữ chứ
-            // không phải "new row" của DataGridView (AllowUserToAddRows = false,
-            // Designer.cs:1088). Nguồn gốc là VB6: lúc dựng lưới app thêm HAI dòng rỗng
-            // (frm203002.cs:3043-3044) rồi giấu dòng 0 đi (:3063-3066) để giữ nguyên logic
-            // "dòng đầu là dòng tiêu đề"; dòng còn lại nằm ở cuối và là chỗ để gõ 処置 tiếp.
-            // Move_Cell(Down) ở dòng cuối lại nối thêm một dòng nữa (:5856-5870) — nên
-            // "trống ở cuối" là BẤT BIẾN, không phải rác.
+            // ── Dòng CUỐI của lưới ───────────────────────────────────────────────
+            // ĐO THẬT 2026-08-25: dòng cuối KHÔNG trống mà là 日計行 —
+            //     [15] 14 | | [負担金 0円]  [日計 70点] | |
             //
-            // Bản web dễ port hụt đúng chỗ này: thấy AllowUserToAddRows = false rồi kết
-            // luận "không có dòng trống", thế là mất luôn chỗ nhập tay.
+            // Bản đầu của testcase này assert "dòng cuối phải TRỐNG", suy từ chỗ app thêm
+            // HAI dòng rỗng lúc dựng lưới (frm203002.cs:3043-3044) rồi giấu dòng 0
+            // (:3063-3066). Suy vậy là SAI với trạng thái ĐÃ NẠP DỮ LIỆU: hai dòng rỗng đó
+            // bị dữ liệu của tháng lấp mất, và modAcc.DispDayPoint (modAcc.cs:132) chèn
+            // 日計行 vào cuối mỗi ngày — nên dòng cuối lưới là 日計行 của NGÀY CUỐI.
+            // (Dòng trống ở cuối chỉ xuất hiện khi Move_Cell(Down) nối thêm, :5856-5870.)
+            //
+            // Giữ lại phép đo này vì nó VẪN là hợp đồng parity thật: bản web cũng phải kết
+            // thúc tháng bằng dòng 日計 (footer 【負担金 N円】【日計 M点】), không được kết
+            // thúc bằng một 処置行 trần.
             var rows = _grid.Snapshot();
             Assert.That(rows, Is.Not.Empty, "grdRegi phải có ít nhất một dòng sau khi nạp xong");
             var last = rows[^1];
-            Assert.That(last.Ryo, Is.Empty,
-                "dòng CUỐI của lưới phải là dòng TRỐNG để còn gõ 処置 tiếp — di sản VB6, app tự " +
-                $"giữ (frm203002.cs:3043-3044 + :3063-3066). Dòng cuối đang đọc được: {last}");
+            LogKq(1, $"dòng cuối lưới: {last}");
+            Assert.That(last.Ryo, Does.Contain("日計").Or.Empty,
+                "dòng CUỐI của lưới phải là 日計行 của ngày cuối (modAcc.DispDayPoint, " +
+                "modAcc.cs:132) — hoặc trống khi tháng chưa có 処置 nào. Đang là " +
+                $"「{last.Ryo}」. Kết thúc bằng một 処置行 trần nghĩa là 日計行 chưa được dựng.");
         });
 
         LogKq(1, $"số dòng lúc bắt đầu: {_grid.RowCount()}; lbAllPoint = 「{_grid.AllPoint()}」");
@@ -238,16 +296,28 @@ public sealed class TreatmentGridBasicTests : UiTestBase
     {
         using var trace = TestTrace.Begin();
 
-        var snapBefore = _grid.Snapshot();
-        var before = snapBefore.Count;
         var pointBefore = _grid.AllPoint();
-        LogKq(2, $"trước khi chèn: {before} dòng, lbAllPoint = 「{pointBefore}」");
+        LogKq(2, $"trước khi chèn: {_grid.RowCount()} dòng đang thấy, lbAllPoint = 「{pointBefore}」");
 
         var kobetu = trace.Do("mo tab 個別", () => Screen.Kobetu.Open());
         trace.Do("don 3 o 検索", kobetu.ResetSearchBoxes);
 
-        var kobetuRow = trace.Do($"tim 処置 {SimpleTrtCd} o tab 個別",
-            () => kobetu.SearchByCode(SimpleTrtCd)[0]);
+        // KHÔNG lấy [0]: lưới 個別 cũng phơi dòng TIÊU ĐỀ ra UIA như grdRegi (ô kiểu
+        // Header chứ không phải HeaderItem, xem TreatmentGridOps.Headers), mà
+        // KobetuTab.DataRows() chỉ lọc "dòng rỗng" nên dòng tiêu đề LỌT vào vị trí [0].
+        // Đã vấp thật 2026-08-25: 「処置 đem test: 処置名称」 — đó là tên CỘT, và cú click
+        // rơi vào dòng tiêu đề. Lọc theo chính ô ｺｰﾄﾞ thì không thể nhầm.
+        var kobetuRow = trace.Do($"tim 処置 {SimpleTrtCd} o tab 個別", () =>
+        {
+            var found = kobetu.SearchByCode(SimpleTrtCd);
+            var real = found.FirstOrDefault(r => Txt.Int(r.At(KobetuTab.Col.Code)) == SimpleTrtCd);
+            if (real is null)
+                throw new InvalidOperationException(
+                    $"tìm ｺｰﾄﾞ {SimpleTrtCd} ra {found.Count} dòng nhưng không dòng nào có ô ｺｰﾄﾞ " +
+                    $"đúng bằng {SimpleTrtCd} (thấy: " +
+                    string.Join(", ", found.Select(r => $"「{r.At(KobetuTab.Col.Code)}」")) + ")");
+            return real;
+        });
         var kobetuName = kobetuRow.At(KobetuTab.Col.Name);
         LogKq(2, $"処置 đem test: ｺｰﾄﾞ {SimpleTrtCd} 「{kobetuName}」");
 
@@ -255,58 +325,63 @@ public sealed class TreatmentGridBasicTests : UiTestBase
         // Enter → CellDoubleClick → pKobetu_Let_Trt_Data. Không cần double-click.
         trace.Do("chon dong 個別 (chen xuong luoi dang ky)", () => kobetu.SelectRow(kobetuRow));
 
-        Waits.Until(() => _grid.RowCount() > before,
-            $"chọn dòng 個別 「{kobetuName}」 mà lưới đăng ký không thêm dòng nào " +
-            "(pKobetu_Let_Trt_Data, modKobetu.cs:255-265)");
+        // ── Nghiệm thu bằng 合計点数, KHÔNG bằng đếm dòng ────────────────────────
+        //
+        // UIA của DataGridView CHỈ phơi ra những dòng ĐANG NHÌN THẤY, mà chèn xong app
+        // cuộn lưới xuống dòng mới. Mọi mốc dựa trên tập dòng đọc được đều trôi theo vị
+        // trí cuộn — đã thử và hỏng CẢ BA cách (2026-08-25):
+        //   · so hai lượt chụp theo chỉ số  → "khác nhau" ngay từ index 0;
+        //   · đếm tổng số dòng             → đổi theo vị trí cuộn, không theo dữ liệu;
+        //   · đếm số dòng mang cùng tên    → dòng mới hiện ra thì một dòng cũ trôi khỏi
+        //                                     khung nhìn, tổng đứng yên.
+        // Trong khi đó ẢNH CHỤP cho thấy 処置 đã được chèn đàng hoàng ⇒ lỗi ở phép đo.
+        //
+        // 合計点数 (lbAllPoint) nằm NGOÀI lưới nên miễn nhiễm với cuộn, và nó chính là
+        // thứ nghiệp vụ mà việc chèn 処置 phải làm đổi. Đo cái đó vừa đúng vừa chắc.
+        var pointsBefore = _grid.AllPointValue();
+        LogKq(2, $"lbAllPoint trước khi chốt 回数: 「{_grid.AllPoint()}」");
 
-        var snapAfter = _grid.Snapshot();
-        var after = snapAfter.Count;
-        LogKq(2, $"sau khi chèn: {after} dòng (+{after - before})");
-
-        // ĐIỂM MẤU CHỐT — frm203002.cs:6919-6925 đặt CurrentCell sang CỘT 回 của dòng
+        // ĐIỂM MẤU CHỐT — frm203002.cs:6920-6925 đặt CurrentCell sang CỘT 回 của dòng
         // vừa thêm rồi BeginEdit. Đây là thứ quyết định "gõ tiếp là ra số lần", và là
         // chỗ bản web rất dễ bỏ sót (để con trỏ ở lại panel 個別).
         var focused = _grid.FocusedCellName();
         var editing = _grid.IsEditing();
         LogKq(2, $"ô đang giữ con trỏ ngay sau khi chèn: 「{focused}」 (đang mở editor: {editing})");
 
-        // Dò dòng mới bằng cách SO HAI LƯỢT CHỤP chứ không dò theo tên: tên trên lưới
-        // đăng ký là cct_nm hay trt_nm tuỳ ModCommon.pCultTrt, có thể khác hẳn tên vừa
-        // đọc ở tab 個別 — dò theo tên là tự chuốc một lần đỏ oan.
-        var added = TreatmentGridOps.FirstDifference(snapBefore, snapAfter);
-        Assert.That(added, Is.Not.Null,
-            $"lưới báo có thêm dòng nhưng hai lượt chụp không khác nhau ở đâu cả " +
-            $"(処置 vừa chọn: 「{kobetuName}」)");
-        Assert.That(added!.Ryo, Is.Not.Empty,
-            $"dòng vừa thêm không có 療法・処置 nào: {added}");
-        _addedRowText = added.Ryo;
-        LogKq(2, $"dòng vừa thêm: {added}");
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(after - before, Is.EqualTo(1),
-                $"một lần chọn 処置 phải thêm ĐÚNG 1 dòng, đang thêm {after - before}. " +
-                "Nhiều hơn 1 nghĩa là app còn chèn kèm 部位行 / 日計行 — nếu vậy phải ghi rõ " +
-                "ở đây rồi mới so được với bản web.");
-
-            // Con trỏ đứng ở cột 回: mô tả ô của DataGridView có KÈM TÊN CỘT, nên chỉ
-            // cần tìm chữ 回 trong đó. Editor đang mở thì phần tử focus là TextBox con
-            // của lưới và mô tả rỗng — khi đó bỏ qua vế này, IsEditing đã nói đủ.
-            if (!editing && focused.Length > 0)
-            {
-                Assert.That(Txt.Has(focused, "回"), Is.True,
-                    $"chèn xong con trỏ phải nằm ở cột 回 của dòng mới (grdRegi[4, y], " +
-                    $"frm203002.cs:6919-6925), đang ở 「{focused}」");
-            }
-        });
+        Assert.That(editing, Is.True,
+            "chèn xong app phải MỞ EDITOR ngay ở ô 回 của dòng mới " +
+            "(grdRegi.CurrentCell = grdRegi[4, y] rồi BeginEdit, frm203002.cs:6920-6925). " +
+            $"Ô đang giữ con trỏ: 「{focused}」. Không mở editor nghĩa là con trỏ còn kẹt ở " +
+            "panel 個別, chưa được trả về lưới. (Lúc editor đang mở, phần tử focus là " +
+            "「Editing Control」 nên KHÔNG đọc được tên cột từ nó — IsEditing là mốc đo được.)");
 
         // Chốt 回数 bằng Enter — đường mà người dùng đi, và là chỗ WinForm mới tính lại
-        // 合計点数 (frm203002.cs:5657 + 5779-5783). Hộp thoại 「〜を算定しますか？」 nếu bung
-        // ra đã có NuisanceDialogWatcher tự bấm 「いいえ」.
-        if (editing) trace.Do("Enter chot 回数", () => _grid.Press(VirtualKeyShort.RETURN));
+        // 合計点数 (frm203002.cs:5657 + 5779-5783). Trước khi chốt thì 合計 CHƯA đổi.
+        // Hộp thoại 「〜を算定しますか？」 nếu bung ra đã có NuisanceDialogWatcher bấm 「いいえ」.
+        trace.Do("Enter chot 回数", () => _grid.Press(VirtualKeyShort.RETURN));
 
-        var pointAfter = _grid.AllPoint();
-        LogKq(2, $"lbAllPoint: 「{pointBefore}」 → 「{pointAfter}」 (点 dòng mới = {added.Ten}, 回 = {added.Kai})");
+        if (pointsBefore is null)
+            IgnoreWithReason($"không đọc được số từ lbAllPoint 「{_grid.AllPoint()}」");
+
+        Waits.Until(() => _grid.AllPointValue() > pointsBefore,
+            $"chốt 回数 xong mà 合計点数 không tăng (đang là 「{_grid.AllPoint()}」, trước là " +
+            $"{pointsBefore}) — nghĩa là 処置 「{kobetuName}」 chưa thực sự vào lưới " +
+            "(pKobetu_Let_Trt_Data, modKobetu.cs:255-265 → modAcc.Calc_MDPoint)");
+
+        var pointsAfter = _grid.AllPointValue();
+        LogKq(2, $"lbAllPoint: {pointsBefore} → {pointsAfter} (+{pointsAfter - pointsBefore})");
+
+        // Dòng vừa chèn đang nằm trong khung nhìn (app vừa cuộn tới nó) nên đọc lại được.
+        var added = _grid.LastRowMatching(kobetuName);
+        LogKq(2, added is null
+            ? $"CẢNH BÁO: 合計 đã tăng nhưng không đọc lại được dòng 「{kobetuName}」 trong khung nhìn"
+            : $"dòng vừa thêm: {added}");
+
+        Assert.That(added, Is.Not.Null,
+            $"合計点数 đã tăng nhưng không thấy dòng 「{kobetuName}」 nào trong khung nhìn — " +
+            "app phải cuộn lưới tới dòng vừa chèn (CurrentCell được đặt vào chính dòng đó)");
+
+        _addedRowText = added!.Ryo;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -318,6 +393,7 @@ public sealed class TreatmentGridBasicTests : UiTestBase
     public void Tc3_Enter_OpensEditorInPlace_DoesNotMoveDown()
     {
         using var trace = TestTrace.Begin();
+        DismissBlockingDialog();
         var row = RequireAddedRow();
 
         trace.Do("dat con tro vao o 回", () => _grid.FocusCell(row, RegiGrid.Col.Kai));
@@ -341,9 +417,11 @@ public sealed class TreatmentGridBasicTests : UiTestBase
             $"ô giữ con trỏ sau Enter: 「{after}」. Nếu con trỏ đã dời sang dòng khác tức là " +
             "hành vi mặc định của DataGridView chưa bị chặn.");
 
-        // Escape huỷ editor — testcase KHÔNG được làm bẩn lưới cho các TC sau.
-        trace.Do("Escape huy editor", () => _grid.Press(VirtualKeyShort.ESCAPE));
-        Assert.That(_grid.IsEditing(), Is.False, "Escape phải đóng editor lại");
+        // Dọn editor bằng CLICK SANG Ô KHÁC, TUYỆT ĐỐI không dùng ESC — ESC là 戻る, nó
+        // bung 「保存しますか」 rồi đóng màn hình, làm mọi TC sau thao tác vào hộp thoại
+        // thay vì vào lưới (đo thật 2026-08-25, xem LeaveEditor).
+        trace.Do("click sang o khac de roi editor", () => LeaveEditor(row, RegiGrid.Col.Kai));
+        Assert.That(_grid.IsEditing(), Is.False, "click sang ô khác phải đóng editor lại");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -351,34 +429,53 @@ public sealed class TreatmentGridBasicTests : UiTestBase
     // ═══════════════════════════════════════════════════════════════════════
 
     [Test, Order(4)]
-    [Description("TC-4 — Tab bị nuốt, con trỏ ĐỨNG YÊN (frm203002.cs:3566-3569)")]
-    public void Tc4_Tab_IsSwallowed_CursorStaysPut()
+    [Description("TC-4 — Tab RỜI khỏi lưới sang control kế tiếp (StandardTab = true, Designer.cs:1121)")]
+    public void Tc4_Tab_MovesFocusOutOfGrid()
     {
         using var trace = TestTrace.Begin();
+        DismissBlockingDialog();
         var row = RequireAddedRow();
 
+        // PHẢI ở trạng thái KHÔNG edit: đang mở editor thì phím vào TextBox con và đi
+        // đường khác hẳn (grdRegi_TextBox_PreviewKeyDown) — đo lúc đó là đo nhầm hàm.
         trace.Do("dat con tro vao o 点", () => _grid.FocusCell(row, RegiGrid.Col.Ten));
-        var before = _grid.FocusedCellName();
-        LogKq(4, $"ô đang giữ con trỏ trước khi gõ Tab: 「{before}」");
+        if (_grid.IsEditing()) trace.Do("roi editor", () => LeaveEditor(row, RegiGrid.Col.Ten));
+        trace.Do("dat lai con tro vao o 点", () => _grid.FocusCell(row, RegiGrid.Col.Ten));
 
-        if (before.Length == 0)
+        var before = _grid.FocusedCellName();
+        LogKq(4, $"ô đang giữ con trỏ trước khi gõ Tab: 「{before}」 (editing={_grid.IsEditing()})");
+
+        if (before.Length == 0 || Txt.Has(before, "Editing"))
             IgnoreWithReason(
-                "không đọc được mô tả ô đang giữ con trỏ ⇒ không có cách nào chứng minh " +
-                "con trỏ đứng yên. Chạy -Diagnostics để xem cây UIA của grdRegi.");
+                $"không đặt được con trỏ vào ô 点 ở trạng thái KHÔNG edit (đang là 「{before}」) " +
+                "⇒ không đo được Tab của LƯỚI.");
 
         trace.Do("go Tab", () => _grid.Press(VirtualKeyShort.TAB));
 
         var after = _grid.FocusedCellName();
         LogKq(4, $"ô đang giữ con trỏ sau khi gõ Tab: 「{after}」");
 
-        // grdRegi_KeyDown đặt e.Handled = true cho Tab (frm203002.cs:3566-3569) nên cả
-        // hành vi mặc định của DataGridView (sang ô phải) LẪN StandardTab = true
-        // (Designer.cs:1121, sang control kế tiếp) đều không xảy ra. Bản web để trình
-        // duyệt xử lý Tab thì con trỏ bay ra khỏi lưới — lệch hẳn.
-        Assert.That(after, Is.EqualTo(before),
-            $"Tab phải bị NUỐT và con trỏ đứng yên (e.Handled = true, frm203002.cs:3566-3569). " +
-            $"Con trỏ đã dời 「{before}」 → 「{after}」. Dời sang ô bên phải = hành vi mặc định của " +
-            "DataGridView chưa bị chặn; ra khỏi lưới hẳn = Tab đang được trả cho thứ tự tab của form.");
+        // ĐO THẬT 2026-08-25 (probe P3): 「点 Row 16」 --Tab--> 「患者情報」.
+        //
+        // Bản đầu của testcase này assert NGƯỢC LẠI — "Tab bị nuốt, con trỏ đứng yên" —
+        // suy từ grdRegi_KeyDown đặt e.Handled = true cho Tab (frm203002.cs:3566-3569).
+        // Suy vậy là SAI: Tab là phím điều hướng hộp thoại, WinForms xử qua
+        // ProcessDialogKey TRƯỚC KeyDown, và grdRegi khai StandardTab = true
+        // (Designer.cs:1121) nghĩa là "Tab sang CONTROL kế tiếp thay vì sang ô kế tiếp".
+        // e.Handled ở KeyDown chỉ chặn được phần dời-ô mà StandardTab vốn đã tắt.
+        //
+        // Hợp đồng parity: bản web KHÔNG được giữ con trỏ lại trong lưới khi gõ Tab.
+        Assert.Multiple(() =>
+        {
+            Assert.That(after, Is.Not.EqualTo(before),
+                "Tab phải RỜI con trỏ khỏi ô hiện tại (StandardTab = true, Designer.cs:1121). " +
+                $"Con trỏ vẫn ở 「{after}」 nghĩa là bản web đang NUỐT Tab, khác WinForm.");
+
+            Assert.That(Txt.Has(after, "Row"), Is.False,
+                $"Tab phải đưa con trỏ RA KHỎI lưới, nhưng nó đang ở một ô lưới khác 「{after}」 " +
+                "— đó là hành vi mặc định 'sang ô bên phải' của DataGridView, thứ mà " +
+                "StandardTab đã tắt.");
+        });
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -390,12 +487,23 @@ public sealed class TreatmentGridBasicTests : UiTestBase
     public void Tc5_TenCell_AcceptsDigitsOnly()
     {
         using var trace = TestTrace.Begin();
+        DismissBlockingDialog();
         var row = RequireAddedRow();
         var original = row.Ten;
         LogKq(5, $"ô 点 của dòng test trước khi gõ: 「{original}」");
 
+        // TC-4 vừa đẩy focus RA KHỎI lưới (sang 患者情報) nên cú click đầu chỉ trả focus
+        // về lưới, chưa chắc mở được editor — gõ Enter lại một nhịp nữa nếu cần.
         trace.Do("dat con tro vao o 点", () => _grid.FocusCell(row, RegiGrid.Col.Ten));
         trace.Do("go Enter de mo editor", () => _grid.Press(VirtualKeyShort.RETURN));
+        if (!_grid.IsEditing())
+        {
+            trace.Do("chua mo duoc editor — dat lai con tro roi Enter lan nua", () =>
+            {
+                _grid.FocusCell(row, RegiGrid.Col.Ten);
+                _grid.Press(VirtualKeyShort.RETURN);
+            });
+        }
 
         if (!_grid.IsEditing())
             IgnoreWithReason(
@@ -410,18 +518,20 @@ public sealed class TreatmentGridBasicTests : UiTestBase
         var editorText = _grid.EditorText();
         LogKq(5, $"nội dung editor sau khi gõ 「9a8」: 「{editorText}」");
 
-        Assert.That(editorText, Does.Not.Contain("a").IgnoreCase,
-            $"ô 点 chỉ được nhận chữ số (grdRegi_TextBox_KeyPress, frm203002.cs:3599-3640) — " +
-            $"chữ 「a」 phải bị nuốt, nhưng editor đang là 「{editorText}」. Bản web dùng " +
-            "<input> thường mà không lọc phím thì mọi ký tự đều lọt.");
+        Assert.That(editorText, Is.EqualTo("98"),
+            $"ô 点 chỉ được nhận chữ số (grdRegi_TextBox_KeyPress, frm203002.cs:3601-3639) — " +
+            $"gõ 「9a8」 phải ra 「98」. Editor đang là 「{editorText}」; ra 「9a8」 nghĩa là bản " +
+            "web dùng <input> thường mà không lọc phím. (Đo thật 2026-08-25, probe P4.)");
 
-        // Escape trả ô về nguyên trạng — TC-7 còn cần dòng này với đúng số điểm cũ.
-        trace.Do("Escape huy editor", () => _grid.Press(VirtualKeyShort.ESCAPE));
+        // Rời ô bằng CLICK (không ESC — ESC là 戻る). Đo thật 2026-08-25 (probe P4):
+        // rời ô KHÔNG chốt giá trị gõ dở, ô 点 quay về giá trị cũ.
+        trace.Do("click sang o khac de roi o 点", () => LeaveEditor(row, RegiGrid.Col.Ten));
 
         var restored = _grid.LastRowMatching(_addedRowText!);
-        LogKq(5, $"ô 点 sau khi Escape: 「{restored?.Ten}」 (trước khi gõ: 「{original}」)");
+        LogKq(5, $"ô 点 sau khi rời ô: 「{restored?.Ten}」 (trước khi gõ: 「{original}」)");
         Assert.That(restored?.Ten, Is.EqualTo(original),
-            "Escape phải huỷ sửa và trả ô 点 về giá trị cũ");
+            "rời ô phải HUỶ giá trị gõ dở và trả ô 点 về giá trị cũ (đo thật: 59 → gõ 98 → " +
+            "rời ô → vẫn 59)");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -433,11 +543,17 @@ public sealed class TreatmentGridBasicTests : UiTestBase
     public void Tc6_InsertKey_AddsExactlyOneRow()
     {
         using var trace = TestTrace.Begin();
+        DismissBlockingDialog();
         var row = RequireAddedRow();
 
+        // Editor còn mở thì phím Insert vào TextBox chứ không vào lưới, VÀ số dòng đếm
+        // được bị cộng thêm 1 (ô editor là con của lưới). Dọn trước khi đo.
         trace.Do("dat con tro vao o 療法・処置", () => _grid.FocusCell(row, RegiGrid.Col.Ryo));
+        if (_grid.IsEditing()) trace.Do("roi editor con sot lai", () => LeaveEditor(row, RegiGrid.Col.Ryo));
+        trace.Do("dat lai con tro vao o 療法・処置", () => _grid.FocusCell(row, RegiGrid.Col.Ryo));
+
         var before = _grid.RowCount();
-        LogKq(6, $"số dòng trước khi gõ Insert: {before}");
+        LogKq(6, $"số dòng trước khi gõ Insert: {before} (editing={_grid.IsEditing()})");
 
         trace.Do("go Insert", () => _grid.Press(VirtualKeyShort.INSERT));
 
@@ -471,6 +587,7 @@ public sealed class TreatmentGridBasicTests : UiTestBase
     public void Tc7_DeleteKey_RemovesFocusedRow_AndRecalculatesTotal()
     {
         using var trace = TestTrace.Begin();
+        DismissBlockingDialog();
         var row = RequireAddedRow();
 
         var marker = _addedRowText!;
@@ -480,6 +597,8 @@ public sealed class TreatmentGridBasicTests : UiTestBase
                  $"dòng sắp xoá 点={row.Ten} 回={row.Kai}");
 
         trace.Do("dat con tro vao o 療法・処置 cua dong test", () => _grid.FocusCell(row, RegiGrid.Col.Ryo));
+        if (_grid.IsEditing()) trace.Do("roi editor con sot lai", () => LeaveEditor(row, RegiGrid.Col.Ryo));
+        trace.Do("dat lai con tro vao o 療法・処置", () => _grid.FocusCell(row, RegiGrid.Col.Ryo));
         trace.Do("go Delete", () => _grid.Press(VirtualKeyShort.DELETE));
 
         // 処置 đem test KHÔNG phải 部位病名行 (linekbn = "1") nên KHÔNG được hỏi
@@ -494,21 +613,34 @@ public sealed class TreatmentGridBasicTests : UiTestBase
                 "dành cho 部位病名行 (linekbn = \"1\", frm203002.cs:3853-3862).");
         }
 
-        var gone = Waits.TryUntil(() => _grid.LastRowMatching(marker) is null);
+        // ĐẾM, không hỏi "còn hay hết": 処置 đem test có thể ĐÃ có sẵn trên lưới ở ngày
+        // khác trong tháng (bệnh nhân test có sẵn một dòng 歯科再診料 ngày 14), nên sau
+        // khi xoá dòng của TC-2 thì LastRowMatching VẪN tìm ra dòng cũ. Đã vấp thật
+        // 2026-08-25: TC-7 đỏ với 「Delete chưa được nối vào 行削除」 trong khi log ngay
+        // bên cạnh cho thấy 18→17 dòng và 合計 468→409.
+        // MỐC LÀ 合計点数, KHÔNG phải số dòng.
+        //
+        // Đếm dòng đã hỏng HAI lần liên tiếp ở đúng testcase này (2026-08-25): UIA chỉ
+        // phơi ra dòng ĐANG NHÌN THẤY, mà xoá xong lưới cuộn lại — lần thì thấy dòng
+        // 歯科再診料 cũ của ngày khác nên tưởng chưa xoá, lần thì số dòng đứng yên.
+        // 合計 nằm NGOÀI lưới nên miễn nhiễm, và nó chính là thứ nghiệp vụ phải đổi.
+        // Xem PROBE-GUIDELINE.md mục 3.1.
+        var matchBefore = _grid.CountRyoContaining(marker);
+        var gone = Waits.TryUntil(() => _grid.AllPointValue() < pointBefore);
         var after = _grid.RowCount();
         var pointAfter = _grid.AllPointValue();
-        LogKq(7, $"sau khi xoá: {after} dòng ({after - before:+#;-#;0}), lbAllPoint = 「{_grid.AllPoint()}」");
+        LogKq(7, $"sau khi xoá: {after} dòng ({after - before:+#;-#;0}), lbAllPoint = 「{_grid.AllPoint()}」, " +
+                 $"dòng cùng tên 「{marker}」: {matchBefore} → {_grid.CountRyoContaining(marker)} " +
+                 "(số dòng chỉ để tham khảo — phụ thuộc vị trí cuộn)");
 
         Assert.Multiple(() =>
         {
             Assert.That(gone, Is.True,
-                $"Delete phải xoá dòng ĐANG ĐỨNG 「{marker}」 " +
-                "(grdRegi_KeyDown :3574-3583 → DeleteRow :3814). Dòng vẫn còn tức là phím Delete " +
-                "chưa được nối vào 行削除, hoặc DeleteRow đã từ chối ở một trong ba cổng đầu " +
-                "(ô 日 rỗng :3840 / linekbn 99 :3841 / 日計行 :3843).");
-
-            Assert.That(after, Is.LessThan(before),
-                $"xoá xong lưới phải ít dòng hơn, đang là {before} → {after}");
+                $"Delete phải xoá dòng ĐANG ĐỨNG 「{marker}」 và làm 合計点数 giảm " +
+                "(grdRegi_KeyDown :3574-3583 → DeleteRow :3814 → modAcc.Calc_MDPoint :3960-3966). " +
+                $"合計 vẫn là {pointBefore} nghĩa là phím Delete chưa được nối vào 行削除, hoặc " +
+                "DeleteRow đã từ chối ở một trong ba cổng đầu (ô 日 rỗng :3840 / linekbn 99 " +
+                ":3841 / 日計行 :3843).");
 
             // Xoá xong DeleteRow gọi modAcc.Calc_MDPoint rồi ghi lại lbAllPoint
             // (frm203002.cs:3960-3966). Chỉ chốt CHIỀU chứ không chốt con số: 合計 của
@@ -516,8 +648,8 @@ public sealed class TreatmentGridBasicTests : UiTestBase
             // đỏ oan trên máy có dữ liệu khác.
             if (pointBefore is not null && pointAfter is not null && Txt.Int(row.Ten) > 0)
             {
-                Assert.That(pointAfter, Is.LessThan(pointBefore),
-                    $"xoá một dòng có 点={row.Ten} thì 合計点数 phải GIẢM " +
+                Assert.That(pointBefore - pointAfter, Is.EqualTo(Txt.Int(row.Ten) * Math.Max(1, Txt.Int(row.Kai) ?? 1)),
+                    $"xoá một dòng 点={row.Ten} × 回={row.Kai} thì 合計点数 phải giảm ĐÚNG chừng ấy " +
                     $"(modAcc.Calc_MDPoint → lbAllPoint, frm203002.cs:3960-3966), " +
                     $"đang là {pointBefore} → {pointAfter}. Không đổi tức là bản web chỉ bỏ dòng " +
                     "khỏi lưới mà quên tính lại tổng.");

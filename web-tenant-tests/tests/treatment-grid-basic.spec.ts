@@ -135,20 +135,27 @@ import { closeDialogs } from './virtual-grid'
 
 const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
 
-/** Bệnh nhân test — cùng mặc định với các spec 診療入力 khác. */
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+/**
+ * Bệnh nhân test — PHẢI khớp `patient.patNo` trong
+ * `fla-ui-tests/src/OchaCom.FlaUiTests/testsettings.local.json`.
+ *
+ * 10 chứ KHÔNG phải 12138 như các spec khác: đây là spec PARITY, hai bên bắt buộc đo
+ * CÙNG một bệnh nhân và CÙNG một ngày thì mới so được. Bệnh nhân 10 được chọn vì chỉ
+ * có 8 dòng TRNTRN trong toàn bộ lịch sử (12138 có 2.864 ⇒ WinForm treo hơn một phút).
+ */
+const PAT_NO = process.env.TEST_PAT_NO ?? '10'
 
 /**
- * Ngày test = HÔM NAY (yyyy-MM-dd). BẮT BUỘC thuộc tháng hiện hành: dòng tháng cũ
- * mang `linekbn = 99` bên WinForm / `isHistoryRowKey` bên web, mọi thao tác đều bị
- * từ chối.
+ * Ngày test — PHẢI khớp `patient.trtDate` bên `testsettings.local.json` (FlaUI).
+ *
+ * KHÔNG dùng "hôm nay": hôm nay thường CHƯA có 処置 nào được lưu, khi đó cả hai bên mở
+ * ra lưới rỗng và không có gì để so. Ngày này phải là ngày CÓ dữ liệu thật và phải
+ * thuộc tháng đang mở (dòng tháng cũ mang `linekbn = 99` / `isHistoryRowKey`, mọi thao
+ * tác đều bị từ chối).
+ *
+ * Đổi ngày thì PHẢI đổi cả hai bên cùng lúc.
  */
-const TRT_DT =
-    process.env.TEST_TRT_DT ??
-    (() => {
-        const d = new Date()
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    })()
+const TRT_DT = process.env.TEST_TRT_DT ?? '2026-08-03'
 
 /**
  * 処置 dùng để tạo MỘT dòng đơn giản, KHÔNG phải chọn 部位.
@@ -205,6 +212,19 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
     /** Dòng 処置 mà TC-2 chèn — mốc cho TC-3…TC-7. */
     let addedKey: string | null = null
     let addedRyo = ''
+
+    /** Ô giữ con trỏ ngay sau khi TC-2 chèn 処置 — TC-8 so nó với WinForm. */
+    let focusedAfterInsert: string | null = null
+
+    /**
+     * rowKey của dòng TC-2 chèn, giữ RIÊNG cho TC-8.
+     *
+     * Không dùng chung `addedKey`: TC-7 xoá dòng đó xong gán `addedKey = null` để các TC
+     * sau không thao tác lên dòng đã biến mất — nhưng TC-8 chỉ ĐỌC LẠI giá trị đã đo ở
+     * TC-2, không cần dòng còn tồn tại. Dùng chung thì TC-8 bị skip oan (đã vấp thật
+     * 2026-08-25: cả file "7 passed" mà TC-8 không hề chạy).
+     */
+    let insertedKeyForTc8: string | null = null
 
     /**
      * Đọc CẢ lưới trong một lượt `evaluateAll`: rowKey + 療法・処置 + 点 + 回.
@@ -307,6 +327,10 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
     }
 
     async function openTreatmentScreen() {
+        // KHÔNG truyền inpKbn. Đo thật 2026-08-25, cùng bệnh nhân 10 / ngày 2026-08-03:
+        //   (không có inpKbn) → 合計 409 点, 実日数 2日 — ĐÚNG bằng WinForm và bằng DB;
+        //   inpKbn=update     → lưới RỖNG (0 点 / 0日).
+        // Tức đường vào đúng là URL trần, giống hệt cái người dùng mở trên trình duyệt.
         await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
         await expect(
             ryoCells(page).first(),
@@ -341,6 +365,19 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
                     .getByRole('button', { name: /^(No|いいえ)$/ })
                     .first()
                     .click()
+            },
+            { times: 30 },
+        )
+
+        // カルテ記載選択 — dialog ĐI KÈM sau 算定 (GUIDELINE Rule 14.1). Nó KHÔNG tự tắt và
+        // che kín lưới, nên mọi phép đo sau đó đều vô nghĩa. Đã vấp thật 2026-08-25:
+        // TC-1 đọc "dòng cuối" ra một 処置行 ngẫu nhiên vì lưới bị che.
+        // Đóng bằng nút F10 戻る của chính dialog (Escape trong dialog này = CHỐT, Rule 10.4).
+        await page.addLocatorHandler(
+            page.getByText('カルテ記載選択').first(),
+            async () => {
+                const back = page.getByRole('button', { name: /戻る/ }).last()
+                if (await back.count()) await back.click()
             },
             { times: 30 },
         )
@@ -385,21 +422,36 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
             ).toBeAttached()
         }
 
-        // Lưới LUÔN kết thúc bằng MỘT dòng trống, và đó là dòng do CHÍNH APP giữ chứ
-        // không phải "new row" của DataGridView (AllowUserToAddRows = false,
-        // Designer.cs:1088). Nguồn gốc VB6: lúc dựng lưới app thêm HAI dòng rỗng
-        // (frm203002.cs:3043-3044) rồi giấu dòng 0 đi (:3063-3066); dòng còn lại nằm ở
-        // cuối và là chỗ để gõ 処置 tiếp.
+        // ── Lưới phải kết thúc bằng 日計, không phải một 処置行 trần ──────────────
         //
-        // Đây là chỗ bản web dễ port hụt: thấy AllowUserToAddRows = false rồi kết luận
-        // "không có dòng trống", thế là mất luôn chỗ nhập tay.
+        // ĐO THẬT trên WinForm 2026-08-25: dòng cuối là 日計行 —
+        //     [15] 14 | | [負担金 0円]  [日計 70点] | |
+        // tức 日計 nằm trong CỘT 2 (療法・処置) của một dòng lưới thật
+        // (modAcc.DispDayPoint, modAcc.cs:132).
+        //
+        // ⚠️ LỆCH DOM ĐÃ ĐO (2026-08-25, probe DOM bản web): bản web KHÔNG đặt 日計 vào
+        // cột 2. Dòng footer chỉ có `data-grid-cell` cho cột 0/1/3/4 — THIẾU HẲN `|2` —
+        // còn chuỗi 「【負担金 0円】【日計 162点】」 nằm trong một <div> chỉ có class, không
+        // mang thuộc tính ô nào. Nội dung thì ĐÚNG và ĐỦ.
+        //
+        // Nên assert theo thứ TƯƠNG ĐƯƠNG chứ không theo vị trí ô: ngày cuối phải có
+        // dòng footer, và chuỗi 日計 phải hiện. Ghi lại chênh lệch DOM ở đây để người
+        // sau không tưởng là 日計 chưa được port.
         const rows = await currentMonthRows()
         expect(rows.length, 'lưới tháng hiện hành phải có ít nhất một dòng').toBeGreaterThan(0)
-        expect(
-            rows[rows.length - 1]!.ryo,
-            'dòng CUỐI của lưới phải TRỐNG để còn gõ 処置 tiếp — di sản VB6, app tự giữ ' +
-                `(frm203002.cs:3043-3044 + :3063-3066). Dòng cuối đang là 「${rows[rows.length - 1]!.ryo}」`,
-        ).toBe('')
+
+        const lastKey = rows[rows.length - 1]!.key
+        await expect(
+            page.locator(`[data-footer-cell^="${lastKey}:footer-"]`).first(),
+            `sau 処置行 CUỐI phải là dòng 日計 của ngày đó (modAcc.DispDayPoint, modAcc.cs:132). ` +
+                `Không thấy footer nào gắn với dòng 「${rows[rows.length - 1]!.ryo}」 ⇒ lưới đang ` +
+                'kết thúc bằng một 処置行 trần, khác WinForm.',
+        ).toBeAttached()
+
+        await expect(
+            page.getByText(/【日計\s*[\d,]+\s*点】/).last(),
+            'phải hiện chuỗi 【日計 N点】 của ngày cuối',
+        ).toBeVisible()
 
         console.log(`TC-1: ${rows.length} dòng tháng hiện hành, 合計 = ${await readTotal()}`)
     })
@@ -457,22 +509,16 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
             'lưới báo có thêm dòng nhưng hai lượt chụp không khác nhau ở đâu cả',
         ).toBeDefined()
         addedKey = added!.key
+        insertedKeyForTc8 = added!.key
         addedRyo = added!.ryo
         console.log(`TC-2: dòng vừa thêm key=${addedKey} 「${addedRyo}」 点=${added!.ten} 回=${added!.kai}`)
 
         expect(added!.ryo, 'dòng vừa thêm không có 療法・処置 nào').not.toBe('')
 
-        // ĐIỂM MẤU CHỐT — frm203002.cs:6920-6925 đặt CurrentCell sang CỘT 回 của dòng
-        // vừa thêm rồi BeginEdit. Đây là thứ quyết định "gõ tiếp là ra số lần", và là
-        // chỗ bản web rất dễ bỏ sót (để con trỏ ở lại panel 個別).
-        const focused = await focusedCellId()
-        console.log(`TC-2: ô đang giữ con trỏ sau khi chèn = ${focused}`)
-        expect(
-            focused,
-            `chèn xong con trỏ phải nằm ở CỘT 回 của dòng mới (grdRegi[4, y], ` +
-                `frm203002.cs:6920-6925), đang ở 「${focused}」. null = con trỏ còn ở panel 個別, ` +
-                'chưa được trả về lưới.',
-        ).toBe(`${addedKey}|${COL_KAI}`)
+        // Vị trí con trỏ sau khi chèn: CHỈ GHI LẠI ở đây. Phép so với WinForm nằm ở
+        // TC-8 cuối file (test.fail) vì bản web đang LỆCH — xem giải thích ở đó.
+        focusedAfterInsert = await focusedCellId()
+        console.log(`TC-2: ô đang giữ con trỏ sau khi chèn = ${focusedAfterInsert}`)
     })
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -488,6 +534,17 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
 
         await page.keyboard.press('Enter')
         await step()
+
+        // Ngay sau khi TC-2 chèn dòng, app còn đang dọn nốt (đóng dialog 算定 / カルテ記載
+        // 選択, dời con trỏ về footer). Cú Enter đầu có thể rơi vào lúc đó. Probe
+        // 2026-08-25 đã chứng minh Enter MỞ ĐƯỢC editor trên dòng ổn định, nên thử lại
+        // một nhịp trước khi kết luận là bản web thiếu tính năng.
+        if ((await cell(key, COL_KAI).locator('input').count()) === 0) {
+            await focusCell(key, COL_RYO)
+            await focusCell(key, COL_KAI)
+            await page.keyboard.press('Enter')
+            await step()
+        }
 
         // DataGridView mặc định: Enter = chốt ô rồi NHẢY XUỐNG dòng dưới. frm203002 tắt
         // hẳn hành vi đó (RegularOperationEnterKeyDisable = true, Designer.cs:1116) và
@@ -505,8 +562,17 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
                 'đã bị chặn (RegularOperationEnterKeyDisable = true, Designer.cs:1116)',
         ).toBe(before)
 
-        // Escape huỷ editor — testcase không được làm bẩn lưới cho các TC sau.
-        await page.keyboard.press('Escape')
+        // Dọn editor bằng CLICK SANG Ô KHÁC, TUYỆT ĐỐI không dùng Escape.
+        //
+        // ĐO THẬT trên WinForm 2026-08-25 (probe P2): ESC KHÔNG huỷ editor mà là 戻る —
+        // GradientDataGridView.ProcessDialogKey trả false khi
+        // RegularOperationEnterKeyDisable = true (GradientDataGridView.cs:645-668) nên ESC
+        // rơi xuống form, bung 「処置データは、変更されています。保存しますか？」 rồi ĐÓNG màn hình.
+        //
+        // ⚠️ Đây là chỗ NGHI LỆCH: bản web cho Escape huỷ editor
+        // (registration-table.tsx:126-157). Chưa đo nên chưa chốt — spec này cố ý KHÔNG
+        // dùng Escape để phép đo của TC-3 không phụ thuộc vào chỗ còn tranh cãi đó.
+        await focusCell(key, COL_RYO)
         await expect(cell(key, COL_KAI).locator('input')).toHaveCount(0)
     })
 
@@ -514,7 +580,20 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
     // TC-4 — Tab bị nuốt
     // ═══════════════════════════════════════════════════════════════════════
 
-    test('TC-4 — Tab bị NUỐT, con trỏ đứng yên (frm203002.cs:3566-3569)', async () => {
+    test('TC-4 — [LỆCH] Tab phải RỜI khỏi lưới sang control kế tiếp (StandardTab = true, Designer.cs:1121)', async () => {
+        // LỆCH ĐÃ ĐO 2026-08-25, cùng bệnh nhân 10 / ngày 2026-08-03 / cùng dữ liệu (409 点):
+        //   WinForm : 「点 Row 16」 --Tab--> 「患者情報」   (con trỏ RỜI khỏi lưới)
+        //   Bản web : 「<row>|3」    --Tab--> 「<row>|3」    (ô vàng ĐỨNG YÊN, Tab bị nuốt)
+        //
+        // WinForm không tự viết hành vi này: grdRegi khai StandardTab = true
+        // (Designer.cs:1121) nên Tab đi theo thứ tự tab của FORM, và WinForms xử Tab qua
+        // ProcessDialogKey TRƯỚC KeyDown — `e.Handled = true` ở grdRegi_KeyDown
+        // (frm203002.cs:3566-3569) chỉ chặn phần dời-ô mà StandardTab vốn đã tắt.
+        //
+        // Giữ dưới test.fail() theo quy ước repo: lệch đã biết vẫn chạy để canh, nhưng
+        // không chặn các testcase sau. Sửa xong thì test này "unexpectedly passed" và
+        // phải bỏ test.fail() đi.
+        test.fail()
         const key = requireAddedRow()
 
         await focusCell(key, COL_TEN)
@@ -524,22 +603,39 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
         await page.keyboard.press('Tab')
         await step()
 
-        // grdRegi_KeyDown đặt e.Handled = true cho Tab (frm203002.cs:3566-3569) nên CẢ
-        // hành vi mặc định của DataGridView (sang ô phải) LẪN StandardTab = true
-        // (Designer.cs:1121, sang control kế tiếp) đều không xảy ra.
+        const after = await focusedCellId()
+        console.log(`TC-4: focusedCell ${before} --Tab--> ${after}`)
+
+        // ĐO THẬT trên WinForm 2026-08-25 (probe P3): 「点 Row 16」 --Tab--> 「患者情報」.
+        //
+        // Bản đầu assert NGƯỢC LẠI — "Tab bị nuốt, con trỏ đứng yên" — suy từ
+        // grdRegi_KeyDown đặt e.Handled = true cho Tab (frm203002.cs:3566-3569). Suy vậy
+        // SAI: Tab là phím điều hướng hộp thoại, WinForms xử qua ProcessDialogKey TRƯỚC
+        // KeyDown, và grdRegi khai StandardTab = true (Designer.cs:1121) = "Tab sang
+        // CONTROL kế tiếp thay vì sang ô kế tiếp". e.Handled ở KeyDown chỉ chặn được phần
+        // dời-ô mà StandardTab vốn đã tắt.
         expect(
-            await focusedCellId(),
-            'Tab phải bị NUỐT và con trỏ đứng yên (e.Handled = true, frm203002.cs:3566-3569). ' +
-                'Dời sang ô bên phải = chưa chặn hành vi mặc định; ô vàng biến mất = Tab đang ' +
-                'được trả cho thứ tự tab của trình duyệt và con trỏ đã bay ra khỏi lưới.',
-        ).toBe(before)
+            after,
+            'Tab phải RỜI ô vàng khỏi ô hiện tại (StandardTab = true, Designer.cs:1121). ' +
+                `Ô vàng vẫn ở 「${after}」 nghĩa là bản web đang NUỐT Tab, khác WinForm.`,
+        ).not.toBe(before)
     })
 
     // ═══════════════════════════════════════════════════════════════════════
     // TC-5 — ô 点 chỉ ăn chữ số
     // ═══════════════════════════════════════════════════════════════════════
 
-    test('TC-5 — ô 点 chỉ nhận 0-9, chữ cái bị chặn (grdRegi_TextBox_KeyPress, frm203002.cs:3601-3639)', async () => {
+    test('TC-5 — [LỆCH] ô 点 chỉ nhận 0-9, chữ cái phải bị chặn (grdRegi_TextBox_KeyPress, frm203002.cs:3601-3639)', async () => {
+        // LỆCH ĐÃ ĐO 2026-08-25, cùng bệnh nhân / ngày / dữ liệu:
+        //   WinForm : gõ 「9a8」 → editor ra 「98」   (chữ 「a」 bị nuốt)
+        //   Bản web : gõ 「9a8」 → editor ra 「9a8」  (nhận tất cả)
+        //
+        // WinForm lọc ở tầng PHÍM: grdRegi_TextBox_KeyPress (frm203002.cs:3601-3639) chỉ
+        // cho '0'..'9' + BackSpace + Ctrl+C đi qua trên cột 3/4, chặn cả Ctrl+V. Bản web
+        // dùng <input> thường nên mọi ký tự đều lọt vào ô điểm.
+        //
+        // Giữ dưới test.fail() theo quy ước repo — xem ghi chú ở TC-4.
+        test.fail()
         const key = requireAddedRow()
         const original = (await currentMonthRows()).find((r) => r.key === key)?.ten ?? ''
 
@@ -568,12 +664,13 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
                 'không lọc phím thì mọi ký tự đều lọt.',
         ).toBe('98')
 
-        // Escape trả ô về nguyên trạng — TC-7 còn cần dòng này với đúng số điểm cũ.
-        await page.keyboard.press('Escape')
+        // Rời ô bằng CLICK (không Escape — xem TC-3). ĐO THẬT trên WinForm (probe P4):
+        // rời ô KHÔNG chốt giá trị gõ dở, ô 点 quay về giá trị cũ (59 → gõ 98 → vẫn 59).
+        await focusCell(key, COL_RYO)
         await expect(editor).toHaveCount(0)
         expect(
             (await currentMonthRows()).find((r) => r.key === key)?.ten,
-            'Escape phải huỷ sửa và trả ô 点 về giá trị cũ',
+            'rời ô phải HUỶ giá trị gõ dở và trả ô 点 về giá trị cũ (WinForm: 59 → gõ 98 → vẫn 59)',
         ).toBe(original)
     })
 
@@ -675,4 +772,34 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
 
         addedKey = null
     })
+    /**
+     * ─── TC-8: LỆCH ĐÃ ĐO, giữ dưới test.fail ────────────────────────────────
+     * Đặt CUỐI file và mang `test.fail()` theo đúng quy ước repo: lệch đã biết thì
+     * vẫn chạy để canh, nhưng không chặn các testcase khác. Ngày nó được sửa, test
+     * này chuyển sang "unexpectedly passed" và phải bỏ `test.fail()` đi.
+     */
+    test('TC-8 — [LỆCH] chèn xong con trỏ phải đậu ở ô 回 của DÒNG MỚI (frm203002.cs:6920-6925)', async () => {
+        // test.fail() phải nằm TRONG thân testcase. Gọi ở cấp describe thì Playwright áp
+        // cho MỌI test trong file — đã vấp thật 2026-08-25: TC-1 báo
+        // 「Expected to fail, but passed」 và cả file dừng.
+        test.fail()
+        const key = insertedKeyForTc8
+        test.skip(key === null, 'TC-2 chưa chèn được dòng nào')
+
+        // ĐO THẬT 2026-08-25, cùng bệnh nhân (10) cùng ngày (2026-08-03):
+        //   WinForm : mở editor ngay ở ô 回 của dòng vừa thêm
+        //             (grdRegi.CurrentCell = grdRegi[4, y] rồi BeginEdit).
+        //   Bản web : con trỏ nhảy sang 「<rowKey>:footer-ten|3」 — ô 点 của dòng FOOTER,
+        //             không phải ô 回 của dòng mới.
+        //
+        // Hệ quả cho người dùng: ở WinForm gõ tiếp là ra SỐ LẦN của 処置 vừa chọn; ở bản
+        // web gõ tiếp rơi vào ô điểm của dòng tổng ngày.
+        console.log(`TC-8: focusedCell sau khi chèn = ${focusedAfterInsert} (mong đợi ${key}|${COL_KAI})`)
+        expect(
+            focusedAfterInsert,
+            'chèn xong con trỏ phải nằm ở CỘT 回 của DÒNG MỚI (grdRegi[4, y], ' +
+                'frm203002.cs:6920-6925) — đây là chỗ quyết định "gõ tiếp là ra số lần".',
+        ).toBe(`${key}|${COL_KAI}`)
+    })
+
 })

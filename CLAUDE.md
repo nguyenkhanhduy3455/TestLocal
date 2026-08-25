@@ -10,4 +10,10 @@ Ba luật không được phá (chi tiết ở `web-tenant-tests/GUIDELINE.md`):
 
 Trước khi viết spec mới: đọc `web-tenant-tests/GUIDELINE.md` (Rule 1–11) và `web-tenant-tests/TEST-PLAYPWRIGHT-GUIDELINE.md` (Rule 12–22). Bảng tra tóm tắt cả 22 rule ở README mục 6.
 
+Trước khi viết test UI cho app WinForm (`fla-ui-tests/`): đọc
+[`fla-ui-tests/PROBE-GUIDELINE.md`](./fla-ui-tests/PROBE-GUIDELINE.md). Luật số một —
+chưa biết app thật hành xử ra sao thì **chụp màn hình → đọc ảnh → rồi mới viết
+assert**, KHÔNG viết assert theo phỏng đoán rồi chạy cả fixture để xem nó đỏ ở đâu.
+Ảnh chụp lúc lỗi đã có sẵn trong `artifacts/screenshots/` — mở ra xem trước khi chạy lại.
+
 Trước khi debug một test fail: chạy triage ở README mục 7 — kiểm app sống (502?), kiểm rate-limit, đọc dòng `Error:` đầu tiên, mở `test-results/<tên-test>/error-context.md`.
