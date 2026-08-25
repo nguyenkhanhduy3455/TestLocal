@@ -307,6 +307,31 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
     }
 
     /**
+     * Vùng đang giữ FOCUS BÀN PHÍM — khác hẳn `focusedCellId()` (ô vàng).
+     *
+     * Bên WinForm hai thứ này tách rời: `grdRegi` chỉ đặt màu ô chọn ĐÚNG MỘT LẦN ở
+     * `InpInitControl` (frm203002.cs:697-698) và `colorRegiBackSelection[0]` (active) với
+     * `[1]` (không active) ĐỀU là 薄い黄色 #FFFFC0 (frm203002.cs:88-92); `grdRegi_Enter`
+     * (:2471) và `grdRegi_Leave` (:2484) thì thân hàm bị comment sạch. Nghĩa là Tab rời
+     * lưới KHÔNG làm ô vàng nhúc nhích — chỉ có focus đi. Muốn đo "đã rời lưới chưa" thì
+     * phải đo `document.activeElement`.
+     *
+     * Trả về: `'grid'` nếu focus còn nằm trong một ô lưới, tên vùng theo
+     * `data-focus-region` (`patient` / `pinfo` / `sidepanel`) nếu đã sang vùng khác,
+     * `null` nếu không có gì giữ focus (Tab bị nuốt thật).
+     */
+    async function focusedRegion(): Promise<string | null> {
+        return page.evaluate(() => {
+            const el = document.activeElement as HTMLElement | null
+            if (!el || el === document.body) return null
+            // Ô lưới (kể cả editor trong ô và 2 ô input của dòng 日計) đều nằm trong một
+            // phần tử mang data-grid-cell.
+            if (el.closest('[data-grid-cell]')) return 'grid'
+            return el.closest('[data-focus-region]')?.getAttribute('data-focus-region') ?? 'other'
+        })
+    }
+
+    /**
      * 合計点数 của tháng, đọc thành SỐ.
      *
      * Gom chữ số thay vì `parseInt`: WinForm in ra `"12,345　点"` (dấu phẩy ngăn nghìn
@@ -577,23 +602,25 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
     })
 
     // ═══════════════════════════════════════════════════════════════════════
-    // TC-4 — Tab bị nuốt
+    // TC-4 — Tab rời khỏi lưới (focus), ô vàng đứng yên
     // ═══════════════════════════════════════════════════════════════════════
 
-    test('TC-4 — [LỆCH] Tab phải RỜI khỏi lưới sang control kế tiếp (StandardTab = true, Designer.cs:1121)', async () => {
-        // LỆCH ĐÃ ĐO 2026-08-25, cùng bệnh nhân 10 / ngày 2026-08-03 / cùng dữ liệu (409 点):
-        //   WinForm : 「点 Row 16」 --Tab--> 「患者情報」   (con trỏ RỜI khỏi lưới)
-        //   Bản web : 「<row>|3」    --Tab--> 「<row>|3」    (ô vàng ĐỨNG YÊN, Tab bị nuốt)
+    test('TC-4 — Tab RỜI khỏi lưới sang control kế tiếp (StandardTab = true, Designer.cs:1121)', async () => {
+        // ĐO THẬT trên WinForm 2026-08-25 (probe P3): 「点 Row 16」 --Tab--> 「患者情報」,
+        // tức FOCUS rời khỏi lưới. grdRegi khai StandardTab = true (Designer.cs:1121) nên
+        // Tab đi theo thứ tự tab của FORM, và WinForms xử Tab qua ProcessDialogKey TRƯỚC
+        // KeyDown — `e.Handled = true` ở grdRegi_KeyDown (frm203002.cs:3566-3569) chỉ chặn
+        // phần dời-ô mà StandardTab vốn đã tắt.
         //
-        // WinForm không tự viết hành vi này: grdRegi khai StandardTab = true
-        // (Designer.cs:1121) nên Tab đi theo thứ tự tab của FORM, và WinForms xử Tab qua
-        // ProcessDialogKey TRƯỚC KeyDown — `e.Handled = true` ở grdRegi_KeyDown
-        // (frm203002.cs:3566-3569) chỉ chặn phần dời-ô mà StandardTab vốn đã tắt.
+        // ⚠️ ĐO CÁI GÌ: bản đầu của testcase này so FOCUS bên WinForm với Ô VÀNG bên web —
+        // hai đại lượng khác nhau, nên nó báo lệch oan. Bên WinForm ô vàng KHÔNG dời khi
+        // Tab (xem giải thích ở `focusedRegion`), vậy phép so đúng là:
+        //   • ô vàng phải Y NGUYÊN, và
+        //   • focus bàn phím phải RỜI lưới.
         //
-        // Giữ dưới test.fail() theo quy ước repo: lệch đã biết vẫn chạy để canh, nhưng
-        // không chặn các testcase sau. Sửa xong thì test này "unexpectedly passed" và
-        // phải bỏ test.fail() đi.
-        test.fail()
+        // Đích của Tab: picInfo/lbPInfo — thanh 患者情報 ngay dưới lưới, TabIndex 109
+        // (Designer.cs:2121), đứng ngay sau grdRegi (108). Hai combobox 担当医/衛生士 ở
+        // header nằm trong splitContainer3.Panel1 nên chỉ tới được bằng Shift+Tab.
         const key = requireAddedRow()
 
         await focusCell(key, COL_TEN)
@@ -603,22 +630,26 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
         await page.keyboard.press('Tab')
         await step()
 
+        const region = await focusedRegion()
         const after = await focusedCellId()
-        console.log(`TC-4: focusedCell ${before} --Tab--> ${after}`)
+        console.log(`TC-4: focus --Tab--> vùng 「${region}」, ô vàng ${before} → ${after}`)
 
-        // ĐO THẬT trên WinForm 2026-08-25 (probe P3): 「点 Row 16」 --Tab--> 「患者情報」.
-        //
-        // Bản đầu assert NGƯỢC LẠI — "Tab bị nuốt, con trỏ đứng yên" — suy từ
-        // grdRegi_KeyDown đặt e.Handled = true cho Tab (frm203002.cs:3566-3569). Suy vậy
-        // SAI: Tab là phím điều hướng hộp thoại, WinForms xử qua ProcessDialogKey TRƯỚC
-        // KeyDown, và grdRegi khai StandardTab = true (Designer.cs:1121) = "Tab sang
-        // CONTROL kế tiếp thay vì sang ô kế tiếp". e.Handled ở KeyDown chỉ chặn được phần
-        // dời-ô mà StandardTab vốn đã tắt.
+        expect(
+            region,
+            'Tab phải đưa FOCUS ra khỏi lưới sang thanh 患者情報 (picInfo, TabIndex 109, ' +
+                'Designer.cs:2121). Nhận `grid` nghĩa là focus còn kẹt trong lưới; nhận `null` ' +
+                'nghĩa là bản web NUỐT Tab.',
+        ).toBe('pinfo')
+
         expect(
             after,
-            'Tab phải RỜI ô vàng khỏi ô hiện tại (StandardTab = true, Designer.cs:1121). ' +
-                `Ô vàng vẫn ở 「${after}」 nghĩa là bản web đang NUỐT Tab, khác WinForm.`,
-        ).not.toBe(before)
+            'Ô vàng KHÔNG được dời: WinForm dùng cùng một màu 薄い黄色 cho cả active lẫn ' +
+                'không-active (frm203002.cs:88-92) và grdRegi_Enter/Leave (:2471/:2484) đều ' +
+                'rỗng, nên CurrentCell vẫn nằm nguyên ô cũ sau khi Tab.',
+        ).toBe(before)
+
+        // Trả focus về lưới cho các TC sau (chúng giả định con trỏ đang ở trong lưới).
+        await focusCell(key, COL_TEN)
     })
 
     // ═══════════════════════════════════════════════════════════════════════
