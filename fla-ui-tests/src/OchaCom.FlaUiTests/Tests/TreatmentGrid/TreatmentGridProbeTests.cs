@@ -44,6 +44,11 @@ namespace OchaCom.FlaUiTests.Tests.TreatmentGrid;
 [Explicit]
 public sealed class TreatmentGridProbeTests : UiTestBase
 {
+    /// <summary>Winuser.h VK_F10 = 0x79 — phím đóng của mọi dialog nghiệp vụ (戻る).</summary>
+    private const ushort VK_F10 = 0x79;
+    /// <summary>Winuser.h VK_ESCAPE = 0x1B.</summary>
+    private const ushort VK_ESCAPE = 0x1B;
+
     private TreatmentGridOps _grid = null!;
     private TestTrace _trace = null!;
 
@@ -154,6 +159,22 @@ public sealed class TreatmentGridProbeTests : UiTestBase
                 var ok = isSave
                     ? Dialogs.ClickButton(d, "キャンセル", "Cancel")
                     : Dialogs.ClickButton(d, "いいえ", "No", "OK", "N");
+
+                // Dialog nghiệp vụ (部位選択, 処置選択…) KHÔNG có nút はい/いいえ — chúng
+                // đóng bằng F10 戻る. Đã vấp thật 2026-08-25: 部位選択 kẹt lại, ClearDialogs
+                // thử 「いいえ」 5 lần đều trượt, và mọi phép đo sau đó đều vô nghĩa.
+                if (!ok)
+                {
+                    ok = Dialogs.ClickButton(d, "戻る", "F10 戻る", "閉じる", "キャンセル", "Cancel");
+                    if (!ok)
+                    {
+                        try { d.Focus(); } catch { }
+                        Uia.SendKey(VK_F10);
+                        Thread.Sleep(500);
+                        ok = RealDialogs().Count == 0;
+                        if (!ok) { Uia.SendKey(VK_ESCAPE); Thread.Sleep(500); ok = RealDialogs().Count == 0; }
+                    }
+                }
                 LogKq(tag, $"   dẹp hộp thoại 「{text}」 bằng 「{button}」 → {(ok ? "ok" : "KHÔNG bấm được")}");
             }
             Waits.TryUntil(() => RealDialogs().Count == 0, TimeSpan.FromSeconds(3));
@@ -290,5 +311,216 @@ public sealed class TreatmentGridProbeTests : UiTestBase
         LogKq("9", "TRẠNG THÁI CUỐI: " + State());
         LogKq("9", "Gửi lại: mọi dòng 「=== KQ-」 ở trên + thư mục ảnh của testcase này.");
         Assert.Pass("probe xong — xem log + ảnh, KHÔNG có assert nào ở đây");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PROBE NÂNG CAO — luật từ chối của DeleteRow/AddRow, điều hướng, dialog
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Mở các CỘT ẨN của lưới (linekbn, trt_cd, trt_dt…) bằng lối tắt có sẵn của app.
+    ///
+    /// <para>frm203002.cs:2646-2660 + :2718 — phải đi ĐÚNG hai bước:
+    /// click nhãn 患者番号 (<c>customLabel1</c>) để bật <c>mbolHideClickFlg</c>, RỒI
+    /// double-click nhãn 氏名 (<c>customLabel3</c>). Chỉ double-click không thôi thì
+    /// nhánh <c>if (mbolHideClickFlg == false)</c> ép <c>mbolHideRowFlg = false</c> và
+    /// cột ẩn không bao giờ hiện.</para>
+    ///
+    /// <para>Đáng giá vì <c>linekbn</c> (cột 51) là thứ quyết định MỌI luật của lưới —
+    /// 1 = 部位病名行, 2 = 処置行, 10..15 = 負担金/日計行, 30 = 介護, 99 = 履歴(当月外) —
+    /// mà bình thường UI không đọc được.</para>
+    /// </summary>
+    private bool TryRevealHiddenColumns()
+    {
+        try
+        {
+            var patNoLabel = Uia.ById(Screen.Window, "customLabel1");
+            var nameLabel = Uia.ById(Screen.Window, "customLabel3");
+            if (patNoLabel is null || nameLabel is null)
+            {
+                LogKq("A", $"không thấy nhãn customLabel1={patNoLabel is not null} " +
+                           $"customLabel3={nameLabel is not null} ⇒ bỏ qua bước mở cột ẩn");
+                return false;
+            }
+
+            var (px, py) = Uia.Center(patNoLabel);
+            Uia.LeftClickPhysical(px, py);
+            Thread.Sleep(300);
+
+            var (nx, ny) = Uia.Center(nameLabel);
+            Uia.LeftClickPhysical(nx, ny);
+            Thread.Sleep(80);
+            Uia.LeftClickPhysical(nx, ny);
+            Thread.Sleep(800);
+
+            var cols = _grid.Headers().Count;
+            LogKq("A", $"sau khi mở cột ẩn: đọc được {cols} cột (5 = chưa mở được)");
+            return cols > 5;
+        }
+        catch (Exception e)
+        {
+            LogKq("A", $"mở cột ẩn lỗi: {e.GetType().Name}: {e.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 部位病名行 (linekbn = "1") — nhận ra qua ô 点 là dấu gạch ngang.
+    ///
+    /// <para>⚠️ WinForm ghi 「－」 (U+FF0D, ĐỦ chiều rộng) nhưng <c>Txt.N</c> chuẩn hoá
+    /// NFKC nên tới đây nó đã thành 「-」 nửa chiều rộng. So với 「－」 là KHÔNG BAO GIỜ
+    /// khớp — đã vấp thật 2026-08-25: probe báo 「lưới không có dòng nào 点 = 「－」」
+    /// trong khi dòng [0] chính là 部位病名行.</para>
+    /// </summary>
+    private static bool IsBuiRow(RegiRow r) => Txt.N(r.Ten) is "-" or "－";
+
+    /// <summary>Một dòng lưới kèm phán đoán loại dòng, đọc từ nội dung nhìn thấy được.</summary>
+    private string Describe(RegiRow r)
+    {
+        var kind =
+            Txt.Has(r.Ryo, "日計") || Txt.Has(r.Ryo, "負担金") ? "日計/負担金" :
+            IsBuiRow(r) ? "部位病名行" :
+            r.Ryo.Length == 0 ? "trống" : "処置行";
+        return $"[{r.Index,2}] 日={r.Day,-3} 点={r.Ten,-5} 回={r.Kai,-3} {kind,-14} 「{r.Ryo}」";
+    }
+
+    [Test]
+    [Description("Probe nâng cao — luật từ chối Delete/Insert, điều hướng mũi tên, dialog từ lưới")]
+    public void Probe_AdvancedGridRules()
+    {
+        using var trace = TestTrace.Begin();
+        _trace = trace;
+
+        LogKq("A", "trạng thái mở màn: " + State());
+
+        // ── P-A: kiểm kê lưới ────────────────────────────────────────────────
+        var revealed = TryRevealHiddenColumns();
+        LogKq("A", $"đọc được cột ẩn: {revealed}");
+        if (revealed)
+        {
+            var hdr = _grid.Headers();
+            LogKq("A", "tiêu đề đầy đủ: " + string.Join(" | ", hdr.Take(20)));
+        }
+
+        var rows = _grid.Snapshot();
+        LogKq("A", $"KIỂM KÊ {rows.Count} dòng:");
+        foreach (var r in rows) Log("        " + Describe(r));
+        trace.Shot("A-kiem-ke");
+
+        // Nếu mở được cột ẩn thì đóng lại — các phép đo sau giả định 5 cột.
+        if (revealed) { TryRevealHiddenColumns(); LogKq("A", "đã đóng cột ẩn lại"); }
+
+        // ── P-B: Delete trên 日計行 ──────────────────────────────────────────
+        LogKq("B", "CÂU HỎI: Delete trên 日計行 có bị từ chối không? (frm203002.cs:3843-3846)");
+        var nikkei = _grid.Snapshot().FirstOrDefault(r => Txt.Has(r.Ryo, "日計"));
+        if (nikkei is null) LogKq("B", "lưới không có 日計行 ⇒ bỏ qua");
+        else
+        {
+            var n0 = _grid.RowCount(); var p0 = _grid.AllPointValue();
+            Probe("B", "dat con tro vao 日計行 roi Delete", () =>
+            {
+                _grid.FocusCell(nikkei, RegiGrid.Col.Ryo);
+                _grid.Press(VirtualKeyShort.DELETE);
+            });
+            LogKq("B", $"số dòng {n0} → {_grid.RowCount()}, 合計 {p0} → {_grid.AllPointValue()} " +
+                       "(KHÔNG đổi = đã từ chối, đúng WinForm)");
+            ClearDialogs("B");
+        }
+
+        // ── P-C: Delete trên 部位病名行 ─────────────────────────────────────
+        LogKq("C", "CÂU HỎI: Delete trên 部位病名行 có hỏi 「同一部位の処置を全て削除」 và xoá cả cụm?");
+        var bui = _grid.Snapshot().FirstOrDefault(IsBuiRow);
+        if (bui is null) LogKq("C", "lưới không có dòng nào 点 = 「－」 ⇒ bỏ qua");
+        else
+        {
+            LogKq("C", "dòng 部位 đem thử: " + Describe(bui));
+            var n0 = _grid.RowCount(); var p0 = _grid.AllPointValue();
+            Probe("C", "dat con tro vao dong 部位 roi Delete", () =>
+            {
+                _grid.FocusCell(bui, RegiGrid.Col.Ryo);
+                _grid.Press(VirtualKeyShort.DELETE);
+            });
+            var dlg = RealDialogs();
+            LogKq("C", dlg.Count == 0
+                ? "KHÔNG có hộp thoại nào bung ra"
+                : "hộp thoại: 「" + Txt.N(Dialogs.TextOf(dlg[0])).Replace("\n", " ") + "」");
+            // Trả lời いいえ để KHÔNG xoá — probe không được phá lưới của bước sau.
+            ClearDialogs("C");
+            LogKq("C", $"sau khi trả lời 「いいえ」: số dòng {n0} → {_grid.RowCount()}, " +
+                       $"合計 {p0} → {_grid.AllPointValue()} (không đổi = huỷ đúng)");
+        }
+
+        // ── P-D: Insert trên 日計行 ─────────────────────────────────────────
+        LogKq("D", "CÂU HỎI: Insert trên 日計行 làm gì?");
+        var nikkei2 = _grid.Snapshot().FirstOrDefault(r => Txt.Has(r.Ryo, "日計"));
+        if (nikkei2 is not null)
+        {
+            var n0 = _grid.RowCount();
+            Probe("D", "dat con tro vao 日計行 roi Insert", () =>
+            {
+                _grid.FocusCell(nikkei2, RegiGrid.Col.Ryo);
+                _grid.Press(VirtualKeyShort.INSERT);
+            });
+            LogKq("D", $"số dòng {n0} → {_grid.RowCount()}");
+            ClearDialogs("D");
+        }
+
+        // ── P-G: → trên ô 日 ────────────────────────────────────────────────
+        LogKq("G", "CÂU HỎI: → từ ô 日 nhảy sang cột nào? (Move_Cell :5877 nói nhảy thẳng sang 点)");
+        var trt3 = _grid.Snapshot().FirstOrDefault(r => !IsBuiRow(r) && r.Day.Length > 0 && r.Ryo.Length > 0);
+        if (trt3 is not null)
+        {
+            Probe("G", "dat con tro vao o 日 roi bam mui ten phai", () =>
+            {
+                _grid.FocusCell(trt3, RegiGrid.Col.Day);
+                _grid.Press(VirtualKeyShort.RIGHT);
+            });
+            LogKq("G", $"ô đang giữ con trỏ: 「{_grid.FocusedCellName()}」 " +
+                       "(mong đợi 「点 …」 nếu Move_Cell nhảy 0→3; ra 「部位 …」 là đi từng ô)");
+            ClearDialogs("G");
+        }
+
+        // ── P-E / P-F ĐẶT CUỐI CÙNG ────────────────────────────────────────────
+        // Cả hai đều MỞ hộp thoại 部位選択, và hộp thoại đó KHÔNG đóng được bằng
+        // いいえ/No/OK/F10/ESC — nó là cửa sổ CON của frm203002 với bảng răng, nút đóng
+        // nằm ở đâu thì chưa biết. Đã vấp thật 2026-08-25 hai lần: để P-E ở giữa thì nó
+        // kẹt lại và mọi bước sau đọc lưới đều timeout.
+        //
+        // Nên xếp xuống cuối và CHẤP NHẬN để app ở trạng thái đó — runner-task.ps1 kill
+        // MENU.exe sau mỗi lượt chạy nên không ảnh hưởng lượt sau.
+        // ── P-E: Enter trên ô 部位 ──────────────────────────────────────────
+        LogKq("E", "CÂU HỎI: Enter trên ô 部位 mở hộp thoại gì? (frm203002.cs:3551-3558)");
+        var trt = _grid.Snapshot().FirstOrDefault(r => !IsBuiRow(r) && r.Ten.Length > 0 && r.Ryo.Length > 0);
+        if (trt is null) LogKq("E", "không tìm được 処置行 nào ⇒ bỏ qua");
+        else
+        {
+            Probe("E", "dat con tro vao o 部位 roi Enter", () =>
+            {
+                _grid.FocusCell(trt, RegiGrid.Col.Bui);
+                _grid.Press(VirtualKeyShort.RETURN);
+            });
+            LogKq("E", "cửa sổ đang hiện: " + KarteAutoCalc.KarteAutoCalcDialog.DescribeVisibleWindows(App));
+            trace.Shot("E-sau-enter-o-bui");
+            ClearDialogs("E");
+            LogKq("E", "sau khi dẹp: " + State());
+        }
+
+        // ── P-F: ← trên ô 点 ────────────────────────────────────────────────
+        LogKq("F", "CÂU HỎI: ← trên ô 点 mở 部位＆病名 hay chỉ dời ô? (frm203002.cs:3583-3593)");
+        var trt2 = _grid.Snapshot().FirstOrDefault(r => !IsBuiRow(r) && r.Ten.Length > 0 && r.Ryo.Length > 0);
+        if (trt2 is not null)
+        {
+            Probe("F", "dat con tro vao o 点 roi bam mui ten trai", () =>
+            {
+                _grid.FocusCell(trt2, RegiGrid.Col.Ten);
+                _grid.Press(VirtualKeyShort.LEFT);
+            });
+            LogKq("F", "cửa sổ đang hiện: " + KarteAutoCalc.KarteAutoCalcDialog.DescribeVisibleWindows(App));
+            trace.Shot("F-sau-mui-ten-trai");
+            ClearDialogs("F");
+        }
+
+        LogKq("Z", "TRẠNG THÁI CUỐI: " + State());
+        Assert.Pass("probe nâng cao xong — đọc log + ảnh, KHÔNG có assert nào");
     }
 }

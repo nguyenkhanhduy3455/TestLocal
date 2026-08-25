@@ -126,10 +126,12 @@ src/OchaCom.FlaUiTests/
 └── Tests/
     ├── KobetuSidePanelScoreTests.cs   TC-1 … TC-3
     ├── UiaTreeDumpTests.cs            công cụ chẩn đoán locator ([Explicit])
-    ├── TreatmentGrid/                  thao tác CƠ BẢN trên lưới 処置 — xem mục 8b
-    │   ├── README.md                   bảng tương ứng với spec Playwright
-    │   ├── TreatmentGridOps.cs         phần GHI vào grdRegi (click ô, gửi phím)
-    │   └── TreatmentGridBasicTests.cs  TC-1 … TC-7
+    ├── TreatmentGrid/                     thao tác trên lưới 処置 — xem mục 8b
+    │   ├── README.md                      bảng tương ứng với spec Playwright
+    │   ├── TreatmentGridOps.cs            phần GHI vào grdRegi (click ô, gửi phím)
+    │   ├── TreatmentGridBasicTests.cs     TC-1 … TC-7   (cơ bản)
+    │   ├── TreatmentGridAdvancedTests.cs  TC-A1 … TC-A5 (luật theo linekbn)
+    │   └── TreatmentGridProbeTests.cs     PROBE [Explicit] — dò hành vi, không assert
     ├── ParitySaveData/                ⚠️ luồng GHI DB, runner riêng — xem mục 8b
     │   ├── README.md                  đọc file này TRƯỚC khi chạy
     │   ├── Bug2dConcurrentSaveTests.cs
@@ -225,6 +227,7 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 | `.\run-fix-accounting-data.ps1` | F8 会計 → `modAcc.ChgAccData` (会計データ修正) | `Tests/ParityAccountingCorrection/` | ⚠️ **CÓ** — `acc_dat` + `person_exp` (**sổ tiền**) |
 | `.\run-inp-p1-dialog.ps1` | F11 →「９ オプション」→ Step / チェック項目設定 · 部位選択 → F9 Br例 | `Tests/InpP1Dialogs/` | ⚠️ chỉ khi `-AllowSave` — `TRTSTATE`, `chkprm` |
 | `.\run-edit-treatment-rows.ps1` | Insert/Delete trên lưới 処置 → `AddRow` / `DeleteRow` (行追加・行削除) | `Tests/TreatmentGrid/` | ✖ không bấm F9 |
+| `.\run-edit-treatment-rows.ps1 -Case Probe_Advanced` | PROBE — dò hành vi, KHÔNG assert | `Tests/TreatmentGrid/` | ✖ |
 
 > Thêm luồng mới thì giữ đúng quy ước này: `run-<động từ>-<đối tượng>.ps1` mô tả việc
 > mà WinForm làm, chứ không phải `run-<tên thư mục test>.ps1`. Tên cũ

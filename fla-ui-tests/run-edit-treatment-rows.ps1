@@ -65,7 +65,10 @@ if ($Diagnostics) {
 } elseif ($Case -ne "") {
     $filter = "FullyQualifiedName~$ns&FullyQualifiedName~$Case"
 } else {
-    $filter = "FullyQualifiedName~$ns.TreatmentGridBasicTests"
+    # Ca hai fixture: TreatmentGridBasicTests (TC-1..TC-7) + TreatmentGridAdvancedTests
+    # (TC-A1..TC-A5). Cac fixture Probe mang [Explicit] nen KHONG chay o day — muon chay
+    # thi goi dich danh: -Case Probe_GridKeyBehaviour / -Case Probe_AdvancedGridRules.
+    $filter = "FullyQualifiedName~$ns"
 }
 
 $testArgs = @(
