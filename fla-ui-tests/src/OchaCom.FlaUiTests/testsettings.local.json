@@ -5,7 +5,6 @@
     "TrustServerCertificate=True la BAT BUOC: Microsoft.Data.SqlClient 5.x mac dinh",
     "Encrypt=True, thieu no thi loi chung chi ngay khi mo ket noi."
   ],
-
   "//app": [
     "Duong dan lay tu testsettings.json cu tren may Windows.",
     "PHAI la exe DA BUILD LAI sau khi chep modSave.cs / modAcc.cs co log SONTEST1 sang,",
@@ -16,12 +15,10 @@
     "attachIfRunning": true,
     "closeOnFinish": false
   },
-
   "db": {
     "enabled": true,
-    "connectionString": "Data Source=192.168.1.178,1433\\OCHASQLEXPRESS;Initial Catalog=SIM2000;User ID=sa;Password=tmdu;TrustServerCertificate=True"
+    "connectionString": "Data Source=localhost,1433\\OCHASQLEXPRESS;Initial Catalog=SIM2000;User ID=sa;Password=tmdu;TrustServerCertificate=True"
   },
-
   "//parity": [
     "BAT allowSave = luong ParitySaveData se bam F9 登録 va GHI THAT xuong DB.",
     "F9 ghi lai TOAN BO 処置行 cua thang cua patient.trtDate (xoa + chen lai).",
@@ -32,7 +29,6 @@
     "simpleTrtCd": 110,
     "simpleTrtSb": 0
   },
-
   "//patient": [
     "patNo 10 = benh nhan TEST, chon bang cach soi DB SIM2000:",
     "  - CHI 8 dong TRNTRN trong toan bo lich su (12138 co 2864 => app treo hon 1 phut)",
@@ -51,7 +47,6 @@
     "trtDate": "2026-08-03",
     "openMode": "update"
   },
-
   "run": {
     "stepMs": 0
   }
