@@ -5,9 +5,21 @@ artifacts/
 .vs/
 TestResults/
 
-# Allow testsettings and env files
-!testsettings.json
-!testsettings.*.json
-!.env
-!*.env
+# Nhật ký + kết quả của mỗi lần chạy — sinh lại được, đừng commit.
+logs/
+treatment-grid-*.txt
+karte-auto-calc-KQ.txt
+inp-p1-dialog-KQ.txt
+*.trx
 
+# testsettings.local.json là file RIÊNG CỦA TỪNG MÁY: đường dẫn MENU.exe, chuỗi kết
+# nối SQL Server, bệnh nhân/ngày test, timeout — mỗi máy một khác. Trước đây nó bị
+# commit (dòng `!testsettings.*.json` cũ vô hiệu hoá mọi ignore), gây hai chuyện:
+#   · hai máy sửa cùng file ⇒ conflict mỗi lần pull;
+#   · mật khẩu `sa` nằm trong repo.
+# Bản mẫu để người mới copy là testsettings.local.json.example (VẪN commit).
+testsettings.local.json
+
+# testsettings.json là cấu hình CHUNG, phải commit.
+!testsettings.json
+!testsettings.local.json.example
