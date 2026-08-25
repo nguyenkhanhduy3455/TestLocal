@@ -523,4 +523,117 @@ public sealed class TreatmentGridProbeTests : UiTestBase
         LogKq("Z", "TRẠNG THÁI CUỐI: " + State());
         Assert.Pass("probe nâng cao xong — đọc log + ảnh, KHÔNG có assert nào");
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PROBE 点数/コード — 入力モード và tra cứu 処置 từ ô 点
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>Nhãn 入力モード — <c>lbInpMode</c>, hiện 「点数」 hoặc 「コード」.</summary>
+    private string InpModeLabel()
+    {
+        var box = Uia.ById(Screen.Window, "lbInpMode");
+        return box is null ? "(khong thay lbInpMode)" : Txt.N(Uia.ValueOf(box));
+    }
+
+    /// <summary>
+    /// Bấm một nút của LỚP ON (hậu tố <c>_S</c>).
+    ///
+    /// <para>Thanh phím có hai lớp: OFF thì F9 = 登録, ON thì F9 = 点数. Hai lớp là hai
+    /// BỘ CONTROL khác nhau — <c>btnF9</c> và <c>btnF9_S</c> (frm203002.cs:4571/:4604).
+    /// Bấm thẳng <c>btnF9_S</c> thì khỏi phải bật/tắt lớp.</para>
+    /// </summary>
+    private bool PressShiftKey(string id)
+    {
+        var btn = Uia.ById(Screen.Window, id);
+        if (btn is null) { LogKq("P", $"KHÔNG thấy nút {id}"); return false; }
+        Uia.Click(btn);
+        Thread.Sleep(600);
+        return true;
+    }
+
+    [Test]
+    [Description("Probe 点数/コード — 入力モード, tra cứu từ ô 点, mã đặc biệt; KHÔNG assert")]
+    public void Probe_PointCodeMode()
+    {
+        using var trace = TestTrace.Begin();
+        _trace = trace;
+
+        // ── P1: mode mặc định ────────────────────────────────────────────────
+        LogKq("P1", $"nhãn 入力モード lúc mở màn: 「{InpModeLabel()}」 (mong đợi 「点数」 — " +
+                    "flgInpMode khởi tạo ePoint, frm203002.cs:3024)");
+
+        // ── P2: đổi mode bằng nút lớp ON ────────────────────────────────────
+        LogKq("P2", "CÂU HỎI: btnF10_S / btnF9_S có đổi 入力モード không?");
+        if (PressShiftKey("btnF10_S")) LogKq("P2", $"sau btnF10_S: 「{InpModeLabel()}」 (mong đợi 「コード」)");
+        if (PressShiftKey("btnF9_S")) LogKq("P2", $"sau btnF9_S : 「{InpModeLabel()}」 (mong đợi 「点数」)");
+        trace.Shot("P2-doi-mode");
+
+        // ── P3: click chính cái nhãn ────────────────────────────────────────
+        LogKq("P3", "CÂU HỎI: click nhãn lbInpMode có đổi mode? (frm203002.cs:7126)");
+        var label = Uia.ById(Screen.Window, "lbInpMode");
+        if (label is null) LogKq("P3", "không thấy lbInpMode ⇒ bỏ qua");
+        else
+        {
+            var before = InpModeLabel();
+            var (lx, ly) = Uia.Center(label);
+            Uia.LeftClickPhysical(lx, ly);
+            Thread.Sleep(600);
+            LogKq("P3", $"click nhãn: 「{before}」 → 「{InpModeLabel()}」");
+        }
+        ClearDialogs("P3");
+
+        // ── Tiền đề cho P4..P6: một ô 点 gõ được ────────────────────────────
+        var row = _grid.Snapshot().FirstOrDefault(r => Txt.N(r.Ten) is not ("-" or "－")
+                                                       && !Txt.Has(r.Ryo, "日計")
+                                                       && r.Ryo.Length > 0);
+        if (row is null)
+        {
+            LogKq("P4", "không tìm được 処置行 nào để gõ vào ô 点 ⇒ dừng");
+            Assert.Pass("xem log");
+            return;
+        }
+        LogKq("P4", "dòng đem test: " + Describe(row));
+
+        // Gõ một giá trị vào ô 点 rồi Enter, ghi lại app phản ứng gì.
+        void TryTen(string tag, string what, string typed)
+        {
+            LogKq(tag, $"── gõ 「{typed}」 vào ô 点 rồi Enter ({what})");
+            try
+            {
+                _grid.FocusCell(row!, RegiGrid.Col.Ten);
+                if (!_grid.IsEditing()) _grid.Press(VirtualKeyShort.RETURN);
+                Thread.Sleep(300);
+                _grid.Type(typed);
+                LogKq(tag, $"   editor trước Enter: 「{_grid.EditorText()}」");
+                _grid.Press(VirtualKeyShort.RETURN);
+                Thread.Sleep(1200);
+            }
+            catch (Exception e) { LogKq(tag, $"   NÉM: {e.GetType().Name}: {e.Message}"); }
+
+            var dlgs = RealDialogs();
+            LogKq(tag, dlgs.Count == 0
+                ? "   hộp thoại: (không có)"
+                : "   hộp thoại: 「" + Txt.N(Dialogs.TextOf(dlgs[0])).Replace("\n", " ") + "」");
+            LogKq(tag, "   " + State());
+            try { _trace.Shot($"{tag}-{what}"); } catch { }
+            ClearDialogs(tag);
+        }
+
+        // ── P4: mã KHÔNG tồn tại (コードモード) ─────────────────────────────
+        PressShiftKey("btnF10_S");
+        LogKq("P4", $"đã chuyển sang 「{InpModeLabel()}」");
+        TryTen("P4", "ma-khong-ton-tai", "99999");
+
+        // ── P5: cú pháp 「コード-枝番」 ──────────────────────────────────────
+        LogKq("P5", "CÂU HỎI: 「116-5」 có bị Conversion.Val cắt thành 116 không?");
+        TryTen("P5", "116-5", "116-5");
+
+        // ── P6: mã 17 (自費金額) — có LUÔN mở dialog không? ─────────────────
+        LogKq("P6", "CÂU HỎI: mã 17 có LUÔN mở 処置選択 kể cả khi master chỉ 1 dòng? " +
+                    "(modMain.cs: intRowCnt == 1 && trt_cd != 17)");
+        TryTen("P6", "ma-17", "17");
+
+        LogKq("PZ", "TRẠNG THÁI CUỐI: " + State());
+        Assert.Pass("probe 点数/コード xong — đọc log + ảnh");
+    }
 }
