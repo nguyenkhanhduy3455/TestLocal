@@ -352,7 +352,10 @@ test.describe('#16 当月来患集計 — F3', () => {
 
   test('TC-1 — đủ dòng, dòng đầu có nội dung, KHÔNG skeleton', async () => {
     // Scope vào dialog: grid 受付患者一覧 phía dưới vẫn tồn tại trong DOM.
-    await expectClientGrid(fgDialog, '当月来患集計', 'count')
+    // colId 「人数」 đổi `count` → `cnt` ở commit `refactor(web-tenant): 来患集計ダイアログの
+    // 重複を共通ヘルパーへ集約し命名を統一` (7e97d38c8); FIGURE_COLUMNS[0] trong
+    // monthly-visit-summary-dialog.tsx là nguồn chân lý.
+    await expectClientGrid(fgDialog, '当月来患集計', 'cnt')
     await step()
   })
 })
@@ -658,6 +661,11 @@ test.describe('診療入力 — chuỗi nhập 処置 (GHI DỮ LIỆU THẬT)',
   const pickScoreRow = async () => {
     // Sau TC-3 grid đã bị sort lại nên PHẢI đọc lại danh sách 点数 theo thứ tự
     // ĐANG HIỂN THỊ, không dùng index cũ.
+    // ⚠️ Cột `score1` của picker nay in KẾT QUẢ getTensu chứ không phải score1 thô
+    // (modMain.cs:659 ghi getTensu vào tblTrtSel c04). Với bệnh nhân test hiện tại
+    // (người lớn, dis_flg 0, ngày không 訪問診療) getTensu == score1 nên PICK_SCORE
+    // vẫn khớp. Đổi sang bệnh nhân 乳幼児/障害 thì phải đổi TEST_PICK_SCORE theo —
+    // "không tìm thấy dòng" ở đây là DỮ LIỆU, không phải lỗi app.
     const scores = await cells(fgDialog, 'score1').allTextContents()
     const pickIdx = scores.findIndex((s) => s.trim() === PICK_SCORE)
     expect(

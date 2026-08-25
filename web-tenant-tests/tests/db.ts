@@ -368,6 +368,16 @@ export interface SeedTrtRow {
      * và để locate, KHÔNG dùng nó vào bất kỳ assert parity nào.
      */
     dspBui?: string
+    /**
+     * `freewd` (WinForm cột lưới 72, modSave.cs:321) — cột nháp đa nghĩa.
+     *
+     * Cần cho ngữ cảnh cùng ngày của `getTensu`: với bệnh nhân `dis_flg = 3`, dòng
+     * 歯科診療特別対応加算 (105/{0,1,2,3,6,7} hoặc 508/{0,1,6}) mang `freewd == "1"` thì
+     * phân giải thành 歯科診療困難者加算1, khác 「1」 thì thành 加算2
+     * (CommonChk.cs:109). KHÔNG truyền thì cột để '' — nghĩa là 加算2, đúng nhánh
+     * người dùng bấm いいえ ở modSave.cs:3452.
+     */
+    freewd?: string
 }
 
 // trn_trn có nhiều cột NOT NULL không default (bui_1..32, dis_cd_1..10, dis_sb_1..10)
@@ -406,11 +416,11 @@ export async function seedTreatmentRows(
                 `INSERT INTO trn_trn (
                      pat_no, pat_br, insu_cd, trt_dt, disp_no, ${zeroList}, ${buiList},
                      trt_cd, trt_sb, trt_cnt, trt_pt, isl, price, jihi_flg, dr_no, syosin_flg,
-                     dsp_trt, dsp_bui
+                     dsp_trt, dsp_bui, freewd
                  )
                  SELECT pat_no, pat_br, insu_cd, $2::date, $3, ${zeroVals}, ${buiVals},
                         $4, $5, $6, $7, 0, $7, $8, 1, 3,
-                        $9::text, $42::text
+                        $9::text, $42::text, $43::text
                  FROM trn_trn
                  WHERE pat_no = $1 AND disp_no < ${SEED_DISP_BASE}
                  ORDER BY trt_dt DESC
@@ -428,6 +438,8 @@ export async function seedTreatmentRows(
                     ...bui,
                     // dsp_bui là NOT NULL DEFAULT '' — truyền null sẽ vỡ INSERT.
                     r.dspBui ?? '',
+                    // freewd cũng NOT NULL DEFAULT '' (TrnTrnConfiguration.cs).
+                    r.freewd ?? '',
                 ],
             )
         }

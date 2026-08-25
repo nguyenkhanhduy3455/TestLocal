@@ -47,9 +47,12 @@ import { ADMIN_USER, JA } from './test-data'
  *        vẫn đi). `acc_unit` và thông tin bệnh nhân do BE tự đọc; FE chỉ gửi cờ
  *        pHoumon của ngày.
  *    ⇒ TC-1 và TC-2 giờ là test CHỐNG TÁI PHÁT, kỳ vọng XANH.
- *  - Chưa nằm trong phạm vi bản sửa đó (nên đừng viết testcase đè lên): 全身麻酔 /
- *    歯科診療特別対応加算 cùng ngày chưa được gửi lên (null/false), số lần cố định 1,
- *    và đường chọn qua 処置選択 vẫn là score1.
+ *  - ĐÍNH CHÍNH 2026-08-25: ba mục từng ghi ở đây là "chưa nằm trong phạm vi" —
+ *    全身麻酔 / 歯科診療特別対応加算 cùng ngày chưa gửi lên (null/false), và đường chọn
+ *    qua 処置選択 vẫn là score1 — nay ĐÃ LÀM (commit `feat(api,web-tenant): 診療入力の
+ *    点数を実機の getTensu と同じ結果にする`). Testcase cho chúng nằm ở
+ *    `treatment-score-gettensu-parity.spec.ts`, ĐỪNG viết đè ở file này.
+ *    Còn lại chưa làm: 算定回数 vẫn cố định 1.
  *
  * ─── Khối 検索 (TC-4..TC-8) ───────────────────────────────────────────────────
  *  - frm203002.cs:2177 btnKobeSearch_Click = HAI bước:

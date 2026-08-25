@@ -1181,8 +1181,8 @@ test.describe('client sort — dialog grid + list màn hình', () => {
       console.log('F3 không mở được 当月来患集計 → BỎ QUA')
       return
     }
-    await expect(cells(d, 'count').first()).toBeVisible({ timeout: 15000 })
-    const beOrder = await colValues(d, 'count')
+    await expect(cells(d, 'cnt').first()).toBeVisible({ timeout: 15000 })
+    const beOrder = await colValues(d, 'cnt')
     await step()
 
     const h = header(d, '人数')
@@ -1198,9 +1198,9 @@ test.describe('client sort — dialog grid + list màn hình', () => {
     await closeAllDialogs()
     await page.keyboard.press('F3')
     await expect(d).toBeVisible({ timeout: 20000 })
-    await expect(cells(d, 'count').first()).toBeVisible({ timeout: 15000 })
+    await expect(cells(d, 'cnt').first()).toBeVisible({ timeout: 15000 })
     await expectNoSortGlyph(d, '当月来患集計 (mở lại)')
-    expect(await colValues(d, 'count'), '当月来患集計 mở lại phải về thứ tự BE').toEqual(beOrder)
+    expect(await colValues(d, 'cnt'), '当月来患集計 mở lại phải về thứ tự BE').toEqual(beOrder)
     await closeAllDialogs()
   })
 
