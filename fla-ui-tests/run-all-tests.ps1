@@ -8,6 +8,8 @@
       .\run-fix-accounting-data.ps1   F8 会計  → modAcc.ChgAccData  (会計データ修正)
       .\run-inp-p1-dialog.ps1         F11 オプション → Step / チェック項目設定,
                                       部位選択 → F9 Br例  (3 dialog vua port sang web)
+      .\run-edit-treatment-rows.ps1   Insert/Delete tren luoi 処置 → AddRow / DeleteRow
+                                      (7 thao tac CO BAN, khong ghi DB)
 
 .DESCRIPTION
     PHẢI chạy trên Windows, trong một phiên đăng nhập CÓ MÀN HÌNH THẬT (không RDP thu

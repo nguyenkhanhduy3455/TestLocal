@@ -98,6 +98,9 @@
     "kobetuSearchTens": "txtKobeSearchTens",
     "kobetuSearchButton": "btnKobeSearch",
     "kobetuSelNo": "txtKobetuSel",
-    "regiGrid": "grdRegi"
+    "regiGrid": "grdRegi",
+    "//regiAllPoint": "月計点数 và 実日数 của 診療入力 — hai TextBox chỉ đọc cạnh nhãn 「合計」 (frm203002.Designer.cs:1062-1084), do modAcc.Calc_MDPoint ghi.",
+    "regiAllPoint": "lbAllPoint",
+    "regiDays": "lbDays"
   }
 }

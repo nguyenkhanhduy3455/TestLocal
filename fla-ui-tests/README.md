@@ -126,6 +126,10 @@ src/OchaCom.FlaUiTests/
 └── Tests/
     ├── KobetuSidePanelScoreTests.cs   TC-1 … TC-3
     ├── UiaTreeDumpTests.cs            công cụ chẩn đoán locator ([Explicit])
+    ├── TreatmentGrid/                  thao tác CƠ BẢN trên lưới 処置 — xem mục 8b
+    │   ├── README.md                   bảng tương ứng với spec Playwright
+    │   ├── TreatmentGridOps.cs         phần GHI vào grdRegi (click ô, gửi phím)
+    │   └── TreatmentGridBasicTests.cs  TC-1 … TC-7
     ├── ParitySaveData/                ⚠️ luồng GHI DB, runner riêng — xem mục 8b
     │   ├── README.md                  đọc file này TRƯỚC khi chạy
     │   ├── Bug2dConcurrentSaveTests.cs
@@ -220,6 +224,7 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 | `.\run-save-treatment-data.ps1` | F9 登録 → `modSave.SaveData` (処置データ登録) | `Tests/ParitySaveData/` | ⚠️ **CÓ** — `trn_trn` |
 | `.\run-fix-accounting-data.ps1` | F8 会計 → `modAcc.ChgAccData` (会計データ修正) | `Tests/ParityAccountingCorrection/` | ⚠️ **CÓ** — `acc_dat` + `person_exp` (**sổ tiền**) |
 | `.\run-inp-p1-dialog.ps1` | F11 →「９ オプション」→ Step / チェック項目設定 · 部位選択 → F9 Br例 | `Tests/InpP1Dialogs/` | ⚠️ chỉ khi `-AllowSave` — `TRTSTATE`, `chkprm` |
+| `.\run-edit-treatment-rows.ps1` | Insert/Delete trên lưới 処置 → `AddRow` / `DeleteRow` (行追加・行削除) | `Tests/TreatmentGrid/` | ✖ không bấm F9 |
 
 > Thêm luồng mới thì giữ đúng quy ước này: `run-<động từ>-<đối tượng>.ps1` mô tả việc
 > mà WinForm làm, chứ không phải `run-<tên thư mục test>.ps1`. Tên cũ
@@ -234,6 +239,14 @@ ngay, không tốn công mở app.
 **ParityAccountingCorrection** xác minh 会計データ修正 (`ChgAccData`, lô 8). Nặng hơn:
 nó sửa **sổ tiền** — 会計 đã chốt và số dư 預り金/未収金. Cần tiền đề mà test không tự
 dựng được (ngày đã 窓口精算, `tre_acc_link = 1`).
+
+**TreatmentGrid** đo **đáp án** cho bảy thao tác CƠ BẢN nhất trên lưới 処置 của
+`frm203002` (`grdRegi` / `hFG1`): nhìn cột, chèn 処置 từ tab 個別, Enter, Tab, gõ số
+vào ô 点, Insert 行追加, Delete 行削除. Nó KHÔNG bấm F9 nên **không ghi DB** và không
+cần cờ gì — nhưng vẫn có runner riêng vì bảy testcase NỐI TIẾP nhau (TC-2 chèn dòng
+mà TC-3…TC-6 đứng lên, TC-7 xoá dòng đó) và vì nó là nửa còn lại của một cặp parity:
+bên kia là `../web-tenant-tests/tests/treatment-grid-basic.spec.ts`, cùng số hiệu
+TC-1…TC-7. Bảng tương ứng nằm ở `Tests/TreatmentGrid/README.md` mục 4.
 
 **InpP1Dialogs** đo **đáp án** cho spec Playwright của bản web
 (`../web-tenant-tests/tests/step-edit-dialog.spec.ts` cho TC-STEP-*,
