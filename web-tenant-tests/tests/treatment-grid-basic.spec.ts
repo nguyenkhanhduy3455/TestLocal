@@ -625,17 +625,12 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
     // TC-5 — ô 点 chỉ ăn chữ số
     // ═══════════════════════════════════════════════════════════════════════
 
-    test('TC-5 — [LỆCH] ô 点 chỉ nhận 0-9, chữ cái phải bị chặn (grdRegi_TextBox_KeyPress, frm203002.cs:3601-3639)', async () => {
-        // LỆCH ĐÃ ĐO 2026-08-25, cùng bệnh nhân / ngày / dữ liệu:
-        //   WinForm : gõ 「9a8」 → editor ra 「98」   (chữ 「a」 bị nuốt)
-        //   Bản web : gõ 「9a8」 → editor ra 「9a8」  (nhận tất cả)
-        //
+    test('TC-5 — ô 点 chỉ nhận 0-9, chữ cái bị chặn (grdRegi_TextBox_KeyPress, frm203002.cs:3601-3639)', async () => {
         // WinForm lọc ở tầng PHÍM: grdRegi_TextBox_KeyPress (frm203002.cs:3601-3639) chỉ
-        // cho '0'..'9' + BackSpace + Ctrl+C đi qua trên cột 3/4, chặn cả Ctrl+V. Bản web
-        // dùng <input> thường nên mọi ký tự đều lọt vào ô điểm.
+        // cho '0'..'9' + BackSpace + Ctrl+C đi qua trên cột 3/4, chặn cả Ctrl+V.
         //
-        // Giữ dưới test.fail() theo quy ước repo — xem ghi chú ở TC-4.
-        test.fail()
+        // Từng LỆCH (đo 2026-08-25: bản web ra 「9a8」 vì dùng <input> thường). ĐÃ SỬA —
+        // đo lại cùng ngày, bản web ra đúng 「98」. Bỏ test.fail(), từ đây là test hồi quy.
         const key = requireAddedRow()
         const original = (await currentMonthRows()).find((r) => r.key === key)?.ten ?? ''
 
@@ -773,27 +768,26 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
         addedKey = null
     })
     /**
-     * ─── TC-8: LỆCH ĐÃ ĐO, giữ dưới test.fail ────────────────────────────────
-     * Đặt CUỐI file và mang `test.fail()` theo đúng quy ước repo: lệch đã biết thì
-     * vẫn chạy để canh, nhưng không chặn các testcase khác. Ngày nó được sửa, test
-     * này chuyển sang "unexpectedly passed" và phải bỏ `test.fail()` đi.
+     * ─── TC-8 ────────────────────────────────────────────────────────────────
+     * Từng LỆCH và từng nằm dưới `test.fail()` (đo 2026-08-25: bản web đưa con trỏ
+     * sang 「<rowKey>:footer-ten|3」 — ô 点 của dòng TỔNG NGÀY). ĐÃ SỬA — đo lại thì con
+     * trỏ đậu đúng ô 回 của dòng mới. Từ đây là test hồi quy.
+     *
+     * Vẫn để CUỐI file: nó chỉ ĐỌC LẠI giá trị đã đo ở TC-2 nên không cần dòng còn
+     * tồn tại, và giữ nguyên vị trí thì lịch sử file đọc dễ hơn.
      */
-    test('TC-8 — [LỆCH] chèn xong con trỏ phải đậu ở ô 回 của DÒNG MỚI (frm203002.cs:6920-6925)', async () => {
-        // test.fail() phải nằm TRONG thân testcase. Gọi ở cấp describe thì Playwright áp
-        // cho MỌI test trong file — đã vấp thật 2026-08-25: TC-1 báo
-        // 「Expected to fail, but passed」 và cả file dừng.
-        test.fail()
+    test('TC-8 — chèn xong con trỏ đậu ở ô 回 của DÒNG MỚI (frm203002.cs:6920-6925)', async () => {
         const key = insertedKeyForTc8
         test.skip(key === null, 'TC-2 chưa chèn được dòng nào')
 
         // ĐO THẬT 2026-08-25, cùng bệnh nhân (10) cùng ngày (2026-08-03):
         //   WinForm : mở editor ngay ở ô 回 của dòng vừa thêm
         //             (grdRegi.CurrentCell = grdRegi[4, y] rồi BeginEdit).
-        //   Bản web : con trỏ nhảy sang 「<rowKey>:footer-ten|3」 — ô 点 của dòng FOOTER,
-        //             không phải ô 回 của dòng mới.
+        //   Bản web : TRƯỚC khi sửa nhảy sang 「<rowKey>:footer-ten|3」 (ô 点 của dòng
+        //             TỔNG NGÀY); SAU khi sửa đậu đúng 「<rowKey>|4」.
         //
-        // Hệ quả cho người dùng: ở WinForm gõ tiếp là ra SỐ LẦN của 処置 vừa chọn; ở bản
-        // web gõ tiếp rơi vào ô điểm của dòng tổng ngày.
+        // Vì sao đáng canh: ở WinForm gõ tiếp là ra SỐ LẦN của 処置 vừa chọn. Nếu con trỏ
+        // rơi vào ô điểm của dòng tổng thì người dùng gõ tiếp là sửa nhầm chỗ.
         console.log(`TC-8: focusedCell sau khi chèn = ${focusedAfterInsert} (mong đợi ${key}|${COL_KAI})`)
         expect(
             focusedAfterInsert,
