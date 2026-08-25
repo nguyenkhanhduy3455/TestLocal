@@ -167,18 +167,28 @@ test.describe('診療入力 — mã đặc biệt コードモード + nội dun
             }))
         }
 
-        // Đường 2: đọc text. Mỗi dòng dữ liệu bắt đầu bằng số (コード), rồi 枝番, rồi tên.
-        const raw = await picker.innerText()
-        return raw
+        // Đường 2: đọc text. Dialog `is-input-dialog` không có testid nào, và
+        // `innerText` trả MỖI Ô MỘT DÒNG:
+        //     処置選択 / コード / 枝番 / 名称 / 点数 / 50 / 0 / N2O使用リッター数 / 0 / …
+        // ⇒ bỏ qua tới hết dòng tiêu đề rồi GOM TỪNG BỐN Ô. Đừng dùng regex trên từng
+        // dòng: mỗi dòng chỉ là một ô, không phải một hàng (đã vấp 2026-08-25 — đọc ra
+        // 6 "dòng" rỗng từ một danh sách 2 hàng).
+        const lines = (await picker.innerText())
             .split('\n')
             .map((l) => l.trim())
-            .filter((l) => /^\d+\s/.test(l) || /^\d+$/.test(l))
-            .map((l) => {
-                const m = l.match(/^(\d+)\s+(\d+)\s*(.*)$/)
-                return m
-                    ? { code: m[1]!, sub: m[2]!, name: txt(m[3] ?? '') }
-                    : { code: l, sub: '', name: '' }
-            })
+            .filter((l) => l.length > 0)
+
+        const start = lines.findIndex((l) => l === '点数')
+        if (start < 0) return []
+
+        const out: { code: string; sub: string; name: string }[] = []
+        for (let k = start + 1; k + 3 < lines.length + 1; k += 4) {
+            const [code, sub, name] = [lines[k], lines[k + 1], lines[k + 2]]
+            // Hết danh sách khi gặp ô không phải số (câu hướng dẫn, nhãn ô nhập, F9…).
+            if (!/^\d+$/.test(code ?? '') || !/^\d+$/.test(sub ?? '')) break
+            out.push({ code: code!, sub: sub!, name: txt(name ?? '') })
+        }
+        return out
     }
 
     async function closePicker() {
@@ -300,12 +310,13 @@ test.describe('診療入力 — mã đặc biệt コードモード + nội dun
         await closeDialogs(page)
     })
 
-    test('TC-S2 — [LỆCH] mã 50 (IS): picker phải liệt kê ĐỦ 2 dòng 50-0 N2O / 50-1 O2', async () => {
+    test('TC-S2 — mã 50 (IS): picker liệt kê ĐỦ 2 dòng 50-0 N2O / 50-1 O2 + ô nhập リッター数', async () => {
         // LỆCH ĐÃ ĐO 2026-08-25, cùng bệnh nhân 10 / ngày 2026-08-03 (có ảnh cả hai bên):
         //   WinForm : 処置選択 liệt kê ĐỦ 2 dòng —
         //               50-0 N2O使用リッター数 (0点) / 50-1 O2使用リッター数 (0点)
         //             kèm ô nhập リッター数 bên dưới.
-        //   Bản web : chỉ MỘT dòng 「50 | 0 |」 và cột 名称 TRỐNG.
+        //   Bản web : TRƯỚC khi sửa chỉ MỘT dòng 「50 | 0 |」 với cột 名称 TRỐNG;
+        //             SAU khi sửa ra đủ hai dòng có tên, khớp WinForm.
         //
         // Nguyên nhân nằm ở component: web dùng `is-input-dialog.tsx`, nhận
         // trtCd/trtSb/trtNm là PROP ĐƠN LẺ (:33-34) và render đúng một dòng (:159-160)
@@ -314,9 +325,8 @@ test.describe('診療入力 — mã đặc biệt コードモード + nội dun
         //
         // Hệ quả: người dùng KHÔNG chọn được giữa N2O và O2 từ danh sách như WinForm.
         //
-        // Giữ dưới test.fail() theo quy ước repo — sửa xong thì test này
-        // "unexpectedly passed" và phải bỏ cờ đi.
-        test.fail()
+        // ĐÃ SỬA 2026-08-25: đo lại thì web ra ĐỦ hai dòng có tên, khớp WinForm. Bỏ
+        // test.fail(), từ đây là test hồi quy.
         await enterCodeIntoRowTen('50')
 
         await expect(picker, 'mã 50 phải mở picker IS').toBeVisible({ timeout: 20_000 })
