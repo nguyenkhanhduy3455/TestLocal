@@ -156,9 +156,20 @@ public sealed class TreatmentGridProbeTests : UiTestBase
                 var text = Txt.N(Dialogs.TextOf(d)).Replace("\n", " ");
                 var isSave = Txt.Has(text, "保存しますか");
                 var button = isSave ? "キャンセル" : "いいえ";
+                // Hộp thoại CRASH của .NET (「Unhandled exception has occurred…」) có nút
+                // Continue/Quit. Bấm Continue để app đi tiếp — nếu không, nó chắn mọi
+                // bước sau và cả lượt probe thành vô nghĩa. Đã vấp thật 2026-08-25: mã
+                // 999 làm app ném IndexOutOfRangeException và che sạch 5 mã còn lại.
+                var isCrash = Txt.Has(text, "Unhandled exception");
+                if (isCrash)
+                {
+                    LogKq(tag, "   ⚠️ APP CRASH: " + text[..Math.Min(140, text.Length)]);
+                    if (Dialogs.ClickButton(d, "Continue")) { Thread.Sleep(800); continue; }
+                }
+
                 var ok = isSave
                     ? Dialogs.ClickButton(d, "キャンセル", "Cancel")
-                    : Dialogs.ClickButton(d, "いいえ", "No", "OK", "N");
+                    : Dialogs.ClickButton(d, "いいえ", "No", "OK", "N", "Continue");
 
                 // Dialog nghiệp vụ (部位選択, 処置選択…) KHÔNG có nút はい/いいえ — chúng
                 // đóng bằng F10 戻る. Đã vấp thật 2026-08-25: 部位選択 kẹt lại, ClearDialogs
@@ -635,5 +646,153 @@ public sealed class TreatmentGridProbeTests : UiTestBase
 
         LogKq("PZ", "TRẠNG THÁI CUỐI: " + State());
         Assert.Pass("probe 点数/コード xong — đọc log + ảnh");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PROBE — QUÉT MÃ ĐẶC BIỆT + NỘI DUNG DANH SÁCH trong 処置選択
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Đổ NỘI DUNG lưới <c>dgvView</c> của 処置選択 (frm203016.Designer.cs:126).
+    ///
+    /// <para>Mở được dialog chưa nói lên gì — phải so từng dòng: コード / 枝番 / 名称 /
+    /// 点数. Đây là thứ quyết định hai bên có thật sự khớp hay không.</para>
+    /// </summary>
+    private List<string> DumpPickerRows(FlaUI.Core.AutomationElements.Window dialog, int limit = 12)
+    {
+        var rows = new List<string>();
+        try
+        {
+            var grid = Uia.ById(dialog, "dgvView");
+            if (grid is null) { rows.Add("(khong thay dgvView)"); return rows; }
+
+            var wf = new WinFormsGrid(grid);
+            var hdr = wf.Headers();
+            if (hdr.Count > 0) rows.Add("cột: " + string.Join(" | ", hdr));
+
+            foreach (var r in wf.Rows(limit))
+            {
+                var cells = r.Cells.Where(c => c.Length > 0).ToList();
+                if (cells.Count > 0) rows.Add(string.Join(" | ", cells));
+            }
+            if (rows.Count == 0) rows.Add("(luoi rong)");
+        }
+        catch (Exception e) { rows.Add($"(loi doc dgvView: {e.Message})"); }
+        return rows;
+    }
+
+    /// <summary>Đóng 処置選択 bằng nút 戻る của chính nó (F10).</summary>
+    private bool ClosePicker(FlaUI.Core.AutomationElements.Window dialog)
+    {
+        try
+        {
+            var btn = Uia.Descendants(dialog)
+                .FirstOrDefault(e => Uia.ControlTypeOf(e) == FlaUI.Core.Definitions.ControlType.Button
+                                     && Txt.Has(Uia.NameOf(e), "戻る"));
+            if (btn is null) return false;
+            Uia.Click(btn);
+            return Waits.TryUntil(() => RealDialogs().Count == 0, TimeSpan.FromSeconds(5));
+        }
+        catch { return false; }
+    }
+
+    [Test]
+    [Description("Probe — quét mã đặc biệt và ĐỔ NỘI DUNG danh sách trong 処置選択")]
+    public void Probe_SpecialCodesAndPickerItems()
+    {
+        using var trace = TestTrace.Begin();
+        _trace = trace;
+
+        var row = _grid.Snapshot().FirstOrDefault(
+            r => Txt.N(r.Ten) is not ("-" or "－") && !Txt.Has(r.Ryo, "日計") && r.Ryo.Length > 0);
+        if (row is null) { LogKq("S", "không có 処置行 nào ⇒ dừng"); Assert.Pass("xem log"); return; }
+
+        // Đổi 入力モード bằng cách click nhãn (không có btnF9_S/btnF10_S — probe trước đã đo).
+        void SetMode(string want)
+        {
+            var label = Uia.ById(Screen.Window, "lbInpMode");
+            for (var i = 0; i < 3 && label is not null; i++)
+            {
+                var cur = Txt.N(Uia.ValueOf(label));
+                if (Txt.Same(cur, want)) return;
+                var (x, y) = Uia.Center(label);
+                Uia.LeftClickPhysical(x, y);
+                Thread.Sleep(500);
+            }
+        }
+
+        string ModeNow()
+        {
+            var l = Uia.ById(Screen.Window, "lbInpMode");
+            return l is null ? "?" : Txt.N(Uia.ValueOf(l));
+        }
+
+        // Gõ một giá trị vào ô 点, ghi lại app phản ứng gì + NỘI DUNG picker nếu có.
+        void Try(string tag, string what, string typed)
+        {
+            LogKq(tag, $"───── {what}: gõ 「{typed}」 (mode 「{ModeNow()}」) ─────");
+            var rowsBefore = _grid.RowCount();
+            try
+            {
+                _grid.FocusCell(row!, RegiGrid.Col.Ten);
+                if (!_grid.IsEditing()) _grid.Press(VirtualKeyShort.RETURN);
+                Thread.Sleep(250);
+                _grid.Type(typed);
+                var editor = _grid.EditorText();
+                LogKq(tag, $"   editor trước Enter: 「{editor}」");
+                _grid.Press(VirtualKeyShort.RETURN);
+                Thread.Sleep(1500);
+            }
+            catch (Exception e) { LogKq(tag, $"   NÉM: {e.GetType().Name}: {e.Message}"); }
+
+            var dlgs = RealDialogs();
+            if (dlgs.Count == 0)
+            {
+                LogKq(tag, $"   KHÔNG có dialog. số dòng {rowsBefore} → {_grid.RowCount()}, " +
+                           $"合計 = {_grid.AllPointValue()}, mode giờ 「{ModeNow()}」");
+                return;
+            }
+
+            var d = dlgs[0];
+            var text = Txt.N(Dialogs.TextOf(d)).Replace("\n", " ");
+            LogKq(tag, $"   DIALOG: 「{(text.Length > 90 ? text[..90] + "…" : text)}」");
+            foreach (var line in DumpPickerRows(d)) LogKq(tag, "     · " + line);
+            try { _trace.Shot($"{tag}-{what}"); } catch { }
+
+            if (!ClosePicker(d)) { ClearDialogs(tag); }
+            LogKq(tag, $"   sau khi đóng: dialog còn {RealDialogs().Count}, " +
+                       $"số dòng {rowsBefore} → {_grid.RowCount()}, mode 「{ModeNow()}」");
+        }
+
+        // ── Nhóm 1: mã đặc biệt của GetTrtmasCod ────────────────────────────
+        SetMode("コード");
+        LogKq("S1", "NHÓM 1 — mã đặc biệt (modMain.cs GetTrtmasCod)");
+        Try("S1", "ma-101-kasan", "101");
+        SetMode("コード"); Try("S1", "ma-50-IS", "50");
+        SetMode("コード"); Try("S1", "ma-999-misou", "999");
+        SetMode("コード"); Try("S1", "ma-333-houmon", "333");
+        SetMode("コード"); Try("S1", "ma-1-jiyu", "1");
+        SetMode("コード"); Try("S1", "ma-179-zankon", "179");
+        SetMode("コード"); Try("S1", "ma-202-IS", "202");
+        SetMode("コード"); Try("S1", "ma-599-kaigo", "599");
+
+        // ── Nhóm 2: 点数モード — danh sách phải lọc theo ĐIỂM, không theo MÃ ──
+        //
+        // Lượt trước có dấu hiệu lạ: nhãn ghi 「点数」 mà kết quả lại ra các dòng cùng MÃ.
+        // Lần này kiểm chặt: in nhãn NGAY TRƯỚC khi gõ, và chọn điểm 「4」 — đã biết chắc
+        // có 処置 mang 点数 4 (人工歯料(レジン歯・前歯部), lượt trước lộ ra).
+        //   · mọi dòng có cột 点数 = 4  ⇒ đúng 点数モード (GetTrtmas: score1 = <点数>)
+        //   · mọi dòng có cột コード = 4 ⇒ app đang tra theo MÃ dù nhãn ghi 点数
+        LogKq("S2", "NHÓM 2 — 点数モード, danh sách phải lọc theo ĐIỂM");
+        SetMode("点数");
+        LogKq("S2", $"nhãn NGAY TRƯỚC khi gõ: 「{ModeNow()}」");
+        Try("S2", "diem-4", "4");
+
+        SetMode("点数");
+        LogKq("S2", $"nhãn NGAY TRƯỚC khi gõ: 「{ModeNow()}」");
+        Try("S2", "diem-31", "31");
+
+        LogKq("SZ", "TRẠNG THÁI CUỐI: " + State());
+        Assert.Pass("probe mã đặc biệt xong — đọc log + ảnh");
     }
 }
