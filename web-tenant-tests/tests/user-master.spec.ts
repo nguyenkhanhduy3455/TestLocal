@@ -28,8 +28,8 @@ import { ADMIN_USER, JA } from './test-data'
  *      · loginStatus CHỈ có 2 giá trị: unverified 未認証 / verified 認証済,
  *        suy từ password_hash. Phân biệt 'đã mời mà chưa bấm link' với
  *        'chưa mời' nằm ở cột メールアドレス bên cạnh (có/không có địa chỉ).
- *      · form.userNoAuto = '空欄で自動採番' (placeholder ô NO ở chế độ 新規)
- *      · form.userNoImmutable = 'NO は登録後に変更できません'
+ *      · form.userNoImmutable = 'NO は自動採番のため変更できません'
+ *        (KHÔNG còn form.userNoAuto: màn 新規 đã bỏ hẳn ô NO)
  *      · activate.buttonNone/Pending/Active = ログイン有効化 / メール再送 / ログイン無効化
  *      · activate.dialogTitle = 'ログイン有効化'
  *      · activate.labelEmail = 'メールアドレス', labelRecipientName = 'お名前（任意）'
@@ -37,7 +37,8 @@ import { ADMIN_USER, JA } from './test-data'
  *      · activate.hintNoPassword = 'パスワードは本人が招待メールのリンクから設定します。'
  *      · dialogs.deleteTitle = 'ユーザを削除しますか？'
  *  - components/user-master-form.tsx
- *      · Init focus port từ frm501003.cs:196-206 — 更新 → 氏名, 新規 → NO.
+ *      · Init focus: CẢ HAI chế độ đều ở 氏名. WinForm frm501003.cs:205 focus
+ *        vào NO ở nhánh Insert, nhưng bản web đã bỏ ô NO nên không còn chỗ đậu.
  *      · 区分 render bằng <Select> (WinForm cboUserKbn là ComboBox
  *        DropDownList), nhãn lấy từ mst_cod cd_type 30 — KHÔNG hardcode trong FE.
  *        makeCodMstCombo(30, COMBO_SPC_OFF) ⇒ KHÔNG có mục trắng dẫn đầu.
@@ -48,7 +49,10 @@ import { ADMIN_USER, JA } from './test-data'
  *  - components/postal-suggest-dropdown.tsx: role="listbox" (aria-label
  *    '郵便番号候補') + role="option" cho từng dòng.
  *      · 新規 chọn sẵn ドクター (frm501003.cs:205 `cboUserKbn.SelectedValue = 0`).
- *      · Ô NO bị `disabled` ở chế độ 更新 (WinForm disable txtUserNo).
+ *      · Ô NO CHỈ render ở chế độ 更新 và luôn `disabled` (WinForm cũng disable
+ *        txtUserNo ở nhánh Update). Chế độ 新規 KHÔNG render ô NO: số do server
+ *        cấp (AppUserNoAllocator = MAX(user_no)+1) và CreateUserMasterRequest
+ *        không còn trường userNo để client gửi lên.
  *  - shared/ui/label.tsx: <Label required> nối thêm <span aria-hidden>*</span>.
  *    ⇒ TEXT của label là 'メールアドレス*' nên getByLabel(exact) TRƯỢT, trong khi
  *    accessible name của input vẫn sạch. Trong dialog phải dùng
@@ -63,6 +67,14 @@ import { ADMIN_USER, JA } from './test-data'
  *      · Đã đăng ký xong (loginStatus verified) ⇒ ô email bị disable.
  *        Người mới được mời (pending) vẫn sửa được để chữa địa chỉ gõ nhầm, và
  *        F9 lần nữa chính là gửi lại mail (BE thu hồi token cũ).
+ *  - routes/_public/activate-login.tsx
+ *      · Tra token TRƯỚC khi dựng form: GET /tenant/user-master/invite-status
+ *        (ẩn danh) trả { displayName, email, expiresAt }. Form redeem chỉ hiện
+ *        khi tra thành công ⇒ token hỏng/hết hạn/đã dùng thì KHÔNG có ô nào để
+ *        gõ, chỉ còn thẻ 'この招待リンクは無効か…'.
+ *      · 氏名 mở ra ĐÃ ĐIỀN SẴN tên quản trị viên nhập lúc 新規; người được mời
+ *        vẫn sửa được, để trống thì BE giữ nguyên tên cũ.
+ *      · メールアドレス hiện kèm ở dạng chỉ đọc (id 'redeem-email').
  *  - routes/_authenticated/settings/user-master/*
  *      · /settings/user-master (一覧), /new (新規), /$userNo (更新).
  *  - BE: GET /tenant/user-master mở cho mọi tenant user; POST/PATCH/DELETE và
@@ -118,12 +130,18 @@ const ALLOW_SAVE = process.env.TEST_ALLOW_SAVE === '1'
 /** Gửi mail thật → cờ riêng, chặt hơn ALLOW_SAVE. */
 const ALLOW_INVITE = process.env.TEST_ALLOW_INVITE === '1'
 
-/** NO dùng cho dòng tạo mới. Để cao cho khỏi đụng dải legacy (1..112). */
-const NEW_USER_NO = Number(process.env.TEST_NEW_USER_NO ?? '9001')
+/**
+ * 氏名 của dòng tạo mới — ĐÂY là thứ định danh dòng test, không phải NO.
+ *
+ * Không còn TEST_NEW_USER_NO: màn 新規 đã bỏ ô NO và BE tự cấp
+ * MAX(user_no)+1, nên spec KHÔNG biết trước số nào sẽ ra. Số thật đọc lại từ
+ * ô NO của dòng vừa tạo (TC-WRITE-1) rồi truyền cho các TC sau qua
+ * `createdUserNo`.
+ */
 const NEW_USER_NM = process.env.TEST_NEW_USER_NM ?? 'E2Eテスト職員'
 
 /** Địa chỉ nhận thư mời — riêng cho test, để dọn hộp thư mà không đụng ai. */
-const INVITE_EMAIL = process.env.TEST_INVITE_EMAIL ?? `e2e-${NEW_USER_NO}@example.com`
+const INVITE_EMAIL = process.env.TEST_INVITE_EMAIL ?? 'e2e-user-master@example.com'
 
 /** Mật khẩu người được mời tự đặt ở màn /activate-login. */
 const INVITE_PASSWORD = process.env.TEST_INVITE_PASSWORD ?? 'E2e!Passw0rd#2026'
@@ -152,8 +170,7 @@ const UM = {
     colEmail: 'メールアドレス',
     colLogin: '認証状態',
     noResults: '登録されているユーザがありません',
-    userNoAuto: '空欄で自動採番',
-    userNoImmutable: 'NO は登録後に変更できません',
+    userNoImmutable: 'NO は自動採番のため変更できません',
     labelEmail: 'メールアドレス',
     emailLocked: '登録完了後はメールアドレスを変更できません',
     activateConfirmTitle: 'アカウントを有効化しますか？',
@@ -197,6 +214,14 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
     /** Token của thư mời ĐẦU TIÊN — TC-MAIL-2 kiểm nó chết sau khi 再送. */
     let firstInviteToken: string | null = null
 
+    /**
+     * NO mà BE cấp cho dòng test, đọc lại ở TC-WRITE-1.
+     *
+     * `undefined` nghĩa là TC-WRITE-1 chưa chạy (TEST_ALLOW_SAVE tắt) hoặc đã
+     * fail — mọi TC phía sau skip theo, đừng đoán một con số nào cả.
+     */
+    let createdUserNo: number | undefined
+
     // ── Locator helper ───────────────────────────────────────────────────────
 
     /**
@@ -209,11 +234,18 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
     const fkey = (n: number): Locator => page.locator(`[data-fkey="F${n}"]`)
 
     /**
-     * Các dòng của lưới 一覧. Lưới dựng bằng div nên component gắn sẵn
-     * `data-testid="user-master-row"` + `data-user-no` — bám vào đó thay vì
-     * Tailwind class (Rule 3).
+     * Các dòng của lưới 一覧.
+     *
+     * 一覧 đã chuyển sang `VirtualListTable` dùng chung, nên KHÔNG còn
+     * `data-testid="user-master-row"` + `data-user-no` như bản đầu. Hook hiện tại
+     * là `data-testid="row-<uuid>"` (khoá dòng là app_user.id) và mỗi ô mang
+     * `data-testid="cell-<colId>"` — giống mọi grid khác, xem helper
+     * tests/virtual-grid.ts.
      */
-    const listRows = (): Locator => page.getByTestId('user-master-row')
+    const listRows = (): Locator => page.locator('[data-testid^="row-"]')
+
+    /** Ô NO của một dòng. */
+    const noCell = (row: Locator): Locator => row.getByTestId('cell-userNo')
 
     /** Số dòng mang NO đó — tự vào 一覧 trước vì có testcase gọi lúc đang ở màn khác. */
     async function rowCount(userNo: number): Promise<number> {
@@ -221,9 +253,41 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         return rowOf(userNo).count()
     }
 
-    /** Dòng của một NO cụ thể. */
+    /**
+     * Dòng của một NO cụ thể.
+     *
+     * Lọc theo TEXT của ô NO chứ không theo thuộc tính: khoá dòng của grid dùng
+     * chung là uuid, còn NO chỉ tồn tại dưới dạng nội dung ô. `hasText` với
+     * RegExp neo hai đầu để 11 không dính 110/111/112.
+     */
     const rowOf = (userNo: number): Locator =>
-        page.locator(`[data-testid="user-master-row"][data-user-no="${userNo}"]`)
+        listRows().filter({
+            has: page.getByTestId('cell-userNo').filter({ hasText: new RegExp(`^${userNo}$`) }),
+        })
+
+    /**
+     * NO mà TC-WRITE-1 đọc được, hoặc SKIP testcase nếu chưa có.
+     *
+     * Trước đây NO là hằng số nên mọi TC dùng thẳng được; giờ nó là kết quả của
+     * một testcase khác, nên phải có chốt chặn — thiếu chốt thì locator đi tìm
+     * NO `undefined`, không khớp dòng nào, và test đỏ với lý do sai.
+     */
+    function requireCreatedNo(): number {
+        skipWithReason(
+            createdUserNo === undefined,
+            'TC-WRITE-1 chưa tạo được dòng test (hoặc TEST_ALLOW_SAVE tắt) — chạy lại cả file',
+        )
+        return createdUserNo!
+    }
+
+    /**
+     * Dòng của dòng test, tìm theo 氏名.
+     *
+     * Cần vì NO do BE cấp: ngay sau khi 登録 xong, thứ duy nhất spec biết chắc
+     * về dòng vừa tạo là cái tên nó vừa gõ.
+     */
+    const rowByName = (userNm: string): Locator =>
+        listRows().filter({ hasText: userNm })
 
     /** Đăng nhập admin trên `p`. Tách riêng vì cả beforeAll lẫn gotoList đều cần. */
     async function loginAsAdmin(p: Page): Promise<void> {
@@ -269,10 +333,10 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         await expect(
             heading,
             'không vào được 一覧 kể cả sau khi đăng nhập lại. Gần như chắc chắn là ' +
-                'MÔI TRƯỜNG chứ không phải tính năng: dev server reload làm mất ' +
-                'accessToken (chỉ nằm trong RAM), và nếu đã chạy suite nhiều lần liên ' +
-                'tiếp thì lần đăng nhập lại còn bị app khoá (Rule 10.1 — ~10 login/khung). ' +
-                'Chờ vài phút rồi chạy lại, ĐỪNG sửa code.',
+            'MÔI TRƯỜNG chứ không phải tính năng: dev server reload làm mất ' +
+            'accessToken (chỉ nằm trong RAM), và nếu đã chạy suite nhiều lần liên ' +
+            'tiếp thì lần đăng nhập lại còn bị app khoá (Rule 10.1 — ~10 login/khung). ' +
+            'Chờ vài phút rồi chạy lại, ĐỪNG sửa code.',
         ).toBeVisible({ timeout: 30000 })
         await expect(page.getByText(LIST_TOTAL_LABEL)).toBeVisible({ timeout: 30000 })
         await step()
@@ -280,25 +344,30 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
 
     /**
      * Xoá sạch dòng test khỏi app_user. Dùng cả ở beforeAll (dọn tàn dư của lần
-     * chạy trước bị fail giữa chừng — nếu không, TC-WRITE-1 tạo lại sẽ đụng
-     * USER_NO_TAKEN và fail vì lý do chẳng liên quan gì tới cái đang test) lẫn ở
-     * TC-DB-2 (dọn sau khi chạy xong).
+     * chạy trước bị fail giữa chừng) lẫn ở TC-DB-2 (dọn sau khi chạy xong).
+     *
+     * Dọn theo 氏名 chứ không theo NO: NO do BE cấp nên lần chạy trước để lại
+     * con số nào thì lượt này không biết. Điều kiện lọc gồm cả dòng đã xoá mềm
+     * — 削除 của TC-WRITE-2 chỉ set deleted_at, mà dòng đó vẫn giữ user_no và
+     * vẫn được MAX() đếm, nên để lại là rác tích luỹ qua mỗi lượt chạy.
      */
     async function purgeTestUser(): Promise<number> {
         return withDb(async (c) => {
+            const target = `(SELECT id FROM ${DB_SCHEMA}.app_user WHERE display_name = ANY($1))`
+            // Cả tên lúc tạo lẫn tên người được mời tự sửa ở màn redeem.
+            const names = [NEW_USER_NM, REDEEMED_NM]
             await c.query(
-                `DELETE FROM ${DB_SCHEMA}.app_user_invite_token
-                  WHERE user_id IN (SELECT id FROM ${DB_SCHEMA}.app_user WHERE user_no = $1)`,
-                [NEW_USER_NO],
+                `DELETE FROM ${DB_SCHEMA}.app_user_invite_token WHERE user_id IN ${target}`,
+                [names],
             )
             await c.query(
-                `DELETE FROM ${DB_SCHEMA}.app_user_role
-                  WHERE user_id IN (SELECT id FROM ${DB_SCHEMA}.app_user WHERE user_no = $1)`,
-                [NEW_USER_NO],
+                `DELETE FROM ${DB_SCHEMA}.app_user_role WHERE user_id IN ${target}`,
+                [names],
             )
-            const r = await c.query(`DELETE FROM ${DB_SCHEMA}.app_user WHERE user_no = $1`, [
-                NEW_USER_NO,
-            ])
+            const r = await c.query(
+                `DELETE FROM ${DB_SCHEMA}.app_user WHERE display_name = ANY($1)`,
+                [names],
+            )
             return r.rowCount ?? 0
         })
     }
@@ -353,6 +422,48 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         await step()
     }
 
+    /**
+     * Mở màn 更新 của một người CHƯA kích hoạt (認証状態 = 未認証).
+     *
+     * KHÔNG dùng "dòng đầu" được nữa: 一覧 xếp theo NO tăng dần và NO = 0 là tài
+     * khoản chủ sự nghiệp (事業者登録) — người này LUÔN 認証済 nên ô
+     * メールアドレス của họ bị khoá. Test nào cần ô email sửa được thì phải tự
+     * chọn đúng loại dòng.
+     */
+    async function openUnverifiedDetail(): Promise<void> {
+        await gotoList()
+        const row = listRows()
+            .filter({
+                has: page.getByTestId('cell-login').filter({ hasText: UM.loginUnverified }),
+            })
+            .first()
+        await expect(row, 'dataset không có ai đang 未認証').toBeVisible({ timeout: 30000 })
+        await openDetail(Number((await noCell(row).innerText()).trim()))
+    }
+
+    /**
+     * Mở màn 更新 của một người CHƯA có メールアドレス.
+     *
+     * Cùng lý do với `openUnverifiedDetail`: dòng đầu (NO = 0, chủ sự nghiệp) ĐÃ
+     * có email, nên nhánh "email trống thì F9 lưu thẳng" không kiểm được ở đó.
+     * Chọn dòng có sẵn ô email rỗng thay vì xoá email của người khác — testcase
+     * này không được phép ghi đè dữ liệu thật.
+     */
+    async function openDetailWithoutEmail(): Promise<void> {
+        await gotoList()
+        await expect(listRows().first()).toBeVisible({ timeout: 30000 })
+
+        // Đọc cả cột một lần rồi tìm index — Playwright không lọc được theo
+        // "text rỗng". Lưới ảo hoá nên chỉ thấy các dòng đang render; dataset
+        // demo ~21 dòng nên vào hết một màn.
+        const emails = await listRows().getByTestId('cell-email').allInnerTexts()
+        const idx = emails.findIndex((v) => v.trim() === '')
+        skipWithReason(idx < 0, 'không có dòng nào bỏ trống メールアドレス trong dataset')
+
+        const row = listRows().nth(idx)
+        await openDetail(Number((await noCell(row).innerText()).trim()))
+    }
+
     // ── Setup ────────────────────────────────────────────────────────────────
 
     test.beforeAll(async ({ browser }) => {
@@ -368,11 +479,11 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
 
         await loginAsAdmin(page)
 
-        // Dọn tàn dư trước khi bắt đầu: NO test là UNIQUE trong app_user, nên một
-        // dòng sót lại từ lần chạy trước sẽ làm TC-WRITE-1 fail vì USER_NO_TAKEN.
+        // Dọn tàn dư trước khi bắt đầu: các TC sau tìm dòng test THEO TÊN, nên
+        // hai dòng cùng tên sót lại từ lượt trước sẽ làm locator dính nhiều dòng.
         if (dbEnabled && ALLOW_SAVE) {
             const purged = await purgeTestUser()
-            if (purged > 0) console.log(`dọn tàn dư NO=${NEW_USER_NO}: ${purged} dòng`)
+            if (purged > 0) console.log(`dọn tàn dư 氏名=${NEW_USER_NM}: ${purged} dòng`)
         }
         if (ALLOW_INVITE) {
             const mails = await purgeMailTo(INVITE_EMAIL)
@@ -408,30 +519,30 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         }
 
         // Rule 10.8 — chờ dòng đầu hiện rồi mới count().
-        const rows = listRows()
-        const empty = page.getByText(UM.noResults)
-        const hasRows = await rows
-            .first()
-            .isVisible()
-            .catch(() => false)
+        // const rows = listRows()
+        // const empty = page.getByText(UM.noResults)
+        // const hasRows = await rows
+        //     .first()
+        //     .isVisible()
+        //     .catch(() => false)
 
-        skipWithReason(
-            !hasRows && (await empty.isVisible().catch(() => false)),
-            'ユーザマスタ rỗng — dataset chưa import IINMST2, không có gì để test',
-        )
+        // skipWithReason(
+        //     !hasRows && (await empty.isVisible().catch(() => false)),
+        //     'ユーザマスタ rỗng — dataset chưa import IINMST2, không có gì để test',
+        // )
 
-        await expect(rows.first()).toBeVisible({ timeout: 30000 })
-        const n = await rows.count()
-        expect(n, 'lưới không có dòng nào').toBeGreaterThan(0)
+        // await expect(rows.first()).toBeVisible({ timeout: 30000 })
+        // const n = await rows.count()
+        // expect(n, 'lưới không có dòng nào').toBeGreaterThan(0)
 
-        // Chọn dòng để các testcase sau mở màn 更新.
-        if (PINNED_USER_NO !== undefined) {
-            targetUserNo = Number(PINNED_USER_NO)
-        } else {
-            targetUserNo = Number(await rows.first().getAttribute('data-user-no'))
-        }
-        expect(Number.isFinite(targetUserNo), 'không đọc được NO của dòng đầu').toBeTruthy()
-        console.log(`ユーザマスタ: ${n} dòng, dùng NO=${targetUserNo} cho màn 更新`)
+        // // Chọn dòng để các testcase sau mở màn 更新.
+        // if (PINNED_USER_NO !== undefined) {
+        //     targetUserNo = Number(PINNED_USER_NO)
+        // } else {
+        //     targetUserNo = Number(await rows.first().getAttribute('data-user-no'))
+        // }
+        // expect(Number.isFinite(targetUserNo), 'không đọc được NO của dòng đầu').toBeTruthy()
+        // console.log(`ユーザマスタ: ${n} dòng, dùng NO=${targetUserNo} cho màn 更新`)
         await step()
     })
 
@@ -450,17 +561,23 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         const rows = listRows()
         await expect(rows.nth(1)).toBeVisible({ timeout: 30000 })
 
+        // NO của dòng thứ hai, đọc TRƯỚC khi bấm phím — sau đó phải là dòng đang chọn.
+        const secondNo = (await noCell(rows.nth(1)).innerText()).trim()
+
         await rows.first().click()
         await step()
         await page.keyboard.press('ArrowDown')
         await step()
 
-        const selected = page.locator('[data-testid="user-master-row"][data-selected]')
+        // VirtualListTable dùng chung không gắn `data-selected`; dòng đang chọn là
+        // dòng DUY NHẤT có tabindex=0 (những dòng khác đều -1). Đó là hành vi thật
+        // của bàn phím chứ không phải class Tailwind, nên bám được (Rule 3).
+        const selected = listRows().and(page.locator('[tabindex="0"]'))
         await expect(selected, 'ArrowDown không đổi dòng đang chọn').toHaveCount(1)
         await expect(
-            selected,
+            noCell(selected),
             'ArrowDown không nhảy xuống dòng thứ hai',
-        ).toHaveAttribute('data-user-no', await rows.nth(1).getAttribute('data-user-no') ?? '')
+        ).toHaveText(secondNo)
         await step()
     })
 
@@ -603,6 +720,11 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
     // ── ログイン有効化 qua ô メールアドレス + confirm khi F9 ─────────────────
 
     test('TC-ACT-1 — ô メールアドレス nằm ngay trên 区分 và sửa được khi chưa kích hoạt', async () => {
+        // Tự mở một dòng 未認証 thay vì xài lại màn hình testcase trước để lại:
+        // dòng đầu của 一覧 giờ là chủ sự nghiệp (NO = 0), người LUÔN 認証済, nên
+        // ô email của họ bị khoá và assert dưới đây đỏ oan.
+        await openUnverifiedDetail()
+
         // Không còn nút/hộp thoại ログイン有効化 riêng: cấp login là một thuộc tính
         // của người này nên nó là một ô của chính form.
         await expect(
@@ -654,13 +776,13 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
     })
 
     test('TC-ACT-3 — bỏ trống email thì F9 lưu thẳng, KHÔNG hỏi kích hoạt', async () => {
-        await openDetail()
+        await openDetailWithoutEmail()
 
         const email = page.getByLabel(UM.labelEmail, { exact: true })
-        skipWithReason(
-            (await email.inputValue()) !== '',
-            'dòng đầu đã có email — không kiểm được nhánh "không hỏi"',
-        )
+        expect(
+            await email.inputValue(),
+            'mở nhầm dòng đã có email — helper chọn sai',
+        ).toBe('')
 
         let asked = false
         const watch = () => {
@@ -710,20 +832,22 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
 
     // ── 新規 (frm501003 Insert) ──────────────────────────────────────────────
 
-    test('TC-NEW-1 — F1 mở màn 新規: NO nhập được, placeholder tự động, focus ở NO', async () => {
+    test('TC-NEW-1 — F1 mở màn 新規: KHÔNG có ô NO, focus ở 氏名', async () => {
         await gotoList()
         await fkey(1).click()
         await expect(page).toHaveURL(/\/settings\/user-master\/new$/, { timeout: 30000 })
         await step()
 
-        const noInput = page.getByLabel(UM.colUserNo, { exact: true })
-        await expect(noInput, 'ô NO bị khoá ở chế độ 新規').toBeEnabled()
-        await expect(noInput).toHaveAttribute('placeholder', UM.userNoAuto)
-
-        // FACT frm501003.cs:205 — Insert → txtUserNo.Focus().
+        // Điểm khác WinForm: bản cũ bắt gõ NO (frm501003.cs:205 focus vào
+        // txtUserNo). Bản web bỏ hẳn ô đó — số là việc của server.
         await expect(
-            noInput,
-            'focus khởi tạo phải ở NO (frm501003 nhánh Insert)',
+            page.getByLabel(UM.colUserNo, { exact: true }),
+            'màn 新規 vẫn còn ô NO — số phải do BE cấp, không cho nhập',
+        ).toHaveCount(0)
+
+        await expect(
+            page.getByLabel(UM.colUserNm, { exact: true }),
+            'focus khởi tạo phải ở 氏名 — 新規 không còn ô NO để đậu',
         ).toBeFocused({ timeout: 15000 })
 
         // FACT frm501003.cs:205 — cboUserKbn.SelectedValue = 0 (ドクター).
@@ -738,45 +862,71 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         await step()
     })
 
-    test('TC-NEW-2 — NO = 0 bị chặn ngay ở FE (WinForm E00025)', async () => {
-        await page.getByLabel(UM.colUserNo, { exact: true }).fill('0')
-        await page.getByLabel(UM.colUserNm, { exact: true }).fill(NEW_USER_NM)
-        await step()
-        await fkey(9).click()
-        await step()
+    test('TC-NEW-2 — không còn ô NO dưới BẤT KỲ dạng nào ở màn 新規', async () => {
+        // TC-NEW-1 bám aria-label; testcase này bám id và cả thẻ input thô, để
+        // một lần "ẩn bằng CSS" hay "đổi label" không lọt qua được.
+        await expect(page.locator('#userNo'), 'còn input#userNo ở màn 新規').toHaveCount(0)
+        await expect(
+            page.getByText(UM.userNoImmutable),
+            'ghi chú NO của màn 更新 lọt sang màn 新規',
+        ).toHaveCount(0)
 
-        await expect(page.getByText('NO は 1 以上で入力してください')).toBeVisible({
-            timeout: 15000,
-        })
-        await expect(page, 'màn 新規 tự rời dù NO = 0').toHaveURL(
-            /\/settings\/user-master\/new$/,
-        )
+        // Ghi chú cũ '空欄で自動採番' đã bị xoá khỏi locales — nếu nó còn hiện
+        // nghĩa là ô NO chưa gỡ hết.
+        await expect(page.getByText('空欄で自動採番')).toHaveCount(0)
         await step()
     })
 
-    test('TC-WRITE-1 — 新規 lưu được, dòng mới hiện ở 一覧 với 認証状態 = 未認証', async () => {
+    test('TC-WRITE-1 — 新規 lưu được, BE tự cấp NO, dòng mới 認証状態 = 未認証', async () => {
         skipWithReason(!ALLOW_SAVE, 'TEST_ALLOW_SAVE != 1 — bỏ qua thao tác GHI DB (Rule 18.1)')
 
-        // Tự dọn ngay trước khi tạo, không dựa vào beforeAll: NEW_USER_NO là hằng
-        // số nên chạy `--repeat-each` (Rule 16) sẽ lặp lại chính testcase này và
-        // lần thứ hai đụng USER_NO_TAKEN. Dọn ở đây làm mỗi lần lặp tự đứng được.
+        // Tự dọn ngay trước khi tạo, không dựa vào beforeAll: chạy lại cả file
+        // nhiều lượt sẽ để lại dòng cùng tên, làm rowByName dính nhiều dòng.
         if (dbEnabled) await purgeTestUser()
 
         await gotoList()
         await fkey(1).click()
         await expect(page).toHaveURL(/\/settings\/user-master\/new$/, { timeout: 30000 })
 
-        await page.getByLabel(UM.colUserNo, { exact: true }).fill(String(NEW_USER_NO))
+        // Bắt body của lệnh tạo: NO là việc của server, FE không được gửi lên.
+        // Đây là chỗ duy nhất chứng minh được điều đó từ phía client.
+        let createBody: Record<string, unknown> | null = null
+        const watchCreate = (r: { url: () => string; method: () => string; postData: () => string | null }) => {
+            if (r.method() === 'POST' && new URL(r.url()).pathname.endsWith('/tenant/user-master')) {
+                try {
+                    createBody = JSON.parse(r.postData() ?? '{}') as Record<string, unknown>
+                } catch {
+                    createBody = null
+                }
+            }
+        }
+        page.on('request', watchCreate)
+
         await page.getByLabel(UM.colUserNm, { exact: true }).fill(NEW_USER_NM)
         await step()
         await fkey(9).click()
 
         await expect(page).toHaveURL(/\/settings\/user-master$/, { timeout: 30000 })
+        page.off('request', watchCreate)
         await step()
 
-        const row = rowOf(NEW_USER_NO)
+        expect(createBody, 'không bắt được POST /tenant/user-master').not.toBeNull()
+        expect(
+            Object.keys(createBody ?? {}),
+            'FE vẫn gửi userNo lên — CreateUserMasterRequest đã bỏ trường này',
+        ).not.toContain('userNo')
+
+        const row = rowByName(NEW_USER_NM)
         await expect(row, 'dòng vừa tạo không thấy ở 一覧').toHaveCount(1, { timeout: 30000 })
-        await expect(row).toContainText(NEW_USER_NM)
+
+        // Đọc lại số BE vừa cấp — mọi TC sau bám vào đây thay vì một hằng số.
+        createdUserNo = Number((await noCell(row).innerText()).trim())
+        expect(
+            Number.isInteger(createdUserNo) && createdUserNo > 0,
+            `BE cấp NO không hợp lệ: ${createdUserNo}`,
+        ).toBeTruthy()
+        console.log(`BE cấp NO=${createdUserNo} cho ${NEW_USER_NM}`)
+
         // Người mới chưa có tài khoản ⇒ trạng thái ログイン phải là 未設定.
         await expect(row, 'người mới tạo đã xác thực — lẽ ra phải là 未認証').toContainText(
             UM.loginUnverified,
@@ -792,12 +942,13 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
             'TEST_ALLOW_INVITE != 1 — bỏ qua vì thao tác này GỬI MAIL THẬT',
         )
         skipWithReason(!ALLOW_SAVE, 'TEST_ALLOW_SAVE != 1 — cần dòng test do TC-WRITE-1 tạo')
+        const createdNo = requireCreatedNo()
 
         skipWithReason(
-            (await rowCount(NEW_USER_NO)) === 0,
+            (await rowCount(createdNo)) === 0,
             `không còn dòng ${NEW_USER_NM} — TC-WRITE-1 chưa tạo được; chạy lại cả file`,
         )
-        await openDetail(NEW_USER_NO)
+        await openDetail(createdNo)
 
         await page.getByLabel(UM.labelEmail, { exact: true }).fill(INVITE_EMAIL)
         await step()
@@ -819,7 +970,7 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
 
         // Trạng thái ログイン của dòng chuyển sang 招待中.
         await expect(
-            rowOf(NEW_USER_NO),
+            rowOf(createdNo),
             'gửi mail xong vẫn phải là 未認証 — mới mời chứ người ta chưa đặt mật khẩu',
         ).toContainText(UM.loginUnverified, { timeout: 30000 })
         await step()
@@ -827,9 +978,10 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
 
     test('TC-INVITE-2 — bấm いいえ: KHÔNG gửi mail nhưng thông tin VẪN lưu', async () => {
         skipWithReason(!ALLOW_SAVE, 'TEST_ALLOW_SAVE != 1 — cần dòng test do TC-WRITE-1 tạo')
+        const createdNo = requireCreatedNo()
 
-        skipWithReason((await rowCount(NEW_USER_NO)) === 0, `không còn dòng NO=${NEW_USER_NO}`)
-        await openDetail(NEW_USER_NO)
+        skipWithReason((await rowCount(createdNo)) === 0, `không còn dòng NO=${createdNo}`)
+        await openDetail(createdNo)
 
         // Sửa một trường bất kỳ để chứng minh phần lưu KHÔNG phụ thuộc câu trả lời.
         const marker = `TEL-${Date.now() % 100000}`
@@ -857,7 +1009,7 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
 
         // Mấu chốt: F9 là để LƯU, hộp thoại chỉ hỏi thêm chuyện gửi mail. Nói
         // いいえ mà mất luôn phần vừa nhập thì người dùng không hiểu nổi.
-        await openDetail(NEW_USER_NO)
+        await openDetail(createdNo)
         await expect(
             page.getByLabel(UM.colUserTel, { exact: true }),
             'bấm いいえ làm mất luôn thông tin vừa sửa',
@@ -868,17 +1020,18 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
     test('TC-DB-1 — 有効化 chỉ set email, password_hash vẫn NULL', async () => {
         skipWithReason(!dbEnabled, 'TEST_DB != 1 — bỏ qua kiểm tra tầng DB')
         skipWithReason(!ALLOW_INVITE, 'TEST_ALLOW_INVITE != 1 — chưa có dòng nào được 有効化')
+        const createdNo = requireCreatedNo()
 
         const row = await withDb(async (c) => {
             const r = await c.query(
                 `SELECT email, password_hash FROM ${DB_SCHEMA}.app_user
                   WHERE user_no = $1 AND deleted_at IS NULL`,
-                [NEW_USER_NO],
+                [createdNo],
             )
             return r.rows[0] as { email: string | null; password_hash: string | null } | undefined
         })
 
-        skipWithReason(row === undefined, `app_user NO=${NEW_USER_NO} không tồn tại`)
+        skipWithReason(row === undefined, `app_user NO=${createdNo} không tồn tại`)
         expect(row!.email, 'email chưa được set sau khi 有効化').toBeTruthy()
         // Cốt lõi của thiết kế: khoảng giữa 有効化 và nhận mail KHÔNG phải cửa vào.
         expect(
@@ -923,10 +1076,11 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         skipWithReason(!ALLOW_INVITE, 'TEST_ALLOW_INVITE != 1 — chưa gửi mail nào')
         skipWithReason(!(await mailpitUp()), 'Mailpit không chạy')
         skipWithReason(firstInviteToken === null, 'TC-MAIL-1 không lấy được token đầu tiên')
+        const createdNo = requireCreatedNo()
 
         // Không còn nút メール再送: người chưa redeem thì bấm F9 lần nữa chính là
         // gửi lại — BE thu hồi token cũ rồi phát token mới.
-        await openDetail(NEW_USER_NO)
+        await openDetail(createdNo)
         await fkey(9).click()
 
         const confirm = confirmBox()
@@ -950,18 +1104,24 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         )
 
         // Link cũ phải chết, để một mail bị chuyển nhầm hoặc rò rỉ không dùng được.
+        //
+        // Trang giờ TRA TOKEN TRƯỚC khi dựng form (GET invite-status, để điền sẵn
+        // 氏名), nên token chết bị chặn ngay ở bước tải: chỉ hiện thẻ báo lỗi,
+        // KHÔNG có ô mật khẩu nào để gõ. Trước đây spec gõ mật khẩu rồi mới bấm
+        // 設定する — làm vậy bây giờ sẽ đỏ ở `#password` không tồn tại.
         const deadToken = firstInviteToken
         await withInviteePage(async (invitee) => {
             await invitee.goto(`/activate-login?token=${deadToken}`, {
                 waitUntil: 'domcontentloaded',
             })
-            await invitee.locator('#password').fill(INVITE_PASSWORD)
-            await invitee.locator('#passwordConfirm').fill(INVITE_PASSWORD)
-            await invitee.getByRole('button', { name: ja_redeemSubmit }).click()
             await expect(
                 invitee.getByText(UM.inviteInvalid),
                 'link cũ vẫn dùng được sau khi gửi lại — token chưa bị revoke',
             ).toBeVisible({ timeout: 20000 })
+            await expect(
+                invitee.locator('#password'),
+                'token chết mà form đặt mật khẩu vẫn dựng lên',
+            ).toHaveCount(0)
         })
         await step()
 
@@ -978,6 +1138,20 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
                 waitUntil: 'domcontentloaded',
             })
             await expect(invitee.getByText(ja_redeemHeading)).toBeVisible({ timeout: 30000 })
+
+            // Tên quản trị viên đã nhập lúc 新規 phải hiện sẵn: phòng khám biết mình
+            // mời ai, bắt người ta gõ lại tên của chính mình là hỏi thừa.
+            await expect(
+                invitee.locator('#displayName'),
+                '氏名 không được điền sẵn — người được mời phải gõ lại tên của chính mình',
+            ).toHaveValue(NEW_USER_NM, { timeout: 20000 })
+
+            // Địa chỉ nhận thư hiện kèm, chỉ đọc — token gắn với nó nên sửa vô nghĩa.
+            const emailBox = invitee.locator('#redeem-email')
+            await expect(emailBox, 'màn redeem không hiện メールアドレス').toHaveValue(
+                INVITE_EMAIL,
+            )
+            await expect(emailBox, 'ô メールアドレス ở màn redeem phải bị khoá').toBeDisabled()
 
             // 氏名 sửa được ở đây — KHÁC hộp thoại của quản trị viên (chỉ dùng cho mail).
             await invitee.locator('#displayName').fill(REDEEMED_NM)
@@ -1006,16 +1180,17 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
     test('TC-MAIL-4 — 氏名 sửa ở màn redeem GHI vào master', async () => {
         skipWithReason(!dbEnabled, 'TEST_DB != 1 — bỏ qua kiểm tra tầng DB')
         skipWithReason(!ALLOW_INVITE, 'TEST_ALLOW_INVITE != 1 — chưa redeem lần nào')
+        const createdNo = requireCreatedNo()
 
         const row = await withDb(async (c) => {
             const r = await c.query(
                 `SELECT display_name FROM ${DB_SCHEMA}.app_user
                   WHERE user_no = $1 AND deleted_at IS NULL`,
-                [NEW_USER_NO],
+                [createdNo],
             )
             return r.rows[0] as { display_name: string } | undefined
         })
-        skipWithReason(row === undefined, `app_user NO=${NEW_USER_NO} không tồn tại`)
+        skipWithReason(row === undefined, `app_user NO=${createdNo} không tồn tại`)
 
         // Khác hộp thoại của quản trị viên: tên gõ ở đó CHỈ vào nội dung mail, còn
         // tên người tự sửa lúc redeem thì mới ghi vào master.
@@ -1026,16 +1201,17 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
 
     test('TC-MAIL-5 — đăng ký xong thì ô メールアドレス bị khoá', async () => {
         skipWithReason(!ALLOW_INVITE, 'TEST_ALLOW_INVITE != 1 — chưa redeem lần nào')
+        const createdNo = requireCreatedNo()
 
         await gotoList()
-        const row = rowOf(NEW_USER_NO)
-        skipWithReason((await row.count()) === 0, `không còn dòng NO=${NEW_USER_NO}`)
+        const row = rowOf(createdNo)
+        skipWithReason((await row.count()) === 0, `không còn dòng NO=${createdNo}`)
         await expect(row, 'sau khi redeem, cột 認証状態 phải là 認証済').toContainText(
             UM.loginVerified,
             { timeout: 30000 },
         )
 
-        await openDetail(NEW_USER_NO)
+        await openDetail(createdNo)
 
         // Đăng ký xong thì email là danh tính đăng nhập — đổi nó là đổi người.
         await expect(
@@ -1048,11 +1224,12 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
 
     test('TC-WRITE-2 — 削除 dòng vừa tạo (chưa dính lịch sử nên xoá được)', async () => {
         skipWithReason(!ALLOW_SAVE, 'TEST_ALLOW_SAVE != 1 — bỏ qua thao tác GHI DB (Rule 18.1)')
+        const createdNo = requireCreatedNo()
 
         // TC-INVITE-1 kết thúc ở màn chi tiết. Về 一覧 trước để testcase này không
         // phụ thuộc vào việc testcase ngay trước nó dừng ở đâu.
-        await expect(await rowCount(NEW_USER_NO), 'không còn dòng test để xoá').toBe(1)
-        await openDetail(NEW_USER_NO)
+        await expect(await rowCount(createdNo), 'không còn dòng test để xoá').toBe(1)
+        await openDetail(createdNo)
 
         await fkey(8).click()
         const confirm = confirmBox()
@@ -1065,7 +1242,7 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         await expect(page).toHaveURL(/\/settings\/user-master$/, { timeout: 30000 })
         await step()
 
-        await expect(rowOf(NEW_USER_NO), 'dòng vừa xoá vẫn còn ở 一覧').toHaveCount(0, {
+        await expect(rowOf(createdNo), 'dòng vừa xoá vẫn còn ở 一覧').toHaveCount(0, {
             timeout: 30000,
         })
         await step()
@@ -1099,7 +1276,7 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         skipWithReason(
             victimNo === undefined,
             'không xác định được người CÓ lịch sử (cần TEST_DB=1 hoặc TEST_USER_MASTER_NO) — ' +
-                'không thử xoá bừa để tránh xoá nhầm dữ liệu thật',
+            'không thử xoá bừa để tránh xoá nhầm dữ liệu thật',
         )
 
         expect(await rowCount(victimNo!), `không thấy NO=${victimNo} ở 一覧`).toBe(1)
@@ -1134,6 +1311,6 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         skipWithReason(!ALLOW_SAVE, 'TEST_ALLOW_SAVE != 1 — không có gì để dọn')
 
         const removed = await purgeTestUser()
-        console.log(`dọn app_user NO=${NEW_USER_NO}: ${removed} dòng`)
+        console.log(`dọn app_user 氏名=${NEW_USER_NM} (NO=${createdUserNo ?? '?'}): ${removed} dòng`)
     })
 })
