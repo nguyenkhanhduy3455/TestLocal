@@ -235,6 +235,26 @@ public sealed class TreatmentGridOps
     ///
     /// <para>Ô phải đang nằm trong khung nhìn — lưới không tự cuộn tới nó. Các
     /// testcase ở đây chỉ chạm dòng vừa chèn (luôn ở gần con trỏ) nên không cần cuộn.</para>
+    ///
+    /// ─── Vì sao phải kiểm toạ độ TRƯỚC khi click ─────────────────────────────
+    /// <c>LeftClickPhysical</c> bắn chuột vào <b>toạ độ màn hình</b>, không vào phần tử.
+    /// Nếu phần tử đọc ra rect rỗng <c>{0,0,0,0}</c> — chuyện có thật khi dòng nằm ngoài
+    /// khung nhìn, khi lưới bị tab khác che, hoặc khi cầu MSAA→UIA trả về dòng "ma" —
+    /// thì <c>Uia.Center</c> trả <c>(0,0)</c> và cú click rơi vào <b>góc trái trên
+    /// DESKTOP</b>.
+    ///
+    /// <para>Chuỗi hậu quả đã xảy ra thật, đo 2026-08-26 (TrnCheck PROBE 2 Tc2):</para>
+    /// <code>
+    /// TargetRow  = [0]  |  | (null) | (null) |        ← dòng ma
+    /// ô 点       = tâm (0,0) rect {0,0,0,0}
+    /// click(0,0) → chọn biểu tượng trên Desktop, app MẤT foreground
+    /// Type("165")→ type-ahead của Explorer nhảy tới tệp bắt đầu bằng 「1」 = 1.pdf
+    /// Enter      → MỞ 1.pdf trong Microsoft Edge
+    /// </code>
+    /// <para>Và thông điệp lỗi đọc được sau đó là 「処置選択 không mở」 — nghe như app sai,
+    /// trong khi thật ra không có phím nào tới được app. Đúng cái bẫy PROBE-GUIDELINE
+    /// 3.4 mô tả, nhưng ở mức <b>cửa sổ</b> chứ không phải hộp thoại. Ném sớm ở đây rẻ
+    /// hơn nhiều so với đi đọc log của bước sau.</para>
     /// </summary>
     public void FocusCell(RegiRow row, int column)
     {
@@ -243,7 +263,16 @@ public sealed class TreatmentGridOps
             throw new InvalidOperationException(
                 $"dòng lưới chỉ đọc được {cells.Count} ô, không có cột {column}. Cả dòng: {row}");
 
-        var (x, y) = Uia.Center(cells[column]);
+        var cell = cells[column];
+        var rect = Uia.RectOf(cell);
+        if (rect is null || rect.Value.Width <= 0 || rect.Value.Height <= 0)
+            throw new InvalidOperationException(
+                $"ô cột {column} của dòng {row} đọc ra rect RỖNG ({rect?.ToString() ?? "null"}) — " +
+                "click vào đó sẽ bắn chuột ra (0,0) tức góc trái trên DESKTOP, không phải vào app. " +
+                "Thường là dòng nằm ngoài khung nhìn, hoặc lưới đang bị tab khác (個別/ガイド/パック) " +
+                "che. Cuộn tới dòng hoặc quay về tab chính rồi thử lại.");
+
+        var (x, y) = Uia.Center(cell);
         Uia.LeftClickPhysical(x, y);
         Waits.Step();
     }

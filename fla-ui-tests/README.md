@@ -138,6 +138,12 @@ src/OchaCom.FlaUiTests/
     │   ├── SaveFlow.cs                lái chuỗi hộp thoại F9
     │   ├── OchaDbParity.cs            truy vấn CÓ GHI (tách khỏi Data/OchaDb.cs)
     │   └── BuiDialogDiagnosticsTests.cs
+    ├── TrnCheck/                   診療チェック — CẢ HAI cửa của COMMON/Lib/Check.cs
+    │   ├── README.md                  bảng tương ứng spec + kết quả đo trên máy thật
+    │   ├── TrnCheckFlow.cs            F3 → panel grdChek/lbChk · đọc-rồi-dẹp W00100
+    │   ├── TrnCheckProbeTests.cs      PROBE 1 [Explicit] — 9 câu hỏi, không assert
+    │   ├── TrnCheckProbe2Tests.cs     PROBE 2 [Explicit] — cây UIA panel + đường chèn
+    │   └── TrnCheckSweepTests.cs      一括 F3: TC-BASE, TC-TOGGLE
     └── InpP1Dialogs/                  ba dialog vừa port sang web — xem mục 8b
         ├── README.md                  bảng tương ứng với spec Playwright
         ├── InpP1MenuFlow.cs           F11 → 「９ オプション」 → mục con

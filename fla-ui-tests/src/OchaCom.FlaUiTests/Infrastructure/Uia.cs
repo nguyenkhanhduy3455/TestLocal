@@ -223,6 +223,22 @@ public static class Uia
         Win32.mouse_event(Win32.MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
     }
 
+    /// <summary>
+    /// <c>BoundingRectangle</c> của phần tử; đọc không được → null.
+    ///
+    /// <para>Luôn hỏi hàm này TRƯỚC khi <see cref="LeftClickPhysical"/> vào một phần tử
+    /// lấy từ lưới. Rect rỗng <c>{0,0,0,0}</c> là chuyện có thật (dòng ngoài khung nhìn,
+    /// lưới bị tab khác che, dòng "ma" của cầu MSAA→UIA) và khi đó
+    /// <see cref="Center"/> trả <c>(0,0)</c> — cú click rơi vào góc trái trên DESKTOP
+    /// chứ không vào app. Xem chuỗi hậu quả đã đo được ở
+    /// <c>TreatmentGridOps.FocusCell</c>.</para>
+    /// </summary>
+    public static System.Drawing.Rectangle? RectOf(AutomationElement e)
+    {
+        try { return e.BoundingRectangle; }
+        catch { return null; }
+    }
+
     /// <summary>Tọa độ trung tâm BoundingRectangle của phần tử (toạ độ màn hình).</summary>
     public static (int X, int Y) Center(AutomationElement e)
     {

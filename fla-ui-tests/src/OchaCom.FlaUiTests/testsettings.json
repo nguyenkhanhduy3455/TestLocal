@@ -101,6 +101,13 @@
     "regiGrid": "grdRegi",
     "//regiAllPoint": "月計点数 và 実日数 của 診療入力 — hai TextBox chỉ đọc cạnh nhãn 「合計」 (frm203002.Designer.cs:1062-1084), do modAcc.Calc_MDPoint ghi.",
     "regiAllPoint": "lbAllPoint",
-    "regiDays": "lbDays"
+    "regiDays": "lbDays",
+
+    "//chkPanel": "Panel 処置データチェック của 一括チェック (F3) — frm203002.Designer.cs:2593. Ẩn cho tới khi TrnChk tìm ra lỗi.",
+    "chkPanel": "PnlChek",
+    "//chkGrid": "Lưới một cột chứa từng câu lỗi, dòng cuối là 「----- 以上 -----」 (frm203002.cs:5214).",
+    "chkGrid": "grdChek",
+    "//chkCount": "Nhãn 件数 — TrnChk ghi list.Count + 「件」 (frm203002.cs:5219). Mốc ĐỘC LẬP với việc đọc lưới.",
+    "chkCount": "lbChk"
   }
 }
