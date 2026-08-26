@@ -81,8 +81,19 @@ public static class UnpaidCreationFlow
 
         for (var i = 0; i < 8; i++)
         {
-            var owner = Alive(screen) ? screen : null;
-            var dialog = Waits.TryFor(() => ModalDialogs.All(app, owner).FirstOrDefault(),
+            // ⚠️ ĐỪNG hỏi 「cửa sổ còn sống không」 ở đây.
+            //
+            // Bản đầu viết `var owner = Alive(screen) ? screen : null;` và TREO CỨNG:
+            // Alive() đọc thuộc tính của frm203002 ĐÚNG LÚC luồng UI của nó đang bị
+            // MessageBox chặn. Đó là cái bẫy ghi ngay đầu ModalDialogs — đọc thuộc tính
+            // của cửa sổ bị chặn thì hoặc ném, hoặc treo. Đo thật 2026-08-26: chuỗi
+            // dừng ngay sau khi bấm F8, hộp thoại 処置データチェック nằm im trên màn hình
+            // không ai bấm, và fixture chạy tới hết trần giờ.
+            //
+            // Truyền thẳng `screen`: ModalDialogs.All đi đường 1 là
+            // `owner.ModalWindows` — API dành đúng cho trường hợp cửa sổ chủ đang bị
+            // modal chặn, hỏi cửa sổ chủ chứ không quét desktop.
+            var dialog = Waits.TryFor(() => ModalDialogs.All(app, screen).FirstOrDefault(),
                                       TimeSpan.FromSeconds(i == 0 ? 30 : 6));
             if (dialog is null)
                 return new Walk(trail, sawCreate,
@@ -168,12 +179,6 @@ public static class UnpaidCreationFlow
         //    ở trên — phủ định với chúng là bỏ cuộc, không phải an toàn.
         return (["いいえ", "No", "キャンセル", "Cancel", "OK"],
                 "KHÔNG khớp luật nào — trả lời phủ định");
-    }
-
-    private static bool Alive(Window w)
-    {
-        try { return Uia.IsOnScreen(w); }
-        catch { return false; }
     }
 
     public static IReadOnlyList<string> ButtonsOf(Window d)

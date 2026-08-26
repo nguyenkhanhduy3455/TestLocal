@@ -263,8 +263,12 @@ public sealed class AccountingDayFlow
         // Chạm trần nghĩa là gặp vòng lặp, và bỏ chạy còn hơn bấm mãi vào sổ tiền.
         for (var i = 0; i < 6; i++)
         {
+            // Truyền thẳng cửa sổ, KHÔNG hỏi 「còn sống không」 trước: đọc thuộc tính
+            // của cửa sổ đang bị modal chặn thì hoặc ném hoặc TREO (xem đầu
+            // ModalDialogs). ModalDialogs.All đi đường 1 là `owner.ModalWindows`,
+            // API dành đúng cho tình huống này.
             var dialog = Waits.TryFor(
-                () => ModalDialogs.All(_app, ScreenIfAlive()).FirstOrDefault(),
+                () => ModalDialogs.All(_app, _screen.Window).FirstOrDefault(),
                 TimeSpan.FromSeconds(i == 0 ? 25 : 6));
 
             if (dialog is null)
@@ -352,9 +356,6 @@ public sealed class AccountingDayFlow
         try { return Uia.IsOnScreen(_screen.Window); }
         catch { return false; }
     }
-
-    /// <summary>Cửa sổ chủ để hỏi modal — null khi 診療入力 đã đóng, để ModalDialogs đi đường khác.</summary>
-    private Window? ScreenIfAlive() => TreatmentScreenAlive() ? _screen.Window : null;
 
     private bool WaitScreenClosed()
     {
