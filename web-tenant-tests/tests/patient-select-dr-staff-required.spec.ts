@@ -157,13 +157,28 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
     }
 
     /**
-     * Combo Ｄｒ．trên HEADER màn 処置入力.
+     * Combo Ｄｒ．trên HEADER màn 処置入力 — SAU khi click ô giá trị để nó hiện ra.
      *
-     * Nhãn ở đây là `Dr` (patient-info-header.tsx) chứ không phải `Dr.` như màn
-     * 患者選択 — hai màn dùng chung StaffSelect nhưng truyền label khác nhau.
+     * Từ bản port Chg_DrName, header có hai control chồng chỗ như WinForm: ô giá
+     * trị (lbDr) hiện 担当医 CỦA DÒNG con trỏ đang đứng, còn combo (cboDr) giữ
+     * 担当医 cho dòng thêm mới và `Visible = false` cho tới khi ô giá trị được
+     * click (frm203002.cs:8082). Testcase này hỏi về cái thứ hai, nên phải mở nó
+     * ra trước — đọc nhãn sẽ ra người khác, và đó là ĐÚNG.
+     *
+     * Nhãn ở màn chi tiết là `Dr:`; màn 患者選択 là `Dr.:` — khác đúng một dấu
+     * chấm nên `exact` là bắt buộc.
      */
-    function detailDrSelect(): Locator {
-        return page.getByText('Dr:', { exact: true }).locator('..').getByRole('combobox')
+    async function openDetailDrCombo(): Promise<Locator> {
+        const caption = page.getByRole('button', { name: 'Dr:', exact: true })
+        await expect(caption, 'không thấy hàng Ｄｒ．trên header màn chi tiết').toBeVisible({
+            timeout: 30000,
+        })
+        await caption.locator('..').getByRole('button').nth(1).click()
+        const combo = page.getByRole('combobox').first()
+        await expect(combo, 'click ô giá trị mà combo Ｄｒ．không hiện ra').toBeVisible({
+            timeout: 15000,
+        })
+        return combo
     }
 
     /**
@@ -559,18 +574,20 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
         })
 
         // Đây mới là assert của #2: URL đúng từ trước bản vá (nó đọc combo),
-        // cái sai nằm ở HEADER màn chi tiết.
+        // cái sai nằm ở COMBO trên header màn chi tiết — nó từng được seed từ
+        // dòng TRN đầu tiên của tháng thay vì từ giá trị màn 患者選択.
+        const combo = await openDetailDrCombo()
         await expect(
-            detailDrSelect(),
-            `header lấy Ｄｒ．từ dòng TRN cũ (dr_no=[${trnPatient!.trnDrNos.join(',')}]) ` +
+            combo,
+            `combo header lấy Ｄｒ．từ dòng TRN cũ (dr_no=[${trnPatient!.trnDrNos.join(',')}]) ` +
                 `thay vì Ｄｒ．${seedProbeDoctor!.userNo} vừa chọn ở màn 患者選択`,
-        ).toHaveText(seedProbeDoctor!.userNm, { timeout: 30000 })
+        ).toContainText(seedProbeDoctor!.userNm, { timeout: 30000 })
 
         // Nói thẳng ra tên của các Ｄｒ．trong TRN để log đọc được khi hỏng.
         for (const drNo of trnPatient!.trnDrNos) {
             const nm = doctorNameOf.get(drNo)
             if (!nm || nm === seedProbeDoctor!.userNm) continue
-            await expect(detailDrSelect(), `header đang hiện Ｄｒ．của TRN 「${nm}」`).not.toHaveText(nm)
+            await expect(combo, `combo đang hiện Ｄｒ．của TRN 「${nm}」`).not.toContainText(nm)
         }
         console.log(
             `患者${trnPatient!.patNo} (TRN dr_no=[${trnPatient!.trnDrNos.join(',')}]) → ` +

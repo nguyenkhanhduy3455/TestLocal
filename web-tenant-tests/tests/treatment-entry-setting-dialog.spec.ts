@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
 
+import { listDoctors } from './db'
 import { makeStep, skipWithReason } from './step'
 import { ADMIN_USER, JA } from './test-data'
 
@@ -591,13 +592,68 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
         await step()
     })
 
-    test('TC-TAB-4 — その他: 2 ô số + 衛生士 + 治療情報', async () => {
+    test('TC-TAB-4 — その他: 2 combo 医院マスタ + 衛生士 + 治療情報', async () => {
         await selectTab('その他')
-        await expect(rowOf('デフォルトＤｒ番号').getByRole('textbox')).toBeVisible()
-        await expect(rowOf('デフォルト衛生士番号').getByRole('textbox')).toBeVisible()
+        // Trước bản vá TODO(staff-master) đây là 2 ô nhập SỐ tự do. Nay là combo
+        // lấy từ 医院マスタ — `makeIinMstCombo(cboDefaultDrId, KBN_DR, COMBO_SPC_OFF)`
+        // (frm203003.cs:162-163). Assert role đổi từ textbox sang combobox chính là
+        // thứ phân biệt hai bản.
+        await expect(
+            rowOf('デフォルトＤｒ番号').getByRole('combobox'),
+            'デフォルトＤｒ番号 vẫn là ô nhập số — bản đang chạy chưa có bản vá?',
+        ).toBeVisible()
+        await expect(rowOf('デフォルト衛生士番号').getByRole('combobox')).toBeVisible()
+        await expect(
+            panel.getByRole('textbox'),
+            'tab その他 không còn ô nhập tự do nào',
+        ).toHaveCount(0)
         await expect(checkOf('衛生士を入力する')).toBeVisible()
         await expect(checkOf('一初診内')).toBeVisible()
         await expect(panel.getByRole('checkbox')).toHaveCount(2)
+        await step()
+    })
+
+    test('TC-TAB-4b — デフォルトＤｒ番号: options là 医院マスタ, KHÔNG có dòng trống', async () => {
+        await selectTab('その他')
+        const combo = rowOf('デフォルトＤｒ番号').getByRole('combobox')
+
+        // COMBO_SPC_OFF: đây là combo Ｄｒ．DUY NHẤT trong app không có dòng trống,
+        // nên không có cách nào biểu diễn 未選択 — WinForm dựa hẳn vào điều đó
+        // (giá trị 0 → SelectedIndex = 0 → người đầu danh sách).
+        await combo.click()
+        const listbox = page.getByRole('listbox')
+        await expect(listbox).toBeVisible({ timeout: 15000 })
+        const labels = await listbox.getByRole('option').allInnerTexts()
+        expect(labels.length, 'không nạp được 医院マスタ').toBeGreaterThan(0)
+        expect(
+            labels.filter((t) => t.trim() === ''),
+            'combo có dòng trống — sai COMBO_SPC_OFF của frm203003',
+        ).toHaveLength(0)
+
+        // Danh sách phải là Ｄｒ．(user_kbn=0) chứ không phải toàn bộ nhân sự.
+        const doctors = await listDoctors()
+        expect(labels.map((t) => t.trim()).sort()).toEqual(
+            doctors.map((d) => d.userNm).sort(),
+        )
+
+        await page.keyboard.press('Escape')
+        await expect(listbox).toBeHidden()
+
+        // Giá trị đang hiện phải là một Ｄｒ．có thật: hoặc device.defaultDrId, hoặc
+        // (khi nó = 0) người đầu danh sách — `if (DefaultDrId > 0) SelectedValue =
+        // ... else SelectedIndex = 0` (frm203003.cs:215-218).
+        const stored = Number(loadedInpSettings?.device?.defaultDrId ?? 0)
+        const expected =
+            stored > 0
+                ? (doctors.find((d) => d.userNo === stored)?.userNm ?? '')
+                : (doctors[0]?.userNm ?? '')
+        skipWithReason(expected === '', 'không dò được Ｄｒ．nào để đối chiếu')
+        await expect(
+            combo,
+            stored > 0
+                ? `device.defaultDrId = ${stored} nhưng combo không hiện đúng người`
+                : 'defaultDrId = 0 mà combo không rơi về người đầu danh sách (SelectedIndex = 0)',
+        ).toContainText(expected)
         await step()
     })
 
@@ -647,10 +703,8 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
             String(Number(device.gamen)),
         )
 
-        await selectTab('その他')
-        await expect(rowOf('デフォルトＤｒ番号').getByRole('textbox')).toHaveValue(
-            String(Number(device.defaultDrId)),
-        )
+        // デフォルトＤｒ番号 giờ là combo 医院マスタ nên không so được bằng SỐ ở đây;
+        // TC-TAB-4b lo phần đối chiếu device.defaultDrId ↔ tên hiển thị.
         await step()
     })
 
