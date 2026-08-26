@@ -347,7 +347,11 @@ public static class AccountingFlow
     /// ParitySaveData: nhãn F8 không đồng nghĩa với phím F8, và ô lưới đang soạn
     /// thảo sẽ nuốt phím.
     /// </summary>
-    private static void TriggerAccounting(Window screen, TestTrace? trace)
+    /// <summary>
+    /// Bấm 会計. Dùng chung với luồng <c>AccountingFocusedDay</c> nên để public —
+    /// cách kích hoạt F8 là thứ đã trả giá để biết (click NÚT, không gửi phím).
+    /// </summary>
+    public static void TriggerAccounting(Window screen, TestTrace? trace = null)
     {
         screen.Focus();
         var btn = Uia.ByIdOrName(screen, "btnF8", "会計", FlaUI.Core.Definitions.ControlType.Button);
