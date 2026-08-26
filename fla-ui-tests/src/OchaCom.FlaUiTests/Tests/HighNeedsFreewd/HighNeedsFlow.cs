@@ -131,9 +131,61 @@ public sealed class HighNeedsFlow
         catch { return []; }
     }
 
+    /// <summary>
+    /// Mọi MessageBox (<c>#32770</c>) đang mở của app — kể cả cái NẰM LỒNG trong một
+    /// cửa sổ khác.
+    ///
+    /// <para><b>Vì sao không chỉ quét top-level.</b> Đo thật 2026-08-26: MsgBox mà
+    /// <c>IregCodChk</c> bung ra có chủ là <c>frm203016</c> (処置選択), và cầu MSAA→UIA
+    /// dựng nó thành CON của cửa sổ chủ. Hệ quả: <c>ModalDialogs.All</c> trả về
+    /// frm203016, còn <c>Dialogs.TextOf(frm203016)</c> gom cả chữ của MsgBox vì hàm đó
+    /// duyệt <c>FindAllDescendants</c>. Tìm 「cửa sổ nào có chứa câu hỏi」 sẽ trúng
+    /// frm203016 — đọc ra tiêu đề 「処置選択」 và 8 nút
+    /// <c>[Yes, No, Close, F9 選択, F10 戻る, …]</c>, tức là hợp của hai cửa sổ.</para>
+    ///
+    /// <para>Nên ở đây lọc theo ClassName <c>#32770</c>, và quét cả hai tầng.</para>
+    /// </summary>
+    private IEnumerable<Window> MessageBoxes()
+    {
+        var seen = new HashSet<string>();
+
+        foreach (var w in Candidates())
+        {
+            string key;
+            try { key = string.Join("/", w.Properties.RuntimeId.ValueOrDefault ?? []); }
+            catch { continue; }
+            if (key.Length > 0 && !seen.Add(key)) continue;
+            yield return w;
+        }
+
+        IEnumerable<Window> Candidates()
+        {
+            foreach (var owner in ModalDialogs.All(_app, _screen.Window))
+            {
+                if (IsMsgBox(owner)) yield return owner;
+
+                AutomationElement[] nested;
+                try
+                {
+                    nested = owner.FindAllDescendants(cf => cf.ByControlType(ControlType.Window));
+                }
+                catch { continue; }
+
+                foreach (var d in nested)
+                    if (IsMsgBox(d)) yield return d.AsWindow();
+            }
+        }
+
+        static bool IsMsgBox(AutomationElement e)
+        {
+            try { return Uia.ClassNameOf(e) == Dialogs.Win32DialogClass && Uia.IsOnScreen(e); }
+            catch { return false; }
+        }
+    }
+
     /// <summary>Hộp thoại 困難者加算 nếu đang mở; null nếu không.</summary>
     public Window? HighNeedsDialog() =>
-        OpenDialogs().FirstOrDefault(d => Txt.Has(Txt.N(Dialogs.TextOf(d)), Question));
+        MessageBoxes().FirstOrDefault(d => Txt.Has(Txt.N(Dialogs.TextOf(d)), Question));
 
     /// <summary>Chờ tối đa <paramref name="seconds"/> cho câu hỏi 困難者加算.</summary>
     public Window? WaitForHighNeedsDialog(int seconds = 12)

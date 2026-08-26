@@ -234,8 +234,18 @@ public sealed class HighNeedsAskedTests : UiTestBase
                 $"tiêu đề là tham số thứ ba của Interaction.MsgBox — 「特別対応加算」, " +
                 $"KHÔNG phải 「お茶コン」 như các MsgDialog.* khác. Đọc ra 「{caption}」");
 
-            Assert.That(buttons, Has.Count.EqualTo(2),
-                $"MsgBoxStyle.YesNo ⇒ đúng 2 nút. Đang có: [{string.Join(", ", buttons)}]");
+            // Đo theo TẬP NÚT chứ không theo SỐ nút: MessageBox còn phơi ra nút Close
+            // của thanh tiêu đề, nên đếm bằng 2 là bám vào chi tiết của UIA chứ không
+            // phải vào hành vi. Điều thật sự đáng khoá là YesNo chứ KHÔNG PHẢI
+            // YesNoCancel — nhãn nút theo ngôn ngữ Windows (máy đo 2026-08-26 ra
+            // 「Yes」/「No」 tiếng Anh) nên nhận cả hai thứ tiếng.
+            Assert.That(buttons.Any(IsYes), Is.True,
+                $"MsgBoxStyle.YesNo phải có nút 「はい」/「Yes」. Đang có: [{string.Join(", ", buttons)}]");
+            Assert.That(buttons.Any(IsNo), Is.True,
+                $"MsgBoxStyle.YesNo phải có nút 「いいえ」/「No」. Đang có: [{string.Join(", ", buttons)}]");
+            Assert.That(buttons.Any(IsCancel), Is.False,
+                "câu này khai MsgBoxStyle.YesNo (frm203016.cs:1100) — KHÔNG có キャンセル. " +
+                $"Có nút huỷ nghĩa là ai đó đã đổi sang YesNoCancel. Đang có: [{string.Join(", ", buttons)}]");
         });
 
         TestContext.Out.WriteLine(
@@ -245,6 +255,10 @@ public sealed class HighNeedsAskedTests : UiTestBase
         _flow.DismissAll();
         _ = pick;
     }
+
+    private static bool IsYes(string n) => Txt.Same(n, "はい") || Txt.Same(n, "Yes");
+    private static bool IsNo(string n) => Txt.Same(n, "いいえ") || Txt.Same(n, "No");
+    private static bool IsCancel(string n) => Txt.Same(n, "キャンセル") || Txt.Same(n, "Cancel");
 
     // ═══════════════════════════════════════════════════════════════════════
     // TC-A2 — ⇔ web I-1 (「はい」 → freewd 「1」 đúng dòng)
