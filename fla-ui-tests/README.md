@@ -144,6 +144,13 @@ src/OchaCom.FlaUiTests/
     │   ├── TrnCheckProbeTests.cs      PROBE 1 [Explicit] — 9 câu hỏi, không assert
     │   ├── TrnCheckProbe2Tests.cs     PROBE 2 [Explicit] — cây UIA panel + đường chèn
     │   └── TrnCheckSweepTests.cs      一括 F3: TC-BASE, TC-TOGGLE
+    ├── PatientSelectAssign/           患者確定 chốt 担当医/衛生士 — xem mục 8b
+    │   ├── README.md                      bảng tương ứng spec + 5 điểm lệch đã tìm ra
+    │   ├── PatientSelectScreen.cs         screen object frm203001 (đầu tiên cho màn này)
+    │   ├── PatientSelectFlow.cs           lái 患者確定, đọc kết cục, KHÔNG assert
+    │   ├── PatientSelectAssignDb.cs       truy vấn CHỈ ĐỌC person/iinmst2/wait/TRNTRN
+    │   ├── PatientSelectAssignProbeTests.cs PROBE [Explicit] — 10 câu hỏi
+    │   └── PatientSelectAssignTests.cs    TC-MSG-1, TC-PAT-1, TC-DR-1..4, TC-ST-1, TC-ROW-1, TC-SEED-1
     └── InpP1Dialogs/                  ba dialog vừa port sang web — xem mục 8b
         ├── README.md                  bảng tương ứng với spec Playwright
         ├── InpP1MenuFlow.cs           F11 → 「９ オプション」 → mục con
@@ -233,6 +240,7 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 | `.\run-fix-accounting-data.ps1` | F8 会計 → `modAcc.ChgAccData` (会計データ修正) | `Tests/ParityAccountingCorrection/` | ⚠️ **CÓ** — `acc_dat` + `person_exp` (**sổ tiền**) |
 | `.\run-inp-p1-dialog.ps1` | F11 →「９ オプション」→ Step / チェック項目設定 · 部位選択 → F9 Br例 | `Tests/InpP1Dialogs/` | ⚠️ chỉ khi `-AllowSave` — `TRTSTATE`, `chkprm` |
 | `.\run-edit-treatment-rows.ps1` | Insert/Delete trên lưới 処置 → `AddRow` / `DeleteRow` (行追加・行削除) | `Tests/TreatmentGrid/` | ✖ không bấm F9 |
+| `.\run-confirm-patient.ps1` | End/F9/Enter ở 患者選択 → `frm203001.defData` (患者確定) | `Tests/PatientSelectAssign/` | ✖ không bấm F9, không seed `wait` |
 | `.\run-edit-treatment-rows.ps1 -Case Probe_Advanced` | PROBE — dò hành vi, KHÔNG assert | `Tests/TreatmentGrid/` | ✖ |
 
 > Thêm luồng mới thì giữ đúng quy ước này: `run-<động từ>-<đối tượng>.ps1` mô tả việc
@@ -274,6 +282,25 @@ riêng `inpP1.allowSave` và tự trả lại giá trị cũ. Ｂｒサンプル
 >
 > Luồng này thay cho `StepsEdit` / `run-steps-edit.ps1` cũ — luồng đó chỉ mở `frm203050`
 > rồi đọc cấu trúc, giờ là `StepEditTests.Tc1` trong đây.
+
+**PatientSelectAssign** đo **đáp án** cho `frm203001.defData` — màn 診療入力（患者選択）
+phải chốt được 担当医 / 衛生士 **trước khi** mở 処置入力, và từ chối mở khi không chốt
+được (hai số đó bị đóng dấu lên mọi dòng lưu ở màn sau, `TRNTRN.dr_no` / `staff_no`).
+Nó KHÔNG bấm F9 và KHÔNG seed bảng `wait` — khác bản Playwright, nơi `ensureWaitRow`
+chèn rồi xoá một dòng 受付; DB bên này là DB thật của phòng khám nên nhánh nào cần dòng
+受付 mà máy không có sẵn thì testcase tự `Ignore`.
+
+Đây là luồng ĐẦU TIÊN đứng lại ở `frm203001` thay vì đi xuyên qua nó, nên nó thêm hai
+thứ dùng chung: `AppNavigator.OpenPatientSelect` và
+`UiTestBase.NavigatesToTreatmentEntry` (+ `UiaDumpRoot`).
+
+Đọc source đã tìm ra **năm điểm lệch** với bản web — trong đó `DispEiseisi` bị bind
+nhầm sang một cột DB khác hẳn, và nhánh 受付 đọc *sự tồn tại của cột* chứ không phải
+giá trị. Chi tiết ở `Tests/PatientSelectAssign/README.md` mục 4.
+
+> ⚠️ **Chưa chạy lần nào trên Windows.** Chạy `.\run-confirm-patient.ps1 -Diagnostics`
+> **trước tiên**; đáp án nằm ở các dòng `=== KQ-n ===`, runner lọc sẵn ra
+> `confirm-patient-KQ.txt`.
 
 → Đọc README trong thư mục của luồng **trước khi chạy**.
 

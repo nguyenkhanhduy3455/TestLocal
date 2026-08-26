@@ -1371,6 +1371,44 @@ export async function findPatientsByAttDr(): Promise<{ withDr: number | null; wi
     })
 }
 
+/**
+ * Một bệnh nhân CÓ 担当医 và CHƯA có dòng 受付 nào còn sống — chỗ duy nhất seed
+ * được một dòng mang `user_no = 0`.
+ *
+ * `ux_wait_active` là unique theo `pat_no` trên các dòng chưa xoá, nên bệnh nhân
+ * đã được tiếp nhận (thật, hoặc do testcase khác seed) thì `ensureWaitRow` sẽ
+ * DÙNG LẠI dòng có sẵn và trả về `user_no` của nó — không còn là 0 nữa. Vì thế
+ * phải loại sẵn ở đây thay vì thử rồi hỏng.
+ *
+ * `exclude` là bệnh nhân đã dùng cho nhánh 「user_no hợp lệ」, phải khác.
+ *
+ * Vì sao cần: WinForm ở nhánh `selRow` kiểm SỰ TỒN TẠI CỦA CỘT `user_no` chứ
+ * không kiểm giá trị (`dt.Columns.Contains("user_no")`, frm203001.cs:698), nên
+ * dòng mang 0 làm nó chặn E00027; bản web thì `waitRowUserNo || patientAttDr`
+ * nên rơi về 担当医 và mở được màn. Đó là một điểm lệch, và đây là dữ liệu dựng nó.
+ */
+export async function findPatientForZeroWaitRow(
+    exclude: number,
+): Promise<{ patNo: number; attDr: number } | null> {
+    return withDb(async (c) => {
+        const r = await c.query<{ pat_no: number; att_dr: number }>(
+            `SELECT p.pat_no, p.att_dr
+               FROM view_person_active p
+              WHERE COALESCE(p.att_dr, 0) > 0
+                AND p.pat_no <> $1
+                AND NOT EXISTS (
+                      SELECT 1 FROM wait w
+                       WHERE w.pat_no = p.pat_no AND w.deleted_at IS NULL
+                    )
+              ORDER BY p.pat_no
+              LIMIT 1`,
+            [exclude],
+        )
+        const row = r.rows[0]
+        return row ? { patNo: Number(row.pat_no), attDr: Number(row.att_dr) } : null
+    })
+}
+
 // ─── wait (受付一覧) — seed một dòng tiếp nhận để kiểm nhánh `user_no` của dòng ─
 //
 // Nhánh này của `frm203001.defData` (:697-701) chỉ chạy khi mở bệnh nhân TỪ

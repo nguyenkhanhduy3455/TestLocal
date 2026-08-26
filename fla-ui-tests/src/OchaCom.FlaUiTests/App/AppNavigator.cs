@@ -36,20 +36,50 @@ public static class AppNavigator
         var already = app.Window("frm203002");
         if (already is not null) return already;
 
-        if (app.Window("frm203001") is null)
-        {
-            var menu = WaitForMainMenu(app, launchTimeout);
-            ClickPane(menu, "pnlBtn1", "業務 日常業務");
-            ClickPane(menu, "pnlMenu3", "メニュー 診療入力");
-        }
-
-        var patSelect = app.RequireWindow("frm203001", launchTimeout);
-        Waits.Step();
+        var patSelect = OpenPatientSelect(app, settings);
 
         SetTreatmentDate(patSelect, settings.Patient.ResolvedTrtDate);
         EnterPatient(app, patSelect, settings);
 
         return WaitForTreatmentWindow(app, settings, launchTimeout);
+    }
+
+    /// <summary>
+    /// Đi tới màn 診療入力（患者選択） frm203001 rồi DỪNG LẠI ở đó.
+    ///
+    /// <para>Khác <see cref="OpenTreatmentEntry"/>: hàm kia coi 患者選択 là trạm trung
+    /// chuyển và luôn 患者確定 để sang frm203002. Luồng nào ĐANG ĐO CHÍNH cái
+    /// <c>defData</c> của màn này (fallback 担当医/衛生士, E00005, E00027) thì cần
+    /// đứng lại — xem <c>Tests/PatientSelectAssign/</c>.</para>
+    ///
+    /// <para>frm203001 KHÔNG bị đóng khi sang frm203002, nó chỉ <c>this.Hide()</c>
+    /// (frm203001.cs:1061). <c>OchaApp.Window</c> lọc theo IsOffscreen nên cửa sổ đang
+    /// ẩn trả về null — tức là app đang đứng ở 診療入力 thì hàm này KHÔNG tự lùi về
+    /// được, và nó nói thẳng ra thay vì bấm F10 mò: F10 戻る của frm203002 có thể bung
+    /// 「処置データは、変更されています。保存しますか？」 (PROBE-GUIDELINE 3.3), trả lời
+    /// nhầm là ghi thật xuống trn_trn.</para>
+    /// </summary>
+    public static Window OpenPatientSelect(OchaApp app, TestSettings settings)
+    {
+        var launchTimeout = TimeSpan.FromSeconds(settings.App.LaunchTimeoutSeconds);
+
+        var already = app.Window("frm203001");
+        if (already is not null) return already;
+
+        if (app.Window("frm203002") is not null)
+            throw new InvalidOperationException(
+                "App đang đứng ở màn 診療入力 (frm203002) nên 患者選択 đang bị Hide(). " +
+                "Luồng này KHÔNG tự bấm F10 戻る để lùi về: F10 có thể bung " +
+                "「処置データは、変更されています。保存しますか？」 và trả lời nhầm là GHI THẬT " +
+                "xuống trn_trn. Đóng màn 診療入力 (không lưu) hoặc tắt hẳn MENU.exe rồi chạy lại.");
+
+        var menu = WaitForMainMenu(app, launchTimeout);
+        ClickPane(menu, "pnlBtn1", "業務 日常業務");
+        ClickPane(menu, "pnlMenu3", "メニュー 診療入力");
+
+        var patSelect = app.RequireWindow("frm203001", launchTimeout);
+        Waits.Step();
+        return patSelect;
     }
 
     private static Window WaitForMainMenu(OchaApp app, TimeSpan timeout)

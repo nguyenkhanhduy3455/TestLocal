@@ -108,6 +108,27 @@
     "//chkGrid": "Lưới một cột chứa từng câu lỗi, dòng cuối là 「----- 以上 -----」 (frm203002.cs:5214).",
     "chkGrid": "grdChek",
     "//chkCount": "Nhãn 件数 — TrnChk ghi list.Count + 「件」 (frm203002.cs:5219). Mốc ĐỘC LẬP với việc đọc lưới.",
-    "chkCount": "lbChk"
+    "chkCount": "lbChk",
+
+    "//patSel": "Màn 診療入力（患者選択） frm203001 — luồng Tests/PatientSelectAssign.",
+    "//patSelPatNo": "患者番号. Là ComboBox (lịch sử bệnh nhân) chứ không phải TextBox — khai báo ở LỚP CHA frm901001.Designer.cs:217.",
+    "patSelPatNo": "cboPatNo",
+    "//patSelGrid": "Lưới 受付患者一覧 / 本日来院一覧 / 患者検索一覧 — cũng ở lớp cha, frm901001.Designer.cs:153.",
+    "patSelGrid": "dgvView",
+    "//patSelDr": "Combo Ｄｒ．(user_kbn=0), frm203001.Designer.cs:122. Dòng index 0 là dòng TRỐNG (USER_NO=0).",
+    "patSelDr": "cboUserNm",
+    "//patSelStaff": "Combo 衛生士 (user_kbn=1), frm203001.Designer.cs:140.",
+    "patSelStaff": "cboStaffNm",
+    "//patSelStaffLabel": "Nhãn 衛生士 — Visible bị tắt khi DispEiseisi == 0 (frm203001.cs:542). Mốc DUY NHẤT đọc được cờ đó từ UI.",
+    "patSelStaffLabel": "lblStaffNm",
+
+    "//detailDrLabel": "Ｄｒ．trên header 処置入力. Là NHÃN chứ không phải combo: cboDr bị ẩn (frm203002.cs:2478), lbDr mang cboDr.Text (:427).",
+    "detailDrLabel": "lbDr",
+    "//detailStaffLabel": "衛生士 trên header 処置入力 — cùng kiểu nhãn như lbDr.",
+    "detailStaffLabel": "lbEiseisi",
+    "//detailDrCombo": "Combo Ｄｒ．của header 処置入力. Visible=false cho tới khi click nhãn lbDr (lbDr_Click, frm203002.cs:8087). Giữ 担当医 cho DÒNG THÊM MỚI — con số đóng dấu xuống TRNTRN.dr_no.",
+    "detailDrCombo": "cboDr",
+    "//detailStaffCombo": "Combo 衛生士 tương ứng, cùng kiểu ẩn/hiện như cboDr.",
+    "detailStaffCombo": "cboEiseisi"
   }
 }

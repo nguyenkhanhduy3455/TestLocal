@@ -1,3 +1,4 @@
+using FlaUI.Core.AutomationElements;
 using NUnit.Framework;
 using NUnit.Framework.Interfaces;
 using OchaCom.FlaUiTests.App;
@@ -88,6 +89,28 @@ public abstract class UiTestBase
     /// </summary>
     protected virtual void PrepareDataBeforeApp() { }
 
+    /// <summary>
+    /// Có tự đi tới 診療入力 (frm203002) trong <c>OneTimeSetUp</c> hay không.
+    ///
+    /// <para>Mặc định <b>true</b>: gần như mọi fixture ở đây đo màn 処置入力 nên nền
+    /// chung mở sẵn cho. Fixture nào ĐANG ĐO CHÍNH màn 患者選択 (frm203001) thì trả
+    /// <b>false</b> — nó cần đứng lại ở đó, và 患者確定 chính là thứ đang đo chứ không
+    /// phải bước chuẩn bị.</para>
+    ///
+    /// <para>Trả false thì <see cref="Screen"/> để NGUYÊN null: fixture tự lấy cửa sổ
+    /// bằng <c>AppNavigator.OpenPatientSelect</c>. Mọi chỗ dùng chung đụng tới
+    /// <c>Screen</c> (ảnh chụp cây UIA, <c>TreatmentScreenAlive</c>) đều đã né null.</para>
+    /// </summary>
+    protected virtual bool NavigatesToTreatmentEntry => true;
+
+    /// <summary>
+    /// Cửa sổ đem đổ cây UIA khi testcase đỏ. Mặc định là 診療入力 đang mở.
+    ///
+    /// <para>Fixture đứng ở màn khác override để cây đổ ra đúng cửa sổ đang đo —
+    /// đổ nhầm cửa sổ thì file <c>.uia.txt</c> vô dụng đúng lúc cần nó nhất.</para>
+    /// </summary>
+    protected virtual AutomationElement? UiaDumpRoot => Screen?.Window;
+
     [OneTimeSetUp]
     public void UiTestBaseOneTimeSetUp()
     {
@@ -132,13 +155,22 @@ public abstract class UiTestBase
                                              Settings.Run.NuisanceDialogButtons);
         _watcher.Start();
 
-        var window = AppNavigator.OpenTreatmentEntry(App, Settings);
-        Screen = new TreatmentEntryScreen(window, App.Automation);
-        Screen.WaitUntilReady();
-        WaitUntilAppResponsive();
+        if (NavigatesToTreatmentEntry)
+        {
+            var window = AppNavigator.OpenTreatmentEntry(App, Settings);
+            Screen = new TreatmentEntryScreen(window, App.Automation);
+            Screen.WaitUntilReady();
+            WaitUntilAppResponsive();
 
-        TestContext.Out.WriteLine($"診療入力 đã mở: 患者番号={Screen.PatientNo()} 年月={Screen.YearMonth()} " +
-                                  $"(ngày test {TrtDate:yyyy-MM-dd})");
+            TestContext.Out.WriteLine($"診療入力 đã mở: 患者番号={Screen.PatientNo()} 年月={Screen.YearMonth()} " +
+                                      $"(ngày test {TrtDate:yyyy-MM-dd})");
+        }
+        else
+        {
+            TestContext.Out.WriteLine(
+                $"Fixture tự điều hướng (NavigatesToTreatmentEntry = false) — nền chung KHÔNG mở 診療入力. " +
+                $"(ngày test {TrtDate:yyyy-MM-dd})");
+        }
         if (DbUnavailableReason is not null)
             TestContext.Out.WriteLine($"CẢNH BÁO — DB không dùng được: {DbUnavailableReason}");
     }
@@ -195,10 +227,19 @@ public abstract class UiTestBase
             // trên máy người khác là ngõ cụt.
             try
             {
-                var dumpPath = Path.Combine(
-                    ScreenshotDirectory(),
-                    $"{_testIndex:00}_{ShortName(ctx.Test.Name)}_{status}_{DateTime.Now:HHmmss}.uia.txt");
-                File.WriteAllText(dumpPath, Uia.DumpTree(Screen.Window));
+                var dumpRoot = UiaDumpRoot;
+                if (dumpRoot is null)
+                {
+                    TestContext.Out.WriteLine(
+                        "Không đổ được cây UIA: không có cửa sổ nào để đổ (UiaDumpRoot = null).");
+                }
+                else
+                {
+                    var dumpPath = Path.Combine(
+                        ScreenshotDirectory(),
+                        $"{_testIndex:00}_{ShortName(ctx.Test.Name)}_{status}_{DateTime.Now:HHmmss}.uia.txt");
+                    File.WriteAllText(dumpPath, Uia.DumpTree(dumpRoot));
+                }
             }
             catch (Exception e)
             {
@@ -278,7 +319,7 @@ public abstract class UiTestBase
     /// <summary>Cửa sổ 診療入力 hiện tại còn dùng được không (F9 làm nó đóng).</summary>
     protected bool TreatmentScreenAlive()
     {
-        try { return Uia.IsOnScreen(Screen.Window); }
+        try { return Screen is not null && Uia.IsOnScreen(Screen.Window); }
         catch { return false; }
     }
 
