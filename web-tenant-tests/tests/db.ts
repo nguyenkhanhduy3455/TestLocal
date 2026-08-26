@@ -1324,3 +1324,149 @@ export async function findMstTrt(onDate: string, trtCd: number): Promise<MstTrtR
         }))
     })
 }
+
+// ─── person (患者マスタ) — 担当医 / 衛生士 dùng làm fallback của 患者確定 ──────
+//
+// `frm203001.defData` lấy `person.dr` / `person.staff` khi combo Dr./衛生士 để
+// trống. Spec cần biết TRƯỚC giá trị thật của bệnh nhân mới assert được URL
+// `drNo=` — hardcode một số sẽ xanh giả ở dataset khác.
+//
+// BE map 0 → null khi trả ra API (PatInfoDataMapper.cs:42), nên ở đây 0 và null
+// đều được coi là "chưa gán" và trả về `null`.
+
+export interface PersonAttending {
+    /** `person.att_dr` — 0 / null đều thành null. */
+    attDr: number | null
+    /** `person.att_st` — 0 / null đều thành null. Lưu ý 100 là 無所属「－」, KHÔNG phải chưa gán. */
+    attSt: number | null
+}
+
+/** Đọc 担当医 / 衛生士 của một bệnh nhân. `null` = không có dòng person. */
+export async function personAttending(patNo: number): Promise<PersonAttending | null> {
+    return withDb(async (c) => {
+        const r = await c.query<{ att_dr: number | null; att_st: number | null }>(
+            `SELECT att_dr, att_st FROM view_person_active WHERE pat_no = $1 LIMIT 1`,
+            [patNo],
+        )
+        const row = r.rows[0]
+        if (!row) return null
+        const norm = (v: number | null) => (v === null || Number(v) === 0 ? null : Number(v))
+        return { attDr: norm(row.att_dr), attSt: norm(row.att_st) }
+    })
+}
+
+/** Một 患者番号 CÓ 担当医 và một 患者番号 KHÔNG có — hai nhánh của E00027「ドクター」. */
+export async function findPatientsByAttDr(): Promise<{ withDr: number | null; withoutDr: number | null }> {
+    return withDb(async (c) => {
+        const withDr = await c.query<{ pat_no: number }>(
+            `SELECT pat_no FROM view_person_active WHERE COALESCE(att_dr, 0) > 0 ORDER BY pat_no LIMIT 1`,
+        )
+        const withoutDr = await c.query<{ pat_no: number }>(
+            `SELECT pat_no FROM view_person_active WHERE COALESCE(att_dr, 0) = 0 ORDER BY pat_no LIMIT 1`,
+        )
+        return {
+            withDr: withDr.rows[0] ? Number(withDr.rows[0].pat_no) : null,
+            withoutDr: withoutDr.rows[0] ? Number(withoutDr.rows[0].pat_no) : null,
+        }
+    })
+}
+
+// ─── wait (受付一覧) — seed một dòng tiếp nhận để kiểm nhánh `user_no` của dòng ─
+//
+// Nhánh này của `frm203001.defData` (:697-701) chỉ chạy khi mở bệnh nhân TỪ
+// 受付患者一覧, mà bảng `wait` ở máy dev thường rỗng. Seed một dòng của chính
+// test rồi xoá CỨNG trong afterAll — dòng do test tạo nên không đụng dữ liệu
+// thật, và xoá cứng (không phải soft-delete) để 受付一覧 sạch đúng như trước.
+//
+// `rdate` để NOW(): cột này vừa là thứ tự sắp xếp vừa là gốc tính 待ち時間.
+
+export interface EnsuredWaitRow {
+    /** id của dòng 受付 đang đứng trên lưới. */
+    id: string
+    /** `user_no` THẬT của dòng đó — có thể khác giá trị xin seed (xem `created`). */
+    userNo: number | null
+    /** true = dòng do lần chạy này tạo ⇒ afterAll được phép xoá. */
+    created: boolean
+}
+
+/**
+ * Bảo đảm có một dòng 受付 cho bệnh nhân, KHÔNG đụng dòng của người khác.
+ *
+ * `ux_wait_active` là unique theo `pat_no` trên các dòng còn sống, nên INSERT
+ * thẳng sẽ vỡ khi bệnh nhân đó đã được tiếp nhận thật, hoặc khi hai worker chạy
+ * song song (`--repeat-each` mặc định 3 worker) cùng seed một bệnh nhân. Vì thế:
+ * có sẵn thì DÙNG LẠI và trả về `user_no` thật của nó, chưa có thì INSERT.
+ *
+ * `created` quyết định quyền xoá: chỉ dòng do chính lần chạy này tạo mới được
+ * `deleteWaitRows`, dòng có sẵn phải giữ nguyên.
+ */
+export async function ensureWaitRow(patNo: number, userNo: number | null): Promise<EnsuredWaitRow> {
+    return withDb(async (c) => {
+        const existing = async () =>
+            (
+                await c.query<{ id: string; user_no: number | null }>(
+                    `SELECT id, user_no FROM wait WHERE pat_no = $1 AND deleted_at IS NULL LIMIT 1`,
+                    [patNo],
+                )
+            ).rows[0]
+
+        const before = await existing()
+        if (before) {
+            return { id: String(before.id), userNo: before.user_no === null ? null : Number(before.user_no), created: false }
+        }
+        try {
+            const r = await c.query<{ id: string }>(
+                `INSERT INTO wait (pat_no, user_no, rdate) VALUES ($1, $2, NOW()) RETURNING id`,
+                [patNo, userNo],
+            )
+            return { id: String(r.rows[0]!.id), userNo, created: true }
+        } catch {
+            // Worker khác chèn xen vào giữa SELECT và INSERT — đọc lại dòng của họ.
+            const after = await existing()
+            if (!after) throw new Error(`không tạo được dòng 受付 cho bệnh nhân ${patNo}`)
+            return { id: String(after.id), userNo: after.user_no === null ? null : Number(after.user_no), created: false }
+        }
+    })
+}
+
+/** Xoá cứng các dòng 受付 do test tạo. Trả về số dòng đã xoá. */
+export async function deleteWaitRows(ids: readonly string[]): Promise<number> {
+    if (ids.length === 0) return 0
+    return withDb(async (c) => {
+        const r = await c.query(`DELETE FROM wait WHERE id = ANY($1::uuid[])`, [ids])
+        return r.rowCount ?? 0
+    })
+}
+
+/**
+ * Một 患者番号 CÓ 担当医 nhưng KHÔNG có 衛生士 — nhánh E00027「衛生士」.
+ *
+ * Phải có 担当医 thì mới tới được bước kiểm 衛生士: `resolveStaffAssignment`
+ * chặn ở 担当医 trước. `null` = dataset không có bệnh nhân nào như vậy.
+ * Lưu ý 100 là 無所属「－」 chứ KHÔNG phải chưa gán, nên chỉ 0/null mới tính.
+ */
+export async function findPatientWithoutAttSt(): Promise<number | null> {
+    return withDb(async (c) => {
+        const r = await c.query<{ pat_no: number }>(
+            `SELECT pat_no
+               FROM view_person_active
+              WHERE COALESCE(att_dr, 0) > 0 AND COALESCE(att_st, 0) = 0
+              ORDER BY pat_no
+              LIMIT 1`,
+        )
+        return r.rows[0] ? Number(r.rows[0].pat_no) : null
+    })
+}
+
+/** Danh sách Ｄｒ．(user_kbn=0) đúng như dropdown 担当医 nạp, theo user_no tăng dần. */
+export async function listDoctors(): Promise<{ userNo: number; userNm: string }[]> {
+    return withDb(async (c) => {
+        const r = await c.query<{ user_no: number; user_nm: string }>(
+            `SELECT user_no, user_nm
+               FROM view_clinic_user_active
+              WHERE user_kbn = 0
+              ORDER BY user_no`,
+        )
+        return r.rows.map((x) => ({ userNo: Number(x.user_no), userNm: String(x.user_nm ?? '').trim() }))
+    })
+}
