@@ -41,7 +41,7 @@ import { ADMIN_USER, JA } from './test-data'
  *        cũ (DataGridView mang CurrentRow theo row object).
  *      · Header 病検 `grid-cols-[44px_270px_1fr]` (:1002), ガイド `[40px_1fr]`
  *        (:1089), パック `[35px_1fr]` (:1135), 個別
- *        `[200px_48px_66px_48px_60px_48px]` (KOBE_GRID_CLASS :53).
+ *        `[174px_48px_66px_48px_60px_48px]` (KOBE_GRID_CLASS :53).
  *      · Dòng đang sáng: nền `bg-[#ffffc0]`. Ô 選択№: `input[data-side-anchor]`.
  *
  * ─── LUẬT RIÊNG CỦA BỘ TEST NÀY ─────────────────────────────────────────────
@@ -97,7 +97,7 @@ const TABS: Record<TabName, TabCfg> = {
   個別: {
     tab: '個別',
     rowSel:
-      'div[class*="grid-cols-[200px_48px_66px_48px_60px_48px]"][class*="cursor-pointer"]',
+      'div[class*="grid-cols-[174px_48px_66px_48px_60px_48px]"][class*="cursor-pointer"]',
     headers: ['処置名称', '一般', '50/100', '訪問', 'コード', '枝番'],
     virtual: true,
   },
@@ -197,6 +197,26 @@ test.describe('SidePanel — 見出しクリックの並べ替え (frm203002 4�
     }
   }
 
+  /**
+   * Lưới của tab không được rộng hơn vùng cuộn của nó.
+   *
+   * Nới cột cho vừa icon sort mà quên tổng bề rộng thì panel sinh thanh cuộn
+   * ngang: vừa bấm một cột bên phải là cột 処置名称 bị cắt mất chữ. Chỉ có
+   * 処置名称 co được, nên nó phải gánh phần dôi ra.
+   */
+  async function expectNoHorizontalScroll(cfg: TabCfg) {
+    const over = await headerCell(cfg.headers[0] ?? '').evaluate((el) => {
+      const row = el.parentElement as HTMLElement
+      const scroller = row.parentElement as HTMLElement
+      return scroller.scrollWidth - scroller.clientWidth
+    })
+    expect(
+      over,
+      `${cfg.tab}: lưới rộng hơn vùng cuộn ${over}px → panel cuộn ngang, cột đầu bị cắt. ` +
+        `Co 処置名称 trong KOBE_COLS (treatment-side-panel.tsx) cho vừa.`,
+    ).toBeLessThanOrEqual(1)
+  }
+
   /** Đọc (№, chữ ở cột `textIdx`) của mọi dòng đang render. */
   async function readRows(cfg: TabCfg, textIdx: number) {
     return rowsOf(cfg).evaluateAll(
@@ -234,7 +254,9 @@ test.describe('SidePanel — 見出しクリックの並べ替え (frm203002 4�
     await expect(rows.first().or(page.getByText(/未登録|該当なし/))).toBeVisible({
       timeout: 60000,
     })
-    return rows.count()
+    const n = await rows.count()
+    await expectNoHorizontalScroll(cfg)
+    return n
   }
 
   /** Bấm một tiêu đề rồi chờ aria-sort đổi sang trạng thái mong muốn. */
