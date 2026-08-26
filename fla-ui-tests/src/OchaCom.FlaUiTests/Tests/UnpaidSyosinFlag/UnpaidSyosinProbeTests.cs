@@ -213,30 +213,21 @@ public sealed class UnpaidSyosinProbeTests : UiTestBase
                     $"{pick.ExpectedSflg} ({pick.Why})");
             _flow.FocusRow(row, trace);
 
-            // ĐI HẾT chuỗi, KHÔNG dừng ở cổng ngày — đây là điểm khác AccountingFocusedDay.
-            // Dùng lại bộ luật của AccountingFlow: nó đã biết trả lời 保存/チェック/日付/
-            // 既存会計, và nhận ra cửa sổ 入金指定 của nhánh 「chưa có 会計データ」.
-            var walk = AccountingFlow.WalkToChgAccData(App, Screen.Window, trace);
+            // ĐI HẾT chuỗi và luôn chọn nhánh TẠO 未精算.
+            //
+            // KHÔNG dùng AccountingFlow.WalkToChgAccData: bộ luật của lớp đó trả lời
+            // 「いいえ」 cho 「…未清算データ…作成してよろしいですか?」 — đúng cho mục tiêu
+            // của nó (会計データ修正) nhưng ngược hẳn mục tiêu ở đây. Đo 2026-08-26:
+            // chuỗi đi trọn 3 hộp thoại, tới 会計データ修正, mà UNPAID vẫn 0 dòng.
+            var walk = UnpaidCreationFlow.PressF8AndCreateUnpaid(App, Screen.Window, trace);
 
-            Kq("4", $"chuỗi hộp thoại ĐẦY ĐỦ ({walk.Trail.Count} cái), tới đích 会計データ修正: " +
-                    $"{walk.Reached}");
+            Kq("4", $"chuỗi hộp thoại ĐẦY ĐỦ ({walk.Trail.Count} cái); có gặp câu " +
+                    $"「作成してよろしいですか」 không: {walk.SawCreateUnpaid}");
             for (var i = 0; i < walk.Trail.Count; i++)
-            {
-                var s = walk.Trail[i];
-                Log($"        [{i + 1}] 「{s.Text}」 nút=[{string.Join(", ", s.Buttons)}] " +
-                    $"→ bấm 「{s.Answered}」");
-            }
-            if (walk.Diagnosis is not null) Log("        chẩn đoán: " + walk.Diagnosis);
+                Log($"        [{i + 1}] {walk.Trail[i]}");
+            Log("        chẩn đoán: " + walk.Explain);
 
             trace.Shot("01-sau-chuoi-f8");
-
-            // Đích 会計データ修正 thì KHÔNG bấm — nó sửa ACCDAT/PERSON_EXP (sổ tiền), ngoài
-            // phạm vi luồng này. Chỉ cần biết UNPAID đã được ghi hay chưa.
-            if (walk.Reached && walk.Target is not null)
-            {
-                Log("        tới 会計データ修正 — KHÔNG trả lời, đóng lại (ngoài phạm vi luồng này)");
-                Dialogs.ClickButton(walk.Target, "いいえ", "No", "キャンセル", "Cancel");
-            }
 
             _flow.LeaveCounterPaymentIfOpen(trace);
             Thread.Sleep(800);
