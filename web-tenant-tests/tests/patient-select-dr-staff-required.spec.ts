@@ -4,6 +4,7 @@ import {
     dbEnabled,
     deleteWaitRows,
     ensureWaitRow,
+    findPatientWithTrnThisMonth,
     findPatientWithoutAttSt,
     findPatientsByAttDr,
     listDoctors,
@@ -121,6 +122,12 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
     let waitUserNo: number | null = null
     /** id các dòng `wait` do test tạo — afterAll xoá đúng chừng này. */
     const seededWaitIds: string[] = []
+    /** Bệnh nhân CÓ 処置 mang dr_no > 0 trong tháng hiện tại — dựng nhánh seed từ TRN. */
+    let trnPatient: { patNo: number; trnDrNos: number[]; attDr: number | null } | null = null
+    /** Ｄｒ．chọn tay cho TC-SEED-1: KHÁC mọi dr_no trong TRN và khác att_dr. */
+    let seedProbeDoctor: { userNo: number; userNm: string } | null = null
+    /** Tên hiển thị của các Ｄｒ．— để đối chiếu nhãn combo trên header màn chi tiết. */
+    let doctorNameOf = new Map<number, string>()
 
     // ── Locator dùng lại ─────────────────────────────────────────────────────
 
@@ -147,6 +154,16 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
      */
     function staffSelect(label: 'Dr.' | '衛生士'): Locator {
         return page.getByText(`${label}:`, { exact: true }).locator('..').getByRole('combobox')
+    }
+
+    /**
+     * Combo Ｄｒ．trên HEADER màn 処置入力.
+     *
+     * Nhãn ở đây là `Dr` (patient-info-header.tsx) chứ không phải `Dr.` như màn
+     * 患者選択 — hai màn dùng chung StaffSelect nhưng truyền label khác nhau.
+     */
+    function detailDrSelect(): Locator {
+        return page.getByText('Dr:', { exact: true }).locator('..').getByRole('combobox')
     }
 
     /**
@@ -246,7 +263,16 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
 
         // Ｄｒ．chọn tay và `wait.user_no` phải KHÁC att_dr, nếu không thì assert
         // "combo/dòng thắng 患者マスタ" xanh cả khi fallback chạy sai thứ tự.
-        const doctors = (await listDoctors()).filter((d) => d.userNo !== attDrOfPatWithDr)
+        const allDoctors = await listDoctors()
+        doctorNameOf = new Map(allDoctors.map((d) => [d.userNo, d.userNm]))
+        trnPatient = await findPatientWithTrnThisMonth()
+        if (trnPatient) {
+            // Phải khác MỌI dr_no của tháng và khác att_dr, nếu không thì không
+            // phân biệt được "seed từ TRN" với "seed từ màn chọn".
+            const taken = new Set<number>([...trnPatient.trnDrNos, trnPatient.attDr ?? -1])
+            seedProbeDoctor = allDoctors.find((d) => d.userNo > 0 && !taken.has(d.userNo)) ?? null
+        }
+        const doctors = allDoctors.filter((d) => d.userNo !== attDrOfPatWithDr)
         expect(doctors.length, 'cần ít nhất 2 Ｄｒ．khác nhau để phân biệt nguồn của drNo').toBeGreaterThan(1)
         pickedDoctor = doctors[0]!
 
@@ -263,6 +289,12 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
                 `patWithoutDr=${patWithoutDr ?? 'KHÔNG CÓ'}, patWithoutSt=${patWithoutSt ?? 'KHÔNG CÓ'}, ` +
                 `combo Dr.=${pickedDoctor.userNo}「${pickedDoctor.userNm}」, ` +
                 `wait.user_no=${waitUserNo ?? 'NULL'}${wait.created ? ' (test seed)' : ' (dòng có sẵn)'}`,
+        )
+        console.log(
+            trnPatient
+                ? `TRN tháng này: 患者${trnPatient.patNo} dr_no=[${trnPatient.trnDrNos.join(',')}] ` +
+                      `att_dr=${trnPatient.attDr ?? 'NULL'} → Ｄｒ．dò=${seedProbeDoctor?.userNo ?? 'KHÔNG CÓ'}`
+                : 'TRN tháng này: KHÔNG có bệnh nhân nào → TC-SEED-1 sẽ skip',
         )
 
         page = await browser.newPage({
@@ -498,5 +530,55 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
         await step()
 
         await backToList()
+    })
+
+    // ── Seed Ｄｒ．ở HEADER màn 処置入力 ─────────────────────────────────────
+
+    test('TC-SEED-1 — header 処置入力 giữ Ｄｒ．vừa chọn, KHÔNG lấy dr_no của dòng TRN cũ', async () => {
+        skipWithReason(
+            trnPatient === null,
+            'không có bệnh nhân nào có 処置 mang dr_no > 0 trong tháng hiện tại — ' +
+                'không dựng được trạng thái mà bug cũ lộ ra',
+        )
+        skipWithReason(
+            seedProbeDoctor === null,
+            `mọi Ｄｒ．đều đã xuất hiện trong TRN/att_dr của 患者${trnPatient?.patNo} — ` +
+                'không còn giá trị nào để phân biệt hai nguồn seed',
+        )
+
+        // Bản CŨ: `pickFirstNonDefault(currentMonthMapper.items, 'drNo')` thắng
+        // props, nên header hiện Ｄｒ．của lần khám trước dù người dùng vừa chọn
+        // người khác — và mọi dòng thêm mới bị đóng dấu số đó khi F9 登録.
+        await clearPatNo()
+        await pickDoctor(seedProbeDoctor!.userNm)
+        await typePatNo(String(trnPatient!.patNo))
+        await page.keyboard.press('End')
+
+        await expect(page).toHaveURL(detailUrlWithDr(trnPatient!.patNo, seedProbeDoctor!.userNo), {
+            timeout: 30000,
+        })
+
+        // Đây mới là assert của #2: URL đúng từ trước bản vá (nó đọc combo),
+        // cái sai nằm ở HEADER màn chi tiết.
+        await expect(
+            detailDrSelect(),
+            `header lấy Ｄｒ．từ dòng TRN cũ (dr_no=[${trnPatient!.trnDrNos.join(',')}]) ` +
+                `thay vì Ｄｒ．${seedProbeDoctor!.userNo} vừa chọn ở màn 患者選択`,
+        ).toHaveText(seedProbeDoctor!.userNm, { timeout: 30000 })
+
+        // Nói thẳng ra tên của các Ｄｒ．trong TRN để log đọc được khi hỏng.
+        for (const drNo of trnPatient!.trnDrNos) {
+            const nm = doctorNameOf.get(drNo)
+            if (!nm || nm === seedProbeDoctor!.userNm) continue
+            await expect(detailDrSelect(), `header đang hiện Ｄｒ．của TRN 「${nm}」`).not.toHaveText(nm)
+        }
+        console.log(
+            `患者${trnPatient!.patNo} (TRN dr_no=[${trnPatient!.trnDrNos.join(',')}]) → ` +
+                `header giữ 「${seedProbeDoctor!.userNm}」`,
+        )
+        await step()
+
+        await backToList()
+        await clearDoctor()
     })
 })

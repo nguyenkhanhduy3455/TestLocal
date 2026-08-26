@@ -1470,3 +1470,47 @@ export async function listDoctors(): Promise<{ userNo: number; userNm: string }[
         return r.rows.map((x) => ({ userNo: Number(x.user_no), userNm: String(x.user_nm ?? '').trim() }))
     })
 }
+
+// ─── trn_trn — bệnh nhân CÓ 処置 trong THÁNG đang mở ──────────────────────────
+//
+// Cần cho nhánh "seed Ｄｒ．từ TRN cũ": bug chỉ lộ ra khi màn 処置入力 mở đúng
+// vào tháng mà bệnh nhân đã có dòng mang `dr_no > 0`. Màn chi tiết lấy tháng từ
+// `trtDt` trên URL, mà 患者選択 mặc định là HÔM NAY, nên tháng cần dò là tháng
+// hiện tại.
+
+export interface PatientWithTrnThisMonth {
+    patNo: number
+    /** Các `dr_no > 0` xuất hiện trong tháng — giá trị mà bản CŨ có thể seed nhầm. */
+    trnDrNos: number[]
+    /** `person.att_dr` (0/null → null). */
+    attDr: number | null
+}
+
+/**
+ * Bệnh nhân đầu tiên có 処置 mang `dr_no > 0` trong tháng hiện tại.
+ * `null` = dataset không có ⇒ testcase tự skip vì không dựng được trạng thái.
+ */
+export async function findPatientWithTrnThisMonth(): Promise<PatientWithTrnThisMonth | null> {
+    return withDb(async (c) => {
+        const r = await c.query<{ pat_no: number; dr_nos: number[]; att_dr: number | null }>(
+            `SELECT t.pat_no,
+                    ARRAY_AGG(DISTINCT t.dr_no) FILTER (WHERE t.dr_no > 0) AS dr_nos,
+                    MAX(p.att_dr)                                          AS att_dr
+               FROM view_trn_trn_active t
+               JOIN view_person_active p ON p.pat_no = t.pat_no
+              WHERE t.trt_dt >= date_trunc('month', CURRENT_DATE)
+                AND t.trt_dt <  date_trunc('month', CURRENT_DATE) + interval '1 month'
+              GROUP BY t.pat_no
+             HAVING COUNT(*) FILTER (WHERE t.dr_no > 0) > 0
+              ORDER BY t.pat_no
+              LIMIT 1`,
+        )
+        const row = r.rows[0]
+        if (!row) return null
+        return {
+            patNo: Number(row.pat_no),
+            trnDrNos: (row.dr_nos ?? []).map(Number),
+            attDr: row.att_dr === null || Number(row.att_dr) === 0 ? null : Number(row.att_dr),
+        }
+    })
+}
