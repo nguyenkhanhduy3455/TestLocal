@@ -161,11 +161,17 @@ public sealed class UnpaidSyosinFlagTests : UiTestBase
     {
         using var trace = TestTrace.Begin();
 
-        var day = RequireDbOrIgnore().DayOracles(PatNo, TrtDate).FirstOrDefault(o => o.HasFirstVisitTreat);
+        var all = RequireDbOrIgnore().DayOracles(PatNo, TrtDate);
+        foreach (var o in all) TestContext.Out.WriteLine("        " + o);
+
+        // Tiêu chí CHỌN NGÀY chép nguyên từ spec web để hai bên tự chọn CÙNG một ngày.
+        var day = all.FirstOrDefault(o => o.UsableAsFirstVisitCase);
         if (day is null)
             IgnoreWithReason(
-                $"tháng {TrtDate:yyyy-MM} của bệnh nhân {PatNo} không có ngày nào mang 初診 " +
-                "(100/0, 100/1, 107/0, 333/50, 333/55 — Check.cs:12456).");
+                $"tháng {TrtDate:yyyy-MM} của bệnh nhân {PatNo} không có ngày nào CHỈ có 初診 " +
+                "và CHƯA quyết toán. Ngày vừa có 初診 vừa có 再診 thì kết quả phụ thuộc luật " +
+                "「hit đầu tiên thắng」 (biến khác), còn ngày đã 会計済 thì bung hộp 既存会計 và " +
+                "đụng dữ liệu đã chốt — spec web cũng bỏ qua hai loại đó. Xem bảng ngày ở trên.");
 
         TestContext.Out.WriteLine($"ORACLE: {day}");
         var rows = RunF8On(day!, trace);
@@ -199,9 +205,14 @@ public sealed class UnpaidSyosinFlagTests : UiTestBase
     {
         using var trace = TestTrace.Begin();
 
-        var day = RequireDbOrIgnore().DayOracles(PatNo, TrtDate).FirstOrDefault(o => !o.HasFirstVisitTreat);
+        var all = RequireDbOrIgnore().DayOracles(PatNo, TrtDate);
+        foreach (var o in all) TestContext.Out.WriteLine("        " + o);
+
+        var day = all.FirstOrDefault(o => o.UsableAsRevisitCase);
         if (day is null)
-            IgnoreWithReason($"tháng {TrtDate:yyyy-MM} không có ngày nào CHỈ có 再診.");
+            IgnoreWithReason(
+                $"tháng {TrtDate:yyyy-MM} không có ngày nào CHỈ có 再診, không có 文言 初診扱い, " +
+                "và chưa quyết toán. Xem bảng ngày ở trên.");
 
         // Sức chứng minh của testcase này nằm ở chỗ quá khứ ĐÃ CÓ 初診: khi đó một bản
         // port lẫn hai điều kiện (dùng 「quá khứ có 初診」 để quyết định thay vì để phân

@@ -94,15 +94,32 @@ public sealed class UnpaidSyosinDb
     /// <param name="PastSyosinCount">Số dòng 初診 TRƯỚC đầu tháng (getKaikeiPastSyosinCnt).</param>
     /// <param name="ExpectedSflg">1 / 2 / 3 theo modAcc.cs:465-476.</param>
     public sealed record DayOracle(
-        DateTime Date, int Day, bool HasFirstVisitTreat, int PastSyosinCount, int ExpectedSflg)
+        DateTime Date, int Day, bool HasFirstVisitTreat, bool HasRevisitTreat,
+        bool HasPhrase, bool Settled, int PastSyosinCount, int ExpectedSflg)
     {
+        /// <summary>
+        /// Ngày dùng được cho testcase 初診: CHỈ có 初診 và CHƯA quyết toán.
+        ///
+        /// <para>Tiêu chí chép nguyên từ spec web (<c>unpaid-syosin-flg.spec.ts</c>,
+        /// <c>readMonthDays</c>) để hai bên tự chọn CÙNG một ngày mà không phải ghim
+        /// cứng. Ngày vừa có 初診 vừa có 再診 thì kết quả phụ thuộc luật 「hit đầu tiên
+        /// thắng」 — một biến khác, không nên trộn vào phép đo này. Ngày đã quyết toán
+        /// thì bung hộp 既存会計 và đụng dữ liệu 会計 đã chốt.</para>
+        /// </summary>
+        public bool UsableAsFirstVisitCase => HasFirstVisitTreat && !HasRevisitTreat && !Settled;
+
+        /// <summary>Ngày dùng được cho testcase 再診: chỉ 再診, không 初診, không 文言, chưa quyết toán.</summary>
+        public bool UsableAsRevisitCase =>
+            HasRevisitTreat && !HasFirstVisitTreat && !HasPhrase && !Settled;
+
         public string Why => HasFirstVisitTreat
             ? $"ngày có 初診 + {PastSyosinCount} dòng 初診 trước tháng ⇒ " +
               (PastSyosinCount == 0 ? "1 (初診)" : "3 (再初診)")
             : "ngày KHÔNG có 初診 ⇒ 2 (再診)";
 
         public override string ToString() =>
-            $"ngày {Day,2} ({Date:yyyy-MM-dd}): sflg kỳ vọng = {ExpectedSflg}  — {Why}";
+            $"ngày {Day,2} ({Date:yyyy-MM-dd}): 初診={HasFirstVisitTreat} 再診={HasRevisitTreat} " +
+            $"文言={HasPhrase} 会計済={Settled} ⇒ sflg kỳ vọng = {ExpectedSflg}  — {Why}";
     }
 
     /// <summary>
@@ -127,19 +144,42 @@ public sealed class UnpaidSyosinDb
 
         using var con = Open();
         using var cmd = Cmd(con,
+            // Câu này chép nguyên tiêu chí của `readMonthDays` bên spec web để hai bộ
+            // test tự chọn CÙNG một ngày. Khác một chữ là hai bên đo hai ngày khác nhau
+            // và bảng đối chiếu mất nghĩa — đã dính thật 2026-08-26: WinForm chọn ngày
+            // đã 会計済 còn web bỏ qua nó, nên cặp TC-SFLG-1 không đối chiếu được.
             """
-            SELECT CAST(trt_dt AS date) AS d,
-                   SUM(CASE WHEN (trt_cd = 100 AND trt_sb IN (0, 1))
-                             OR (trt_cd = 107 AND trt_sb = 0)
-                             OR (trt_cd = 333 AND trt_sb IN (50, 55))
-                            THEN 1 ELSE 0 END) AS shoshin_rows
-              FROM TRNTRN
-             WHERE pat_no = @p
-               AND ISNULL(del_flg, 0) = 0
-               AND trt_dt >= @from
-               AND trt_dt <  DATEADD(month, 1, @from)
-             GROUP BY CAST(trt_dt AS date)
-             ORDER BY CAST(trt_dt AS date)
+            -- `settled` phải tính NGOÀI khối GROUP BY.
+            -- SQL Server không cho EXISTS(...) nằm trong hàm gộp:
+            -- 「Cannot perform an aggregate function on an expression containing an
+            -- aggregate or a subquery」. Bên Postgres viết `bool_or(...)` cạnh một
+            -- EXISTS ở SELECT ngoài thì được, chép thẳng sang đây là hỏng — đã dính
+            -- thật 2026-08-26. Nên gộp trước, hỏi ACCDAT sau, đúng như CTE của spec web.
+            SELECT d.d, d.has_syosin, d.has_saisin, d.has_phrase,
+                   CASE WHEN EXISTS (SELECT 1 FROM ACCDAT a
+                                      WHERE a.pat_no = @p AND a.trt_dt = d.d)
+                        THEN 1 ELSE 0 END AS settled
+              FROM (
+                   SELECT CAST(t.trt_dt AS date) AS d,
+                          MAX(CASE WHEN (t.trt_cd = 100 AND t.trt_sb IN (0, 1))
+                                    OR (t.trt_cd = 107 AND t.trt_sb = 0)
+                                    OR (t.trt_cd = 333 AND t.trt_sb IN (50, 55))
+                                   THEN 1 ELSE 0 END) AS has_syosin,
+                          MAX(CASE WHEN t.trt_cd = 110 OR (t.trt_cd = 107 AND t.trt_sb = 1)
+                                   THEN 1 ELSE 0 END) AS has_saisin,
+                          MAX(CASE WHEN ISNULL(t.dsp_trt, '') LIKE N'%健診より%'
+                                    OR ISNULL(t.dsp_trt, '') LIKE N'%検診より%'
+                                    OR ISNULL(t.dsp_trt, '') LIKE N'%自費より%'
+                                    OR ISNULL(t.dsp_trt, '') LIKE N'%健康診断の結果に基づき治療開始%'
+                                   THEN 1 ELSE 0 END) AS has_phrase
+                     FROM TRNTRN t
+                    WHERE t.pat_no = @p
+                      AND ISNULL(t.del_flg, 0) = 0
+                      AND t.trt_dt >= @from
+                      AND t.trt_dt <  DATEADD(month, 1, @from)
+                    GROUP BY CAST(t.trt_dt AS date)
+                   ) d
+             ORDER BY d.d
             """);
         cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
         cmd.Parameters.Add("@from", SqlDbType.DateTime).Value = firstOfMonth;
@@ -149,11 +189,14 @@ public sealed class UnpaidSyosinDb
         while (reader.Read())
         {
             var d = Convert.ToDateTime(reader["d"]);
-            var hasFirst = Convert.ToInt32(reader["shoshin_rows"]) > 0;
+            var hasFirst = Convert.ToInt32(reader["has_syosin"]) > 0;
+            var hasRevisit = Convert.ToInt32(reader["has_saisin"]) > 0;
+            var hasPhrase = Convert.ToInt32(reader["has_phrase"]) > 0;
+            var settled = Convert.ToInt32(reader["settled"]) > 0;
             var expected = hasFirst
                 ? (past == 0 ? SyosinFirstVisit : SyosinReFirstVisit)
                 : SyosinRevisit;
-            rows.Add(new DayOracle(d, d.Day, hasFirst, past, expected));
+            rows.Add(new DayOracle(d, d.Day, hasFirst, hasRevisit, hasPhrase, settled, past, expected));
         }
         return rows;
     }
