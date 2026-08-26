@@ -573,7 +573,7 @@ test.describe('診療入力 — dialog mở bằng 1 phím / 1 click', () => {
         await showAll.click()
         await page.waitForTimeout(1000)
       }
-      const guideRows = page.locator('div[class*="grid-cols-[40px_1fr]"]')
+      const guideRows = page.locator('div[class*="grid-cols-[46px_1fr]"]')
       const guideTitle = page.getByText('ガイド処置選択')
 
       const total = Math.min(await guideRows.count(), 12)
@@ -813,7 +813,7 @@ test.describe('診療入力 — chuỗi nhập 処置 (GHI DỮ LIỆU THẬT)',
       expect(await changeBtn.count(), 'không thấy nút 変更 ở panel 病検').toBeGreaterThan(0)
       await changeBtn.click()
 
-      const byoRows = page.locator('div[class*="grid-cols-[40px_270px_1fr]"]')
+      const byoRows = page.locator('div[class*="grid-cols-[44px_270px_1fr]"]')
       await expect(byoRows.nth(1), 'panel 病検 chưa có dòng nào — đổi TEST_PAT_NO').toBeVisible({
         timeout: 20000,
       })

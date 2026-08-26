@@ -421,7 +421,7 @@ test.describe('診療入力 — 行単位 診療チェック W00100 (SingleChk)'
         ryoCells = page.locator('[data-grid-cell$="|2"]')
         sidePanel = page.locator('div[class*="w-[450px]"]').first()
         guideRows = sidePanel.locator(
-            'div[class*="grid-cols-[40px_1fr]"][class*="cursor-pointer"]',
+            'div[class*="grid-cols-[46px_1fr]"][class*="cursor-pointer"]',
         )
 
         await expect(footerTen, 'không thấy ô 点 của dòng 日計').toBeVisible({ timeout: 30000 })

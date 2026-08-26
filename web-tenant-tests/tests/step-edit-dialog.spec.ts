@@ -272,8 +272,8 @@ const DIS_CD_TO_BUI_IDX: Readonly<Record<number, number>> = {
 const BYOU_SCAN_LIMIT = 6
 
 /** Dòng tab 病検 / ガイド (treatment-side-panel.tsx). */
-const BYOU_ROW_SEL = 'div[class*="grid-cols-[40px_270px_1fr]"][class*="cursor-pointer"]'
-const GUID_ROW_SEL = 'div[class*="grid-cols-[40px_1fr]"][class*="cursor-pointer"]'
+const BYOU_ROW_SEL = 'div[class*="grid-cols-[44px_270px_1fr]"][class*="cursor-pointer"]'
+const GUID_ROW_SEL = 'div[class*="grid-cols-[46px_1fr]"][class*="cursor-pointer"]'
 
 interface SaveGridBody {
     rows: number[][]

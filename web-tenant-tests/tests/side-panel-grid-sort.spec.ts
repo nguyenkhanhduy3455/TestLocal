@@ -39,9 +39,9 @@ import { ADMIN_USER, JA } from './test-data'
  *        no-op (đã là thứ tự BE), giảm dần mới đảo.
  *      · `useHighlightFollowsSort` (:269) — sort xong dòng đang sáng vẫn là dòng
  *        cũ (DataGridView mang CurrentRow theo row object).
- *      · Header 病検 `grid-cols-[40px_270px_1fr]` (:1002), ガイド `[40px_1fr]`
+ *      · Header 病検 `grid-cols-[44px_270px_1fr]` (:1002), ガイド `[40px_1fr]`
  *        (:1089), パック `[35px_1fr]` (:1135), 個別
- *        `[200px_45px_45px_45px_56px_40px]` (KOBE_GRID_CLASS :53).
+ *        `[200px_48px_66px_48px_60px_48px]` (KOBE_GRID_CLASS :53).
  *      · Dòng đang sáng: nền `bg-[#ffffc0]`. Ô 選択№: `input[data-side-anchor]`.
  *
  * ─── LUẬT RIÊNG CỦA BỘ TEST NÀY ─────────────────────────────────────────────
@@ -81,12 +81,12 @@ interface TabCfg {
 const TABS: Record<TabName, TabCfg> = {
   病検: {
     tab: '病検',
-    rowSel: 'div[class*="grid-cols-[40px_270px_1fr]"][class*="cursor-pointer"]',
+    rowSel: 'div[class*="grid-cols-[44px_270px_1fr]"][class*="cursor-pointer"]',
     headers: ['No', '部位', '病名'],
   },
   ガイド: {
     tab: 'ガイド',
-    rowSel: 'div[class*="grid-cols-[40px_1fr]"][class*="cursor-pointer"]',
+    rowSel: 'div[class*="grid-cols-[46px_1fr]"][class*="cursor-pointer"]',
     headers: ['No.', '名称'],
   },
   パック: {
@@ -97,7 +97,7 @@ const TABS: Record<TabName, TabCfg> = {
   個別: {
     tab: '個別',
     rowSel:
-      'div[class*="grid-cols-[200px_45px_45px_45px_56px_40px]"][class*="cursor-pointer"]',
+      'div[class*="grid-cols-[200px_48px_66px_48px_60px_48px]"][class*="cursor-pointer"]',
     headers: ['処置名称', '一般', '50/100', '訪問', 'コード', '枝番'],
     virtual: true,
   },
@@ -151,9 +151,28 @@ test.describe('SidePanel — 見出しクリックの並べ替え (frm203002 4�
     })
   }
 
-  /** Chữ có bị tràn ngang khỏi ô không (soft — cắt chữ cũng xấu nhưng không phải luật FAIL). */
+  /**
+   * Số px nội dung tràn ra NGOÀI vùng nội dung của ô, tính cả hai phía.
+   *
+   * KHÔNG dùng `scrollWidth - clientWidth`: cột căn phải (`text-right`) khi
+   * thiếu chỗ thì tràn sang TRÁI, và scrollWidth không hề tăng — đo kiểu đó
+   * báo 0px trong khi trên màn hình icon/nhãn đã đè sang cột bên cạnh.
+   * Đo bằng rect thật của nội dung so với padding box của ô.
+   */
   async function overflowPx(cell: Locator): Promise<number> {
-    return cell.evaluate((el) => el.scrollWidth - el.clientWidth)
+    return cell.evaluate((el) => {
+      const box = el.getBoundingClientRect()
+      const cs = getComputedStyle(el)
+      const innerLeft = box.left + parseFloat(cs.paddingLeft || '0')
+      const innerRight = box.right - parseFloat(cs.paddingRight || '0')
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0 && r.height > 0)
+      if (rects.length === 0) return 0
+      const left = Math.min(...rects.map((r) => r.left))
+      const right = Math.max(...rects.map((r) => r.right))
+      return Math.max(0, innerLeft - left, right - innerRight)
+    })
   }
 
   /**
@@ -170,9 +189,11 @@ test.describe('SidePanel — 見出しクリックの並べ替え (frm203002 4�
         `${cfg.tab} / 「${label}」 ${when}: tiêu đề rớt ${lines} dòng — icon sort làm vỡ header`,
       ).toBe(1)
       const over = await overflowPx(cell)
-      expect
-        .soft(over, `${cfg.tab} / 「${label}」 ${when}: chữ tràn ngang ${over}px khỏi ô`)
-        .toBeLessThanOrEqual(1)
+      expect(
+        over,
+        `${cfg.tab} / 「${label}」 ${when}: nhãn/icon tràn ${Math.ceil(over)}px ra ngoài ô — ` +
+          `đè sang cột bên cạnh. Nới track của cột này trong treatment-side-panel.tsx.`,
+      ).toBeLessThanOrEqual(1)
     }
   }
 

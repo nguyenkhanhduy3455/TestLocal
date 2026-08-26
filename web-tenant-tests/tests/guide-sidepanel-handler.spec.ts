@@ -68,7 +68,7 @@ import { ADMIN_USER, JA } from './test-data'
  *
  * ─── Web port (apps/web-tenant/src/features/treatments) ───────────────────────
  *  - components/treatment-side-panel.tsx: tab ガイド header 2 cột 「No.」/「名称」
- *    (grid-cols-[40px_1fr], sticky); dòng sáng nền `bg-[#ffffc0]`; guard
+ *    (grid-cols-[46px_1fr], sticky); dòng sáng nền `bg-[#ffffc0]`; guard
  *    prevGuidLen (:574) auto sáng dòng đầu khi list đổi; guard prevSelGuid (:600)
  *    đồng bộ ô No. = idx + 1; ô No. mang `data-side-anchor`, lọc ký tự bằng
  *    sanitizeDigits; effect :682 focus ô No. khi vào tab; effect :716 ←/→ đổi tab
@@ -132,7 +132,7 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
     /** Khung side panel (w-[450px]) — mọi locator lưới đều bám vào đây. */
     let sidePanel: Locator
     /**
-     * Dòng của tab ガイド. Header cũng dùng grid-cols-[40px_1fr] nên phải kèm
+     * Dòng của tab ガイド. Header cũng dùng grid-cols-[46px_1fr] nên phải kèm
      * `cursor-pointer` (chỉ dòng dữ liệu mới có) để loại header ra.
      */
     let rows: Locator
@@ -321,7 +321,7 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
         noGuidAlert = page.getByText('該当ガイドがありません')
         noTrtAlert = page.getByText('算定できる処置がありません')
         sidePanel = page.locator('div[class*="w-[450px]"]').first()
-        rows = sidePanel.locator('div[class*="grid-cols-[40px_1fr]"][class*="cursor-pointer"]')
+        rows = sidePanel.locator('div[class*="grid-cols-[46px_1fr]"][class*="cursor-pointer"]')
         noInput = page.locator('input[data-side-anchor]')
         prvBtn = sidePanel.getByRole('button', { name: '前回', exact: true })
         allBtn = sidePanel.getByRole('button', { name: '全て表示', exact: true })
@@ -339,10 +339,10 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
         await page.keyboard.press('F4')
 
         // Header sticky 2 cột — GuidCol chỉ có 0:№ và 1:処置名称 (frm203002.cs:239).
-        // Bám vào DÒNG header (phần tử grid-cols-[40px_1fr] đầu tiên, không có
+        // Bám vào DÒNG header (phần tử grid-cols-[46px_1fr] đầu tiên, không có
         // cursor-pointer) chứ không getByText('No.'): nhãn 「No.」 còn xuất hiện lần
         // nữa ở cụm 選択 dưới chân tab ガイド.
-        const header = sidePanel.locator('div[class*="grid-cols-[40px_1fr]"]').first()
+        const header = sidePanel.locator('div[class*="grid-cols-[46px_1fr]"]').first()
         await expect(header).toBeVisible({ timeout: 30000 })
         await expect(header.locator('div').first(), 'cột 0 phải là 「No.」').toHaveText('No.')
         await expect(header.locator('div').nth(1), 'cột 1 phải là 「名称」').toHaveText('名称')
@@ -1083,10 +1083,10 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
 // chú thích 「WinForm parity 1」 phía trên).
 // ═════════════════════════════════════════════════════════════════════════════
 
-/** Dòng tab 病検 — header cũng dùng grid-cols-[40px_270px_1fr] nên phải kèm cursor-pointer. */
-const BYOU_ROW_SEL = 'div[class*="grid-cols-[40px_270px_1fr]"][class*="cursor-pointer"]'
+/** Dòng tab 病検 — header cũng dùng grid-cols-[44px_270px_1fr] nên phải kèm cursor-pointer. */
+const BYOU_ROW_SEL = 'div[class*="grid-cols-[44px_270px_1fr]"][class*="cursor-pointer"]'
 /** Dòng tab ガイド (treatment-side-panel.tsx:857). */
-const GUID_ROW_SEL = 'div[class*="grid-cols-[40px_1fr]"][class*="cursor-pointer"]'
+const GUID_ROW_SEL = 'div[class*="grid-cols-[46px_1fr]"][class*="cursor-pointer"]'
 /** Dòng tab パック (treatment-side-panel.tsx:902). */
 const PACK_ROW_SEL = 'div[class*="grid-cols-[42px_1fr]"][class*="cursor-pointer"]'
 /**

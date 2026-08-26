@@ -81,9 +81,9 @@ test('病名選択 — Enter window-level (TC-1/1b/2/3/4)', async ({ page }) => 
   await page.getByRole('button', { name: '病検', exact: true }).click().catch(() => {})
   await page.getByRole('button', { name: '変更', exact: true }).click()
 
-  // Dòng panel 病検 dùng cùng class với header (grid-cols-[40px_270px_1fr]) →
+  // Dòng panel 病検 dùng cùng class với header (grid-cols-[44px_270px_1fr]) →
   // index 0 là header No./部位/病名, dòng dữ liệu bắt đầu từ 1.
-  const byoRows = page.locator('div[class*="grid-cols-[40px_270px_1fr]"]')
+  const byoRows = page.locator('div[class*="grid-cols-[44px_270px_1fr]"]')
   await expect(byoRows.nth(1), 'panel 病検 chưa có dòng nào — đổi TEST_PAT_NO').toBeVisible({
     timeout: 20000,
   })

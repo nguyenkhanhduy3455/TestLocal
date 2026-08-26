@@ -794,7 +794,7 @@ test.describe('client sort — dialog grid + list màn hình', () => {
     // Không bấm 全て表示 thì list ガイド rỗng (Rule 10.7).
     await page.getByRole('button', { name: '全て表示' }).click()
 
-    const guideRows = page.locator('div[class*="grid-cols-[40px_1fr]"]')
+    const guideRows = page.locator('div[class*="grid-cols-[46px_1fr]"]')
     await expect(guideRows.nth(2)).toBeVisible({ timeout: 30000 })
     await step()
 
@@ -1070,7 +1070,7 @@ test.describe('client sort — dialog grid + list màn hình', () => {
       return
     }
     await changeBtn.click()
-    const byoRows = page.locator('div[class*="grid-cols-[40px_270px_1fr]"]')
+    const byoRows = page.locator('div[class*="grid-cols-[44px_270px_1fr]"]')
     if (!(await byoRows.nth(1).count())) {
       console.log('病名選択: panel 病検 chưa có dòng nào → BỎ QUA')
       return
