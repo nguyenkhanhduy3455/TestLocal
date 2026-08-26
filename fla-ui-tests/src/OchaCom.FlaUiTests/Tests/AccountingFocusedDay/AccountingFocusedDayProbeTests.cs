@@ -106,6 +106,7 @@ public sealed class AccountingFocusedDayProbeTests : UiTestBase
         trace.Shot("00-man-hinh-ban-dau");
 
         var days = ProbeGrid();
+        ProbeF11Menu(trace);
         ProbeNonTodayRow(trace, days);
         ProbeRowWithoutDay(trace);
 
@@ -151,6 +152,63 @@ public sealed class AccountingFocusedDayProbeTests : UiTestBase
         });
 
         return days;
+    }
+
+    // ── KQ-6 — menu F11 có những mục gì ──────────────────────────────────────
+
+    /// <summary>
+    /// Đổ ra MỌI mục của menu F11.
+    ///
+    /// <para>TC-DATE-4 đỏ ngày 2026-08-26 với 「không mở được menu F11 hoặc không thấy
+    /// mục 会計データ作成」 và chuỗi hộp thoại rỗng — tức chưa bấm được vào menu chứ chưa
+    /// tới cổng ngày. Không đoán AutomationId: in ra cây thật rồi mới sửa.</para>
+    /// </summary>
+    private void ProbeF11Menu(TestTrace trace)
+    {
+        Log("");
+        Safe("mo menu F11 va liet ke muc", () =>
+        {
+            Screen.Window.Focus();
+            var btn = Uia.ByIdOrName(Screen.Window, "btnF11", "選択",
+                                     FlaUI.Core.Definitions.ControlType.Button);
+            Kq("6", btn is null
+                ? "KHÔNG thấy nút btnF11 trên 診療入力."
+                : $"btnF11: name=「{Uia.NameOf(btn)}」 enabled={btn.IsEnabled} " +
+                  $"onScreen={Uia.IsOnScreen(btn)}");
+            if (btn is null) return;
+
+            trace.Do("click btnF11", () => Uia.MouseClick(btn));
+            Thread.Sleep(800);
+            trace.Shot("03-menu-f11");
+
+            var items = new List<string>();
+            foreach (var w in App.Application.GetAllTopLevelWindows(App.Automation))
+            {
+                try
+                {
+                    if (!Uia.IsOnScreen(w)) continue;
+                    foreach (var mi in w.FindAllDescendants(cf =>
+                                 cf.ByControlType(FlaUI.Core.Definitions.ControlType.MenuItem)))
+                        items.Add($"id=「{Uia.AutomationIdOf(mi)}」 name=「{Uia.NameOf(mi)}」");
+                }
+                catch { /* cửa sổ vừa đóng */ }
+            }
+
+            Kq("6", $"tìm thấy {items.Count} MenuItem đang hiện:");
+            foreach (var it in items.Take(30)) Log("        " + it);
+
+            var hit = items.Any(x => Txt.Has(x, AccountingDayFlow.AccDataOnlyMenuId)
+                                     || Txt.Has(x, AccountingDayFlow.AccDataOnlyMenuText));
+            Kq("6", $"có mục 「{AccountingDayFlow.AccDataOnlyMenuText}」 " +
+                    $"({AccountingDayFlow.AccDataOnlyMenuId}) không? {hit}");
+            if (!hit && items.Count == 0)
+                Log("        0 mục ⇒ F11 KHÔNG mở được menu. Xem ảnh 03-menu-f11: có hộp thoại " +
+                    "nào chắn không, hay nút bị disable theo trạng thái.");
+
+            // Đóng menu lại để không chắn các bước sau.
+            Uia.SendKey(0x1B); // VK_ESCAPE
+            Thread.Sleep(400);
+        });
     }
 
     // ── KQ-2 / KQ-3 / KQ-5 — câu chốt ────────────────────────────────────────
