@@ -60,6 +60,18 @@ public abstract class UiTestBase
     /// </summary>
     protected virtual string? FixturePreflightSkipReason() => null;
 
+    /// <summary>
+    /// Mẫu hộp thoại mà <see cref="NuisanceDialogWatcher"/> tự bấm 「いいえ」. Mặc định
+    /// lấy nguyên <c>run.nuisanceDialogs</c>.
+    ///
+    /// <para>Fixture nào ĐANG ĐO CHÍNH một câu hỏi nằm trong danh sách đó <b>phải</b>
+    /// override — mặc định có sẵn 「を算定しますか？」 và 「加算を算定しますか」, tức là
+    /// watcher sẽ trả lời 「いいえ」 hộ trước khi testcase kịp nhìn thấy hộp thoại. Khi
+    /// đó testcase không đỏ mà <b>xanh sai</b>: nó kết luận 「app không hỏi」 trong khi
+    /// app có hỏi và đã bị trả lời mất.</para>
+    /// </summary>
+    protected virtual string[] NuisanceDialogPatterns => Settings.Run.NuisanceDialogs;
+
     [OneTimeSetUp]
     public void UiTestBaseOneTimeSetUp()
     {
@@ -91,8 +103,14 @@ public abstract class UiTestBase
 
         App = OchaApp.LaunchOrAttach(Settings);
 
+        var nuisance = NuisanceDialogPatterns;
+        if (nuisance.Length < Settings.Run.NuisanceDialogs.Length)
+            TestContext.Out.WriteLine(
+                $"NuisanceDialogWatcher: fixture thu hep tu {Settings.Run.NuisanceDialogs.Length} " +
+                $"xuong {nuisance.Length} mau — cac hop thoai con lai fixture tu tra loi.");
+
         _watcher = new NuisanceDialogWatcher(App.ProcessId,
-                                             Settings.Run.NuisanceDialogs,
+                                             nuisance,
                                              Settings.Run.NuisanceDialogButtons);
         _watcher.Start();
 

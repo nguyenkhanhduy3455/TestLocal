@@ -189,6 +189,28 @@ public static class Uia
     }
 
     /// <summary>
+    /// Double-click VẬT LÝ tại tọa độ màn hình tuyệt đối.
+    ///
+    /// <para>Hai cặp down/up phải nằm trong <c>GetDoubleClickTime()</c> (mặc định
+    /// 500ms) thì Windows mới gộp thành <c>WM_LBUTTONDBLCLK</c>; hai lần
+    /// <see cref="LeftClickPhysical"/> rời nhau chỉ ra hai click đơn. Cần cho
+    /// <c>customLabel3_DoubleClick</c> (frm203002.cs:2652) và
+    /// <c>dgvView_CellDoubleClick</c> của 処置選択 (frm203016.cs:238).</para>
+    /// </summary>
+    public static void DoubleClickPhysical(int x, int y)
+    {
+        Win32.SetCursorPos(x, y);
+        Thread.Sleep(30);
+        for (var i = 0; i < 2; i++)
+        {
+            Win32.mouse_event(Win32.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+            Thread.Sleep(20);
+            Win32.mouse_event(Win32.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+            if (i == 0) Thread.Sleep(40);
+        }
+    }
+
+    /// <summary>
     /// Click chuột phải VẬT LÝ tại tọa độ màn hình tuyệt đối. Mở context menu
     /// của control đang nằm dưới con trỏ.
     /// </summary>

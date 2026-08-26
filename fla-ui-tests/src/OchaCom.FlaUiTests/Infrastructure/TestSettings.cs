@@ -22,6 +22,7 @@ public sealed class TestSettings
     [JsonPropertyName("run")] public RunSection Run { get; set; } = new();
     [JsonPropertyName("parity")] public ParitySection Parity { get; set; } = new();
     [JsonPropertyName("inpP1")] public InpP1Section InpP1 { get; set; } = new();
+    [JsonPropertyName("highNeeds")] public HighNeedsSection HighNeeds { get; set; } = new();
     [JsonPropertyName("locators")] public Dictionary<string, string> Locators { get; set; } = new();
 
     private static TestSettings? _current;
@@ -142,6 +143,47 @@ public sealed class TestSettings
     /// (<c>web-tenant-tests/tests/step-edit-dialog.spec.ts</c> +
     /// <c>inp-p1-ported-dialogs.spec.ts</c>).</para>
     /// </summary>
+    /// <summary>
+    /// Luồng <c>Tests/HighNeedsFreewd</c> — câu hỏi 歯科診療困難者加算 và ô ẩn
+    /// <c>hFG1[72]</c> (= <c>TRNTRN.FREEWD</c>).
+    /// </summary>
+    public sealed class HighNeedsSection
+    {
+        /// <summary>
+        /// Cho phép VÁ TẠM <c>insurance.dis_flg</c> = 3 rồi trả lại nguyên trạng.
+        ///
+        /// <para>Bắt buộc, vì câu hỏi chỉ bung ra khi <c>dis_flg == 3</c>
+        /// (modSave.cs:3449, frm203016.cs:1097) mà DB đo ngày 2026-08-26 KHÔNG có
+        /// bệnh nhân nào như vậy — chỉ 0 (16.322 bn) / 1 (2 bn) / 2 (14 bn). Đây là
+        /// bản WinForm của <c>TEST_ALLOW_DIS_FLG_PATCH</c> bên Playwright
+        /// (treatment-score-gettensu-parity.spec.ts:156).</para>
+        ///
+        /// <para>Tắt (mặc định) thì các testcase cần dis_flg 3 tự Ignore; nhóm đo
+        /// 「KHÔNG được hỏi」 vẫn chạy vì nó dùng đúng dữ liệu thật.</para>
+        /// </summary>
+        [JsonPropertyName("allowDisFlgPatch")] public bool AllowDisFlgPatch { get; set; }
+
+        /// <summary>
+        /// Bệnh nhân đem mượn để vá <c>dis_flg</c>. Rỗng = dùng <c>patient.patNo</c>.
+        ///
+        /// <para>Vá THEO BỆNH NHÂN chứ không theo 枝番: một bệnh nhân có nhiều 枝番 và
+        /// app đọc 枝番 còn hiệu lực tại 診療日 (<c>modPat.GetValidSubCode2</c>) — vá
+        /// trúng 枝番 khác là testcase đỏ oan. Bên Playwright đã dính đúng bẫy này
+        /// (bệnh nhân 1 có 5 枝番, vá trúng 枝番 hiệu lực năm 2020).</para>
+        /// </summary>
+        [JsonPropertyName("borrowPatNo")] public string BorrowPatNo { get; set; } = "";
+
+        /// <summary>
+        /// Cho phép bấm F9 登録 để đọc <c>TRNTRN.FREEWD</c> đã ghi xuống.
+        ///
+        /// <para>Cột 72 là cột ẨN — UI không vẽ nó, nên đường DUY NHẤT nhìn thấy giá
+        /// trị là lưu xuống rồi đọc DB (<c>modSave.cs:321</c>). F9 ghi lại TOÀN BỘ
+        /// 処置行 của tháng, nên tách khỏi <c>parity.allowSave</c>: hai luồng đụng
+        /// vào những bảng khác nhau và có mức rủi ro khác nhau.</para>
+        /// </summary>
+        [JsonPropertyName("allowSave")] public bool AllowSave { get; set; }
+    }
+
     public sealed class InpP1Section
     {
         /// <summary>
@@ -282,6 +324,9 @@ public sealed class TestSettings
         Set("OCHA_SCREENSHOT_DIR", v => s.Run.ScreenshotDir = v);
         Set("OCHA_STOP_ON_FIRST_FAILURE", v => s.Run.StopOnFirstFailure = ToBool(v));
         Set("OCHA_INP_P1_ALLOW_SAVE", v => s.InpP1.AllowSave = ToBool(v));
+        Set("OCHA_HIGH_NEEDS_PATCH", v => s.HighNeeds.AllowDisFlgPatch = ToBool(v));
+        Set("OCHA_HIGH_NEEDS_SAVE", v => s.HighNeeds.AllowSave = ToBool(v));
+        Set("OCHA_HIGH_NEEDS_PAT_NO", v => s.HighNeeds.BorrowPatNo = v);
         Set("OCHA_BR_TEETH", v => s.InpP1.BrTeeth = ToIntArray(v));
         Set("OCHA_BR_NO_MATCH_TEETH", v => s.InpP1.BrNoMatchTeeth = ToIntArray(v));
 
