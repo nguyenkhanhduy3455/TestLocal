@@ -58,6 +58,7 @@ public sealed class UnpaidSyosinProbeTests : UiTestBase
     private AccountingDayFlow _flow = null!;
     private UnpaidSyosinDb? _db;
     private IReadOnlyList<UnpaidSyosinDb.UnpaidRow>? _snapshot;
+    private bool _seeded;
 
     /// <summary>Tắt watcher — chuỗi F8 toàn 「…続けますか？」 mà phủ định = BỎ CUỘC.</summary>
     protected override string[] NuisanceDialogPatterns => [];
@@ -87,6 +88,35 @@ public sealed class UnpaidSyosinProbeTests : UiTestBase
 
     [OneTimeSetUp]
     public void ProbeOneTimeSetUp() => _flow = new AccountingDayFlow(App, Screen);
+
+    /// <summary>
+    /// Gỡ dòng seed 再初診. Chạy TRƯỚC <see cref="RestoreUnpaid"/> không quan trọng —
+    /// hai bảng khác nhau — nhưng phải chạy kể cả khi probe hỏng giữa chừng: để sót một
+    /// dòng 初診 giả trong TRNTRN là làm sai 初診 của bệnh nhân đó mãi mãi.
+    /// </summary>
+    [OneTimeTearDown]
+    public void RemoveSeed()
+    {
+        if (_db is null || !_seeded) return;
+        try
+        {
+            var removed = _db.RemovePastSyosinSeed(PatNo);
+            var left = _db.CountSeedRows(PatNo);
+            TestContext.Out.WriteLine(
+                $"ĐÃ GỠ seed 再初診: xoá {removed} dòng, còn sót {left}");
+            if (left > 0)
+                TestContext.Error.WriteLine(
+                    $"!! CÒN SÓT {left} dòng TRNTRN disp_no = {UnpaidSyosinDb.SeedDispNo} " +
+                    $"của bệnh nhân {PatNo}. XOÁ TAY NGAY: " +
+                    $"DELETE FROM TRNTRN WHERE pat_no = {PatNo} AND disp_no = {UnpaidSyosinDb.SeedDispNo}");
+        }
+        catch (Exception e)
+        {
+            TestContext.Error.WriteLine(
+                $"!! KHÔNG GỠ ĐƯỢC seed: {e.Message}. XOÁ TAY: " +
+                $"DELETE FROM TRNTRN WHERE pat_no = {PatNo} AND disp_no = {UnpaidSyosinDb.SeedDispNo}");
+        }
+    }
 
     [OneTimeTearDown]
     public void RestoreUnpaid()
@@ -140,6 +170,7 @@ public sealed class UnpaidSyosinProbeTests : UiTestBase
         var oracles = ProbeOracle();
         ProbeExistingUnpaid();
         ProbeRunF8(trace, oracles);
+        ProbeReFirstVisit(trace);
 
         Log("");
         Log("=== KQ-END === Gửi lại: mọi dòng '=== KQ-' + thư mục artifacts\\screenshots");
@@ -258,4 +289,84 @@ public sealed class UnpaidSyosinProbeTests : UiTestBase
                     "nói bản web đang hardcode 0; đây là con số để đối chiếu.");
         });
     }
+
+    // ── KQ-6 — dựng ca 再初診 (sflg = 3) rồi đo lại ──────────────────────────
+
+    /// <summary>
+    /// Seed một dòng 初診 vào QUÁ KHỨ rồi chạy lại F8 trên CÙNG ngày.
+    ///
+    /// <para>Cùng bệnh nhân, cùng ngày, chỉ khác mỗi dòng lịch sử ⇒ <c>sflg</c> phải
+    /// lật <b>1 → 3</b>. Đây là phép đo cô lập đúng <c>getKaikeiPastSyosinCnt</c>
+    /// (Trntrn.cs:1274) — chỗ mà theo báo cáo điều tra, bản web đang thiếu hẳn ở đường
+    /// 未精算.</para>
+    /// </summary>
+    private void ProbeReFirstVisit(TestTrace trace)
+    {
+        Log("");
+        if (_db is null) return;
+
+        Safe("dựng ca 再初診 rồi đo lại", () =>
+        {
+            var seedDate = UnpaidSyosinDb.DefaultSeedDate(TrtDate);
+            var inserted = _db!.SeedPastSyosin(PatNo, seedDate);
+            _seeded = inserted > 0;
+
+            Kq("6", $"seed {inserted} dòng 初診 vào {seedDate:yyyy-MM-dd} " +
+                    $"(disp_no = {UnpaidSyosinDb.SeedDispNo}, nhân bản từ dòng 100 có thật)");
+            if (!_seeded)
+            {
+                Kq("6", $"bệnh nhân {PatNo} không có dòng trt_cd = 100 nào để nhân bản ⇒ " +
+                        "không dựng được ca 再初診.");
+                return;
+            }
+
+            var after = _db.DayOracles(PatNo, TrtDate);
+            Kq("6", "ORACLE SAU khi seed:");
+            foreach (var o in after) Log("        " + o);
+
+            var pick = after.FirstOrDefault(o => o.ExpectedSflg == UnpaidSyosinDb.SyosinReFirstVisit);
+            if (pick is null)
+            {
+                Kq("6", "seed rồi mà vẫn không ngày nào ra 3 — kiểm lại câu getKaikeiPastSyosinCnt.");
+                return;
+            }
+
+            // Lưới đang mở từ trước khi seed nên chưa thấy dòng quá khứ. Mở lại màn hình
+            // để app đọc lại dữ liệu — không thì F8 vẫn tính trên bộ nhớ cũ.
+            Log("        mở lại 診療入力 để app đọc lại TRNTRN sau khi seed");
+            ReopenTreatmentScreen();
+            _flow = new AccountingDayFlow(App, Screen);
+
+            var row = _flow.RowForDay(pick.Day);
+            if (row is null) { Kq("6", $"lưới không có dòng nào 日 = {pick.Day}."); return; }
+
+            Kq("6", $"chạy lại F8 trên ngày {pick.Date:yyyy-MM-dd} — oracle giờ nói {pick.ExpectedSflg} " +
+                    $"({pick.Why})");
+            _flow.FocusRow(row, trace);
+
+            var walk = UnpaidCreationFlow.PressF8AndCreateUnpaid(App, Screen.Window, trace);
+            Kq("6", $"chuỗi hộp thoại ({walk.Trail.Count} cái); gặp câu 作成: {walk.SawCreateUnpaid}");
+            for (var i = 0; i < walk.Trail.Count; i++) Log($"        [{i + 1}] {walk.Trail[i]}");
+
+            _flow.LeaveCounterPaymentIfOpen(trace);
+            Thread.Sleep(800);
+            trace.Shot("02-sau-seed-re-first-visit");
+
+            var rows = _db.ReadUnpaid(PatNo, pick.Date);
+            if (rows.Count == 0)
+            {
+                Kq("6", $"KHÔNG có dòng UNPAID nào cho {pick.Date:yyyy-MM-dd} — xem chuỗi ở trên.");
+                return;
+            }
+
+            foreach (var r in rows)
+                Kq("6", $"{r}  ⇒ sflg đo được {r.Sflg} / oracle {pick.ExpectedSflg} — " +
+                        (r.Sflg == pick.ExpectedSflg ? "KHỚP" : "LỆCH"));
+
+            Kq("6", "⇒ Cùng bệnh nhân, cùng ngày, chỉ thêm MỘT dòng 初診 trong quá khứ mà " +
+                    "sflg lật 1 → 3. Đó đúng là bước mà báo cáo nói bản web đang thiếu ở " +
+                    "đường 未精算 (getKaikeiPastSyosinCnt, Trntrn.cs:1274).");
+        });
+    }
+
 }

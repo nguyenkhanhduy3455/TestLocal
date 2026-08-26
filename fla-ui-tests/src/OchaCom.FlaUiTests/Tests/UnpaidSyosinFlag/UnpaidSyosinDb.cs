@@ -178,6 +178,111 @@ public sealed class UnpaidSyosinDb
         return Convert.ToInt32(cmd.ExecuteScalar());
     }
 
+    // ── SEED: dựng ca 再初診 (sflg = 3) ──────────────────────────────────────
+
+    /// <summary>
+    /// <c>DISP_NO</c> đánh dấu dòng do TEST seed. Dải thật của bệnh nhân test là 1..13
+    /// (đo 2026-08-26), nên 9001 nằm ngoài hẳn — xoá theo mốc này thì không thể chạm
+    /// nhầm dòng thật.
+    /// </summary>
+    public const int SeedDispNo = 9001;
+
+    /// <summary>
+    /// Dựng ca <b>再初診</b>: chèn MỘT dòng 初診 vào QUÁ KHỨ (trước đầu tháng đang mở).
+    ///
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// VÌ SAO PHẢI SEED, VÀ VÌ SAO SEED KIỂU NÀY
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// <c>sflg = 3</c> đòi HAI điều cùng lúc: ngày đang xét CÓ 初診, VÀ bệnh nhân đã
+    /// từng 初診 TRƯỚC tháng này. Dữ liệu SIM2000 không bệnh nhân nào thoả cả hai (đo
+    /// 2026-08-26: bệnh nhân 10 có vế đầu, 9/12138 có vế sau) — mà 3 lại đúng là giá
+    /// trị bug của tester.
+    ///
+    /// <para>Chỉ thêm <b>lịch sử quá khứ</b>, KHÔNG đụng ngày đang test. Nhờ vậy cùng
+    /// một bệnh nhân, cùng một ngày, chỉ khác mỗi dòng quá khứ này mà
+    /// <c>sflg</c> lật <b>1 ↔ 3</b> — đó chính là phép đo cô lập đúng
+    /// <c>getKaikeiPastSyosinCnt</c>, chỗ mà bản web đang thiếu.</para>
+    ///
+    /// <para><b>Nhân bản một dòng 初診 CÓ THẬT</b> của chính bệnh nhân thay vì tự dựng
+    /// dòng mới: <c>TRNTRN</c> có 84 cột, phần lớn NOT NULL, và tự điền tay là mời gọi
+    /// sai kiểu / thiếu cột. Chép rồi chỉ đè <c>TRT_DT</c> + <c>DISP_NO</c> thì mọi cột
+    /// khác chắc chắn hợp lệ vì chúng đã hợp lệ ở dòng gốc.</para>
+    ///
+    /// <para>Ngày mặc định là <b>ngày 20 tháng trước</b> — cố ý tránh trùng NGÀY với các
+    /// ngày đang có trên lưới (3, 14): dòng tháng cũ vẫn hiện trên <c>grdRegi</c> dưới
+    /// dạng <c>linekbn 99</c>, và nếu trùng số ngày thì <c>RowForDay</c> có thể tóm nhầm
+    /// dòng tháng cũ — bấm F8 ở đó chỉ nhận 「当月以外の操作はできません」.</para>
+    /// </summary>
+    /// <returns>Số dòng đã chèn (0 = bệnh nhân không có dòng 初診 nào để nhân bản).</returns>
+    public int SeedPastSyosin(int patNo, DateTime pastDate)
+    {
+        // Danh sách cột lấy từ schema chứ không viết cứng: TRNTRN có 84 cột và bảng này
+        // khác nhau giữa các bản cài.
+        var columns = new List<string>();
+        using (var con = Open())
+        using (var cmd = Cmd(con,
+            """
+            SELECT c.name
+              FROM sys.columns c
+             WHERE c.object_id = OBJECT_ID('TRNTRN')
+             ORDER BY c.column_id
+            """))
+        using (var reader = cmd.ExecuteReader())
+        {
+            while (reader.Read()) columns.Add(reader.GetString(0));
+        }
+        if (columns.Count == 0) return 0;
+
+        var target = string.Join(", ", columns.Select(c => $"[{c}]"));
+        var source = string.Join(", ", columns.Select(c =>
+            c.Equals("TRT_DT", StringComparison.OrdinalIgnoreCase) ? "@newDt"
+            : c.Equals("DISP_NO", StringComparison.OrdinalIgnoreCase) ? "@newDisp"
+            : $"[{c}]"));
+
+        using (var con = Open())
+        using (var ins = Cmd(con,
+            $"""
+             INSERT INTO TRNTRN ({target})
+             SELECT TOP 1 {source}
+               FROM TRNTRN
+              WHERE pat_no = @p
+                AND trt_cd = 100
+                AND ISNULL(del_flg, 0) = 0
+              ORDER BY trt_dt
+             """))
+        {
+            ins.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+            ins.Parameters.Add("@newDt", SqlDbType.DateTime).Value = pastDate.Date;
+            ins.Parameters.Add("@newDisp", SqlDbType.Int).Value = SeedDispNo;
+            return ins.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>Ngày seed mặc định — ngày 20 tháng TRƯỚC tháng đang mở.</summary>
+    public static DateTime DefaultSeedDate(DateTime monthInView) =>
+        new DateTime(monthInView.Year, monthInView.Month, 1).AddMonths(-1).AddDays(19);
+
+    /// <summary>Gỡ dòng seed. Chỉ chạm dòng mang <see cref="SeedDispNo"/>.</summary>
+    public int RemovePastSyosinSeed(int patNo)
+    {
+        using var con = Open();
+        using var cmd = Cmd(con, "DELETE FROM TRNTRN WHERE pat_no = @p AND disp_no = @d");
+        cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+        cmd.Parameters.Add("@d", SqlDbType.Int).Value = SeedDispNo;
+        return cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>Số dòng seed còn sót — kiểm sau teardown.</summary>
+    public int CountSeedRows(int patNo)
+    {
+        using var con = Open();
+        using var cmd = Cmd(con,
+            "SELECT COUNT(*) FROM TRNTRN WHERE pat_no = @p AND disp_no = @d");
+        cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+        cmd.Parameters.Add("@d", SqlDbType.Int).Value = SeedDispNo;
+        return Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
     // ── UNPAID ───────────────────────────────────────────────────────────────
 
     /// <summary>Một dòng <c>UNPAID</c>, chỉ các cột luồng này quan tâm.</summary>
