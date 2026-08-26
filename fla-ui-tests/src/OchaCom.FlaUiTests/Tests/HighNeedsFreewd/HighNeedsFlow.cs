@@ -410,6 +410,18 @@ public sealed class HighNeedsFlow
 
         if (WaitUntilCommitted()) return true;
 
+        // ⚠️ CHỐT CHẶN TRƯỚC KHI ĐI ĐƯỜNG LUI.
+        //
+        // WaitUntilCommitted trả false có HAI nghĩa: 「chốt hụt thật」 và 「chốt xong rồi
+        // nhưng vòng chờ quá chậm nên hết giờ」. Mỗi lượt poll gọi ModalDialogs.All +
+        // MessageBoxes, và trên máy đang tải nặng một lượt có thể tốn vài giây — đo
+        // 2026-08-26: hạn 10s trôi mất 54s thực, trong khi picker đã đóng từ lâu.
+        //
+        // Đi đường lui khi picker đã đóng là gõ Enter vào LƯỚI, không phải vào picker:
+        // dòng vừa chèn bị xê dịch và testcase đỏ ở một chỗ chẳng liên quan. TC-A4 đã
+        // đỏ đúng vì vậy, sau khi đã xanh hai lượt liền.
+        if (Picker() is null) return true;
+
         // Đường lui: chọn dòng bằng click đơn rồi Enter.
         trace?.Do("double-click khong an — click don roi Enter", () =>
         {
@@ -431,7 +443,7 @@ public sealed class HighNeedsFlow
     /// đó rơi vào form đang bị modal chặn, không ăn gì, và testcase đỏ ở một chỗ chẳng
     /// liên quan. Đã dính thật 2026-08-26 ở TC-A1.</para>
     /// </summary>
-    private bool WaitUntilCommitted(int seconds = 10) =>
+    private bool WaitUntilCommitted(int seconds = 20) =>
         Waits.TryUntil(() => Picker() is null || HighNeedsDialog() is not null,
                        TimeSpan.FromSeconds(seconds));
 
