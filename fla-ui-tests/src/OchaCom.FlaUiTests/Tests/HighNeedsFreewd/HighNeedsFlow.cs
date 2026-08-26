@@ -413,6 +413,27 @@ public sealed class HighNeedsFlow
         return Txt.N(Uia.ValueOf(cells[ColFreewd]));
     }
 
+    /// <summary>
+    /// Chuỗi mà một ô lưới TRỐNG đọc ra qua UIA — <b>đo thật 2026-08-26</b>, không phải
+    /// suy từ source.
+    ///
+    /// <para><c>Uia.ValueOf</c> thử ValuePattern rồi LegacyIAccessible.Value, cả hai
+    /// rỗng thì rơi xuống <c>NameOf</c>; với ô <c>DataGridView</c> mang giá trị null,
+    /// chuỗi đọc ra là đúng bốn chữ 「(null)」. Nếu coi nó là "có giá trị" thì mọi
+    /// khẳng định 「freewd trống」 đều đỏ oan.</para>
+    /// </summary>
+    public const string EmptyCellText = "(null)";
+
+    /// <summary>Ô <c>freewd</c> coi như CHƯA có giá trị: null, rỗng, hoặc 「(null)」.</summary>
+    public static bool IsFreewdEmpty(string? value) =>
+        value is null || Txt.N(value).Length == 0 || Txt.N(value) == EmptyCellText;
+
+    /// <summary>Hiển thị giá trị freewd cho thông điệp assert, phân biệt rõ ba trạng thái.</summary>
+    public static string DescribeFreewd(string? value) =>
+        value is null ? "(không đọc được ô — cột ẩn chưa bật?)"
+        : IsFreewdEmpty(value) ? $"(trống, đọc ra 「{Txt.N(value)}」)"
+        : $"「{Txt.N(value)}」";
+
     /// <summary>Dòng lưới có 療法・処置 chứa <paramref name="name"/>, lấy dòng CUỐI.</summary>
     public RegiRow? RowNamed(string name) => _grid.LastRowMatching(name);
 

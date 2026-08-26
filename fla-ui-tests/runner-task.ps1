@@ -8,7 +8,12 @@ param(
     [string] $ScriptName,
 
     # Tran thoi gian cho MOT lan chay. Het gio thi kill chu khong treo.
-    [int] $TimeoutMinutes = 6
+    #
+    # 6 phut la QUA NGAN cho cac fixture dai. Do that 2026-08-26: probe
+    # HighNeedsFreewd chay het 5.7 phut (moi luot mo 処置選択 + chot mot dong ton
+    # ~50s vi UIA phai quet lai luoi), test Passed nhung wrapper van kill va bao
+    # rc = 124 — nhin log thi khong phan biet duoc "test hong" voi "het gio".
+    [int] $TimeoutMinutes = 15
 )
 
 $ErrorActionPreference = 'Continue'

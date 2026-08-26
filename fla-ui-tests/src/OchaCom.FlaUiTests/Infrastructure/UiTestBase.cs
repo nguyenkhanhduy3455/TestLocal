@@ -72,6 +72,22 @@ public abstract class UiTestBase
     /// </summary>
     protected virtual string[] NuisanceDialogPatterns => Settings.Run.NuisanceDialogs;
 
+    /// <summary>
+    /// Sửa dữ liệu TRƯỚC khi app được mở và trước khi điều hướng tới 診療入力.
+    ///
+    /// <para>Cần cho những cột mà app chỉ đọc MỘT LẦN rồi giữ trong bộ nhớ suốt phiên.
+    /// Rõ nhất là <c>insurance.dis_flg</c>: <c>CommonInp.getCommonPatInfo</c> nạp
+    /// <c>_patInfoList</c> ở màn CHỌN BỆNH NHÂN (frm203001.cs:739), và từ đó
+    /// <c>getPatInfo()</c> chỉ đọc lại mảng trong RAM (CommonInp.cs:160-172). Vá DB khi
+    /// frm203002 đã mở thì app không bao giờ thấy — testcase đỏ mà log trông y hệt
+    /// 「WinForm không hỏi」.</para>
+    ///
+    /// <para>Chạy sau <see cref="FixturePreflightSkipReason"/> (fixture bị bỏ qua thì
+    /// không đụng dữ liệu) và trước <c>OchaApp.LaunchOrAttach</c>. Fixture nào override
+    /// thì phải tự trả lại nguyên trạng ở <c>[OneTimeTearDown]</c> của chính nó.</para>
+    /// </summary>
+    protected virtual void PrepareDataBeforeApp() { }
+
     [OneTimeSetUp]
     public void UiTestBaseOneTimeSetUp()
     {
@@ -84,6 +100,8 @@ public abstract class UiTestBase
         }
 
         ScreenCapture.EnableDpiAwareness();
+
+        PrepareDataBeforeApp();
 
         Db = OchaDb.CreateOrNull(Settings);
         if (Db is null)
