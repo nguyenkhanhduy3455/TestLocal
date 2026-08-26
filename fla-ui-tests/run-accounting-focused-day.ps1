@@ -41,7 +41,14 @@
     Chay Tc0 (PROBE): do nam cau hoi, KHONG assert, khong bao gio nem.
 
 .PARAMETER Case
-    Loc theo ten testcase, vd "TcDate2".
+    Nhom hoac ten testcase le:
+      R / ReadOnly -> AccountingTargetDayTests      (dung o cong ngay, KHONG ghi)
+      W / Write    -> AccountingTargetDayWriteTests (de F8 GHI, co seed dong)
+      con lai      -> loc theo ten method, vd "TcDate2"
+
+    ⚠️ CHAY TUNG NHOM MOT. Fixture Write seed mot dong 処置 cho HOM NAY TRUOC khi
+       app mo; app.attachIfRunning = true nen chay chung thi no bam vao app ma
+       fixture kia da mo va khong thay dong vua seed.
 
 .PARAMETER TrtDate
     Ngay mo man hinh (yyyy-MM-dd). MAC DINH = HOM NAY, va do la CO Y: bug chi lo
@@ -91,9 +98,25 @@ Write-Host "Mo man hinh o ngay: $($env:OCHA_TRT_DT)  (hom nay = $(Get-Date -Form
 
 $ns = "OchaCom.FlaUiTests.Tests.AccountingFocusedDay"
 
+# ⚠️ HAI FIXTURE, CHAY TUNG CAI MOT.
+#
+# AccountingTargetDayWriteTests SEED mot dong 処置 cho HOM NAY o
+# PrepareDataBeforeApp, tuc TRUOC khi app mo — luoi phai duoc nap sau khi seed
+# thi moi thay dong do. Ma app.attachIfRunning = true, nen neu fixture chi-doc
+# chay truoc va mo app roi, fixture ghi se BAM VAO app cu va khong thay dong
+# vua seed. Cung mot lop loi voi dis_flg bi cache o luong HighNeedsFreewd.
+$groups = @{
+    'ReadOnly' = 'AccountingTargetDayTests'
+    'R'        = 'AccountingTargetDayTests'
+    'Write'    = 'AccountingTargetDayWriteTests'
+    'W'        = 'AccountingTargetDayWriteTests'
+}
+
 if ($Diagnostics) {
     # Fixture PROBE mang [Explicit] nen luot chay du khong goi toi; loc dich danh thi chay.
     $filter = "FullyQualifiedName~AccountingFocusedDayProbeTests"
+} elseif ($groups.ContainsKey($Case)) {
+    $filter = "FullyQualifiedName~$($groups[$Case])"
 } elseif ($Case -ne "") {
     $filter = "FullyQualifiedName~$ns&FullyQualifiedName~$Case"
 } else {

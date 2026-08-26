@@ -257,7 +257,18 @@ public sealed class UnpaidSyosinDb
     /// dòng tháng cũ — bấm F8 ở đó chỉ nhận 「当月以外の操作はできません」.</para>
     /// </summary>
     /// <returns>Số dòng đã chèn (0 = bệnh nhân không có dòng 初診 nào để nhân bản).</returns>
-    public int SeedPastSyosin(int patNo, DateTime pastDate)
+    public int SeedPastSyosin(int patNo, DateTime pastDate) =>
+        SeedSyosinRowOn(patNo, pastDate, SeedDispNo);
+
+    /// <summary>
+    /// Nhân bản một dòng 初診 có thật sang <paramref name="date"/> với
+    /// <paramref name="dispNo"/> làm mốc.
+    ///
+    /// <para>Tách ra khỏi <see cref="SeedPastSyosin"/> để dùng được cho seed ĐỘNG —
+    /// ví dụ dựng một dòng 処置 cho ĐÚNG HÔM NAY, thứ không thể seed cố định vì
+    /// 「hôm nay」 trôi mỗi ngày.</para>
+    /// </summary>
+    public int SeedSyosinRowOn(int patNo, DateTime date, int dispNo)
     {
         // Danh sách cột lấy từ schema chứ không viết cứng: TRNTRN có 84 cột và bảng này
         // khác nhau giữa các bản cài.
@@ -305,8 +316,8 @@ public sealed class UnpaidSyosinDb
              """))
         {
             ins.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
-            ins.Parameters.Add("@newDt", SqlDbType.DateTime).Value = pastDate.Date;
-            ins.Parameters.Add("@newDisp", SqlDbType.Int).Value = SeedDispNo;
+            ins.Parameters.Add("@newDt", SqlDbType.DateTime).Value = date.Date;
+            ins.Parameters.Add("@newDisp", SqlDbType.Int).Value = dispNo;
             return ins.ExecuteNonQuery();
         }
     }
@@ -315,24 +326,39 @@ public sealed class UnpaidSyosinDb
     public static DateTime DefaultSeedDate(DateTime monthInView) =>
         new DateTime(monthInView.Year, monthInView.Month, 1).AddMonths(-1).AddDays(19);
 
-    /// <summary>Gỡ dòng seed. Chỉ chạm dòng mang <see cref="SeedDispNo"/>.</summary>
-    public int RemovePastSyosinSeed(int patNo)
+    /// <summary>Gỡ dòng seed. Chỉ chạm dòng mang <paramref name="dispNo"/>.</summary>
+    public int RemoveSeed(int patNo, int dispNo)
     {
         using var con = Open();
         using var cmd = Cmd(con, "DELETE FROM TRNTRN WHERE pat_no = @p AND disp_no = @d");
         cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
-        cmd.Parameters.Add("@d", SqlDbType.Int).Value = SeedDispNo;
+        cmd.Parameters.Add("@d", SqlDbType.Int).Value = dispNo;
         return cmd.ExecuteNonQuery();
     }
 
+    /// <summary>Có dòng 処置 nào của bệnh nhân trong ngày đó không.</summary>
+    public bool HasTreatmentOn(int patNo, DateTime date)
+    {
+        using var con = Open();
+        using var cmd = Cmd(con,
+            """
+            SELECT COUNT(*) FROM TRNTRN
+             WHERE pat_no = @p AND ISNULL(del_flg, 0) = 0
+               AND trt_dt >= @d AND trt_dt < DATEADD(day, 1, @d)
+            """);
+        cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+        cmd.Parameters.Add("@d", SqlDbType.DateTime).Value = date.Date;
+        return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+    }
+
     /// <summary>Số dòng seed còn sót — kiểm sau teardown.</summary>
-    public int CountSeedRows(int patNo)
+    public int CountSeedRows(int patNo, int dispNo = SeedDispNo)
     {
         using var con = Open();
         using var cmd = Cmd(con,
             "SELECT COUNT(*) FROM TRNTRN WHERE pat_no = @p AND disp_no = @d");
         cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
-        cmd.Parameters.Add("@d", SqlDbType.Int).Value = SeedDispNo;
+        cmd.Parameters.Add("@d", SqlDbType.Int).Value = dispNo;
         return Convert.ToInt32(cmd.ExecuteScalar());
     }
 

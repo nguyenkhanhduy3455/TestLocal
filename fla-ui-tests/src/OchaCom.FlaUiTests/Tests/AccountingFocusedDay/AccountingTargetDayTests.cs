@@ -38,8 +38,9 @@ namespace OchaCom.FlaUiTests.Tests.AccountingFocusedDay;
 /// <c>precheck</c>/<c>insert-unpaid</c> để biết FE gửi ngày nào — WinForm không có
 /// đường tương đương mà không ghi DB: muốn biết nó CHỌN ngày nào thì phải để nó chạy
 /// tiếp và tạo 未精算 thật. Cái WinForm chứng minh được ở chế độ chỉ-đọc là <b>cổng
-/// ngày mở theo dòng con trỏ</b> — TC-DATE-3 làm đúng việc đó: cùng một màn hình,
-/// cùng một ngày trên tiêu đề, chỉ đổi dòng con trỏ thì cổng ngày đổi kết quả.</para>
+/// ngày mở theo dòng con trỏ</b> — TC-DATE-2 làm đúng việc đó khi màn hình mở ở HÔM NAY.
+/// Phần còn lại (TC-DATE-1 「ngày nào được chọn」 và TC-DATE-3 「dòng hôm nay ⇒ không
+/// hỏi」) buộc phải để F8 ghi, nên nằm ở <see cref="AccountingTargetDayWriteTests"/>.</para>
 ///
 /// <para>Chạy: <c>.\run-accounting-focused-day.ps1</c></para>
 /// </summary>
@@ -189,46 +190,13 @@ public sealed class AccountingTargetDayTests : UiTestBase
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TC-DATE-3 — ⇔ web TC-DATE-3. ĐÂY là chỗ chứng minh 「theo dòng con trỏ」
-    // ═══════════════════════════════════════════════════════════════════════
-
-    [Test, Order(3)]
-    [Description("TC-DATE-3 — con trỏ ở dòng HÔM NAY: KHÔNG hỏi ngày")]
-    public void TcDate3_TodayRowDoesNotAskDateGate()
-    {
-        using var trace = TestTrace.Begin();
-        EnsureEntryScreen();
-
-        var today = DateTime.Today.Day;
-        var row = _flow.DaysOnGrid().Contains(today) ? _flow.RowForDay(today) : null;
-
-        if (row is null)
-            IgnoreWithReason(
-                $"lưới chưa có dòng nào của HÔM NAY (ngày {today}) — bệnh nhân {PatNo} chưa có " +
-                $"処置 hôm nay, mà 年月 màn hình là 「{Screen.YearMonth()}」. Đây là testcase DUY " +
-                "NHẤT phân biệt được 「ngày lấy theo dòng con trỏ」 với 「ngày lấy theo màn hình」: " +
-                "cùng một màn hình, chỉ đổi dòng con trỏ mà cổng ngày đổi kết quả. Cần bệnh nhân " +
-                "có 処置 ở HAI ngày, một trong hai là hôm nay.");
-
-        TestContext.Out.WriteLine(
-            $"đặt con trỏ vào dòng 日 = {today} (ĐÚNG hôm nay), 年月 màn hình 「{Screen.YearMonth()}」");
-
-        _flow.FocusRow(row!, trace);
-        var result = _flow.PressF8AndStopAtDayGate(trace);
-
-        TestContext.Out.WriteLine($"=== KQ-DATE-3 === chuỗi hộp thoại ({result.Trail.Count}):");
-        foreach (var s in result.Trail) TestContext.Out.WriteLine("        " + s);
-
-        Assert.That(result.Gate, Is.Not.EqualTo(AccountingDayFlow.DayGate.AskedNotToday),
-            $"con trỏ ở dòng HÔM NAY mà vẫn hỏi 「{AccountingDayFlow.NotTodayMsg}」 ⇒ " +
-            "modAcc.cs:386 đang so với một ngày KHÁC ngày của dòng con trỏ.");
-
-        TestContext.Out.WriteLine(
-            "=== KQ-DATE-3 === cùng màn hình, chỉ đổi dòng con trỏ mà cổng ngày đổi kết quả " +
-            "(TC-DATE-2 hỏi, TC-DATE-3 không) ⇒ 会計対象日 lấy theo DÒNG CON TRỎ, không phải " +
-            "theo ngày mở màn hình.");
-    }
+    // TC-DATE-3 đã CHUYỂN sang AccountingTargetDayWriteTests.
+    //
+    // Nó đo 「cổng ngày IM LẶNG」, mà im lặng nghĩa là LetAccData2 chạy tiếp thẳng vào
+    // deleteTrtDtUnPaid + insert. Không có cách nào quan sát 「không hỏi」 mà lại chặn
+    // được nó đi tiếp — nên nó phá vỡ đúng nguyên tắc 「dừng ở cổng ngày, không ghi gì」
+    // của fixture này. TC-DATE-1 cũng vậy: cổng ngày chỉ nói 「khác hôm nay」 chứ không
+    // nói NGÀY NÀO, muốn biết ngày thật thì phải đọc dòng UNPAID nó ghi ra.
 
     // ═══════════════════════════════════════════════════════════════════════
     // TC-DATE-4 — ⇔ web TC-DATE-4
