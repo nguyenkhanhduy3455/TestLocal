@@ -14,27 +14,22 @@ Bên kia của cặp parity: [`../../../../../web-tenant-tests/tests/auto-santei
 
 ---
 
-## 1. WinForm có HAI chỗ hỏi, bản web mới port MỘT
+## 1. WinForm có HAI cửa hỏi, điều kiện KHÁC NHAU
 
-Cùng một câu chữ, cùng ghi vào `hFG1[72]`, nhưng hai chỗ khác nhau và **điều kiện khác nhau**:
+Cùng một câu chữ, cùng ghi vào `hFG1[72]`, nhưng hai chỗ và **điều kiện lệch nhau thật —
+đừng gộp làm một**:
 
 | | `modSave.cs:3450` — 自動算定 | `frm203016.cs:1093-1118` — 処置選択 (`IregCodChk`) |
 |---|---|---|
 | Mã bẫy | **chỉ 105** | **105 và 508** |
-| Lọc 枝番 | không | 105/{0,1,2,3,6,7} · 508/{0,1,6} |
+| Lọc 枝番 | không | 105/{0,1,2,3,6,7} · 508/{0,1,6} — đúng 9 tổ hợp của `CommonChk.cs:1224-1234` |
 | Đọc `dis_flg` | một lần cho cả lượt (`:3041`) | theo 処置日 **của chính dòng** (`dt.Rows[idx][78]`) |
 | Vị trí trong bộ pick | nhánh `else` của `kv.index == 0` ⇒ pick đầu bộ không bao giờ hỏi | không liên quan |
-| Bản web | ✅ đã port — `treatment-entry-detail.tsx:2991` | ❌ **không có gì** |
+| Hỏi lúc nào | trong vòng đẩy pick | **SAU** khi dòng đã được ghi (`:1629`) |
+| Vào từ đâu | tự chạy / Enter ở cột 日 dòng cuối | gõ mã ở ô 点, hoặc chọn ở tab 個別 (`modKobetu.cs:341`) |
 
-Bản web không có tương đương `IregCodChk`: `classifyCodeModeEntry`
-(`code-mode-entry.ts:96`) chỉ chép phần đầu của `GetTrtmasCod` (101/102/103, 50, 999,
-333, 1–6), nên 105 và 508 rơi vào nhánh `'lookup'` thường và **không hỏi gì**.
-
-> ⚠️ Header của spec Playwright đang ghi:
-> *「Câu hỏi ở modSave.cs:3449 CHỈ bẫy `Key == 105`, nên 508 (歯訪) không bao giờ được
-> hỏi — **cả WinForm lẫn web đều vậy**」*.
-> Vế đầu đúng cho nhánh 自動算定. Vế 「cả WinForm lẫn web đều vậy」 **sai**:
-> `frm203016.cs:1107-1118` có hẳn `case 508`. Xem TC-A5.
+Bộ này đo **cửa 処置選択** — cửa duy nhất tới được từ giao diện với dữ liệu test hiện có
+(lý do ở mục 4).
 
 ---
 
@@ -102,28 +97,40 @@ cần tới.
 
 ---
 
-## 4. Bảng tương ứng với spec Playwright
+## 4. Đối chiếu số hiệu TC với spec Playwright
 
-| WinForm | Nội dung | Web |
+Bảng này để **chạy song song hai bên rồi so**, không phải để khẳng định bên kia làm gì.
+Bộ này là bên **đo đáp án**: testcase đỏ nghĩa là bản port lệch, không phải test viết sai.
+
+| WinForm | Nội dung | Bên kia |
 |---|---|---|
-| **N1** | Cửa hậu bật cột ẩn chạy được; `FREEWD` ở đúng ô 72 | — (web không có cột ẩn) |
-| **N2** | `dis_flg ≠ 3` + chèn 105: **KHÔNG hỏi**, dòng vẫn được chèn, `freewd` trống | **H-1** |
-| **A1** | `dis_flg = 3` + 105-0: **hỏi**, đúng nguyên văn, caption 「特別対応加算」, 2 nút | **H-3** (phần nội dung) |
-| **A2** | 「はい」 → `freewd` 「1」 lên **đúng** dòng đó, không lem sang dòng khác | **I-1** |
-| **A3** | 「いいえ」 → dòng **vẫn còn**, `freewd` trống (≠ vắng dòng) | **I-2** |
-| **A4** | 枝番 ngoài whitelist (105-4) **không** được hỏi dù `dis_flg = 3` | ❌ **không có** — web không lọc 枝番 |
-| **A5** | Mã **508** (歯訪) **cũng** được hỏi và cũng ghi `freewd` | ❌ **không có** — lệch parity |
+| **N1** | Cửa hậu bật cột ẩn chạy được; `FREEWD` ở đúng ô 72 | — (chỉ WinForm mới có cột ẩn) |
+| **N2** | `dis_flg ≠ 3` + chèn 105: **KHÔNG hỏi**, dòng vẫn được chèn, `freewd` trống | H-1 |
+| **A1** | `dis_flg = 3` + 105-0: **hỏi**, đúng nguyên văn, caption 「特別対応加算」, 2 nút | H-3 (phần nội dung) |
+| **A2** | 「はい」 → `freewd` 「1」 lên **đúng** dòng đó, không lem sang dòng khác | I-1 |
+| **A3** | 「いいえ」 → dòng **vẫn còn**, `freewd` trống (≠ vắng dòng) | I-2 |
+| **A4** | 枝番 ngoài whitelist (105-4) **không** được hỏi dù `dis_flg = 3` | nhóm J |
+| **A5** | Mã **508** (歯訪) **cũng** được hỏi và cũng ghi `freewd` | nhóm J |
 
-### Testcase bên web không có đối ứng ở đây
+A4/A5 chỉ tồn tại ở cửa `IregCodChk` — cửa 自動算定 không lọc 枝番 và không đụng 508
+(`modSave.cs:3450` chỉ so `Key == 105`).
 
-| Web | Vì sao không dựng |
+### Testcase bên kia không có đối ứng ở đây
+
+| | Vì sao không dựng |
 |---|---|
-| **H-2** `dis_flg = 3` nhưng bộ pick không có 105 | Là tính chất của 自動算定; nhánh 処置選択 thì hiển nhiên (chỉ `case 105`/`case 508` mới hỏi) — A4 đã phủ ý này chặt hơn |
-| **H-4** không có 特２ → chỉ hỏi một câu | Câu 特２ do 自動算定 dựng bộ pick sinh ra, không tồn tại trên nhánh 処置選択 |
+| **H-2** `dis_flg = 3` nhưng bộ pick không có 105 | Là tính chất của 自動算定; ở cửa 処置選択 thì hiển nhiên (chỉ `case 105`/`case 508` mới hỏi) — A4 phủ ý này chặt hơn |
+| **H-4** không có 特２ → chỉ hỏi một câu | Câu 特２ do 自動算定 sinh ra lúc dựng bộ pick, không tồn tại ở cửa 処置選択 |
 | **H-5** nhánh 再診 | nt |
-| **H-6** 「はい」 không đổi dòng nào trên lưới | A2 kiểm chặt hơn: đọc thẳng `freewd` của từng dòng thay vì so danh sách tên |
+| **H-6** 「はい」 không đổi dòng nào trên lưới | A2 kiểm chặt hơn: đọc thẳng `freewd` từng dòng thay vì so danh sách tên |
 | **I-3** 特２ thay pick rồi 困難者 trúng dòng mới | Việc thay pick nằm trong 自動算定 |
-| **I-4** F9 gửi `freewd` lên payload | Bên này đọc thẳng ô 72 nên không cần lưu; muốn phủ cả đường xuống DB thì bật `highNeeds.allowSave` (chưa testcase nào dùng) |
+| **I-4** F9 gửi `freewd` xuống | Bên này đọc thẳng ô 72 nên không cần lưu; muốn phủ cả đường xuống DB thì bật `highNeeds.allowSave` (chưa testcase nào dùng) |
+
+> **Một khác biệt cần biết trước khi so:** WinForm hỏi **SAU** khi đã ghi dòng
+> (`IregCodChk` chạy ở cuối `frmTrtSel_Let_Trt_Data`, `frm203016.cs:1629`). Câu hỏi này
+> không có nút huỷ, nên thứ tự dòng xuất hiện là khác biệt duy nhất nhìn thấy được.
+> Vì vậy N2 khẳng định 「không hỏi vẫn phải chèn dòng」 chứ không khẳng định gì về **thời
+> điểm** dòng hiện ra.
 
 ### Nhánh 自動算定 — CỐ Ý không dựng testcase
 

@@ -40,7 +40,7 @@
     .\run-high-needs-freewd.ps1 -Diagnostics
     .\run-high-needs-freewd.ps1
     .\run-high-needs-freewd.ps1 -AllowDisFlgPatch
-    .\run-high-needs-freewd.ps1 -Case Tc3
+    .\run-high-needs-freewd.ps1 -Case B
 #>
 [CmdletBinding()]
 param(
@@ -64,10 +64,29 @@ if ($PatNo -ne "")      { $env:OCHA_HIGH_NEEDS_PAT_NO = $PatNo }
 
 $ns = "OchaCom.FlaUiTests.Tests.HighNeedsFreewd"
 
+# LOC THEO TEN LOP DAY DU cho hai nhom.
+#
+# `--filter FullyQualifiedName~<chuoi>` la so KHOP CHUOI CON, nen ten hai fixture
+# long vao nhau: "HighNeedsNotAskedTests" CHUA "NotAsked", va bat ky filter nao
+# chua "Asked" cung khop luon no. Da dinh that ca hai chieu 2026-08-26:
+#   -Case NotAsked -> vot them TcA4_...StaysSilent cua fixture kia (3 test)
+#   -Case Asked    -> vot them ca fixture NotAsked           (7 test thay vi 5)
+# Ten lop day du thi khong long nhau, nen hai bi danh duoi day la khong nhap nhang.
+$groups = @{
+    'A'        = 'HighNeedsNotAskedTests'
+    'NotAsked' = 'HighNeedsNotAskedTests'
+    'Silent'   = 'HighNeedsNotAskedTests'
+    'B'        = 'HighNeedsAskedTests'
+    'Asked'    = 'HighNeedsAskedTests'
+}
+
 if ($Diagnostics) {
     # Fixture PROBE mang [Explicit] nên lượt chạy đủ không gọi tới; lọc đích danh thì chạy.
-    $filter = "FullyQualifiedName~$ns&FullyQualifiedName~Tc0"
+    $filter = "FullyQualifiedName~HighNeedsProbeTests"
+} elseif ($groups.ContainsKey($Case)) {
+    $filter = "FullyQualifiedName~$($groups[$Case])"
 } elseif ($Case -ne "") {
+    # Loc mot testcase le theo ten method.
     $filter = "FullyQualifiedName~$ns&FullyQualifiedName~$Case"
 } else {
     $filter = "FullyQualifiedName~$ns"

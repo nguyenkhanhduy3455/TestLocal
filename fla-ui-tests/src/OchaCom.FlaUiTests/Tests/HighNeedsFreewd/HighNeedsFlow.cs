@@ -315,9 +315,8 @@ public sealed class HighNeedsFlow
         {
             Uia.DoubleClickPhysical(x, y);
         });
-        Thread.Sleep(900);
 
-        if (Picker() is null) return true;
+        if (WaitUntilCommitted()) return true;
 
         // Đường lui: chọn dòng bằng click đơn rồi Enter.
         trace?.Do("double-click khong an — click don roi Enter", () =>
@@ -326,9 +325,23 @@ public sealed class HighNeedsFlow
             Thread.Sleep(250);
             Keyboard.Press(VirtualKeyShort.RETURN);
         });
-        Thread.Sleep(900);
-        return Picker() is null;
+        return WaitUntilCommitted();
     }
+
+    /// <summary>
+    /// Đã chốt xong chưa — 処置選択 đóng lại, HOẶC câu hỏi 困難者加算 đã bung ra.
+    ///
+    /// <para><b>Phải nhận cả vế thứ hai.</b> <c>IregCodChk</c> được gọi ở dòng cuối của
+    /// <c>frmTrtSel_Let_Trt_Data</c> (frm203016.cs:1629), tức là VẪN NẰM TRONG hàm xử lý
+    /// của form; <c>MsgBox</c> mà nó bung ra chặn luồng UI nên <c>frm203016</c> chưa kịp
+    /// đóng chừng nào câu hỏi còn đó. Chỉ nhìn 「picker đã đóng chưa」 thì với bệnh nhân
+    /// <c>dis_flg = 3</c> sẽ luôn kết luận 「chốt hụt」 rồi đi click đường lui — cú click
+    /// đó rơi vào form đang bị modal chặn, không ăn gì, và testcase đỏ ở một chỗ chẳng
+    /// liên quan. Đã dính thật 2026-08-26 ở TC-A1.</para>
+    /// </summary>
+    private bool WaitUntilCommitted(int seconds = 10) =>
+        Waits.TryUntil(() => Picker() is null || HighNeedsDialog() is not null,
+                       TimeSpan.FromSeconds(seconds));
 
     /// <summary>Đóng 処置選択 bằng nút 戻る mà KHÔNG chọn gì.</summary>
     public bool ClosePicker(Window dialog)
