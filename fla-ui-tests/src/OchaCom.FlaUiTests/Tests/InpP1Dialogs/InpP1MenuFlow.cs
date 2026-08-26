@@ -282,6 +282,44 @@ public static class InpP1MenuFlow
     /// (IDE, File Explorer) đang topmost ở vị trí đó thì popup bị che và mọi cú click
     /// sau rơi vào cửa sổ kia.</para>
     /// </summary>
+    /// <summary>
+    /// Mở menu F11 rồi click một mục Ở TẦNG ĐẦU (không phải mục con của 「９ オプション」).
+    ///
+    /// <para>Dùng cho <c>IDM_AccDataOnly</c> 「＆3 会計データ作成」 — mục này nằm thẳng
+    /// trong popup, cạnh <c>IDM_Option</c>, nên không cần bước Right Arrow bung submenu
+    /// như <see cref="Open"/>.</para>
+    /// </summary>
+    /// <returns>false khi không mở được menu hoặc không thấy mục.</returns>
+    public static bool ClickTopLevelItem(
+        OchaApp app, Window screen, string menuItemId, string menuItemText, TestTrace? trace = null)
+    {
+        trace?.Step($"F11 → 「{menuItemText}」");
+        OpenMenuByF11(app, screen, trace);
+
+        var popup = WaitForContextMenuPopup(app);
+        if (popup is null)
+        {
+            trace?.Note("KHONG thay popup menu nao sau khi bam F11");
+            return false;
+        }
+
+        var item = FindMenuItem(popup, menuItemId, menuItemText)
+                   ?? FindMenuItemAnywhere(app, menuItemId, menuItemText);
+        if (item is null)
+        {
+            trace?.Note($"popup da mo nhung khong thay muc 「{menuItemText}」 ({menuItemId})");
+            return false;
+        }
+
+        var (x, y) = Uia.Center(item);
+        trace?.Note($"click 「{Uia.NameOf(item)}」");
+        Uia.MoveCursorTo(x, y);
+        Thread.Sleep(200);
+        Uia.LeftClickPhysical(x, y);
+        Waits.Step();
+        return true;
+    }
+
     private static void OpenMenuByF11(OchaApp app, Window screen, TestTrace? trace)
     {
         var btnF11 = Uia.ByIdOrName(screen, "btnF11", "選択", ControlType.Button)

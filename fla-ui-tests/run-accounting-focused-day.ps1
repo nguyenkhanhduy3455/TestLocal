@@ -41,7 +41,12 @@
     Chay Tc0 (PROBE): do nam cau hoi, KHONG assert, khong bao gio nem.
 
 .PARAMETER Case
-    Loc theo ten testcase, vd "Tc1".
+    Loc theo ten testcase, vd "TcDate2".
+
+.PARAMETER TrtDate
+    Ngay mo man hinh (yyyy-MM-dd). MAC DINH = HOM NAY, va do la CO Y: bug chi lo
+    ra khi ngay mo man hinh = hom nay con con tro o ngay cu. Tro vao ngay cu thi
+    testcase van xanh nhung mat kha nang phan biet.
 
 .EXAMPLE
     .\run-accounting-focused-day.ps1 -Diagnostics
@@ -51,6 +56,7 @@
 param(
     [string]$Case = "",
     [int]$StepMs = -1,
+    [string]$TrtDate = "",
     [switch]$Diagnostics,
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug"
@@ -60,6 +66,28 @@ $ErrorActionPreference = "Stop"
 $project = Join-Path $PSScriptRoot "src\OchaCom.FlaUiTests\OchaCom.FlaUiTests.csproj"
 
 if ($StepMs -ge 0) { $env:OCHA_STEP_MS = "$StepMs" }
+
+# ── MO MAN HINH O NGAY HOM NAY — day la TIEN DE CUA CHINH CAI BUG ──────────────
+#
+# Bug chi lo ra khi NGAY MO MAN HINH = hom nay con CON TRO o ngay cu. Va do cung
+# la thu lam cho phep do PHAN BIET DUOC hai gia thuyet:
+#
+#   mo man hinh o HOM NAY, con tro o dong ngay 3
+#     · neu 会計対象日 lay theo DONG CON TRO  -> 3 != hom nay -> CO hoi
+#     · neu lay theo NGAY MAN HINH           -> = hom nay    -> KHONG hoi
+#
+# Neu de patient.trtDate tro vao mot ngay cu (vd 2026-08-03) thi CA HAI gia thuyet
+# deu du doan "co hoi", va testcase mat het kha nang phan biet — van xanh nhung
+# khong chung minh duoc gi.
+#
+# grdRegi giu CA THANG nen mo o hom nay van con day du cac dong ngay cu de dat
+# con tro vao.
+if ($TrtDate -ne "") {
+    $env:OCHA_TRT_DT = $TrtDate
+} else {
+    $env:OCHA_TRT_DT = (Get-Date -Format "yyyy-MM-dd")
+}
+Write-Host "Mo man hinh o ngay: $($env:OCHA_TRT_DT)  (hom nay = $(Get-Date -Format 'yyyy-MM-dd'))" -ForegroundColor Cyan
 
 $ns = "OchaCom.FlaUiTests.Tests.AccountingFocusedDay"
 

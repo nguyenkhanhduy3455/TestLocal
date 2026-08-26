@@ -220,11 +220,44 @@ public sealed class AccountingDayFlow
     /// </summary>
     public Result PressF8AndStopAtDayGate(TestTrace? trace = null)
     {
-        var trail = new List<Seen>();
-
         trace?.Step("bam F8 会計");
         AccountingFlow.TriggerAccounting(_screen.Window, trace);
         Waits.Step();
+        return WalkToDayGate(trace);
+    }
+
+    /// <summary>AutomationId của mục menu 「＆3 会計データ作成」 (frm203002.Designer.cs:2727).</summary>
+    public const string AccDataOnlyMenuId = "IDM_AccDataOnly";
+
+    /// <summary>Chữ trên mục menu đó (frm203002.Designer.cs:2729, đã bỏ ký tự tắt 「＆」).</summary>
+    public const string AccDataOnlyMenuText = "会計データ作成";
+
+    /// <summary>
+    /// F11 → 「3 会計データ作成」 (<c>IDM_AccDataOnly_Click</c>, frm203002.cs:7749) rồi
+    /// dừng ở cổng ngày.
+    ///
+    /// <para>Lối vào này gọi CHÍNH <c>LetAccData2</c> nên đi qua ĐÚNG cổng ngày như F8.
+    /// Khác biệt nằm ở phần SAU: <c>IDM_AccDataOnly_Click</c> <b>không có</b>
+    /// <c>showForm(ID204002)</c> lẫn <c>this.Close()</c> ⇒ 診療入力 Ở LẠI. Đó chính là
+    /// thứ phân biệt hai lối vào, và là điều testcase đối chiếu đo.</para>
+    /// </summary>
+    public Result PressAccDataOnlyAndStopAtDayGate(TestTrace? trace = null)
+    {
+        var opened = InpP1Dialogs.InpP1MenuFlow.ClickTopLevelItem(
+            _app, _screen.Window, AccDataOnlyMenuId, AccDataOnlyMenuText, trace);
+
+        if (!opened)
+            return new Result(DayGate.StoppedAtUnknown, [], false,
+                $"không mở được menu F11 hoặc không thấy mục 「{AccDataOnlyMenuText}」 " +
+                $"({AccDataOnlyMenuId}).");
+
+        Waits.Step();
+        return WalkToDayGate(trace);
+    }
+
+    private Result WalkToDayGate(TestTrace? trace)
+    {
+        var trail = new List<Seen>();
 
         // Trần 6 vòng: trước cổng ngày nhiều nhất là 保存しますか + 処置チェック.
         // Chạm trần nghĩa là gặp vòng lặp, và bỏ chạy còn hơn bấm mãi vào sổ tiền.
