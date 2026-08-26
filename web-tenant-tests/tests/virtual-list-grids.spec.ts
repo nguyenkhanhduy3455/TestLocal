@@ -519,7 +519,7 @@ test.describe('診療入力 — dialog mở bằng 1 phím / 1 click', () => {
 
     test('click 1 パック mở được picker', async () => {
       await page.getByRole('button', { name: 'パック', exact: true }).click()
-      const packRows = page.locator('div[class*="grid-cols-[35px_1fr]"]')
+      const packRows = page.locator('div[class*="grid-cols-[42px_1fr]"]')
       await expect(packRows.nth(2)).toBeVisible({ timeout: 30000 })
       const packTitle = page.getByText('パック処置選択')
       const noTrtAlert = page.getByText('算定可能な処置はありません')
@@ -813,7 +813,7 @@ test.describe('診療入力 — chuỗi nhập 処置 (GHI DỮ LIỆU THẬT)',
       expect(await changeBtn.count(), 'không thấy nút 変更 ở panel 病検').toBeGreaterThan(0)
       await changeBtn.click()
 
-      const byoRows = page.locator('div[class*="grid-cols-[30px_270px_1fr]"]')
+      const byoRows = page.locator('div[class*="grid-cols-[40px_270px_1fr]"]')
       await expect(byoRows.nth(1), 'panel 病検 chưa có dòng nào — đổi TEST_PAT_NO').toBeVisible({
         timeout: 20000,
       })

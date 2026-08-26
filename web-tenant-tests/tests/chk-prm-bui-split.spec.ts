@@ -102,7 +102,7 @@ const PLAQUE_DIS_CDS = [103, 104]
  */
 const SPLIT_ROW_CELL = '[class*="ffe0c0"]'
 
-const BYOU_ROW_SEL = 'div[class*="grid-cols-[30px_270px_1fr]"][class*="cursor-pointer"]'
+const BYOU_ROW_SEL = 'div[class*="grid-cols-[40px_270px_1fr]"][class*="cursor-pointer"]'
 
 /** Một dòng của `GET /tenant/patients/{patNo}/diagnosis-history`. */
 interface DiagnosisHistoryItem {

@@ -27,7 +27,7 @@ import { ADMIN_USER, JA } from './test-data'
  *
  * Web port (apps/web-tenant/src/features/treatments):
  *  - components/treatment-side-panel.tsx
- *      · Tab パック: header 2 cột 「No.」/「名称」 (grid-cols-[35px_1fr], sticky),
+ *      · Tab パック: header 2 cột 「No.」/「名称」 (grid-cols-[42px_1fr], sticky),
  *        list là map thường (KHÔNG virtual như tab 個別); rỗng → 「未登録」,
  *        đang tải → 「読込中…」.
  *      · Dòng đang sáng: nền `bg-[#ffffc0]` (vàng nhạt) — mirror CurrentRow.
@@ -93,7 +93,7 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
     /** Alert 「算定可能な処置はありません。」 khi パック không có 処置 nào tính được. */
     let noTrtAlert: Locator
     /**
-     * Dòng của tab パック. Header cũng dùng grid-cols-[35px_1fr] nên phải kèm
+     * Dòng của tab パック. Header cũng dùng grid-cols-[42px_1fr] nên phải kèm
      * `cursor-pointer` (chỉ dòng dữ liệu mới có) để loại header ra.
      */
     let rows: Locator
@@ -166,7 +166,7 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
 
         picker = page.getByRole('dialog').filter({ hasText: 'パック番号' })
         noTrtAlert = page.getByText('算定可能な処置はありません')
-        rows = page.locator('div[class*="grid-cols-[35px_1fr]"][class*="cursor-pointer"]')
+        rows = page.locator('div[class*="grid-cols-[42px_1fr]"][class*="cursor-pointer"]')
         noInput = page.locator('input[data-side-anchor]')
     })
 

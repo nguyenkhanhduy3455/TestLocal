@@ -564,7 +564,7 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
         // → sang tab パック (SIDE_TABS = 病検/ガイド/パック/個別 → ガイド đứng thứ 2).
         await page.keyboard.press('ArrowRight')
         await expect(
-            sidePanel.locator('div[class*="grid-cols-[35px_1fr]"]').first(),
+            sidePanel.locator('div[class*="grid-cols-[42px_1fr]"]').first(),
         ).toBeVisible({ timeout: 30000 })
         await expect(rows, 'rời tab ガイド mà list ガイド vẫn còn').toHaveCount(0)
 
@@ -1083,12 +1083,12 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
 // chú thích 「WinForm parity 1」 phía trên).
 // ═════════════════════════════════════════════════════════════════════════════
 
-/** Dòng tab 病検 — header cũng dùng grid-cols-[30px_270px_1fr] nên phải kèm cursor-pointer. */
-const BYOU_ROW_SEL = 'div[class*="grid-cols-[30px_270px_1fr]"][class*="cursor-pointer"]'
+/** Dòng tab 病検 — header cũng dùng grid-cols-[40px_270px_1fr] nên phải kèm cursor-pointer. */
+const BYOU_ROW_SEL = 'div[class*="grid-cols-[40px_270px_1fr]"][class*="cursor-pointer"]'
 /** Dòng tab ガイド (treatment-side-panel.tsx:857). */
 const GUID_ROW_SEL = 'div[class*="grid-cols-[40px_1fr]"][class*="cursor-pointer"]'
 /** Dòng tab パック (treatment-side-panel.tsx:902). */
-const PACK_ROW_SEL = 'div[class*="grid-cols-[35px_1fr]"][class*="cursor-pointer"]'
+const PACK_ROW_SEL = 'div[class*="grid-cols-[42px_1fr]"][class*="cursor-pointer"]'
 /**
  * Dòng tab 個別 — list ẢO (react-virtual), chỉ cửa sổ đang nhìn có mặt trong DOM.
  * `data-index` (treatment-side-panel.tsx:950) là CHỈ SỐ THẬT trong mst_trt, nên

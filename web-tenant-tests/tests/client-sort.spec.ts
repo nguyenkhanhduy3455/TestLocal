@@ -853,7 +853,7 @@ test.describe('client sort — dialog grid + list màn hình', () => {
 
     // Khác ガイド: KHÔNG cần 全て表示, list パック tự load.
     await page.getByRole('button', { name: 'パック', exact: true }).click()
-    const packRows = page.locator('div[class*="grid-cols-[35px_1fr]"]')
+    const packRows = page.locator('div[class*="grid-cols-[42px_1fr]"]')
     await expect(packRows.nth(2)).toBeVisible({ timeout: 30000 })
     await step()
 
@@ -1070,7 +1070,7 @@ test.describe('client sort — dialog grid + list màn hình', () => {
       return
     }
     await changeBtn.click()
-    const byoRows = page.locator('div[class*="grid-cols-[30px_270px_1fr]"]')
+    const byoRows = page.locator('div[class*="grid-cols-[40px_270px_1fr]"]')
     if (!(await byoRows.nth(1).count())) {
       console.log('病名選択: panel 病検 chưa có dòng nào → BỎ QUA')
       return

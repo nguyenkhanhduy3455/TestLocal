@@ -434,7 +434,7 @@ test.describe('診療入力 — 2 dialog vừa port (チェック項目設定 / 
         if (!(await appeared(changeBtn, 15_000))) return false
         await changeBtn.click()
 
-        const byoRows = page.locator('div[class*="grid-cols-[30px_270px_1fr]"]')
+        const byoRows = page.locator('div[class*="grid-cols-[40px_270px_1fr]"]')
         if (!(await appeared(byoRows.nth(1), 20_000))) return false
         await byoRows.nth(1).click()
         return appeared(toothDialog, 20_000)
