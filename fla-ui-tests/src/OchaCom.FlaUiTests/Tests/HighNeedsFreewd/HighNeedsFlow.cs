@@ -434,8 +434,50 @@ public sealed class HighNeedsFlow
         : IsFreewdEmpty(value) ? $"(trống, đọc ra 「{Txt.N(value)}」)"
         : $"「{Txt.N(value)}」";
 
-    /// <summary>Dòng lưới có 療法・処置 chứa <paramref name="name"/>, lấy dòng CUỐI.</summary>
-    public RegiRow? RowNamed(string name) => _grid.LastRowMatching(name);
+    /// <summary>Một dòng lưới đã đọc RIÊNG hai ô cần thiết — xem <see cref="ScanRows"/>.</summary>
+    public sealed record FreewdRow(RegiRow Row, string Name, string? Freewd)
+    {
+        public override string ToString() =>
+            $"「{Name}」 freewd = {DescribeFreewd(Freewd)}";
+    }
+
+    /// <summary>
+    /// Quét lưới đọc ĐÚNG HAI ô mỗi dòng: 療法・処置 (2) và FREEWD (72).
+    ///
+    /// <para>KHÔNG dùng <c>TreatmentGridOps.Snapshot</c> ở đây. Lớp đó đọc TOÀN BỘ ô của
+    /// mỗi dòng — bình thường là 5 ô, nhưng luồng này đã bật cột ẩn nên thành <b>81 ô</b>
+    /// (đo 2026-08-26). Mỗi <c>Uia.ValueOf</c> là vài lượt gọi COM xuyên tiến trình, nên
+    /// quét 20 dòng sẽ nhảy từ ~100 lên ~1.600 lượt và testcase hết giờ trước khi đọc
+    /// xong. Đọc đích danh hai ô thì chi phí không đổi theo số cột.</para>
+    /// </summary>
+    public IReadOnlyList<FreewdRow> ScanRows(int limit = 60)
+    {
+        var rows = new List<FreewdRow>();
+        var index = 0;
+
+        foreach (var element in _screen.Regi.Grid.RowElements(limit))
+        {
+            var cells = Uia.Children(element).ToList();
+
+            // Dòng tiêu đề 「Top Row」 lọt vào danh sách y như ở mọi lưới khác của app;
+            // ô con của nó là Header chứ không phải DataItem.
+            if (cells.Count <= RegiGrid.Col.Ryo) continue;
+            if (Uia.ControlTypeOf(cells[0]) is ControlType.Header or ControlType.HeaderItem) continue;
+
+            var name = Txt.N(Uia.ValueOf(cells[RegiGrid.Col.Ryo]));
+            var freewd = cells.Count > ColFreewd ? Txt.N(Uia.ValueOf(cells[ColFreewd])) : null;
+
+            rows.Add(new FreewdRow(
+                new RegiRow(index++, element, "", "", name, "", ""),
+                name,
+                freewd));
+        }
+        return rows;
+    }
+
+    /// <summary>Dòng CUỐI có 療法・処置 chứa <paramref name="name"/>; null nếu không có.</summary>
+    public FreewdRow? RowNamed(string name, int limit = 60) =>
+        ScanRows(limit).LastOrDefault(r => Txt.Has(r.Name, name));
 
     // ── 自動算定 ─────────────────────────────────────────────────────────────
 

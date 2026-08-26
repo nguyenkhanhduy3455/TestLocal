@@ -15,8 +15,8 @@ namespace OchaCom.FlaUiTests.Tests.HighNeedsFreewd;
 /// ═══════════════════════════════════════════════════════════════════════════
 /// Đo ngày 2026-08-26 trên chính SIM2000 mà máy test trỏ tới: <b>không có bệnh nhân
 /// nào dis_flg = 3</b> (0: 16.322 bn · 1: 2 bn · 2: 14 bn · 3: 0 bn). Câu hỏi so BẰNG
-/// 3 nên nhánh này không tự nhiên tới được — y hệt tình trạng bên bản web, và cách xử
-/// lý lấy đúng bên đó (<c>TEST_ALLOW_DIS_FLG_PATCH</c>).
+/// 3 nên nhánh này không tự nhiên tới được. Cách xử lý lấy theo bộ Playwright:
+/// vá tạm rồi trả lại (<c>TEST_ALLOW_DIS_FLG_PATCH</c>).
 ///
 /// <para><b>Vá TRƯỚC khi app mở, không phải giữa chừng.</b>
 /// <c>CommonInp.getCommonPatInfo</c> nạp <c>_patInfoList</c> ở màn CHỌN BỆNH NHÂN
@@ -50,12 +50,11 @@ namespace OchaCom.FlaUiTests.Tests.HighNeedsFreewd;
 /// Khác duy nhất là chỗ châm ngòi.</para>
 ///
 /// ═══════════════════════════════════════════════════════════════════════════
-/// ĐỐI CHIẾU VỚI BẢN WEB
+/// ĐÂY LÀ BÊN ĐO ĐÁP ÁN
 /// ═══════════════════════════════════════════════════════════════════════════
-/// TC-A4 và TC-A5 <b>không có testcase đối ứng bên web</b>, vì bản web chưa port nhánh
-/// <c>IregCodChk</c>: <c>classifyCodeModeEntry</c> (code-mode-entry.ts:96) chỉ chép
-/// phần đầu của <c>GetTrtmasCod</c> (101/102/103, 50, 999, 333, 1-6), nên 105 và 508
-/// rơi vào nhánh <c>'lookup'</c> thường và không có gì hỏi. Chi tiết ở README mục 4.
+/// Mọi con số ở đây là hành vi CỦA WINFORM, đo trên máy thật. Bản port phải khớp
+/// theo chiều này — testcase đỏ nghĩa là bản port lệch, KHÔNG phải testcase viết sai.
+/// Bảng số hiệu TC tương ứng nằm ở README mục 4.
 ///
 /// <para>Chạy: <c>.\run-high-needs-freewd.ps1 -AllowDisFlgPatch -Case Asked</c></para>
 /// </summary>
@@ -191,20 +190,14 @@ public sealed class HighNeedsAskedTests : UiTestBase
         return (target, _flow.WaitForHighNeedsDialog(seconds: 10));
     }
 
-    /// <summary>Dòng vừa chèn trên lưới, kèm giá trị freewd đọc từ cột 72.</summary>
-    private (RegiRowRef Row, string? Freewd) InsertedRow(HighNeedsFlow.PickRow pick)
+    /// <summary>Dòng vừa chèn trên lưới, kèm giá trị ô FREEWD (cột 72).</summary>
+    private HighNeedsFlow.FreewdRow InsertedRow(HighNeedsFlow.PickRow pick)
     {
         var row = _flow.RowNamed(pick.Name.Trim());
         Assert.That(row, Is.Not.Null,
             $"chốt 処置選択 rồi thì dòng 「{pick.Name.Trim()}」 phải có trên lưới " +
             "(IregCodChk chạy SAU khi frmTrtSel_Let_Trt_Data ghi xong dòng, frm203016.cs:1629)");
-        return (new RegiRowRef(row!), _flow.FreewdOf(row!));
-    }
-
-    /// <summary>Bọc mỏng để thông điệp assert in ra được nội dung dòng.</summary>
-    private sealed record RegiRowRef(TreatmentGrid.RegiRow Value)
-    {
-        public override string ToString() => Value.ToString();
+        return row!;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -264,9 +257,9 @@ public sealed class HighNeedsAskedTests : UiTestBase
         using var trace = TestTrace.Begin();
         EnsureFreewdReadable(trace);
 
-        var before = _flow.Grid.Snapshot()
-                          .Select(r => (r.Ryo.Trim(), _flow.FreewdOf(r)))
-                          .Where(x => !HighNeedsFlow.IsFreewdEmpty(x.Item2))
+        var before = _flow.ScanRows()
+                          .Where(r => !HighNeedsFlow.IsFreewdEmpty(r.Freewd))
+                          .Select(r => $"{r.Name}={r.Freewd}")
                           .ToList();
 
         var (pick, dialog) = Insert(trace, HighNeedsFlow.TrtCdToku, trtSb: 0);
@@ -276,28 +269,25 @@ public sealed class HighNeedsAskedTests : UiTestBase
         Thread.Sleep(600);
         trace.Shot("sau-khi-tra-loi-hai");
 
-        var (row, freewd) = InsertedRow(pick);
-        Assert.That(freewd, Is.EqualTo(HighNeedsDb.FreewdDifficult),
+        var row = InsertedRow(pick);
+        Assert.That(row.Freewd, Is.EqualTo(HighNeedsDb.FreewdDifficult),
             $"「はい」 phải ghi 「1」 vào grdRegi[72] của CHÍNH dòng vừa chèn " +
-            $"(frm203016.cs:1101). Dòng 「{row}」 đang có freewd = " +
-            $"{HighNeedsFlow.DescribeFreewd(freewd)}");
+            $"(frm203016.cs:1101). Đang là: {row}");
 
         // Không dòng nào KHÁC được dính thêm freewd. getTensu quét NGƯỢC và lấy dòng
         // 特別対応加算 đầu tiên khớp (CommonChk.chkHighNeedsAdd) nên một giá trị lạc chỗ
         // đổi luôn kết quả tính điểm.
-        var after = _flow.Grid.Snapshot()
-                         .Select(r => (r.Ryo.Trim(), _flow.FreewdOf(r)))
-                         .Where(x => !HighNeedsFlow.IsFreewdEmpty(x.Item2))
-                         .ToList();
-        var newlyMarked = after.Where(a => !before.Any(b => b.Item1 == a.Item1 && b.Item2 == a.Item2))
-                               .Where(a => !Txt.Has(a.Item1, pick.Name.Trim()))
+        var newlyMarked = _flow.ScanRows()
+                               .Where(r => !HighNeedsFlow.IsFreewdEmpty(r.Freewd))
+                               .Select(r => $"{r.Name}={r.Freewd}")
+                               .Except(before)
+                               .Where(x => !Txt.Has(x, pick.Name.Trim()))
                                .ToList();
 
         Assert.That(newlyMarked, Is.Empty,
-            "freewd lem sang dòng không phải 特別対応加算: " +
-            string.Join(" / ", newlyMarked.Select(x => $"「{x.Item1}」={x.Item2}")));
+            "freewd lem sang dòng không phải 特別対応加算: " + string.Join(" / ", newlyMarked));
 
-        TestContext.Out.WriteLine($"=== KQ-A2 === dòng 「{row}」 freewd = 「{freewd}」");
+        TestContext.Out.WriteLine($"=== KQ-A2 === {row}");
         _flow.DismissAll();
     }
 
@@ -319,31 +309,34 @@ public sealed class HighNeedsAskedTests : UiTestBase
         Thread.Sleep(600);
         trace.Shot("sau-khi-tra-loi-khong");
 
-        var (row, freewd) = InsertedRow(pick);
+        var row = InsertedRow(pick);
 
-        Assert.That(HighNeedsFlow.IsFreewdEmpty(freewd), Is.True,
+        Assert.That(HighNeedsFlow.IsFreewdEmpty(row.Freewd), Is.True,
             $"「いいえ」 KHÔNG ghi gì cả — chỉ nhánh Yes mới gán 「1」 (frm203016.cs:1100-1102). " +
-            $"Dòng 「{row}」 đang có freewd = {HighNeedsFlow.DescribeFreewd(freewd)}");
+            $"Đang là: {row}");
 
-        // Đây là điểm mà bản web dễ port hỏng nhất: CommonChk.cs:100-111 phân biệt BA
-        // trạng thái — không có dòng 特別対応加算 → disFlg 0 (加算なし); có dòng, freewd
-        // 「1」 → disFlg 1; có dòng, freewd khác → disFlg 2. Bỏ dòng ra khỏi lưới khi
-        // người dùng trả lời 「いいえ」 sẽ âm thầm biến 加算2 thành 加算なし.
+        // Vì sao 「có dòng + freewd trống」 phải khác 「không có dòng」:
+        // CommonChk.cs:100-111 phân giải BA trạng thái — không có dòng 特別対応加算
+        // cùng ngày → disFlg 0 (加算なし); có dòng, freewd 「1」 → disFlg 1; có dòng,
+        // freewd khác 「1」 → disFlg 2. Bỏ dòng đi khi người dùng trả lời 「いいえ」 sẽ
+        // âm thầm biến 加算2 thành 加算なし, và điểm sai mà không ai thấy.
         TestContext.Out.WriteLine(
-            $"=== KQ-A3 === 「いいえ」 → dòng 「{row}」 vẫn còn, freewd = " +
-            $"{HighNeedsFlow.DescribeFreewd(freewd)} ⇒ getTensu sẽ phân giải disFlg = 2 " +
+            $"=== KQ-A3 === 「いいえ」 → dòng vẫn còn: {row} ⇒ getTensu sẽ phân giải disFlg = 2 " +
             "(CommonChk.cs:109), KHÁC hẳn 0 của trường hợp không có dòng nào.");
 
         _flow.DismissAll();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // TC-A4 — KHÔNG có đối ứng bên web (web không lọc 枝番)
+    // TC-A4 — whitelist 枝番: chỉ cửa IregCodChk mới lọc
     // ═══════════════════════════════════════════════════════════════════════
 
     [Test, Order(4)]
+    // Tên method CỐ Ý không chứa chuỗi 「NotAsked」: runner lọc bằng
+    // `FullyQualifiedName~<Case>`, nên `-Case NotAsked` sẽ vớt luôn testcase này của
+    // fixture kia. Đã dính thật 2026-08-26.
     [Description("TC-A4 — 枝番 ngoài whitelist (105-4) KHÔNG được hỏi, dù dis_flg = 3")]
-    public void TcA4_SubCodeOutsideWhitelistIsNotAsked()
+    public void TcA4_SubCodeOutsideWhitelistStaysSilent()
     {
         using var trace = TestTrace.Begin();
         EnsureFreewdReadable(trace);
@@ -364,9 +357,9 @@ public sealed class HighNeedsAskedTests : UiTestBase
             $"[{string.Join(",", TokuTrapped)}] nên frm203016.cs:1096 không bẫy ⇒ phải im lặng " +
             $"dù dis_flg = 3. Hộp thoại: {_flow.DescribeDialogs()}");
 
-        var (row, freewd) = InsertedRow(pick);
-        Assert.That(HighNeedsFlow.IsFreewdEmpty(freewd), Is.True,
-            $"không hỏi thì không ghi. Dòng 「{row}」 freewd = {HighNeedsFlow.DescribeFreewd(freewd)}");
+        var row = InsertedRow(pick);
+        Assert.That(HighNeedsFlow.IsFreewdEmpty(row.Freewd), Is.True,
+            $"không hỏi thì không ghi. Đang là: {row}");
 
         TestContext.Out.WriteLine(
             $"=== KQ-A4 === 105-{outsideSb} 「{pick.Name.Trim()}」 → không hỏi (đúng whitelist)");
@@ -374,11 +367,11 @@ public sealed class HighNeedsAskedTests : UiTestBase
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // TC-A5 — LỆCH PARITY: web KHÔNG hỏi 508 ở bất kỳ đâu
+    // TC-A5 — mã 508: chỉ cửa IregCodChk mới bẫy
     // ═══════════════════════════════════════════════════════════════════════
 
     [Test, Order(5)]
-    [Description("TC-A5 — mã 508 (歯訪) CŨNG được hỏi — chỗ bản web chưa port")]
+    [Description("TC-A5 — mã 508 (歯訪) CŨNG được hỏi — cửa mà nhánh 自動算定 không có")]
     public void TcA5_HomeVisitCodeIsAlsoAsked()
     {
         using var trace = TestTrace.Begin();
@@ -395,20 +388,16 @@ public sealed class HighNeedsAskedTests : UiTestBase
         Assert.That(_flow.Answer(dialog!, yes: true), Is.True, "không bấm được 「はい」");
         Thread.Sleep(600);
 
-        var (row, freewd) = InsertedRow(pick);
-        Assert.That(freewd, Is.EqualTo(HighNeedsDb.FreewdDifficult),
+        var row = InsertedRow(pick);
+        Assert.That(row.Freewd, Is.EqualTo(HighNeedsDb.FreewdDifficult),
             $"「はい」 trên nhánh 508 ghi vào cùng ô grdRegi[72] (frm203016.cs:1114). " +
-            $"Dòng 「{row}」 freewd = {HighNeedsFlow.DescribeFreewd(freewd)}");
+            $"Đang là: {row}");
 
+        TestContext.Out.WriteLine($"=== KQ-A5 === 508-0 CÓ hỏi và ghi freewd 「{row.Freewd}」.");
         TestContext.Out.WriteLine(
-            $"=== KQ-A5 === 508-0 CÓ hỏi và ghi freewd 「{freewd}」.");
-        TestContext.Out.WriteLine(
-            "=== KQ-A5 === ⚠️ LỆCH PARITY: bản web KHÔNG hỏi 508 ở bất kỳ đâu. " +
-            "runAutoSantei chỉ tìm trtCd === HIGH_NEEDS_ADD_TRT_CD (105), và " +
-            "classifyCodeModeEntry (code-mode-entry.ts:96) không có nhánh nào cho 105/508 " +
-            "nên đường 処置選択 của web không hỏi gì. Header của " +
-            "auto-santei-high-needs-freewd.spec.ts đang ghi 「508 không bao giờ được hỏi — " +
-            "cả WinForm lẫn web đều vậy」 — đúng với nhánh 自動算定, SAI với nhánh này.");
+            "=== KQ-A5 === Đây là điều mà nhánh 自動算定 KHÔNG làm: modSave.cs:3450 chỉ so " +
+            "`Key == 105` nên 508 không bao giờ được hỏi ở cửa đó. Chỉ cửa IregCodChk mới " +
+            "có `case 508` (frm203016.cs:1107). Hai cửa lệch nhau THẬT — đừng gộp làm một.");
 
         _flow.DismissAll();
     }

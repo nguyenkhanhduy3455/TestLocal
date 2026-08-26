@@ -280,9 +280,7 @@ public sealed class HighNeedsProbeTests : UiTestBase
             // Dòng vừa chèn: freewd phải trống vì chưa ai trả lời 「はい」.
             var name = target.Name.Trim();
             var inserted = name.Length > 0 ? _flow.RowNamed(name) : null;
-            if (inserted is not null)
-                Kq("4b", $"dòng vừa chèn 「{inserted.Ryo.Trim()}」 freewd = " +
-                         $"{(_flow.FreewdOf(inserted) is { } f ? $"[{f}]" : "(không đọc được — cột ẩn chưa bật?)")}");
+            if (inserted is not null) Kq("4b", $"dòng vừa chèn: {inserted}");
 
             _flow.DismissAll();
         });

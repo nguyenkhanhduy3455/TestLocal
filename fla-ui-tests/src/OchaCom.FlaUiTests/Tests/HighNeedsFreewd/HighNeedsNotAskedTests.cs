@@ -154,15 +154,12 @@ public sealed class HighNeedsNotAskedTests : UiTestBase
             "Không hỏi KHÔNG có nghĩa là không chèn — IregCodChk chạy SAU khi " +
             "frmTrtSel_Let_Trt_Data đã ghi xong dòng (frm203016.cs:1629).");
 
-        var freewd = _flow.FreewdOf(inserted!);
-        Assert.That(HighNeedsFlow.IsFreewdEmpty(freewd), Is.True,
-            $"không ai trả lời 「はい」 thì freewd phải trống. Đang là " +
-            $"{HighNeedsFlow.DescribeFreewd(freewd)}. Chỉ nhánh Yes mới ghi 「1」 " +
-            "(frm203016.cs:1100-1102).");
+        Assert.That(HighNeedsFlow.IsFreewdEmpty(inserted!.Freewd), Is.True,
+            "không ai trả lời 「はい」 thì freewd phải trống. Chỉ nhánh Yes mới ghi 「1」 " +
+            $"(frm203016.cs:1100-1102). Đang là: {inserted}");
 
         TestContext.Out.WriteLine(
-            $"=== KQ-N2 === dis_flg={_disFlg} → không hỏi; dòng 「{inserted!.Ryo.Trim()}」 " +
-            $"freewd = {HighNeedsFlow.DescribeFreewd(freewd)}");
+            $"=== KQ-N2 === dis_flg={_disFlg} → không hỏi; dòng vừa chèn: {inserted}");
 
         _flow.DismissAll();
     }
