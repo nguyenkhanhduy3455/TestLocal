@@ -296,18 +296,22 @@ public static class InpP1MenuFlow
         trace?.Step($"F11 → 「{menuItemText}」");
         OpenMenuByF11(app, screen, trace);
 
+        // KHÔNG bỏ cuộc khi không tìm thấy "popup": đo thật 2026-08-26 cho thấy menu
+        // của frm203002 không phải lúc nào cũng lộ ra dưới dạng cửa sổ #32768 hay
+        // ControlType.Menu, nên WaitForContextMenuPopup trả null trong khi các
+        // MenuItem VẪN có mặt trong cây UIA. Bản đầu bail ở đây và TC-DATE-4 đỏ với
+        // 「không mở được menu F11」 dù menu đang hiện rành rành trên ảnh chụp.
         var popup = WaitForContextMenuPopup(app);
         if (popup is null)
-        {
-            trace?.Note("KHONG thay popup menu nao sau khi bam F11");
-            return false;
-        }
+            trace?.Note("khong thay cua so popup — quet thang MenuItem tren moi cua so top-level");
 
-        var item = FindMenuItem(popup, menuItemId, menuItemText)
-                   ?? FindMenuItemAnywhere(app, menuItemId, menuItemText);
+        var item = (popup is null ? null : FindMenuItem(popup, menuItemId, menuItemText))
+                   ?? FindMenuItemAnywhere(app, menuItemId, menuItemText)
+                   ?? FindMenuItemAcrossTopLevel(app, menuItemText);
+
         if (item is null)
         {
-            trace?.Note($"popup da mo nhung khong thay muc 「{menuItemText}」 ({menuItemId})");
+            trace?.Note($"khong thay muc 「{menuItemText}」 ({menuItemId}) o bat ky dau");
             return false;
         }
 
@@ -348,6 +352,34 @@ public static class InpP1MenuFlow
     }
 
     /// <summary>Mục menu theo AutomationId, không có thì theo chữ.</summary>
+    /// <summary>
+    /// Quét MỌI cửa sổ top-level của app tìm một <c>MenuItem</c> theo TÊN.
+    ///
+    /// <para>Đường cuối cùng, và là đường ĐO ĐƯỢC là chạy. Menu của frm203002 phơi ra
+    /// 23 MenuItem với <c>AutomationId</c> <b>RỖNG HẾT</b> (đo 2026-08-26), tên dạng
+    /// 「3 会計データ作成」 — có số thứ tự ở đầu và đã bỏ ký tự tắt 「&amp;」. Nên mọi phép
+    /// tìm theo AutomationId đều trượt, và phép tìm theo tên phải là SO CHỨA.</para>
+    /// </summary>
+    private static AutomationElement? FindMenuItemAcrossTopLevel(OchaApp app, string text)
+    {
+        try
+        {
+            foreach (var w in app.Application.GetAllTopLevelWindows(app.Automation))
+            {
+                try
+                {
+                    if (!Uia.IsOnScreen(w)) continue;
+                    var hit = w.FindAllDescendants(cf => cf.ByControlType(ControlType.MenuItem))
+                               .FirstOrDefault(i => Txt.Has(Uia.NameOf(i).Replace("&", ""), text));
+                    if (hit is not null) return hit;
+                }
+                catch { /* cửa sổ vừa đóng */ }
+            }
+        }
+        catch { /* tiến trình bận */ }
+        return null;
+    }
+
     private static AutomationElement? FindMenuItem(AutomationElement root, string automationId, string text)
     {
         AutomationElement[] items;
