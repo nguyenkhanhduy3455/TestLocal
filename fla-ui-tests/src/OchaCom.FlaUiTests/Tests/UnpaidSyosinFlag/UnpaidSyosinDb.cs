@@ -221,10 +221,20 @@ public sealed class UnpaidSyosinDb
         var columns = new List<string>();
         using (var con = Open())
         using (var cmd = Cmd(con,
+            // LOẠI cột IDENTITY và cột tính toán.
+            //
+            // TRNTRN có SEQ là IDENTITY (và nó nằm trong khoá chính
+            // PAT_NO/TRT_DT/DISP_NO/SEQ). Liệt kê nó trong INSERT thì SQL Server từ
+            // chối thẳng: 「Cannot insert explicit value for identity column in table
+            // 'TRNTRN' when IDENTITY_INSERT is set to OFF」 — đo thật 2026-08-26.
+            // Bỏ nó ra vừa hết lỗi vừa tránh đụng khoá chính, vì SQL Server tự cấp
+            // giá trị mới.
             """
             SELECT c.name
               FROM sys.columns c
              WHERE c.object_id = OBJECT_ID('TRNTRN')
+               AND c.is_identity = 0
+               AND c.is_computed = 0
              ORDER BY c.column_id
             """))
         using (var reader = cmd.ExecuteReader())
