@@ -46,6 +46,7 @@ const MST_IIN_URL = /\/tenant\/mst-iin-2(\?|$)/
 /** Chỉ số cột lưới — `RegiCol` (frm203002.cs:158-169). */
 const COL_DAY = 0
 const COL_RYO = 2
+const COL_TEN = 3
 
 /** rowKey của dòng THÁNG CŨ là `${recordIndex}-${itemIndex}`; dòng tháng hiện hành là uuid. */
 const HISTORY_KEY_RE = /^\d+-\d+$/
@@ -68,8 +69,12 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
     let pickedDoctor: { userNo: number; userNm: string } | null = null
     /** Tên của Ｄｒ．đang nằm trên các dòng TRN — cái mà NHÃN phải hiện. */
     let rowDoctorNm = ''
+    /** Dòng mà TC-LBL-1 đặt con trỏ lên; TC-BULK-* thao tác tiếp trên chính nó. */
+    let anchorRow: { key: string; day: string } | null = null
     /** Mọi payload GET /tenant/mst-iin-2 bắt được — nguồn của TC-MST-1. */
     const mstIinPayloads: Record<string, unknown>[][] = []
+    /** Một lời gọi 医院マスタ thật (URL + token) để TC-MST-2 gọi lại không kèm 区分. */
+    let mstIinCall: { url: string; authorization: string } | null = null
 
     // ── Locator ──────────────────────────────────────────────────────────────
 
@@ -104,17 +109,59 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
 
     const cell = (key: string, col: number) => page.locator(`[data-grid-cell="${key}|${col}"]`)
 
-    /** rowKey + số ngày của mọi dòng THÁNG HIỆN HÀNH đang hiển thị. */
+    /**
+     * rowKey + số ngày của các dòng THÁNG HIỆN HÀNH **có 担当医 riêng**.
+     *
+     * Bỏ qua dòng có 点 là dấu gạch (部位病名行 / 保険切替行 / 介護一部負担金) và
+     * dòng 行追加 trống: `chgDrName` trả `null` cho nhóm đầu (giữ nguyên nhãn) và
+     * rơi về combo cho nhóm sau (ô hFG1[69] trống → `pintDrNo`). Đứng trên chúng
+     * mà đòi nhãn ra 担当医 của dòng là đòi sai — WinForm cũng không làm vậy.
+     */
     async function currentMonthRows(): Promise<{ key: string; day: string }[]> {
         const keys = await page.locator(`[data-grid-cell$="|${COL_RYO}"]`).evaluateAll((els) =>
             els.map((e) => (e.getAttribute('data-grid-cell') ?? '').replace(/\|\d+$/, '')),
         )
         const out: { key: string; day: string }[] = []
+        // Ô 日 chỉ IN ra ở dòng đầu của mỗi ngày, các dòng sau để trống cho dễ đọc
+        // (mapper 「blanks repeated day numbers」) — nhưng bên trong dòng nào cũng
+        // mang số ngày của mình, và 一括変更 so theo giá trị bên trong đó. Đọc chay
+        // ô 日 sẽ gom nhầm mọi dòng nối tiếp vào một 「ngày rỗng」, nên phải kéo số
+        // ngày gần nhất xuống — đúng thứ mắt người đọc ra khi nhìn lưới.
+        let lastDay = ''
         for (const key of keys) {
             if (HISTORY_KEY_RE.test(key)) continue
-            out.push({ key, day: (await cell(key, COL_DAY).innerText()).trim() })
+            const dayText = (await cell(key, COL_DAY).innerText()).trim()
+            if (dayText !== '') lastDay = dayText
+            const ten = (await cell(key, COL_TEN).innerText()).trim()
+            if (ten === '' || ten === '－') continue
+            // Dòng 日計 / 介護一部負担金 cũng có điểm và cũng có data-grid-cell, nhưng
+            // KHÔNG phải 処置行: chúng do màn hình dựng ra, không nằm trong
+            // `currentRows` nên không mang 担当医 nào. Đứng lên chúng thì
+            // `chgDrName` không tìm thấy dòng và rơi về combo — trông y hệt 「bị
+            // ghi đè lây」 nếu test nhầm chúng là dòng thật. Tên của chúng luôn
+            // bọc trong 【…】 (`【本日合計　点数：…】`).
+            const ryo = (await cell(key, COL_RYO).innerText()).trim()
+            if (ryo.startsWith('【')) continue
+            out.push({ key, day: lastDay })
         }
         return out
+    }
+
+    /** Đưa con trỏ về một dòng cụ thể bằng cách bấm vào ô 療法・処置 của nó. */
+    async function focusRow(key: string) {
+        await cell(key, COL_RYO).click()
+    }
+
+    /**
+     * Ngày ĐÔNG DÒNG NHẤT trong tháng hiện hành.
+     *
+     * 一括変更 chỉ nói lên điều gì đó khi ngày đó có ≥ 2 dòng: một dòng thì không
+     * phân biệt được 「ghi đè cả ngày」 với 「ghi đè mỗi dòng đang đứng」.
+     */
+    function busiestDay(rows: { key: string; day: string }[]): string {
+        const count = new Map<string, number>()
+        for (const r of rows) count.set(r.day, (count.get(r.day) ?? 0) + 1)
+        return [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? ''
     }
 
     test.beforeAll(async ({ browser }) => {
@@ -151,6 +198,14 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
         })
         step = makeStep(page)
         page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
+        // Giữ lại URL + Authorization của một lời gọi 医院マスタ THẬT: TC-MST-2 cần
+        // gọi lại chính endpoint đó nhưng KHÔNG kèm 区分, mà accessToken chỉ nằm
+        // trong RAM của app (Rule 10.2) nên không có cách nào tự dựng token.
+        page.on('request', (req) => {
+            if (!MST_IIN_URL.test(req.url()) || req.method() !== 'GET') return
+            const auth = req.headers()['authorization']
+            if (auth) mstIinCall = { url: req.url().split('?')[0]!, authorization: auth }
+        })
         page.on('response', (res) => {
             if (!MST_IIN_URL.test(res.url()) || res.request().method() !== 'GET') return
             void res
@@ -173,8 +228,30 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
         await page.goto('/treatments', { waitUntil: 'domcontentloaded' })
         await expect(page.locator('[data-fkey="F7"]')).toBeVisible({ timeout: 60000 })
 
-        await page.getByText('Dr.:', { exact: true }).locator('..').getByRole('combobox').click()
-        await page.getByRole('option', { name: pickedDoctor!.userNm, exact: true }).click()
+        // StaffSelect có `key={ready ? 'ready' : 'pending'}` — nó REMOUNT khi danh
+        // sách 医院マスタ về tới. Bấm trước thời điểm đó thì dropdown vừa mở đã bị
+        // remount đóng lại, và test chết ở chỗ không tìm thấy option. Chờ payload
+        // rồi mới bấm; vòng lặp là lớp phòng hờ cho các remount khác.
+        await expect
+            .poll(() => mstIinPayloads.length, {
+                message: 'không bắt được GET /tenant/mst-iin-2 — dropdown Ｄｒ．chưa nạp',
+                timeout: 30000,
+            })
+            .toBeGreaterThan(0)
+
+        const drTrigger = page.getByText('Dr.:', { exact: true }).locator('..').getByRole('combobox')
+        const option = page.getByRole('option', { name: pickedDoctor!.userNm, exact: true })
+        await expect(drTrigger).toBeVisible({ timeout: 30000 })
+        for (let attempt = 1; ; attempt++) {
+            await drTrigger.click()
+            try {
+                await expect(option).toBeVisible({ timeout: 5000 })
+                break
+            } catch (err) {
+                if (attempt >= 3) throw err
+            }
+        }
+        await option.click()
 
         const patNoBox = page
             .getByText('患者番号', { exact: true })
@@ -226,60 +303,48 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
         // user_kbn = Staff(2) nên không lọt vào hai nhánh đó dù BE có chặn hay
         // không. Nhánh THẬT SỰ lộ là lời gọi không kèm 区分 — chỉ có ở tầng BE.
         //
-        // Không tự dựng request được: accessToken chỉ nằm trong RAM (Rule 10.2).
-        // Cách duy nhất là chặn request CỦA CHÍNH APP rồi bỏ query đi, để nó mang
-        // theo header thật.
-        const unfiltered: Record<string, unknown>[] = []
-        await page.route(MST_IIN_URL, async (route) => {
-            try {
-                const stripped = route.request().url().split('?')[0]!
-                const res = await route.fetch({ url: stripped })
-                const body = (await res.json()) as { data?: Record<string, unknown>[] }
-                if (Array.isArray(body.data)) unfiltered.push(...body.data)
-                await route.fulfill({ response: res })
-            } catch {
-                // Một request bay tới sau khi testcase đã kết thúc (hoặc lúc
-                // teardown) sẽ ném "Request context disposed" và làm log rối
-                // thêm một lỗi giả bên cạnh lỗi thật. Trả nó về mạng là xong.
-                await route.continue().catch(() => undefined)
-            }
+        // Gọi lại chính endpoint đó bằng token mượn từ một request thật của app:
+        // accessToken chỉ nằm trong RAM nên không tự dựng được, còn reload trang
+        // thì mỗi lần là một vòng refresh và app có thể chưa kịp gọi lại 医院マスタ.
+        expect(mstIinCall, 'chưa bắt được lời gọi 医院マスタ nào để mượn token').not.toBeNull()
+
+        const res = await page.request.get(mstIinCall!.url, {
+            headers: { authorization: mstIinCall!.authorization, accept: 'application/json' },
         })
+        expect(res.status(), `gọi ${mstIinCall!.url} không kèm 区分 bị từ chối`).toBe(200)
+        const body = (await res.json()) as { data?: Record<string, unknown>[] }
+        const rows = body.data ?? []
+        expect(rows.length, 'feed không lọc 区分 trả rỗng — có phải gọi nhầm endpoint?').toBeGreaterThan(0)
 
-        try {
-            // Một lần reload để react-query nạp lại 医院マスタ qua route ở trên.
-            await page.reload({ waitUntil: 'domcontentloaded' })
-            await expect
-                .poll(() => unfiltered.length, {
-                    message: 'không bắt được lời gọi 医院マスタ nào sau khi reload',
-                    timeout: 30000,
-                })
-                .toBeGreaterThan(0)
-        } finally {
-            await page.unroute(MST_IIN_URL)
-        }
-
-        const sentinel = unfiltered
+        const sentinel = rows
             .filter((r) => Number(r['userNo']) === 0)
             .map((r) => `${String(r['userNm'])}(kbn=${String(r['userKbn'])})`)
         expect(
             sentinel,
             `feed không lọc 区分 vẫn trả user_no = 0 (${sentinel.join(', ')}) — ` +
-                'GetMstIin2Handler chưa loại dòng sentinel',
+                'GetMstIin2Handler chưa loại dòng sentinel, HOẶC Redis còn giữ bản cache cũ ' +
+                '(key ...:cache:mst_iin_2:kbn=all, TTL 1 giờ)',
         ).toHaveLength(0)
-        console.log(`feed không lọc 区分: ${unfiltered.length} dòng, không có user_no = 0`)
-
-        // Reload đưa màn hình về trạng thái mới: các TC sau cần lưới đã dựng lại.
-        await expect(page.locator(`[data-grid-cell$="|${COL_RYO}"]`).first()).toBeVisible({
-            timeout: GRID_LOAD_TIMEOUT,
-        })
+        console.log(`feed không lọc 区分: ${rows.length} dòng, không có user_no = 0`)
         await step()
     })
 
     // ── Chg_DrName: nhãn theo DÒNG, combo theo NGƯỜI SẮP TỚI ─────────────────
 
     test('TC-LBL-1 — nhãn 「Ｄｒ」 hiện 担当医 của DÒNG, không phải Ｄｒ．vừa chọn', async () => {
-        // Con trỏ dừng ở dòng CUỐI sau khi nạp lưới (modSave.GetTrnRs → Calc_MDPoint
-        // → Chg_DrName), nên nhãn phải là dr_no của dòng đó.
+        const rows = await currentMonthRows()
+        skipWithReason(rows.length === 0, 'lưới không có dòng 処置 nào của tháng hiện hành')
+
+        // Đứng hẳn lên một dòng 処置 thật. Ngay sau khi nạp, con trỏ nằm ở dòng
+        // CUỐI — thường là dòng 行追加 trống, mà ô hFG1[69] của nó rỗng nên
+        // Chg_DrName rơi về `pintDrNo`, tức nhãn ra Ｄｒ．của combo. Đó là ĐÚNG
+        // parity, nên không lấy trạng thái đó làm mốc kiểm.
+        //
+        // Chọn ngày đông dòng nhất để TC-BULK-2 phía sau kiểm được vế 「cả ngày」.
+        const day = busiestDay(rows)
+        anchorRow = rows.find((r) => r.day === day)!
+        await focusRow(anchorRow.key)
+
         await expect(
             drValue(),
             `nhãn đang hiện Ｄｒ．của combo thay vì dr_no=${trnPatient.trnDrNos.join('/')} của dòng — ` +
@@ -320,9 +385,9 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
     // ── 入力済みの一括変更 ───────────────────────────────────────────────────
 
     test('TC-BULK-1 — click caption 「Ｄｒ」 hỏi đúng văn bản, bấm No thì không đổi gì', async () => {
-        const rows = await currentMonthRows()
-        skipWithReason(rows.length === 0, 'lưới không có dòng nào của tháng hiện hành')
-        const focusedDay = rows[rows.length - 1]!.day
+        expect(anchorRow, 'TC-LBL-1 chưa chạy xong').not.toBeNull()
+        // TC-LBL-1 để con trỏ ở anchorRow; 一括変更 lấy ngày từ chính dòng đó.
+        const focusedDay = anchorRow!.day
 
         await drCaption().click()
         await expect(appDialog(), 'click caption mà không hỏi gì — 一括変更 chưa port?').toBeVisible({
@@ -345,9 +410,14 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
 
     test('TC-BULK-2 — bấm Yes: MỌI dòng cùng ngày đổi sang Ｄｒ．của combo', async () => {
         const rows = await currentMonthRows()
-        const focusedDay = rows[rows.length - 1]!.day
+        const focusedDay = anchorRow!.day
         const sameDay = rows.filter((r) => r.day === focusedDay)
-        const otherDay = rows.find((r) => r.day !== focusedDay)
+        // Ngày HÔM NAY không dùng để kiểm 「không lây」 được: màn hình mở ở chế độ
+        // 初/再診入力 nên dòng của hôm nay có thể vừa được tạo trong chính phiên
+        // này, và dòng mới thì đóng dấu `activeDrNo` — tức Ｄｒ．của combo. Nhìn
+        // thấy 「副」 ở đó là ĐÚNG, không phải 一括変更 lây sang.
+        const todayDay = String(new Date().getDate())
+        const otherDay = rows.find((r) => r.day !== focusedDay && r.day !== todayDay)
 
         await drCaption().click()
         await expect(appDialog()).toBeVisible({ timeout: 15000 })
@@ -367,8 +437,8 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
             sameDay.length < 2,
             `ngày ${focusedDay} chỉ có 1 dòng — không kiểm được vế 「mọi dòng cùng ngày」`,
         )
-        const another = sameDay.find((r) => r.key !== rows[rows.length - 1]!.key)!
-        await cell(another.key, COL_RYO).click()
+        const another = sameDay.find((r) => r.key !== anchorRow!.key)!
+        await focusRow(another.key)
         await expect(
             drValue(),
             `dòng khác của ngày ${focusedDay} chưa được ghi đè — vòng lặp đang bỏ sót dòng`,
@@ -376,14 +446,17 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
 
         // Ngày khác PHẢI giữ nguyên — 一括変更 chỉ đụng đúng một ngày.
         if (otherDay) {
-            await cell(otherDay.key, COL_RYO).click()
+            await focusRow(otherDay.key)
             await expect(
                 drValue(),
                 `ngày ${otherDay.day} bị ghi đè lây — điều kiện so ô 日 đang sai`,
             ).toHaveText(rowDoctorNm, { timeout: 15000 })
             console.log(`ngày ${focusedDay} → 「${pickedDoctor!.userNm}」, ngày ${otherDay.day} giữ nguyên`)
         } else {
-            console.log(`lưới chỉ có ngày ${focusedDay} → chưa kiểm được vế 「không lây sang ngày khác」`)
+            console.log(
+                `ngoài ngày ${focusedDay} (và hôm nay ${todayDay}) không còn ngày nào khác → ` +
+                    'CHƯA kiểm được vế 「không lây sang ngày khác」',
+            )
         }
         await step()
         // KHÔNG bấm F9: thay đổi chỉ nằm trong lưới, rời màn hình là mất.

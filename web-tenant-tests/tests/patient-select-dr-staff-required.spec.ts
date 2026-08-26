@@ -60,6 +60,12 @@ import { rows, cells } from './virtual-grid'
  * đây cũng là thứ giữ cho `--repeat-each` (3 worker song song) không dẫm chân
  * nhau. Không có TEST_DB thì cả file tự skip.
  *
+ * `--repeat-each` PHẢI kèm `--workers=1`. Mặc định Playwright chạy 3 worker song
+ * song, mà cả ba cùng thao tác trên đúng một dòng 受付 của cùng một bệnh nhân:
+ * worker chạy xong trước sẽ XOÁ dòng đó trong afterAll trong khi worker khác vẫn
+ * đang dùng, thành ra đỏ giả. `ensureWaitRow` chỉ chống được va chạm lúc TẠO,
+ * không chống được teardown của worker khác.
+ *
  * CHẠY TUẦN TỰ và dùng CHUNG một page (Rule 10.1 / Rule 19). Testcase nối tiếp
  * trạng thái (ô 患者番号, combo Dr., view đang đứng) nên chạy lẻ bằng `-g` sẽ
  * hỏng. Luôn chạy cả file:
