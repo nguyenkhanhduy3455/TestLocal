@@ -10,8 +10,12 @@
  *   ĐẦU GHI  — chỗ DUY NHẤT sinh ra `freewd` 「1」: câu hỏi mà 自動算定 bật lên cho
  *              bệnh nhân `dis_flg == 3`. ⇒ CHƯA CÓ SPEC NÀO CHẠM TỚI.
  *
- * File này khoá ĐẦU GHI: hỏi/không hỏi, hỏi lúc nào, và 「はい」 rồi thì giá trị đó
- * đi đâu (lên lưới → lượt getTensu kế tiếp → payload F9 登録).
+ * File này khoá ĐẦU GHI. Bản thân ĐẦU GHI có HAI cửa trong WinForm, spec chia
+ * theo đúng hai cửa đó:
+ *   nhóm H/I — 自動算定 (modSave.cs:3450)
+ *   nhóm J   — 処置選択 の確定後 (frm203016.IregCodChk, frm203016.cs:1090-1117):
+ *              gõ mã ở ô 点 hoặc chọn từ tab 個別. Cửa này ban đầu KHÔNG được port
+ *              (chỉ có cửa 自動算定), nhóm J là test chống tái phát cho nó.
  *
  * ĐẶC TÍNH KIỂM THỬ: mọi kỳ vọng bám THEO WINFORM (`userapp/src/OCHACOM`), không
  * bám theo code web. Test đỏ = bản port lệch, KHÔNG phải test viết sai.
@@ -43,8 +47,21 @@
  *    dòng đó ra khỏi `sameDayRows`.
  *
  *  ・INP/Lib/CommonChk.cs:1224-1234 — danh sách 特別対応加算: 105/{0,1,2,3,6,7} và
- *    508/{0,1,6}. Câu hỏi ở modSave.cs:3449 CHỈ bẫy `Key == 105`, nên 508 (歯訪)
- *    không bao giờ được hỏi — cả WinForm lẫn web đều vậy.
+ *    508/{0,1,6}.
+ *
+ *  ・INP/Forms/frm203016.cs:1090-1117 `IregCodChk` — cửa THỨ HAI, chạy SAU khi
+ *    frm203016_Hide_Let_Trt_Data đã ghi dòng (:1629). Cùng câu hỏi, cùng ô đích
+ *    (grdRegi[72]), nhưng ĐIỀU KIỆN KHÁC hẳn cửa 自動算定:
+ *      · lọc theo 枝番: `case 105` chỉ nhận {0,1,2,3,6,7} (:1091), `case 508` chỉ
+ *        nhận {0,1,6} (:1104) — tức ĐÚNG 9 tổ hợp của CommonChk.cs:1224-1234;
+ *      · dis_flg lấy từ `getPatInfo(dt.Rows[idx][78])`, tức 処置日 CỦA DÒNG ĐÓ
+ *        (cột 78 = trn_trn.trt_dt, modSave.cs:244), không phải ngày của màn hình.
+ *    Ngược lại cửa 自動算定 (modSave.cs:3449) CHỈ so `Key == 105`, không lọc 枝番 và
+ *    không đụng 508. Hai cửa lệch nhau THẬT — đừng gộp làm một.
+ *
+ *  ・INP/Lib/modKobetu.cs:341 — tab 個別 rơi vào nhánh `default` và cũng gọi
+ *    `frm203016_Hide_Let_Trt_Data(0)` ⇒ cũng qua IregCodChk. Điểm số thì đã tính
+ *    trước đó bằng getTensu (:265), nên thứ tự là: điểm → câu hỏi → ghi dòng.
  *
  * ─── Web port ─────────────────────────────────────────────────────────────────
  *  - GET /tenant/treatment/autosantei trả thêm cờ `highNeedsAddPrompt`
@@ -56,6 +73,14 @@
  *  - `GridRow.freewd` → `sameDayScoreRows()` (`freewd: r.freewd ?? null`) → body
  *    của POST /tenant/treatment/resolve-trt-score; và → `buildRowPayload` →
  *    POST /tenant/treatment/bulk-save.
+ *  - Cửa IregCodChk: `isHighNeedsAddPick(trtCd, trtSb)` (treatment-entry-shared.ts)
+ *    + `askHighNeedsAddFreewd` (treatment-entry-detail.tsx), cắm vào `commitPick`
+ *    (ô 点 / 処置選択) và `appendKobetuPick` (tab 個別). dis_flg đọc từ
+ *    `pickActivePatientRecord(detail.records, dayDate(day)).ins.disFlg`, tức bản
+ *    ghi 保険 hiệu lực đúng NGÀY CỦA DÒNG — khớp cột 78 của WinForm.
+ *  - Web hỏi TRƯỚC khi ghi dòng, WinForm hỏi SAU. Không có nút huỷ trong câu hỏi
+ *    này nên khác biệt duy nhất là thứ tự dòng xuất hiện; web đã chọn cùng cách cho
+ *    Q00200 của 185 (cũng nằm trong IregCodChk) từ trước.
  *
  * ─── RANH GIỚI: mock cái gì, KHÔNG mock cái gì ───────────────────────────────
  * Giống `auto-santei-cases.spec.ts`: mock ĐÚNG đường biên BE→FE. Cái đang kiểm là
@@ -175,6 +200,24 @@ const PROBE_TRT_CD = 401;
 const PROBE_TRT_NM = "プローブ処置";
 const PROBE_SCORE = 77;
 
+/** 歯科診療特別対応加算(歯科訪問診療) — mã thứ hai của IregCodChk (frm203016.cs:1103). */
+const TRT_CD_TOKU_HOUMON = 508;
+/** dis_flg 3 = 歯科診療特別対応; 1 = 歯科診療困難者 (KHÔNG được hỏi). */
+const DIS_FLG_HIGH_NEEDS = 3;
+const DIS_FLG_HANDICAPPED = 1;
+
+/** Một dòng master giả cho nhóm J — mọi cột mà tab 個別 và 処置選択 cần vẽ. */
+const mstTrtItem = (trtCd: number, trtSb: number, trtNm: string) => ({
+  trtCd,
+  trtSb,
+  trtNm,
+  cctNm: trtNm,
+  score1: PROBE_SCORE,
+  score2: PROBE_SCORE,
+  score3: PROBE_SCORE,
+  f1: 0,
+});
+
 interface AutoSanteiStub {
   isInitialVisitEligible: boolean;
   picks: ReturnType<typeof pick>[];
@@ -237,12 +280,32 @@ test.describe("自動算定 — 歯科診療困難者加算 と freewd (data gi�
   let resolveBodies: ResolveScoreBody[] = [];
   /** Body của MỌI lượt POST bulk-save kể từ `arrange()` (đã bị chặn, không ghi DB). */
   let saveBodies: { rows?: SaveRowBody[] }[] = [];
+  /**
+   * Khác null ⇒ ghi đè `records[].ins.disFlg` của GET /tenant/patients/{patNo}.
+   * Dữ liệu tenant demo KHÔNG có bệnh nhân dis_flg 3 nào, mà đây lại đúng là điều
+   * kiện của câu hỏi. Vá phản hồi THẬT (đọc rồi sửa đúng một cột) thay vì dựng cả
+   * PatientDetail giả: header, 保険 và mọi thứ khác của màn hình vẫn là dữ liệu thật.
+   */
+  let forceDisFlg: number | null = null;
+  /** Kết quả GET /tenant/mst-trt giả, theo 処置コード. Mặc định chỉ có mã probe. */
+  let mstTrtItems: Record<string, ReturnType<typeof mstTrtItem>[]> = {};
 
-  /** Đặt stub rồi mở màn 診療入力 (retry vì Vite dev hay nhả hụt module). */
-  const arrange = async (next: AutoSanteiStub) => {
+  /**
+   * Đặt stub rồi mở màn 診療入力 (retry vì Vite dev hay nhả hụt module).
+   *
+   * `extra` chạy SAU khi reset, TRƯỚC khi điều hướng — chỗ nhóm J cài `forceDisFlg`
+   * và `mstTrtItems`, vì phản hồi 患者詳細 đã bị lượt goto đầu tiên đưa vào cache
+   * nên vá sau khi mở màn thì không còn tác dụng.
+   */
+  const arrange = async (next: AutoSanteiStub, extra?: () => void) => {
     stub = next;
     resolveBodies = [];
     saveBodies = [];
+    forceDisFlg = null;
+    mstTrtItems = {
+      [PROBE_TRT_CD]: [mstTrtItem(PROBE_TRT_CD, 0, PROBE_TRT_NM)],
+    };
+    extra?.();
     for (let attempt = 1; attempt <= 3; attempt++) {
       await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, {
         waitUntil: "domcontentloaded",
@@ -391,7 +454,8 @@ test.describe("自動算定 — 歯科診療困難者加算 と freewd (data gi�
     // 個別, …) vẫn đi ra BE thật để không bóp méo phần còn lại của màn hình.
     await page.route("**/tenant/mst-trt**", async (route: Route) => {
       const q = new URL(route.request().url()).searchParams;
-      if (q.get("trtCd") !== String(PROBE_TRT_CD)) {
+      const items = mstTrtItems[q.get("trtCd") ?? ""];
+      if (items === undefined) {
         await route.continue();
         return;
       }
@@ -401,21 +465,10 @@ test.describe("自動算定 — 歯科診療困難者加算 と freewd (data gi�
         body: JSON.stringify({
           success: true,
           data: {
-            items: [
-              {
-                trtCd: PROBE_TRT_CD,
-                trtSb: 0,
-                trtNm: PROBE_TRT_NM,
-                cctNm: PROBE_TRT_NM,
-                score1: PROBE_SCORE,
-                score2: PROBE_SCORE,
-                score3: PROBE_SCORE,
-                f1: 0,
-              },
-            ],
+            items,
             page: 1,
             pageSize: 100,
-            totalCount: 1,
+            totalCount: items.length,
             totalPages: 1,
             hasPreviousPage: false,
             hasNextPage: false,
@@ -424,27 +477,44 @@ test.describe("自動算定 — 歯科診療困難者加算 と freewd (data gi�
       });
     });
 
+    // 患者詳細 — vá đúng một cột `ins.disFlg` trên phản hồi THẬT khi `forceDisFlg`
+    // được bật. Đây là nguồn dis_flg mà IregCodChk đọc (frm203016.cs:1096 →
+    // getPatInfo → PatInfoData.ins.dis_flg).
+    await page.route("**/tenant/patients/*", async (route: Route) => {
+      if (forceDisFlg === null) {
+        await route.continue();
+        return;
+      }
+      const res = await route.fetch();
+      const body = (await res.json()) as {
+        data?: { records?: { ins?: Record<string, unknown> }[] } | null;
+      };
+      for (const rec of body.data?.records ?? []) {
+        if (rec.ins) rec.ins["disFlg"] = forceDisFlg;
+      }
+      await route.fulfill({ response: res, json: body });
+    });
+
     // getTensu — ghi lại body (đây là thứ spec đọc) rồi trả điểm giả.
     await page.route(
       "**/tenant/treatment/resolve-trt-score",
       async (route: Route) => {
-        resolveBodies.push(
-          route.request().postDataJSON() as ResolveScoreBody,
-        );
+        const body = route.request().postDataJSON() as ResolveScoreBody;
+        resolveBodies.push(body);
         await route.fulfill({
           status: 200,
           contentType: "application/json",
           body: JSON.stringify({
             success: true,
             data: {
-              items: [
-                {
-                  trtCd: PROBE_TRT_CD,
-                  trtSb: 0,
-                  found: true,
-                  score: PROBE_SCORE,
-                },
-              ],
+              // Trả lại ĐÚNG danh sách được hỏi: FE khớp kết quả theo
+              // (trtCd, trtSb), thiếu khoá nào thì dòng đó giữ score1 của master.
+              items: body.items.map((it) => ({
+                trtCd: it.trtCd,
+                trtSb: it.trtSb,
+                found: true,
+                score: PROBE_SCORE,
+              })),
             },
           }),
         });
@@ -631,6 +701,47 @@ test.describe("自動算定 — 歯科診療困難者加算 と freewd (data gi�
     ]);
   });
 
+  /**
+   * Không chạy 自動算定 — nhóm J đo cửa 処置選択, không muốn dòng nào của 初再診 lẫn
+   * vào lưới hay dialog nào bung ra trước.
+   */
+  const NO_AUTO_SANTEI: AutoSanteiStub = {
+    isInitialVisitEligible: false,
+    picks: [],
+    reExamPicks: [],
+    highNeedsAddPrompt: false,
+  };
+
+  /**
+   * Gõ một 処置コード ở コードモード vào ô 点 của dòng 日計 rồi Enter.
+   *
+   * Stub master của nhóm J luôn trả ĐÚNG MỘT dòng, nên `handleCodeEntry` đi nhánh
+   * 1 kết quả → `commitPick` thẳng, KHÔNG mở 処置選択 (WinForm GetTrtmasCod
+   * frm203016_Hide_Let_Trt_Data(0), modMain.cs:659). Đó chính là nhánh IregCodChk
+   * chạy ngay sau.
+   */
+  const enterCode = async (trtCd: number) => {
+    await ensureCodeMode();
+    const footerTen = page
+      .locator('input[data-footer-cell$=":footer-ten"]')
+      .last();
+    await expect(footerTen).toBeVisible({ timeout: 20000 });
+    await footerTen.click();
+    await footerTen.fill(String(trtCd));
+    await footerTen.press("Enter");
+  };
+
+  /**
+   * Lưới có thêm dòng mang 処置コード này chưa — đọc qua một lượt getTensu thay vì
+   * dò chữ trên lưới, vì cùng lúc đó ta cũng cần chính `sameDayRows`.
+   */
+  const sameDayRowFor = async (
+    trtCd: number,
+  ): Promise<SameDayRowBody | undefined> => {
+    const rows = await probeSameDayRows();
+    return [...rows].reverse().find((r) => Number(r.trtCd) === trtCd);
+  };
+
   // ══ I. freewd đi tới đâu ══════════════════════════════════════════════════
 
   test("I-1 はい → lượt getTensu kế tiếp mang freewd 「1」 ĐÚNG trên dòng 105", async () => {
@@ -769,5 +880,164 @@ test.describe("自動算定 — 歯科診療困難者加算 と freewd (data gi�
         .map((r) => `${r.trtCd}/${r.trtSb}=${String(r.freewd)}`),
       "freewd lem sang dòng khác trong payload F9",
     ).toEqual([]);
+  });
+  // ══ J. Cửa thứ hai: 処置選択 の確定後 (frm203016.IregCodChk) ═══════════════
+  //
+  // Cửa này ban đầu KHÔNG được port — chỉ có cửa 自動算定. Cả nhóm J là test chống
+  // tái phát; xem phần 「Web port」 ở đầu file.
+
+  test("J-1 コードモード 105/0 + dis_flg 3 → hỏi, はい ghi freewd 「1」", async () => {
+    await arrange(NO_AUTO_SANTEI, () => {
+      forceDisFlg = DIS_FLG_HIGH_NEEDS;
+      mstTrtItems[TRT_CD_TOKU] = [
+      mstTrtItem(TRT_CD_TOKU, 0, "歯科診療特別対応加算１"),
+      ];
+    });
+
+    await enterCode(TRT_CD_TOKU);
+    const q = highNeedsDialog(page);
+    await expect(
+      q,
+      "gõ mã 105 cho bệnh nhân dis_flg 3 mà không hỏi ⇒ IregCodChk chưa được port",
+    ).toBeVisible({ timeout: 20000 });
+    await step();
+    await yesBtn(q).click();
+    await expect(q).toBeHidden({ timeout: 10000 });
+
+    const toku = await sameDayRowFor(TRT_CD_TOKU);
+    expect(toku, "dòng 105 không lên lưới sau khi trả lời").toBeTruthy();
+    expect(
+      toku!.freewd,
+      "「はい」 phải ghi freewd 「1」 (frm203016.cs:1098 grdRegi[72] = \"1\")",
+    ).toBe(FREEWD_DIFFICULT);
+  });
+
+  test("J-2 いいえ → dòng 105 vẫn lên lưới, freewd null", async () => {
+    await arrange(NO_AUTO_SANTEI, () => {
+      forceDisFlg = DIS_FLG_HIGH_NEEDS;
+      mstTrtItems[TRT_CD_TOKU] = [
+      mstTrtItem(TRT_CD_TOKU, 0, "歯科診療特別対応加算１"),
+      ];
+    });
+
+    await enterCode(TRT_CD_TOKU);
+    const q = highNeedsDialog(page);
+    await expect(q).toBeVisible({ timeout: 20000 });
+    await noBtn(q).click();
+    await expect(q).toBeHidden({ timeout: 10000 });
+
+    const toku = await sameDayRowFor(TRT_CD_TOKU);
+    expect(
+      toku,
+      "「いいえ」 KHÔNG được huỷ dòng — WinForm đã ghi dòng TRƯỚC khi hỏi",
+    ).toBeTruthy();
+    expect(toku!.freewd).toBeNull();
+  });
+
+  test("J-3 dis_flg 1 (困難者, không phải 特別対応) → KHÔNG hỏi", async () => {
+    // frm203016.cs:1096 so BẰNG với 3. dis_flg 1 vẫn được getTensu nâng lên score2
+    // theo nhánh riêng (CommonChk.cs:134) nhưng không dính câu hỏi này.
+    await arrange(NO_AUTO_SANTEI, () => {
+      forceDisFlg = DIS_FLG_HANDICAPPED;
+      mstTrtItems[TRT_CD_TOKU] = [
+      mstTrtItem(TRT_CD_TOKU, 0, "歯科診療特別対応加算１"),
+      ];
+    });
+
+    await enterCode(TRT_CD_TOKU);
+    const toku = await sameDayRowFor(TRT_CD_TOKU);
+    expect(toku, "dòng 105 không lên lưới").toBeTruthy();
+    expect(toku!.freewd).toBeNull();
+    await expect(
+      highNeedsDialog(page),
+      "dis_flg 1 mà vẫn hỏi ⇒ đang dùng >= 1 thay vì == 3",
+    ).toHaveCount(0);
+  });
+
+  test("J-4 105 với 枝番 NGOÀI danh sách (4) → KHÔNG hỏi", async () => {
+    // frm203016.cs:1091 liệt kê 0/1/2/3/6/7 — WinForm nhảy 3 → 6. Đây là chỗ cửa
+    // 処置選択 khác cửa 自動算定 (modSave.cs:3449 không lọc 枝番 gì cả).
+    await arrange(NO_AUTO_SANTEI, () => {
+      forceDisFlg = DIS_FLG_HIGH_NEEDS;
+      mstTrtItems[TRT_CD_TOKU] = [mstTrtItem(TRT_CD_TOKU, 4, "105枝番4")];
+    });
+
+    await enterCode(TRT_CD_TOKU);
+    const toku = await sameDayRowFor(TRT_CD_TOKU);
+    expect(toku, "dòng 105/4 không lên lưới").toBeTruthy();
+    expect(Number(toku!.trtSb)).toBe(4);
+    await expect(
+      highNeedsDialog(page),
+      "枝番 4 không nằm trong danh sách 特別対応加算 ⇒ không được hỏi",
+    ).toHaveCount(0);
+  });
+
+  test("J-5 508/0 (歯科訪問診療) cũng hỏi — mã thứ hai của IregCodChk", async () => {
+    // frm203016.cs:1103 `case 508`. Cửa 自動算定 KHÔNG có mã này, nên nếu bản port
+    // chỉ chép cửa 自動算定 thì testcase này đỏ.
+    await arrange(NO_AUTO_SANTEI, () => {
+      forceDisFlg = DIS_FLG_HIGH_NEEDS;
+      mstTrtItems[TRT_CD_TOKU_HOUMON] = [
+      mstTrtItem(TRT_CD_TOKU_HOUMON, 0, "歯科診療特別対応加算１歯訪"),
+      ];
+    });
+
+    await enterCode(TRT_CD_TOKU_HOUMON);
+    const q = highNeedsDialog(page);
+    await expect(
+      q,
+      "mã 508 cũng phải hỏi (frm203016.cs:1103) — getTensu quét cả 508 " +
+        "(CommonChk.cs:1230-1233)",
+    ).toBeVisible({ timeout: 20000 });
+    await yesBtn(q).click();
+    await expect(q).toBeHidden({ timeout: 10000 });
+
+    const toku = await sameDayRowFor(TRT_CD_TOKU_HOUMON);
+    expect(toku, "dòng 508 không lên lưới").toBeTruthy();
+    expect(toku!.freewd).toBe(FREEWD_DIFFICULT);
+  });
+
+  test("J-6 tab 個別 chọn 105/0 cũng hỏi (modKobetu.cs:341 → cùng Hide_Let_Trt_Data)", async () => {
+    await arrange(NO_AUTO_SANTEI, () => {
+      forceDisFlg = DIS_FLG_HIGH_NEEDS;
+      mstTrtItems[TRT_CD_TOKU] = [
+      mstTrtItem(TRT_CD_TOKU, 0, "歯科診療特別対応加算１"),
+      ];
+    });
+
+    // Mở tab 個別, lọc theo ｺｰﾄﾞ rồi bấm dòng — cùng thao tác
+    // `kobetu-sidepanel-score.spec.ts` dùng.
+    // SidePanel — cùng locator `kobetu-sidepanel-score.spec.ts:560` dùng (Rule 12.3:
+    // không đoán locator).
+    const sidePanel = page.locator('div[class*="w-[450px]"]').first();
+    await sidePanel
+      .getByRole("button", { name: "個別", exact: true })
+      .click();
+    const codeInput = sidePanel
+      .locator("span", { hasText: /^ｺｰﾄﾞ$/ })
+      .locator("xpath=following-sibling::input[1]");
+    await expect(codeInput, "không thấy ô ｺｰﾄﾞ của tab 個別").toBeVisible({
+      timeout: 20000,
+    });
+    await codeInput.fill(String(TRT_CD_TOKU));
+    await sidePanel.getByRole("button", { name: "検索" }).click();
+
+    const row = sidePanel.locator("div[data-index]").first();
+    await expect(row, "tìm ｺｰﾄﾞ 105 ở tab 個別 không ra dòng nào").toBeVisible({
+      timeout: 20000,
+    });
+    await row.click();
+
+    const q = highNeedsDialog(page);
+    await expect(
+      q,
+      "chọn 105 từ tab 個別 mà không hỏi ⇒ đường 個別 chưa nối vào IregCodChk",
+    ).toBeVisible({ timeout: 20000 });
+    await yesBtn(q).click();
+    await expect(q).toBeHidden({ timeout: 10000 });
+
+    const toku = await sameDayRowFor(TRT_CD_TOKU);
+    expect(toku, "dòng 105 không lên lưới").toBeTruthy();
+    expect(toku!.freewd).toBe(FREEWD_DIFFICULT);
   });
 });
