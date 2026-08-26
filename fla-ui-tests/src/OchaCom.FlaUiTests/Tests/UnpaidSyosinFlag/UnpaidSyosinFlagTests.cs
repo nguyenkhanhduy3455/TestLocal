@@ -276,4 +276,57 @@ public sealed class UnpaidSyosinFlagTests : UiTestBase
             "— WinForm ghi ModCommon.pintDrNo (担当医, modAcc.cs:640). Con số để đối chiếu với " +
             "bản web (báo cáo nói InsertUnpaidHandler đang hardcode 0).");
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // TC-ATTDR-1 — ⇔ web TC-ATTDR-1
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Test, Order(4)]
+    [Description("TC-ATTDR-1 — att_dr = Dr đang chọn trên header, KHÔNG phải 0")]
+    public void TcAttDr1_AttDrIsHeaderDoctorNotZero()
+    {
+        using var trace = TestTrace.Begin();
+        _ = trace;
+
+        // Không bấm F8 thêm lần nào: đọc lại chính những dòng TC-SFLG-1/2 vừa tạo.
+        var rows = RequireDbOrIgnore().ReadUnpaid(PatNo);
+        if (rows.Count == 0)
+            IgnoreWithReason(
+                "chưa có dòng UNPAID nào — TC-SFLG-1/2 phải chạy trước (fixture nối tiếp nhau).");
+
+        var name = _flow.HeaderDoctorName();
+        var drNo = RequireDbOrIgnore().DoctorNoByName(name);
+
+        TestContext.Out.WriteLine($"Dr trên header: 「{name}」 ⇒ USER_NO = {drNo?.ToString() ?? "(không tra được)"}");
+
+        if (drNo is null)
+            IgnoreWithReason(
+                $"không suy được số bác sĩ từ tên 「{name}」 trên nhãn lbDr — hoặc IINMST2 không " +
+                "có tên đó với USER_KBN = 0, hoặc có NHIỀU bác sĩ trùng tên. Trùng tên thì không " +
+                "suy ngược ra số được, mà đoán bừa còn tệ hơn bỏ qua.");
+
+        if (drNo == 0)
+            IgnoreWithReason(
+                "Dr trên header đang là số 0 — kỳ vọng sẽ TRÙNG ĐÚNG giá trị của bug cũ " +
+                "(hardcode 0) nên testcase mất hết ý nghĩa. Chọn bác sĩ khác trên header.");
+
+        Assert.Multiple(() =>
+        {
+            foreach (var r in rows)
+                Assert.That(r.AttDr, Is.EqualTo(drNo!.Value),
+                    $"{r} — nhưng header đang chọn Dr 「{name}」 (USER_NO {drNo}). " +
+                    "WinForm ghi ModCommon.pintDrNo (modAcc.cs:640), mà pintDrNo chính là " +
+                    "cboDr.SelectedValue của header (frm203002.cs:8091). Ra 0 nghĩa là 担当医 " +
+                    "bị bỏ trống.");
+        });
+
+        TestContext.Out.WriteLine(
+            $"=== KQ-ATTDR-1 === {rows.Count} dòng, att_dr = " +
+            $"[{string.Join(", ", rows.Select(r => r.AttDr).Distinct())}] / header Dr 「{name}」 = {drNo}");
+        TestContext.Out.WriteLine(
+            "=== KQ-ATTDR-1 === WinForm CỐ Ý đóng dấu Dr của HEADER, không suy lại từ dòng " +
+            "処置 của ngày đó — quyết toán một ngày cũ do bác sĩ khác khám thì vẫn mang Dr " +
+            "đang đứng trên màn hình. Bản port phải giữ đúng nết này.");
+    }
+
 }

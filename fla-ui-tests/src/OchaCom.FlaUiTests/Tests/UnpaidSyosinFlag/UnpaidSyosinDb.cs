@@ -362,6 +362,40 @@ public sealed class UnpaidSyosinDb
         return Convert.ToInt32(cmd.ExecuteScalar());
     }
 
+    // ── 担当医 ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// <c>USER_NO</c> của bác sĩ theo TÊN hiển thị — bảng <c>IINMST2</c>, lọc
+    /// <c>USER_KBN = 0</c> (ドクター).
+    ///
+    /// <para>Cần vì trên màn hình chỉ thấy TÊN: <c>cboDr</c> bị ẩn
+    /// (<c>frm203002.cs:2478</c>), thứ hiện ra là nhãn <c>lbDr</c> mang
+    /// <c>cboDr.Text</c> (<c>:427</c>). Còn thứ ghi xuống <c>UNPAID.ATT_DR</c> lại là
+    /// <c>cboDr.SelectedValue</c> qua <c>ModCommon.pintDrNo</c> (<c>:8091</c> →
+    /// <c>modAcc.cs:640</c>) — tức một CON SỐ. Tra bảng là cầu nối giữa hai thứ đó.</para>
+    ///
+    /// <para>Trả về null khi không có tên đó, hoặc có NHIỀU bác sĩ trùng tên — trùng
+    /// tên thì không suy ngược ra số được, và đoán bừa còn tệ hơn bỏ qua.</para>
+    /// </summary>
+    public int? DoctorNoByName(string displayName)
+    {
+        var name = Txt.N(displayName);
+        if (name.Length == 0) return null;
+
+        using var con = Open();
+        using var cmd = Cmd(con,
+            """
+            SELECT USER_NO FROM IINMST2
+             WHERE USER_KBN = 0 AND LTRIM(RTRIM(USER_NM)) = @nm
+            """);
+        cmd.Parameters.Add("@nm", SqlDbType.NVarChar, 100).Value = name;
+
+        var found = new List<int>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read()) found.Add(Convert.ToInt32(reader["USER_NO"]));
+        return found.Count == 1 ? found[0] : null;
+    }
+
     // ── UNPAID ───────────────────────────────────────────────────────────────
 
     /// <summary>Một dòng <c>UNPAID</c>, chỉ các cột luồng này quan tâm.</summary>

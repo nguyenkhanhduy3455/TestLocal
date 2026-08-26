@@ -106,7 +106,7 @@ import { ADMIN_USER, JA } from './test-data'
  *  Ở đây chỉ chứng minh đường dây thật: F8 → BE → cột `sflg` / `att_dr` trong DB.
  *
  * ─── Cách chạy ───────────────────────────────────────────────────────────────
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/unpaid-syosin-flg.spec.ts --retries=0
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/unpaid-insert-parity.spec.ts --retries=0
  *
  * ENV:
  *   TEST_PAT_NO        bệnh nhân test (mặc định 12138)
@@ -145,6 +145,9 @@ const INSERT_TIMEOUT = 90_000
 /** LetAccData2 bước GHI — mốc "BE đã chèn xong" (BẪY 5). */
 const INSERT_UNPAID_URL = /\/tenant\/treatment\/accounting\/insert-unpaid(\?|$)/
 
+/** Danh sách bác sĩ của dropdown Dr (`cboDr`) — nhãn hiển thị ↔ `user_no`. */
+const MST_IIN_DOCTORS_URL = /\/tenant\/mst-iin-2\?.*userKbn=0/
+
 /** Chỉ số cột 日 — `RegiCol.day` = cột 0 (frm203002.cs:158). */
 const COL_DAY = 0
 
@@ -166,6 +169,7 @@ interface UnpaidRow {
     trtCnt: number
     kmCd: number
     sflg: number
+    attDr: number
 }
 
 /** Dòng lưới tháng hiện hành kèm ngày ĐÃ CỘNG DỒN (BẪY 1). */
@@ -270,8 +274,8 @@ async function readHasPastFirstVisit(): Promise<boolean> {
 /** Mọi dòng 未精算 còn sống của một ngày. */
 async function readUnpaidRows(trtDt: string): Promise<UnpaidRow[]> {
     return withDb(async (c) => {
-        const r = await c.query<{ trt_cnt: number; km_cd: number; sflg: number }>(
-            `SELECT trt_cnt, km_cd, sflg
+        const r = await c.query<{ trt_cnt: number; km_cd: number; sflg: number; att_dr: number }>(
+            `SELECT trt_cnt, km_cd, sflg, att_dr
                FROM view_unpaid_active
               WHERE pat_no = $1 AND trt_dt = $2
               ORDER BY trt_cnt, km_cd`,
@@ -281,6 +285,7 @@ async function readUnpaidRows(trtDt: string): Promise<UnpaidRow[]> {
             trtCnt: Number(row.trt_cnt),
             kmCd: Number(row.km_cd),
             sflg: Number(row.sflg),
+            attDr: Number(row.att_dr),
         }))
     })
 }
@@ -290,7 +295,7 @@ test.describe.configure({ mode: 'serial', timeout: 300_000 })
 skipWithReason(!dbEnabled, 'Cần TEST_DB=1: `sflg` không hiện trên UI, assert phải soi Postgres')
 skipWithReason(!ALLOW_SAVE, 'Cần TEST_ALLOW_SAVE=1: F8 会計 ghi 未精算データ thật (Rule 18.1)')
 
-test.describe('診療入力 F8 → unpaid.sflg theo bảng mã 1/2/3 của modAcc', () => {
+test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp modAcc', () => {
     let page: Page
     let step: () => Promise<void>
 
@@ -303,6 +308,20 @@ test.describe('診療入力 F8 → unpaid.sflg theo bảng mã 1/2/3 của modAc
 
     /** `id` → `deleted_at` của mọi dòng unpaid thuộc các ngày test, chụp TRƯỚC khi chạy. */
     const unpaidSnapshot = new Map<string, string | null>()
+
+    /**
+     * Nhãn bác sĩ trên dropdown ↔ `user_no` — bắt từ CHÍNH response mà màn hình
+     * tải (`GET /tenant/mst-iin-2?userKbn=0`). Không hỏi DB: cái ghi xuống
+     * `att_dr` là giá trị màn hình đang cầm, nên nguồn kỳ vọng cũng phải là nó.
+     * Trùng tên hai bác sĩ → lưu -1 để testcase skip thay vì đoán bừa.
+     */
+    const doctorNoByName = new Map<string, number>()
+
+    /** Thứ tự bác sĩ như dropdown dựng — cần khi header trống, phải tự chọn. */
+    const doctorNames: string[] = []
+
+    /** 会計対象日 → Dr đang hiện trên header lúc bấm F8 = kỳ vọng của `att_dr`. */
+    const expectedAttDr = new Map<string, number>()
 
     const dlg = (text: string | RegExp) =>
         page.locator('[role="dialog"], [role="alertdialog"]').filter({ hasText: text })
@@ -317,6 +336,41 @@ test.describe('診療入力 F8 → unpaid.sflg theo bảng mã 1/2/3 của modAc
 
     const btn = (box: Locator, name: string | RegExp) =>
         box.getByRole('button', { name, exact: typeof name === 'string' })
+
+    /**
+     * Trigger của dropdown Dr trên header — Radix Select nên nó là `button` đứng
+     * ngay sau `<span>Dr:</span>` (BẪY 7). Nhãn hiện trên nút là TÊN bác sĩ.
+     */
+    const drTrigger = () =>
+        page
+            .getByText('Dr:', { exact: true })
+            .first()
+            .locator('xpath=following-sibling::button[1]')
+
+    /**
+     * Bảo đảm header ĐANG chọn một bác sĩ thật, trả về `user_no` của người đó.
+     *
+     * Vì sao phải ép chọn: header trống ⇒ FE gửi `drNo = 0` ⇒ kỳ vọng cũng là 0,
+     * trùng đúng giá trị mà bug cũ (hardcode 0) sinh ra, testcase sẽ xanh cả trên
+     * bản hỏng. Trả về 0 khi phòng khám không có bác sĩ nào hoặc tên bị trùng —
+     * lúc đó testcase tự skip kèm lý do.
+     */
+    async function ensureHeaderDoctor(): Promise<number> {
+        const readLabel = async () => (await drTrigger().innerText()).trim()
+
+        let label = await readLabel()
+        if (doctorNoByName.get(label) === undefined || doctorNoByName.get(label) === -1) {
+            const pick = doctorNames.find((nm) => (doctorNoByName.get(nm) ?? -1) > 0)
+            if (pick === undefined) return 0
+            await drTrigger().click()
+            // Radix bung listbox qua portal ở `body`; mục chọn mang role="option".
+            await page.getByRole('option', { name: pick, exact: true }).first().click()
+            await expect(drTrigger()).toContainText(pick, { timeout: 10_000 })
+            label = await readLabel()
+        }
+        const no = doctorNoByName.get(label) ?? 0
+        return no > 0 ? no : 0
+    }
 
     async function drainSanteiDialogs() {
         const santei = page.getByText(/を算定しますか？/).first()
@@ -422,6 +476,11 @@ test.describe('診療入力 F8 → unpaid.sflg theo bảng mã 1/2/3 của modAc
         await page.locator(`[data-grid-cell="${target.key}|${COL_DAY}"]`).click()
         await step()
 
+        // Chốt 担当医 NGAY TRƯỚC khi bấm — WinForm đọc pintDrNo tại đúng thời điểm
+        // này (modAcc.cs:640), nên kỳ vọng cũng phải chụp ở đây chứ không phải
+        // lúc mở màn hình.
+        expectedAttDr.set(trtDt, await ensureHeaderDoctor())
+
         // Mốc tin cậy là response của bước GHI, không phải việc đổi URL (BẪY 5).
         const inserted = page
             .waitForResponse(
@@ -488,6 +547,29 @@ test.describe('診療入力 F8 → unpaid.sflg theo bảng mã 1/2/3 của modAc
         page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
         step = makeStep(page)
         page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
+
+        // Bảng bác sĩ lấy từ chính response màn hình tải, không hỏi DB (xem chú
+        // thích ở `doctorNoByName`). Response tới trước khi dropdown render nên
+        // lúc cần tra thì bảng đã đầy.
+        page.on('response', (res) => {
+            if (!MST_IIN_DOCTORS_URL.test(res.url())) return
+            void res
+                .json()
+                .then((body: { data?: { userNo?: number | string; userNm?: string }[] }) => {
+                    for (const d of body.data ?? []) {
+                        const nm = (d.userNm ?? '').trim()
+                        const no = Number(d.userNo ?? 0)
+                        if (nm === '' || !Number.isFinite(no)) continue
+                        if (!doctorNoByName.has(nm)) {
+                            doctorNoByName.set(nm, no)
+                            doctorNames.push(nm)
+                        } else if (doctorNoByName.get(nm) !== no) {
+                            doctorNoByName.set(nm, -1) // trùng tên ⇒ không tra được
+                        }
+                    }
+                })
+                .catch(() => {})
+        })
 
         await page.addLocatorHandler(
             page.getByText(/を算定しますか？/).first(),
@@ -588,6 +670,35 @@ test.describe('診療入力 F8 → unpaid.sflg theo bảng mã 1/2/3 của modAc
             ).toBe(SFLG.revisit)
         }
         console.log(`${saisinDay}: sflg = ${rows.map((r) => r.sflg).join(', ')}`)
+    })
+
+    test('TC-ATTDR-1 — att_dr = Dr đang chọn trên header, KHÔNG phải 0', async () => {
+        const tested = [...expectedAttDr.entries()]
+        skipWithReason(tested.length === 0, 'không có ngày nào chạy được ở TC-SFLG-1/2')
+        if (tested.length === 0) return
+
+        const usable = tested.filter(([, drNo]) => drNo > 0)
+        skipWithReason(
+            usable.length === 0,
+            'dropdown Dr không chọn được bác sĩ nào (phòng khám chưa có mst-iin user_kbn=0, ' +
+                'hoặc hai bác sĩ trùng tên) — kỳ vọng 0 sẽ trùng đúng giá trị của bug cũ nên ' +
+                'testcase mất ý nghĩa',
+        )
+        if (usable.length === 0) return
+
+        // Không bấm F8 thêm lần nào: đọc lại chính những dòng TC-SFLG-1/2 vừa tạo.
+        for (const [day, drNo] of usable) {
+            const rows = await readUnpaidRows(day)
+            expect(rows, `không còn dòng 未精算 nào của ngày ${day}`).not.toHaveLength(0)
+            for (const row of rows) {
+                expect(
+                    row.attDr,
+                    `ngày ${day}: att_dr = ${row.attDr} (km_cd=${row.kmCd}) nhưng header đang ` +
+                        `chọn Dr ${drNo}. Ra 0 nghĩa là 担当医 vẫn bị bỏ trống như trước khi sửa.`,
+                ).toBe(drNo)
+            }
+            console.log(`${day}: att_dr = ${rows.map((r) => r.attDr).join(', ')} (header Dr ${drNo})`)
+        }
     })
 
     test('TC-SFLG-3 — mọi dòng vừa ghi chỉ mang 1/2/3, không có mã 4 của buiPrice', async () => {

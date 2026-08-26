@@ -230,6 +230,19 @@ public sealed class AccountingDayFlow
         Waits.Step();
     }
 
+    /// <summary>
+    /// Tên bác sĩ đang hiện trên header 診療入力 — nhãn <c>lbDr</c>.
+    ///
+    /// <para>KHÔNG đọc <c>cboDr</c>: combo đó bị ẩn (<c>frm203002.cs:2478</c>), chỉ hiện
+    /// khi người dùng click vào nhãn. Nhãn <c>lbDr</c> mang <c>cboDr.Text</c>
+    /// (<c>:427</c>) nên luôn đọc được.</para>
+    /// </summary>
+    public string HeaderDoctorName()
+    {
+        var box = Uia.ById(_screen.Window, "lbDr");
+        return box is null ? "" : Txt.N(Uia.ValueOf(box));
+    }
+
     // ── Bấm F8 rồi DỪNG ở cổng ngày ──────────────────────────────────────────
 
     /// <summary>
