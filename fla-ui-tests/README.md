@@ -241,6 +241,7 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 | `.\run-inp-p1-dialog.ps1` | F11 →「９ オプション」→ Step / チェック項目設定 · 部位選択 → F9 Br例 | `Tests/InpP1Dialogs/` | ⚠️ chỉ khi `-AllowSave` — `TRTSTATE`, `chkprm` |
 | `.\run-edit-treatment-rows.ps1` | Insert/Delete trên lưới 処置 → `AddRow` / `DeleteRow` (行追加・行削除) | `Tests/TreatmentGrid/` | ✖ không bấm F9 |
 | `.\run-confirm-patient.ps1` | End/F9/Enter ở 患者選択 → `frm203001.defData` (患者確定) | `Tests/PatientSelectAssign/` | ✖ không bấm F9, không seed `wait` |
+| `.\run-bulk-change-dr.ps1` | Click nhãn 「Ｄｒ」 → `lblDrLabel_Click` (担当医 一括変更) | `Tests/TreatmentHeaderStaff/` | ✖ chỉ sửa lưới trong bộ nhớ |
 | `.\run-edit-treatment-rows.ps1 -Case Probe_Advanced` | PROBE — dò hành vi, KHÔNG assert | `Tests/TreatmentGrid/` | ✖ |
 
 > Thêm luồng mới thì giữ đúng quy ước này: `run-<động từ>-<đối tượng>.ps1` mô tả việc
@@ -301,6 +302,20 @@ giá trị. Chi tiết ở `Tests/PatientSelectAssign/README.md` mục 4.
 > ⚠️ **Chưa chạy lần nào trên Windows.** Chạy `.\run-confirm-patient.ps1 -Diagnostics`
 > **trước tiên**; đáp án nằm ở các dòng `=== KQ-n ===`, runner lọc sẵn ra
 > `confirm-patient-KQ.txt`.
+
+**TreatmentHeaderStaff** đo **đáp án** cho vùng 「Ｄｒ」 của header `frm203002`, nơi
+WinForm để **ba** control chồng nhau và mỗi cái trả lời một câu khác nhau: `lblDrLabel`
+(click = 一括変更 cả ngày), `lbDr` (担当医 của DÒNG con trỏ), `cboDr` (担当医 cho dòng
+THÊM MỚI, `Visible = false`). Chúng rất dễ bị gộp thành một khi port — bản web có riêng
+`treatment-header-staff.spec.ts` khoá cả ba, và đây là nửa WinForm của nó.
+
+Đã chạy thật 2026-08-26: 4/5 xanh, `TC-LBL-1` `Ignore` vì dataset máy đó không tách
+được nhãn khỏi combo. Chi tiết + văn bản 一括変更 nguyên văn ở README của luồng.
+
+> **Bài học dùng chung, đọc trước khi viết luồng mới:** app này **không nhận
+> InvokePattern ở bất kỳ control nào**. `Uia.Click` lên nhãn / caption / dòng lưới đều
+> KHÔNG có tác dụng — phải `Uia.LeftClickPhysical` / `Uia.MouseClick`, và luôn kiểm
+> rect trước khi bắn chuột. Đo được ở `Tests/TreatmentHeaderStaff/README.md` mục 4.
 
 → Đọc README trong thư mục của luồng **trước khi chạy**.
 

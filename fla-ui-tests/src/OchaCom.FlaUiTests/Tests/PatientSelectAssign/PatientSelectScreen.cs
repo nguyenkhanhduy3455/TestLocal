@@ -149,6 +149,27 @@ public sealed class PatientSelectScreen
             "với một dòng trống ở index 0 (EditControl.cs:660-676) — lệch nghĩa là giả định đó sai.");
     }
 
+    /// <summary>
+    /// Click bằng CHUỘT THẬT vào tâm phần tử, có kiểm rect.
+    ///
+    /// <para>App dùng control vẽ tay và KHÔNG nhận InvokePattern ở đâu cả — đo
+    /// 2026-08-26 ở luồng TreatmentHeaderStaff. Rect rỗng thì ném, vì
+    /// <c>LeftClickPhysical</c> bắn vào toạ độ màn hình nên <c>(0,0)</c> là click vào
+    /// góc trái trên DESKTOP và app mất foreground.</para>
+    /// </summary>
+    private static void ClickPhysically(AutomationElement element, string what)
+    {
+        var rect = Uia.RectOf(element);
+        if (rect is null || rect.Value.Width <= 0 || rect.Value.Height <= 0)
+            throw new InvalidOperationException(
+                $"{what} đọc ra rect RỖNG ({rect?.ToString() ?? "null"}) — click vào đó sẽ bắn " +
+                "chuột ra (0,0) tức góc trái trên DESKTOP chứ không vào app.");
+
+        var (x, y) = Uia.Center(element);
+        Uia.LeftClickPhysical(x, y);
+        Waits.Step();
+    }
+
     private static void Focus(AutomationElement element)
     {
         try { element.Focus(); }
@@ -236,8 +257,10 @@ public sealed class PatientSelectScreen
         var wanted = Txt.N(userNm);
         var seen = new List<string>();
 
-        Uia.Click(DrCombo);           // bung dropdown
-        Waits.Step();
+        // CHUỘT THẬT, không Invoke: app này không nhận InvokePattern ở control nào —
+        // đo 2026-08-26 tại luồng TreatmentHeaderStaff (KQ-5b/6/7). Uia.Click(combo)
+        // là lý do bản trước đi 30 bước mà nhãn vẫn 「」.
+        ClickPhysically(DrCombo, "combo Ｄｒ．");
 
         for (var i = 0; i < maxSteps; i++)
         {
@@ -271,8 +294,7 @@ public sealed class PatientSelectScreen
         var seen = new List<string>();
 
         // PHẢI bung dropdown trước: combo đóng không nhận phím (đo 2026-08-26, KQ-3b).
-        Uia.Click(DrCombo);
-        Waits.Step();
+        ClickPhysically(DrCombo, "combo Ｄｒ．");
 
         for (var i = 0; i < maxSteps; i++)
         {

@@ -150,8 +150,8 @@ public sealed class PatientSelectFlow
             // OK — bấm Quit là đóng cả app. Xem ghi chú ở ReturnToPatientSelect.
             if (text.Contains("Unhandled exception") || text.Contains("Continue"))
             {
-                if (!Dialogs.ClickButton(dialog, "Continue", "続行"))
-                    Dialogs.ClickButtonContaining(dialog, "Continue", "続行");
+                if (!Dialogs.ClickButtonContaining(dialog, "Continue", "続行"))
+                    Dialogs.ClickButton(dialog, "Continue", "続行");
                 Waits.Step();
                 continue;
             }
@@ -218,11 +218,16 @@ public sealed class PatientSelectFlow
     /// <summary>
     /// Đóng hộp thoại bằng BÀN PHÍM khi không click được nút.
     ///
-    /// <para>Đo 2026-08-26 (probe lượt 5): hộp thoại của <c>MsgDialog.ShowWarningMsg</c>
-    /// phơi ra <b>0 nút</b> qua UIA — <c>Dialogs.ClickButton</c> và
-    /// <c>ClickButtonContaining</c> đều không có gì để bấm, nên hộp thoại nằm lại và
-    /// mọi lần đọc SAU đó lấy phải nội dung CŨ. Đúng cái bẫy PROBE-GUIDELINE 3.4, chỉ
-    /// khác là lần này thứ chắn màn hình là hộp thoại của chính testcase trước.</para>
+    /// <para>Đo 2026-08-26 (probe lượt 5-9): hộp thoại của <c>MsgDialog.ShowWarningMsg</c>
+    /// không đóng được bằng <c>Dialogs.ClickButton</c> (InvokePattern) lẫn
+    /// <c>Window.Close()</c>, nên nó nằm lại và mọi lần đọc SAU đó lấy phải nội dung CŨ.
+    /// Đúng cái bẫy PROBE-GUIDELINE 3.4, chỉ khác là thứ chắn màn hình là hộp thoại của
+    /// chính testcase trước.</para>
+    ///
+    /// <para>ĐÃ GỠ ĐƯỢC ở luồng TreatmentHeaderStaff: bấm bằng CHUỘT THẬT
+    /// (<c>ClickButtonContaining</c>) thì đóng ngay. App không nhận InvokePattern ở bất
+    /// kỳ control nào. Bàn phím giữ lại làm đường lùi cho hộp thoại không có nút đọc
+    /// được.</para>
     ///
     /// <para>MessageBox một nút OK nhận cả <c>Enter</c> lẫn <c>Esc</c>; gửi lần lượt
     /// cả hai sau khi đã kéo hộp thoại lên foreground.</para>
@@ -324,11 +329,11 @@ public sealed class PatientSelectFlow
                 // Quit là đóng cả app; phải bấm Continue thì phiên mới sống tiếp.
                 var isClrCrash = text.Contains("Unhandled exception") || text.Contains("Continue");
                 var clicked = isClrCrash
-                    ? Dialogs.ClickButton(dialog, "Continue", "続行") ||
-                      Dialogs.ClickButtonContaining(dialog, "Continue", "続行")
+                    ? Dialogs.ClickButtonContaining(dialog, "Continue", "続行") ||
+                      Dialogs.ClickButton(dialog, "Continue", "続行")
                     // いいえ TRƯỚC — không bao giờ để rơi vào nhánh 保存.
-                    : Dialogs.ClickButton(dialog, "いいえ", "No", "N") ||
-                      Dialogs.ClickButtonContaining(dialog, "いいえ", "No");
+                    : Dialogs.ClickButtonContaining(dialog, "いいえ", "No") ||
+                      Dialogs.ClickButton(dialog, "いいえ", "No", "N");
 
                 if (!clicked)
                     Dialogs.ClickButton(dialog, "OK", "はい", "Yes");

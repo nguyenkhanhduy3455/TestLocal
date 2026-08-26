@@ -126,6 +126,8 @@
     "detailDrLabel": "lbDr",
     "//detailStaffLabel": "衛生士 trên header 処置入力 — cùng kiểu nhãn như lbDr.",
     "detailStaffLabel": "lbEiseisi",
+    "//detailDrCaption": "Caption 「Ｄｒ」 của header 処置入力 — CLICK VÀO ĐÂY LÀ 一括変更 CẢ NGÀY (lblDrLabel_Click, frm203002.cs:8105). Khác hẳn nhãn giá trị lbDr.",
+    "detailDrCaption": "lblDrLabel",
     "//detailDrCombo": "Combo Ｄｒ．của header 処置入力. Visible=false cho tới khi click nhãn lbDr (lbDr_Click, frm203002.cs:8087). Giữ 担当医 cho DÒNG THÊM MỚI — con số đóng dấu xuống TRNTRN.dr_no.",
     "detailDrCombo": "cboDr",
     "//detailStaffCombo": "Combo 衛生士 tương ứng, cùng kiểu ẩn/hiện như cboDr.",
