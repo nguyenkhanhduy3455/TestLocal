@@ -213,14 +213,45 @@ public sealed class HighNeedsFlow
         return true;
     }
 
-    /// <summary>Trả lời một hộp thoại và chờ nó đóng.</summary>
+    /// <summary>
+    /// Trả lời hộp thoại 困難者加算 và chờ nó đóng.
+    ///
+    /// <para><b>Tìm LẠI hộp thoại mỗi lượt thay vì tin vào tham chiếu truyền vào.</b>
+    /// <c>Dialogs.ClickButton</c> bọc <c>try/catch</c> quanh cả thân hàm, nên một lượt
+    /// gọi UIA bị quá hạn cũng trả về <c>false</c> y như 「không có nút nào tên đó」 —
+    /// hai chuyện khác hẳn nhau. Máy chạy chậm (đo 2026-08-26: có testcase mất 5m35s
+    /// thay vì 2m, riêng một lần chụp màn hình mất 20s) thì lượt click đầu rất dễ trượt,
+    /// và TC-A5 đã đỏ đúng vì vậy dù app đang hiện hộp thoại rành rành.</para>
+    ///
+    /// <para>Nhãn nút lấy theo NGÔN NGỮ WINDOWS chứ không theo UI app — máy đo được
+    /// 「Yes」/「No」 tiếng Anh — nên thử cả hai thứ tiếng.</para>
+    /// </summary>
     public bool Answer(Window dialog, bool yes)
     {
-        var name = yes ? "はい" : "いいえ";
-        var alt = yes ? "Yes" : "No";
-        if (!Dialogs.ClickButton(dialog, name, alt)) return false;
-        Waits.TryUntil(() => !Dialogs.IsAlive(dialog), TimeSpan.FromSeconds(8));
-        return true;
+        string[] names = yes ? ["はい", "Yes"] : ["いいえ", "No"];
+
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            // Hộp thoại đã tự đóng (ai đó trả lời hộ, hoặc lượt click trước ĐÃ ăn mà
+            // ta không kịp thấy) ⇒ coi như xong, đừng bấm thêm vào form phía sau.
+            var target = Dialogs.IsAlive(dialog) ? dialog : HighNeedsDialog();
+            if (target is null) return true;
+
+            if (Dialogs.ClickButton(target, names))
+                return Waits.TryUntil(() => HighNeedsDialog() is null, TimeSpan.FromSeconds(8));
+
+            Thread.Sleep(400);
+        }
+        return false;
+    }
+
+    /// <summary>Nút của hộp thoại 困難者加算 đang mở — để thông điệp assert nói được vì sao hỏng.</summary>
+    public string DescribeHighNeedsButtons()
+    {
+        var d = HighNeedsDialog();
+        return d is null
+            ? "(hộp thoại không còn mở)"
+            : $"[{string.Join(", ", ButtonNames(d))}]";
     }
 
     /// <summary>Dẹp mọi hộp thoại đang chắn — bấm 「いいえ」 / OK / 戻る.</summary>
@@ -261,10 +292,19 @@ public sealed class HighNeedsFlow
         return Txt.Same(InpMode(), "コード");
     }
 
-    /// <summary>Một dòng 処置 dùng làm chỗ gõ mã — bỏ dòng 日計 và dòng trống.</summary>
+    /// <summary>
+    /// Một dòng 処置 dùng làm chỗ gõ mã — bỏ dòng 日計 và dòng trống.
+    ///
+    /// <para>Đi qua <see cref="ScanRows"/> chứ KHÔNG qua <c>TreatmentGridOps.Snapshot</c>:
+    /// Snapshot đọc TOÀN BỘ ô của tối đa 400 dòng, mà luồng này đã bật cột ẩn nên mỗi
+    /// dòng là 81 ô. Đó là chỗ tốn thời gian nhất của cả fixture — đo 2026-08-26, cùng
+    /// một testcase chạy 2m11s ở lượt này rồi 5m35s ở lượt sau khi lưới đã dài thêm vài
+    /// dòng. Chỉ cần 20 dòng đầu là đủ tìm chỗ đứng.</para>
+    /// </summary>
     public RegiRow? TargetRow() =>
-        _grid.Snapshot().FirstOrDefault(
-            r => Txt.N(r.Ten) is not ("-" or "－") && !Txt.Has(r.Ryo, "日計") && r.Ryo.Length > 0);
+        ScanRows(limit: 20)
+            .FirstOrDefault(r => r.Ten is not ("-" or "－") && !Txt.Has(r.Name, "日計") && r.Name.Length > 0)
+            ?.Row;
 
     /// <summary>
     /// Gõ một 処置コード vào ô 点 ở コードモード rồi Enter.
@@ -408,6 +448,47 @@ public sealed class HighNeedsFlow
         return Waits.TryUntil(() => Picker() is null, TimeSpan.FromSeconds(5));
     }
 
+    // ── Đường tab 個別 ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Chèn một 処置 từ tab 個別 — LỐI VÀO THỨ HAI của cùng cửa <c>IregCodChk</c>.
+    ///
+    /// <para><c>pKobetu_Let_Trt_Data</c> (modKobetu.cs:307-343) rẽ theo 処置コード, và 105
+    /// rơi vào nhánh <c>default</c> ⇒ gọi thẳng
+    /// <c>frm203016.Instance.frm203016_Hide_Let_Trt_Data(0)</c> (:341) — cùng hàm mà
+    /// 処置選択 gọi, nên cũng chạy tới <c>IregCodChk</c> ở dòng cuối (frm203016.cs:1629).</para>
+    ///
+    /// <para><b>Khác một điểm quan trọng:</b> đường này <b>KHÔNG mở 処置選択</b>. Form
+    /// frm203016 được dùng ở dạng ẩn (<c>Hide_</c>), nên không có picker để chờ và cũng
+    /// không có picker để đóng — chỉ có hộp thoại câu hỏi (nếu đủ điều kiện) bung ra.
+    /// Vì vậy không dùng lại được <see cref="CommitPick"/>.</para>
+    ///
+    /// <para>Một cú click chuột là đủ: <c>hfgKobetu_Click</c> (frm203002.cs:6928) tự đẩy
+    /// focus rồi gọi tiếp chuỗi Enter → CellDoubleClick — xem <see cref="KobetuTab.SelectRow"/>.</para>
+    /// </summary>
+    /// <returns>Tên 処置 đọc được từ lưới 個別, để còn dò dòng vừa chèn trên grdRegi.</returns>
+    public string? InsertFromKobetu(int trtCd, int trtSb, TestTrace? trace = null)
+    {
+        DismissAll();
+
+        var kobetu = _screen.Kobetu;
+        string? name = null;
+
+        trace?.Do($"tab 個別: tim {trtCd}-{trtSb} roi chon", () =>
+        {
+            kobetu.Open();
+            kobetu.ResetSearchBoxes();
+            var row = kobetu.RequireRow(trtCd, trtSb);
+            name = Txt.N(row.At(KobetuTab.Col.Name));
+            kobetu.SelectRow(row);
+        });
+
+        // Không có picker để chờ đóng; chờ tới khi câu hỏi bung ra, hoặc hết giờ (=
+        // app im lặng, cũng là một câu trả lời hợp lệ).
+        Waits.TryUntil(() => HighNeedsDialog() is not null, TimeSpan.FromSeconds(8));
+        return name;
+    }
+
     // ── Cột ẩn ───────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -499,15 +580,15 @@ public sealed class HighNeedsFlow
         : IsFreewdEmpty(value) ? $"(trống, đọc ra 「{Txt.N(value)}」)"
         : $"「{Txt.N(value)}」";
 
-    /// <summary>Một dòng lưới đã đọc RIÊNG hai ô cần thiết — xem <see cref="ScanRows"/>.</summary>
-    public sealed record FreewdRow(RegiRow Row, string Name, string? Freewd)
+    /// <summary>Một dòng lưới đã đọc RIÊNG ba ô cần thiết — xem <see cref="ScanRows"/>.</summary>
+    public sealed record FreewdRow(RegiRow Row, string Name, string Ten, string? Freewd)
     {
         public override string ToString() =>
             $"「{Name}」 freewd = {DescribeFreewd(Freewd)}";
     }
 
     /// <summary>
-    /// Quét lưới đọc ĐÚNG HAI ô mỗi dòng: 療法・処置 (2) và FREEWD (72).
+    /// Quét lưới đọc ĐÚNG BA ô mỗi dòng: 療法・処置 (2), 点 (3) và FREEWD (72).
     ///
     /// <para>KHÔNG dùng <c>TreatmentGridOps.Snapshot</c> ở đây. Lớp đó đọc TOÀN BỘ ô của
     /// mỗi dòng — bình thường là 5 ô, nhưng luồng này đã bật cột ẩn nên thành <b>81 ô</b>
@@ -530,11 +611,13 @@ public sealed class HighNeedsFlow
             if (Uia.ControlTypeOf(cells[0]) is ControlType.Header or ControlType.HeaderItem) continue;
 
             var name = Txt.N(Uia.ValueOf(cells[RegiGrid.Col.Ryo]));
+            var ten = cells.Count > RegiGrid.Col.Ten ? Txt.N(Uia.ValueOf(cells[RegiGrid.Col.Ten])) : "";
             var freewd = cells.Count > ColFreewd ? Txt.N(Uia.ValueOf(cells[ColFreewd])) : null;
 
             rows.Add(new FreewdRow(
-                new RegiRow(index++, element, "", "", name, "", ""),
+                new RegiRow(index++, element, "", "", name, ten, ""),
                 name,
+                ten,
                 freewd));
         }
         return rows;

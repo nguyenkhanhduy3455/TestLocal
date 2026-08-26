@@ -60,105 +60,16 @@ namespace OchaCom.FlaUiTests.Tests.HighNeedsFreewd;
 /// </summary>
 [TestFixture]
 [Category("high-needs-freewd")]
-public sealed class HighNeedsAskedTests : UiTestBase
+public sealed class HighNeedsAskedTests : HighNeedsPatchedTestBase
 {
+    protected override int PatchedDisFlg => HighNeedsDb.DisFlgHighNeeds;
+    protected override string PatchPurpose => "歯科診療特別対応 — giá trị DUY NHẤT mở ra câu hỏi";
+
     /// <summary>枝番 mà <c>IregCodChk</c> BẪY cho mã 105 (frm203016.cs:1096).</summary>
     private static readonly int[] TokuTrapped = [0, 1, 2, 3, 6, 7];
 
     /// <summary>枝番 mà <c>IregCodChk</c> BẪY cho mã 508 (frm203016.cs:1109).</summary>
     private static readonly int[] HoumonTrapped = [0, 1, 6];
-
-    private HighNeedsFlow _flow = null!;
-    private HighNeedsDb? _hnDb;
-    private IReadOnlyList<HighNeedsDb.InsuranceBranch>? _snapshot;
-    private int _patchedPatNo = -1;
-
-    protected override string[] NuisanceDialogPatterns => [];
-
-    private int BorrowPatNo =>
-        int.TryParse(Settings.HighNeeds.BorrowPatNo, out var n) ? n : PatNo;
-
-    protected override string? FixturePreflightSkipReason()
-    {
-        if (!Settings.HighNeeds.AllowDisFlgPatch)
-            return "chưa bật highNeeds.allowDisFlgPatch. Dữ liệu KHÔNG có bệnh nhân " +
-                   "dis_flg = 3 (đo 2026-08-26: chỉ 0/1/2) nên nhánh 困難者加算 chỉ tới được " +
-                   "khi cho phép vá tạm insurance.dis_flg rồi trả lại. " +
-                   "Chạy: .\\run-high-needs-freewd.ps1 -AllowDisFlgPatch";
-
-        if (!Settings.Db.Enabled || string.IsNullOrWhiteSpace(Settings.Db.ConnectionString))
-            return "cần db.connectionString để vá và khôi phục insurance.dis_flg";
-
-        return null;
-    }
-
-    /// <summary>Vá <c>dis_flg</c> = 3 TRƯỚC khi app mở — xem chú thích đầu lớp.</summary>
-    protected override void PrepareDataBeforeApp()
-    {
-        _hnDb = HighNeedsDb.CreateOrNull(Settings);
-        if (_hnDb is null) return;
-
-        var patNo = BorrowPatNo;
-        _snapshot = _hnDb.Branches(patNo);
-        if (_snapshot.Count == 0)
-        {
-            TestContext.Out.WriteLine($"bệnh nhân {patNo} không có dòng INSURANCE nào — không vá.");
-            _snapshot = null;
-            return;
-        }
-
-        var changed = _hnDb.PatchDisFlg(patNo, HighNeedsDb.DisFlgHighNeeds);
-        _patchedPatNo = patNo;
-        TestContext.Out.WriteLine(
-            $"VÁ dis_flg = 3 cho bệnh nhân {patNo}, {changed} dòng. " +
-            $"Nguyên trạng sẽ trả lại: {string.Join(", ", _snapshot)}");
-    }
-
-    [OneTimeSetUp]
-    public void AskedOneTimeSetUp() => _flow = new HighNeedsFlow(App, Screen);
-
-    /// <summary>
-    /// Trả <c>dis_flg</c> về nguyên trạng. Chạy kể cả khi fixture đỏ giữa chừng —
-    /// để sót dis_flg = 3 trên DB dùng chung là làm hỏng mọi lượt chạy sau, và làm
-    /// sai điểm của chính bệnh nhân đó nếu ai đó mở app thật.
-    /// </summary>
-    [OneTimeTearDown]
-    public void RestoreDisFlg()
-    {
-        if (_hnDb is null || _snapshot is null || _patchedPatNo < 0) return;
-        try
-        {
-            _hnDb.RestoreDisFlg(_patchedPatNo, _snapshot);
-            var now = _hnDb.Branches(_patchedPatNo);
-            TestContext.Out.WriteLine(
-                $"ĐÃ TRẢ LẠI dis_flg cho bệnh nhân {_patchedPatNo}: {string.Join(", ", now)}");
-
-            var stillPatched = now.Where(b => b.DisFlg == HighNeedsDb.DisFlgHighNeeds)
-                                  .Select(b => b.PatBr).ToList();
-            var expected = _snapshot.Where(b => b.DisFlg == HighNeedsDb.DisFlgHighNeeds)
-                                    .Select(b => b.PatBr).ToList();
-            if (stillPatched.Except(expected).Any())
-                TestContext.Error.WriteLine(
-                    $"!! CHƯA TRẢ HẾT: 枝番 {string.Join(",", stillPatched.Except(expected))} " +
-                    "vẫn đang dis_flg = 3. SỬA TAY NGAY.");
-        }
-        catch (Exception e)
-        {
-            TestContext.Error.WriteLine(
-                $"!! KHÔNG TRẢ LẠI ĐƯỢC dis_flg cho bệnh nhân {_patchedPatNo}: {e.Message}. " +
-                $"Nguyên trạng cần khôi phục: {string.Join(", ", _snapshot)}. SỬA TAY NGAY.");
-        }
-    }
-
-    /// <summary>Bật cột ẩn một lần cho cả fixture — mọi TC đọc freewd đều cần.</summary>
-    private void EnsureFreewdReadable(TestTrace trace)
-    {
-        if (_flow.HiddenColumnsVisible()) return;
-        if (!_flow.RevealHiddenColumns(trace))
-            IgnoreWithReason(
-                "không bật được cột ẩn nên không đọc được ô freewd. Xem TC-N1 của " +
-                "HighNeedsNotAskedTests — nó khoá riêng đường này.");
-    }
 
     /// <summary>
     /// Chèn một 処置 qua 処置選択 rồi trả về hộp thoại 困難者加算 (null nếu app im lặng).
@@ -166,34 +77,34 @@ public sealed class HighNeedsAskedTests : UiTestBase
     private (HighNeedsFlow.PickRow Row, FlaUI.Core.AutomationElements.Window? Dialog) Insert(
         TestTrace trace, int trtCd, int trtSb)
     {
-        Assert.That(_flow.EnterCode(trace, trtCd.ToString()), Is.True,
+        Assert.That(Flow.EnterCode(trace, trtCd.ToString()), Is.True,
             "không gõ được mã vào ô 点 ở コードモード");
 
-        var picker = _flow.WaitForPicker();
+        var picker = Flow.WaitForPicker();
         Assert.That(picker, Is.Not.Null,
             $"mã {trtCd} phải mở 処置選択 (KasanCode chỉ bẫy 101/102/103, modMain.cs:533). " +
-            $"Hộp thoại: {_flow.DescribeDialogs()}");
+            $"Hộp thoại: {Flow.DescribeDialogs()}");
 
-        var rows = _flow.ReadPicker(picker!);
+        var rows = Flow.ReadPicker(picker!);
         var target = rows.FirstOrDefault(r => Txt.Int(r.Sub) == trtSb);
         if (target is null)
         {
-            _flow.ClosePicker(picker!);
+            Flow.ClosePicker(picker!);
             IgnoreWithReason(
                 $"master của ngày {TrtDate:yyyy-MM-dd} không có 処置 {trtCd}-{trtSb}. " +
                 $"Picker đang có 枝番: {string.Join(", ", rows.Select(r => r.Sub))}");
         }
 
-        Assert.That(_flow.CommitPick(picker!, target!.Index, trace), Is.True,
+        Assert.That(Flow.CommitPick(picker!, target!.Index, trace), Is.True,
             $"không chốt được dòng {target} trong 処置選択");
 
-        return (target, _flow.WaitForHighNeedsDialog(seconds: 10));
+        return (target, Flow.WaitForHighNeedsDialog(seconds: 10));
     }
 
     /// <summary>Dòng vừa chèn trên lưới, kèm giá trị ô FREEWD (cột 72).</summary>
     private HighNeedsFlow.FreewdRow InsertedRow(HighNeedsFlow.PickRow pick)
     {
-        var row = _flow.RowNamed(pick.Name.Trim());
+        var row = Flow.RowNamed(pick.Name.Trim());
         Assert.That(row, Is.Not.Null,
             $"chốt 処置選択 rồi thì dòng 「{pick.Name.Trim()}」 phải có trên lưới " +
             "(IregCodChk chạy SAU khi frmTrtSel_Let_Trt_Data ghi xong dòng, frm203016.cs:1629)");
@@ -218,7 +129,7 @@ public sealed class HighNeedsAskedTests : UiTestBase
             $"dis_flg = 3 + 処置 105-0 (枝番 nằm trong [{string.Join(",", TokuTrapped)}]) thì " +
             "frm203016.cs:1096-1102 PHẢI hỏi. Không hỏi ⇒ hoặc bản vá dis_flg chưa tới được " +
             "app (app nạp _patInfoList một lần ở frm203001.cs:739), hoặc watcher đã trả lời " +
-            $"hộ. Hộp thoại đang mở: {_flow.DescribeDialogs()}");
+            $"hộ. Hộp thoại đang mở: {Flow.DescribeDialogs()}");
 
         var text = Txt.N(Dialogs.TextOf(dialog!));
         var caption = Txt.N(Uia.NameOf(dialog!));
@@ -251,14 +162,11 @@ public sealed class HighNeedsAskedTests : UiTestBase
         TestContext.Out.WriteLine(
             $"=== KQ-A1 === 「{text}」 caption 「{caption}」 nút [{string.Join(", ", buttons)}]");
 
-        _flow.Answer(dialog!, yes: false);
-        _flow.DismissAll();
+        Flow.Answer(dialog!, yes: false);
+        Flow.DismissAll();
         _ = pick;
     }
 
-    private static bool IsYes(string n) => Txt.Same(n, "はい") || Txt.Same(n, "Yes");
-    private static bool IsNo(string n) => Txt.Same(n, "いいえ") || Txt.Same(n, "No");
-    private static bool IsCancel(string n) => Txt.Same(n, "キャンセル") || Txt.Same(n, "Cancel");
 
     // ═══════════════════════════════════════════════════════════════════════
     // TC-A2 — ⇔ web I-1 (「はい」 → freewd 「1」 đúng dòng)
@@ -271,15 +179,16 @@ public sealed class HighNeedsAskedTests : UiTestBase
         using var trace = TestTrace.Begin();
         EnsureFreewdReadable(trace);
 
-        var before = _flow.ScanRows()
+        var before = Flow.ScanRows()
                           .Where(r => !HighNeedsFlow.IsFreewdEmpty(r.Freewd))
                           .Select(r => $"{r.Name}={r.Freewd}")
                           .ToList();
 
         var (pick, dialog) = Insert(trace, HighNeedsFlow.TrtCdToku, trtSb: 0);
-        Assert.That(dialog, Is.Not.Null, $"phải hỏi. Hộp thoại: {_flow.DescribeDialogs()}");
+        Assert.That(dialog, Is.Not.Null, $"phải hỏi. Hộp thoại: {Flow.DescribeDialogs()}");
 
-        Assert.That(_flow.Answer(dialog!, yes: true), Is.True, "không bấm được 「はい」");
+        Assert.That(Flow.Answer(dialog!, yes: true), Is.True,
+            $"không bấm được 「はい」/「Yes」. Nút của hộp thoại: {Flow.DescribeHighNeedsButtons()}");
         Thread.Sleep(600);
         trace.Shot("sau-khi-tra-loi-hai");
 
@@ -291,7 +200,7 @@ public sealed class HighNeedsAskedTests : UiTestBase
         // Không dòng nào KHÁC được dính thêm freewd. getTensu quét NGƯỢC và lấy dòng
         // 特別対応加算 đầu tiên khớp (CommonChk.chkHighNeedsAdd) nên một giá trị lạc chỗ
         // đổi luôn kết quả tính điểm.
-        var newlyMarked = _flow.ScanRows()
+        var newlyMarked = Flow.ScanRows()
                                .Where(r => !HighNeedsFlow.IsFreewdEmpty(r.Freewd))
                                .Select(r => $"{r.Name}={r.Freewd}")
                                .Except(before)
@@ -302,7 +211,7 @@ public sealed class HighNeedsAskedTests : UiTestBase
             "freewd lem sang dòng không phải 特別対応加算: " + string.Join(" / ", newlyMarked));
 
         TestContext.Out.WriteLine($"=== KQ-A2 === {row}");
-        _flow.DismissAll();
+        Flow.DismissAll();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -317,9 +226,10 @@ public sealed class HighNeedsAskedTests : UiTestBase
         EnsureFreewdReadable(trace);
 
         var (pick, dialog) = Insert(trace, HighNeedsFlow.TrtCdToku, trtSb: 1);
-        Assert.That(dialog, Is.Not.Null, $"phải hỏi. Hộp thoại: {_flow.DescribeDialogs()}");
+        Assert.That(dialog, Is.Not.Null, $"phải hỏi. Hộp thoại: {Flow.DescribeDialogs()}");
 
-        Assert.That(_flow.Answer(dialog!, yes: false), Is.True, "không bấm được 「いいえ」");
+        Assert.That(Flow.Answer(dialog!, yes: false), Is.True,
+            $"không bấm được 「いいえ」/「No」. Nút của hộp thoại: {Flow.DescribeHighNeedsButtons()}");
         Thread.Sleep(600);
         trace.Shot("sau-khi-tra-loi-khong");
 
@@ -338,7 +248,7 @@ public sealed class HighNeedsAskedTests : UiTestBase
             $"=== KQ-A3 === 「いいえ」 → dòng vẫn còn: {row} ⇒ getTensu sẽ phân giải disFlg = 2 " +
             "(CommonChk.cs:109), KHÁC hẳn 0 của trường hợp không có dòng nào.");
 
-        _flow.DismissAll();
+        Flow.DismissAll();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -369,7 +279,7 @@ public sealed class HighNeedsAskedTests : UiTestBase
         Assert.That(dialog, Is.Null,
             $"処置 105-{outsideSb} 「{pick.Name.Trim()}」 KHÔNG nằm trong " +
             $"[{string.Join(",", TokuTrapped)}] nên frm203016.cs:1096 không bẫy ⇒ phải im lặng " +
-            $"dù dis_flg = 3. Hộp thoại: {_flow.DescribeDialogs()}");
+            $"dù dis_flg = 3. Hộp thoại: {Flow.DescribeDialogs()}");
 
         var row = InsertedRow(pick);
         Assert.That(HighNeedsFlow.IsFreewdEmpty(row.Freewd), Is.True,
@@ -377,7 +287,7 @@ public sealed class HighNeedsAskedTests : UiTestBase
 
         TestContext.Out.WriteLine(
             $"=== KQ-A4 === 105-{outsideSb} 「{pick.Name.Trim()}」 → không hỏi (đúng whitelist)");
-        _flow.DismissAll();
+        Flow.DismissAll();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -397,9 +307,10 @@ public sealed class HighNeedsAskedTests : UiTestBase
         Assert.That(dialog, Is.Not.Null,
             $"処置 508-0 (歯科診療特別対応加算１(歯訪)) nằm trong [{string.Join(",", HoumonTrapped)}] " +
             "mà frm203016.cs:1107-1118 bẫy ⇒ dis_flg = 3 thì PHẢI hỏi. " +
-            $"Hộp thoại: {_flow.DescribeDialogs()}");
+            $"Hộp thoại: {Flow.DescribeDialogs()}");
 
-        Assert.That(_flow.Answer(dialog!, yes: true), Is.True, "không bấm được 「はい」");
+        Assert.That(Flow.Answer(dialog!, yes: true), Is.True,
+            $"không bấm được 「はい」/「Yes」. Nút của hộp thoại: {Flow.DescribeHighNeedsButtons()}");
         Thread.Sleep(600);
 
         var row = InsertedRow(pick);
@@ -413,6 +324,50 @@ public sealed class HighNeedsAskedTests : UiTestBase
             "`Key == 105` nên 508 không bao giờ được hỏi ở cửa đó. Chỉ cửa IregCodChk mới " +
             "có `case 508` (frm203016.cs:1107). Hai cửa lệch nhau THẬT — đừng gộp làm một.");
 
-        _flow.DismissAll();
+        Flow.DismissAll();
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // TC-A6 — lối vào THỨ HAI của cùng cửa: tab 個別
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Test, Order(6)]
+    [Description("TC-A6 — chọn 105-0 từ tab 個別 cũng hỏi (modKobetu.cs:341 → cùng Hide_Let_Trt_Data)")]
+    public void TcA6_KobetuTabAlsoAsks()
+    {
+        using var trace = TestTrace.Begin();
+        EnsureFreewdReadable(trace);
+
+        // modKobetu.cs:307-343 rẽ theo 処置コード; 105 rơi vào nhánh `default` (:341) nên
+        // gọi thẳng frm203016_Hide_Let_Trt_Data(0) — CÙNG hàm mà 処置選択 gọi, và cũng
+        // chạy tới IregCodChk (frm203016.cs:1629). Khác biệt: đường này KHÔNG mở picker.
+        var name = Flow.InsertFromKobetu(HighNeedsFlow.TrtCdToku, trtSb: 0, trace);
+        Assert.That(name, Is.Not.Null.And.Not.Empty,
+            "không đọc được tên 処置 từ lưới 個別 — không dò được dòng vừa chèn trên grdRegi");
+        trace.Shot("kobetu-105-0");
+
+        var dialog = Flow.HighNeedsDialog();
+        Assert.That(dialog, Is.Not.Null,
+            "chọn 105-0 ở tab 個別 với dis_flg = 3 thì PHẢI hỏi: modKobetu.cs:341 đi vào " +
+            "cùng frm203016_Hide_Let_Trt_Data mà 処置選択 dùng, nên cùng chạy tới IregCodChk. " +
+            $"Hộp thoại đang mở: {Flow.DescribeDialogs()}");
+
+        Assert.That(Txt.N(Dialogs.TextOf(dialog!)), Does.Contain(HighNeedsFlow.Question),
+            "phải là ĐÚNG câu 困難者加算, không phải hộp thoại nào khác của tab 個別");
+
+        Assert.That(Flow.Answer(dialog!, yes: true), Is.True,
+            $"không bấm được 「はい」/「Yes」. Nút của hộp thoại: {Flow.DescribeHighNeedsButtons()}");
+        Thread.Sleep(600);
+
+        var row = Flow.RowNamed(name!);
+        Assert.That(row, Is.Not.Null,
+            $"chọn ở tab 個別 rồi thì dòng 「{name}」 phải nằm trên lưới đăng ký");
+        Assert.That(row!.Freewd, Is.EqualTo(HighNeedsDb.FreewdDifficult),
+            "「はい」 trên đường 個別 ghi vào cùng ô grdRegi[72] (frm203016.cs:1101). " +
+            $"Đang là: {row}");
+
+        TestContext.Out.WriteLine($"=== KQ-A6 === tab 個別 → có hỏi; {row}");
+        Flow.DismissAll();
+    }
+
 }

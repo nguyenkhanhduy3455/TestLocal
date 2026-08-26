@@ -24,6 +24,18 @@
     Mặc định TẮT: cột ẩn đọc thẳng được trên lưới nên phần lớn testcase không
     cần lưu gì cả.
 
+.PARAMETER Case
+    Nhom hoac ten testcase le:
+      A / NotAsked / Silent  -> HighNeedsNotAskedTests (dis_flg that, khong can co)
+      B / Asked              -> HighNeedsAskedTests    (dis_flg 3, can -AllowDisFlgPatch)
+      D / DisFlg1            -> HighNeedsDisFlg1Tests  (dis_flg 1, can -AllowDisFlgPatch)
+      con lai                -> loc theo ten method, vd "TcA2"
+
+    ⚠️ CHAY TUNG NHOM MOT, dung chay chung ba nhom trong mot luot.
+       app.attachIfRunning = true nen nhom thu hai BAM VAO app ma nhom thu nhat
+       da mo, va app do con giu nguyen dis_flg cu trong RAM du DB da duoc tra
+       lai — CommonInp nap _patInfoList dung MOT LAN o frm203001.cs:739.
+
 .PARAMETER Diagnostics
     Chạy Tc0 (PROBE): đo sáu câu hỏi, KHÔNG assert, không bao giờ ném.
 
@@ -39,8 +51,9 @@
 .EXAMPLE
     .\run-high-needs-freewd.ps1 -Diagnostics
     .\run-high-needs-freewd.ps1
-    .\run-high-needs-freewd.ps1 -AllowDisFlgPatch
-    .\run-high-needs-freewd.ps1 -Case B
+    .\run-high-needs-freewd.ps1 -Case A
+    .\run-high-needs-freewd.ps1 -AllowDisFlgPatch -Case B
+    .\run-high-needs-freewd.ps1 -AllowDisFlgPatch -Case D
 #>
 [CmdletBinding()]
 param(
@@ -78,6 +91,8 @@ $groups = @{
     'Silent'   = 'HighNeedsNotAskedTests'
     'B'        = 'HighNeedsAskedTests'
     'Asked'    = 'HighNeedsAskedTests'
+    'D'        = 'HighNeedsDisFlg1Tests'
+    'DisFlg1'  = 'HighNeedsDisFlg1Tests'
 }
 
 if ($Diagnostics) {
