@@ -206,6 +206,11 @@ const TRT_CD_TOKU_HOUMON = 508;
 const DIS_FLG_HIGH_NEEDS = 3;
 const DIS_FLG_HANDICAPPED = 1;
 
+/** Tên 処置 giả của nhóm J — dùng làm mốc "dòng đã lên lưới". */
+const TRT_NM_TOKU = "歯科診療特別対応加算１";
+const TRT_NM_TOKU_SB4 = "105枝番4";
+const TRT_NM_TOKU_HOUMON = "歯科診療特別対応加算１歯訪";
+
 /** Một dòng master giả cho nhóm J — mọi cột mà tab 個別 và 処置選択 cần vẽ. */
 const mstTrtItem = (trtCd: number, trtSb: number, trtNm: string) => ({
   trtCd,
@@ -363,6 +368,14 @@ test.describe("自動算定 — 歯科診療困難者加算 と freewd (data gi�
    * nhất đọc nó là getTensu (CommonChk.cs:109). Chọc đúng chỗ đó là kiểm đúng
    * cái WinForm kiểm.
    */
+  /** Chờ dòng mang tên `trtNm` thật sự lên lưới đăng ký (mốc "app đã xử lý xong"). */
+  const waitForRyoText = async (trtNm: string) => {
+    await expect(
+      ryoCell(page).filter({ hasText: trtNm }).first(),
+      `処置 「${trtNm}」 không lên lưới đăng ký`,
+    ).toBeVisible({ timeout: 20000 });
+  };
+
   const probeSameDayRows = async (): Promise<SameDayRowBody[]> => {
     resolveBodies = [];
     await ensureCodeMode();
@@ -398,6 +411,32 @@ test.describe("自動算定 — 歯科診療困難者加算 と freewd (data gi�
     });
     step = makeStep(page);
     page.on("pageerror", (e) => console.log(`pageerror: ${e.message}`));
+
+    /**
+     * Cảnh báo 診療チェック xen ngang — vd 105-4 kéo theo 「特連を算定していますが、
+     * 歯特連の届出が必要です。」 (luật 届出 thật của master, không dính gì tới freewd).
+     * Nó do một lượt gọi BE bất đồng bộ bung ra nên KHÔNG quét dọn trước được: đã thử,
+     * lúc quét thì chưa có, quét xong nó mới hiện rồi overlay nuốt click kế tiếp.
+     * `addLocatorHandler` là cách guideline Rule 14 chỉ định cho đúng ca này —
+     * Playwright tự kiểm trước mỗi thao tác.
+     *
+     * ⚠️ Neo theo NÚT: chỉ hộp thoại cảnh báo mới có ĐÚNG một nút 「OK」. Hai câu hỏi
+     * đang được đo (特２ và 困難者加算) là confirm Yes/No nên không bao giờ khớp — nếu
+     * neo theo role không thôi thì handler sẽ tự bấm mất thứ mà spec cần đọc.
+     */
+    const checkAlert = page
+      .locator('[role="alertdialog"]')
+      .filter({ has: page.getByRole("button", { name: "OK", exact: true }) });
+    await page.addLocatorHandler(
+      checkAlert,
+      async () => {
+        await checkAlert
+          .getByRole("button", { name: "OK", exact: true })
+          .first()
+          .click();
+      },
+      { times: 30 },
+    );
 
     // ── /autosantei — trái tim của spec. Cài TRƯỚC /autosantei2 vì glob
     //    `autosantei**` cũng khớp `autosantei2`; Playwright ưu tiên route cài SAU.
@@ -890,7 +929,7 @@ test.describe("自動算定 — 歯科診療困難者加算 と freewd (data gi�
     await arrange(NO_AUTO_SANTEI, () => {
       forceDisFlg = DIS_FLG_HIGH_NEEDS;
       mstTrtItems[TRT_CD_TOKU] = [
-      mstTrtItem(TRT_CD_TOKU, 0, "歯科診療特別対応加算１"),
+      mstTrtItem(TRT_CD_TOKU, 0, TRT_NM_TOKU),
       ];
     });
 
@@ -916,7 +955,7 @@ test.describe("自動算定 — 歯科診療困難者加算 と freewd (data gi�
     await arrange(NO_AUTO_SANTEI, () => {
       forceDisFlg = DIS_FLG_HIGH_NEEDS;
       mstTrtItems[TRT_CD_TOKU] = [
-      mstTrtItem(TRT_CD_TOKU, 0, "歯科診療特別対応加算１"),
+      mstTrtItem(TRT_CD_TOKU, 0, TRT_NM_TOKU),
       ];
     });
 
@@ -940,18 +979,22 @@ test.describe("自動算定 — 歯科診療困難者加算 と freewd (data gi�
     await arrange(NO_AUTO_SANTEI, () => {
       forceDisFlg = DIS_FLG_HANDICAPPED;
       mstTrtItems[TRT_CD_TOKU] = [
-      mstTrtItem(TRT_CD_TOKU, 0, "歯科診療特別対応加算１"),
+      mstTrtItem(TRT_CD_TOKU, 0, TRT_NM_TOKU),
       ];
     });
 
     await enterCode(TRT_CD_TOKU);
-    const toku = await sameDayRowFor(TRT_CD_TOKU);
-    expect(toku, "dòng 105 không lên lưới").toBeTruthy();
-    expect(toku!.freewd).toBeNull();
+    // Mốc "app đã xử lý xong lượt nhập": dòng đã lên lưới. Không có mốc này thì
+    // toHaveCount(0) xanh oan vì chạy trước cả lúc dialog kịp bung.
+    await waitForRyoText(TRT_NM_TOKU);
     await expect(
       highNeedsDialog(page),
       "dis_flg 1 mà vẫn hỏi ⇒ đang dùng >= 1 thay vì == 3",
     ).toHaveCount(0);
+
+    const toku = await sameDayRowFor(TRT_CD_TOKU);
+    expect(toku, "dòng 105 không lên lưới").toBeTruthy();
+    expect(toku!.freewd).toBeNull();
   });
 
   test("J-4 105 với 枝番 NGOÀI danh sách (4) → KHÔNG hỏi", async () => {
@@ -959,17 +1002,22 @@ test.describe("自動算定 — 歯科診療困難者加算 と freewd (data gi�
     // 処置選択 khác cửa 自動算定 (modSave.cs:3449 không lọc 枝番 gì cả).
     await arrange(NO_AUTO_SANTEI, () => {
       forceDisFlg = DIS_FLG_HIGH_NEEDS;
-      mstTrtItems[TRT_CD_TOKU] = [mstTrtItem(TRT_CD_TOKU, 4, "105枝番4")];
+      mstTrtItems[TRT_CD_TOKU] = [mstTrtItem(TRT_CD_TOKU, 4, TRT_NM_TOKU_SB4)];
     });
 
     await enterCode(TRT_CD_TOKU);
-    const toku = await sameDayRowFor(TRT_CD_TOKU);
-    expect(toku, "dòng 105/4 không lên lưới").toBeTruthy();
-    expect(Number(toku!.trtSb)).toBe(4);
+    await waitForRyoText(TRT_NM_TOKU_SB4);
     await expect(
       highNeedsDialog(page),
       "枝番 4 không nằm trong danh sách 特別対応加算 ⇒ không được hỏi",
     ).toHaveCount(0);
+
+    // 105-4 còn kéo theo cảnh báo 届出 của 診療チェック
+    // (「特連を算定していますが、歯特連の届出が必要です。」) — luật thật của master,
+    // ngoài phạm vi spec này; locator handler ở beforeAll đóng nó.
+    const toku = await sameDayRowFor(TRT_CD_TOKU);
+    expect(toku, "dòng 105/4 không lên lưới").toBeTruthy();
+    expect(Number(toku!.trtSb)).toBe(4);
   });
 
   test("J-5 508/0 (歯科訪問診療) cũng hỏi — mã thứ hai của IregCodChk", async () => {
@@ -978,7 +1026,7 @@ test.describe("自動算定 — 歯科診療困難者加算 と freewd (data gi�
     await arrange(NO_AUTO_SANTEI, () => {
       forceDisFlg = DIS_FLG_HIGH_NEEDS;
       mstTrtItems[TRT_CD_TOKU_HOUMON] = [
-      mstTrtItem(TRT_CD_TOKU_HOUMON, 0, "歯科診療特別対応加算１歯訪"),
+      mstTrtItem(TRT_CD_TOKU_HOUMON, 0, TRT_NM_TOKU_HOUMON),
       ];
     });
 
@@ -1001,7 +1049,7 @@ test.describe("自動算定 — 歯科診療困難者加算 と freewd (data gi�
     await arrange(NO_AUTO_SANTEI, () => {
       forceDisFlg = DIS_FLG_HIGH_NEEDS;
       mstTrtItems[TRT_CD_TOKU] = [
-      mstTrtItem(TRT_CD_TOKU, 0, "歯科診療特別対応加算１"),
+      mstTrtItem(TRT_CD_TOKU, 0, TRT_NM_TOKU),
       ];
     });
 
