@@ -5,11 +5,17 @@ import { makeStep, skipWithReason } from './step'
 import { ADMIN_USER, JA } from './test-data'
 
 /**
- * 診療入力 F8 会計 → `unpaid.sflg` (初診フラグ) phải theo bảng mã của modAcc:
- * **1=初診 / 2=再診 / 3=再初診**.
+ * 診療入力 F8 会計 → các cột của bảng `unpaid` phải khớp WinForm. Hai chỗ đã đo
+ * được lệch khi đối chiếu với SIM2000, cùng nằm trong MỘT câu INSERT
+ * (`modAcc.LetAccData2` → `UnPaid.insertUnPaid`, modAcc.cs:626-707):
  *
- * Bug tester báo (2026-08-26): cùng một bệnh nhân, hệ cũ ghi `UNPAID.SFLG` = 3
- * cho ngày có 歯科初診料 và 2 cho ngày 歯科再診料; web ghi 2 cho cả hai ngày.
+ *   · `sflg`   (初診フラグ) — phải theo bảng mã **1=初診 / 2=再診 / 3=再初診**.
+ *   · `att_dr` (担当医)     — phải là Dr đang chọn trên header 診療入力.
+ *
+ * Bug tester báo (2026-08-26):
+ *   · `SFLG`   — hệ cũ ghi 3 cho ngày có 歯科初診料 và 2 cho ngày 歯科再診料;
+ *                web ghi 2 cho cả hai ngày.
+ *   · `ATT_DR` — hệ cũ ghi 16, web ghi 0.
  *
  * ─── Nguồn WinForm ───────────────────────────────────────────────────────────
  *  - `modAcc.LetAccData2` tự tính `intSyosin` rồi ghi vào UNPAID
@@ -27,21 +33,28 @@ import { ADMIN_USER, JA } from './test-data'
  *  - modAcc còn GHI ĐÈ giá trị của buiPrice bằng `intSyosin`
  *    (`cur_buiPriceData2.syosin_flg = intSyosin`, modAcc.cs:549) ⇒ giá trị của
  *    buiPrice không bao giờ tới được bảng UNPAID.
+ *  - `unPaidData.att_dr = ModCommon.pintDrNo` (modAcc.cs:640). `pintDrNo` là giá
+ *    trị dropdown `cboDr` trên header 診療入力 TẠI THỜI ĐIỂM bấm F8
+ *    (frm203002.cs:8091), KHÔNG phải bác sĩ đã điều trị ngày đó — thanh toán một
+ *    ngày cũ thì WinForm vẫn đóng dấu bác sĩ đang hiện trên header. Đó là lý do
+ *    spec đọc kỳ vọng từ CHÍNH cái dropdown chứ không từ `trn_trn.dr_no`.
  *
  * ─── Web port ────────────────────────────────────────────────────────────────
  *  - `Ochacom.Application/Treatments/Common/UnpaidSyosinFlgResolver.cs` — port
  *    modAcc, có mã 3, không bao giờ trả 4.
  *  - `InsertUnpaidHandler.ResolveSyosinFlgAsync` — đọc các dòng `trn_trn` của
  *    会計対象日 (theo `disp_no`, `seq`) + câu hỏi 「quá khứ có 初診 chưa」.
+ *  - `InsertUnpaidRequest.DrNo` — FE gửi `activeDrNo` (giá trị dropdown Dr), BE
+ *    ghi thẳng vào `att_dr`.
  *  - TRƯỚC KHI SỬA: handler lấy `priceResult.SyosinFlg` của `BuiPriceService`
  *    (port `buiPrice.cs`, bảng mã 1 / 2 / **4=訪問診療**, KHÔNG có 3) ⇒ 再初診 là
- *    thứ web không thể ghi ra.
+ *    thứ web không thể ghi ra; còn `att_dr` thì để `0` cứng.
  *
  * ─── Vì sao spec này phải soi DB ─────────────────────────────────────────────
- *  `sflg` không hiện ở bất kỳ đâu trên màn hình — chính tester cũng phải mở bảng
- *  UNPAID để thấy. Không có đường nào đo qua UI, nên spec chạy F8 THẬT rồi đọc
- *  `view_unpaid_active`. Đây cũng là lý do nó KHÔNG chạy trong lượt hằng ngày mà
- *  phải bật cờ (Rule 18.1).
+ *  Cả `sflg` lẫn `att_dr` không hiện ở bất kỳ đâu trên màn hình — chính tester
+ *  cũng phải mở bảng UNPAID để thấy. Không có đường nào đo qua UI, nên spec chạy
+ *  F8 THẬT rồi đọc `view_unpaid_active`. Đây cũng là lý do nó KHÔNG chạy trong
+ *  lượt hằng ngày mà phải bật cờ (Rule 18.1).
  *
  * ─── GHI DB — đọc kỹ trước khi chạy ──────────────────────────────────────────
  *  Spec CÓ ghi thật: mỗi lần F8 chạy `deleteTrtDtUnPaid` (xoá mềm dòng 未精算 của
@@ -60,6 +73,12 @@ import { ADMIN_USER, JA } from './test-data'
  *  diễn đạt lại luật modAcc bằng SQL để ra giá trị kỳ vọng. Không có ngày phù
  *  hợp thì skip kèm lý do + in bảng ngày ra log để đổi `TEST_PAT_NO`/`TEST_TRT_DT`.
  *
+ *  `att_dr` cũng vậy: kỳ vọng lấy từ CHÍNH dropdown Dr trên header ngay trước khi
+ *  bấm F8 — đọc nhãn đang hiện rồi tra sang `userNo` bằng danh sách bác sĩ mà màn
+ *  hình vừa tải (`GET /tenant/mst-iin-2?userKbn=0`). Header trống thì spec tự chọn
+ *  bác sĩ đầu tiên, vì kỳ vọng 0 sẽ trùng đúng giá trị của bug cũ (hardcode 0) và
+ *  testcase mất hết ý nghĩa.
+ *
  * ─── BẪY ─────────────────────────────────────────────────────────────────────
  *  1. Cột 日 chỉ hiện số ở dòng ĐẦU của mỗi ngày ⇒ đọc DOM phải cộng dồn ngày
  *     gần nhất (giống `accounting-target-date.spec.ts`).
@@ -71,14 +90,20 @@ import { ADMIN_USER, JA } from './test-data'
  *  5. Mốc "đã ghi xong" là RESPONSE của `POST …/accounting/insert-unpaid`, không
  *     phải việc màn hình nhảy sang 窓口精算 — đọc DB trước khi commit xong sẽ ra
  *     dữ liệu cũ.
- *  6. modAcc ghi CÙNG một `intSyosin` cho cả ba dòng 医療保険 / 介護保険 / 自費 của
- *     ngày ⇒ assert trên MỌI dòng của ngày, không phải mỗi dòng đầu.
+ *  6. modAcc ghi CÙNG một `intSyosin` (và cùng một `att_dr`) cho cả ba dòng
+ *     医療保険 / 介護保険 / 自費 của ngày ⇒ assert trên MỌI dòng, không phải dòng đầu.
+ *  7. Dropdown Dr là Radix Select, KHÔNG phải `<select>` gốc: trigger là `button`
+ *     nằm ngay sau `<span>Dr:</span>`, và danh sách bung ra qua PORTAL ở `body`
+ *     với `role="option"` (Rule 12.6). Nhãn hiện trên trigger là TÊN bác sĩ, còn
+ *     thứ ghi xuống DB là `user_no` ⇒ bắt buộc phải tra bảng ánh xạ.
  *
  * ─── KHÔNG kiểm ở đây ────────────────────────────────────────────────────────
  *  Các nhánh 「健診より/自費より」, thứ tự "hit đầu tiên thắng", 訪問診療 không ra 4,
  *  và chỗ cố ý lệch với `modSave.SetOrder` đều đã có unit test:
  *  `apps/api/tests/Ochacom.Application.UnitTests/Treatments/Common/UnpaidSyosinFlgResolverTests.cs`.
- *  Ở đây chỉ chứng minh đường dây thật: F8 → BE → cột `sflg` trong DB.
+ *  Việc `drNo` đi từ body request tới Command đã có
+ *  `apps/api/tests/Ochacom.Api.UnitTests/Mappers/Treatments/InsertUnpaidRequestMapperTests.cs`.
+ *  Ở đây chỉ chứng minh đường dây thật: F8 → BE → cột `sflg` / `att_dr` trong DB.
  *
  * ─── Cách chạy ───────────────────────────────────────────────────────────────
  *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/unpaid-syosin-flg.spec.ts --retries=0

@@ -122,7 +122,13 @@ public sealed class AccountingDayFlow
 
     // ── Đọc lưới ─────────────────────────────────────────────────────────────
 
-    /// <summary>Các ngày (ô 日) đang có trên lưới, theo thứ tự xuất hiện, không trùng.</summary>
+    /// <summary>
+    /// Các ngày (ô 日) đang có trên lưới, không trùng.
+    ///
+    /// <para>⚠️ Gồm CẢ ngày của khối THÁNG CŨ. Ai cần 「ngày của tháng đang mở」 thì
+    /// đừng dùng hàm này — hỏi DB (<c>UnpaidSyosinDb.DayOracles</c> đã lọc theo tháng)
+    /// rồi mới dò dòng trên lưới.</para>
+    /// </summary>
     public IReadOnlyList<int> DaysOnGrid() =>
         _grid.Snapshot()
              .Select(r => Txt.Int(r.Day))
@@ -131,9 +137,21 @@ public sealed class AccountingDayFlow
              .Distinct()
              .ToList();
 
-    /// <summary>Dòng ĐẦU TIÊN mang ô 日 = <paramref name="day"/>; null nếu không có.</summary>
+    /// <summary>
+    /// Dòng mang ô 日 = <paramref name="day"/> — lấy dòng <b>CUỐI CÙNG</b> khớp.
+    ///
+    /// <para><c>grdRegi</c> hiển thị cả khối THÁNG CŨ ở phía trên rồi mới tới tháng
+    /// hiện hành, nên một số ngày có thể xuất hiện HAI LẦN. Lấy dòng đầu là tóm phải
+    /// dòng tháng cũ — dòng đó mang <c>linekbn 99</c> và F8 trên nó không làm việc
+    /// mình tưởng.</para>
+    ///
+    /// <para>Đã dính thật 2026-08-26: sau khi seed một dòng 初診 vào 2026-07-20, lưới
+    /// mọc thêm khối 「R 08年07月」 và <c>FirstOrDefault</c> tóm ngay 日 = 20 của tháng 7.
+    /// TC-DATE-1 đi tìm 未精算 của 2026-08-20 (年月 màn hình + ngày dòng) và tất nhiên
+    /// không thấy gì.</para>
+    /// </summary>
     public RegiRow? RowForDay(int day) =>
-        _grid.Snapshot().FirstOrDefault(r => Txt.Int(r.Day) == day);
+        _grid.Snapshot().LastOrDefault(r => Txt.Int(r.Day) == day);
 
     /// <summary>
     /// Dòng KHÔNG có ô 日 — để đo nhánh 「カーソルを合わせてください」.

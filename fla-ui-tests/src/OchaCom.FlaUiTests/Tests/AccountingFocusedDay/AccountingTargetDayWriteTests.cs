@@ -183,12 +183,19 @@ public sealed class AccountingTargetDayWriteTests : UiTestBase
     {
         using var trace = TestTrace.Begin();
 
+        // Lấy ngày từ DB (đã lọc theo THÁNG ĐANG MỞ) chứ không từ lưới: DaysOnGrid gom
+        // cả khối tháng cũ, và sau khi seed 初診 vào 2026-07-20 thì nó trả về cả ngày 20
+        // của tháng 7 — dòng linekbn 99, F8 trên đó không làm việc mình tưởng.
         var today = DateTime.Today.Day;
-        var day = _flow.DaysOnGrid().FirstOrDefault(d => d != today);
+        var oracle = RequireUnpaidDb().DayOracles(PatNo, TrtDate);
+        TestContext.Out.WriteLine($"ngày của THÁNG ĐANG MỞ: [{string.Join(", ", oracle.Select(o => o.Day))}]");
+        TestContext.Out.WriteLine($"ngày đọc được TRÊN LƯỚI (gồm cả tháng cũ): [{string.Join(", ", _flow.DaysOnGrid())}]");
+
+        var day = oracle.Select(o => o.Day).FirstOrDefault(d => d != today);
         if (day == 0)
             IgnoreWithReason(
-                $"lưới không có ngày nào khác hôm nay ({today}) — không dựng được tình huống " +
-                "「con trỏ ở ngày khác ngày mở màn hình」.");
+                $"tháng {TrtDate:yyyy-MM} không có ngày 処置 nào khác hôm nay ({today}) — " +
+                "không dựng được tình huống 「con trỏ ở ngày khác ngày mở màn hình」.");
 
         var target = new DateTime(TrtDate.Year, TrtDate.Month, day);
         var screenDate = TrtDate.Date;
@@ -243,10 +250,12 @@ public sealed class AccountingTargetDayWriteTests : UiTestBase
         var row = _flow.DaysOnGrid().Contains(today.Day) ? _flow.RowForDay(today.Day) : null;
         if (row is null)
             IgnoreWithReason(
-                $"lưới chưa có dòng nào của HÔM NAY (ngày {today.Day}). Fixture có seed động " +
-                $"nhưng nó chỉ chạy khi hôm nay ({today:yyyy-MM}) cùng tháng với màn hình " +
-                $"({TrtDate:yyyy-MM}) — runner tự đặt OCHA_TRT_DT = hôm nay, kiểm lại xem có bị " +
-                "ghi đè bằng -TrtDate không.");
+                $"lưới chưa có dòng nào của HÔM NAY (ngày {today.Day}). " +
+                $"Ngày trên lưới: [{string.Join(", ", _flow.DaysOnGrid())}]. " +
+                $"Seed động {(_seededToday ? "ĐÃ chạy" : "KHÔNG chạy")} — nó chỉ chạy khi hôm nay " +
+                $"({today:yyyy-MM}) cùng tháng với màn hình ({TrtDate:yyyy-MM}) và ngày đó chưa " +
+                "có 処置. Runner tự đặt OCHA_TRT_DT = hôm nay; kiểm xem có bị ghi đè bằng " +
+                "-TrtDate không.");
 
         TestContext.Out.WriteLine(
             $"con trỏ ở dòng 日 = {today.Day} (ĐÚNG hôm nay), màn hình mở ở {TrtDate:yyyy-MM-dd}");
