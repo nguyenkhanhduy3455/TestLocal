@@ -55,11 +55,15 @@ import { ADMIN_USER, JA } from './test-data'
  *        「登録に失敗しました。」; PUT /v1/config bị agent TỪ CHỐI → toast đỏ
  *        「連携先の保存に失敗しました。」 (409 thì câu khác). Cả hai trường hợp đều
  *        KHÔNG bắn 「登録しました。」 và KHÔNG đóng dialog. Ngoại lệ DUY NHẤT được bỏ
- *        qua là máy KHÔNG có agent nào cả (`agentConfig` undefined): toast info
- *        「連携先は保存されませんでした（エージェント未接続）。」 rồi vẫn báo lưu xong và đóng.
- *      · Agent không chạy → bung AgentOfflineDialog 「エージェントが起動していません」
- *        NGAY LÚC MỞ. Agent giờ chỉ còn lo 2 mã 連携先 và việc khai tên máy, nhưng
- *        thiếu tên máy là không lưu được, nên vẫn phải báo trước khi tick.
+ *        qua là máy KHÔNG có agent nào cả (`agentConfig` undefined): vẫn báo lưu
+ *        xong và đóng. Toast info 「連携先は保存されませんでした（エージェント未接続）。」
+ *        CHỈ bắn khi người dùng THỰC SỰ đổi 1 trong 2 combo 連携先; để nguyên
+ *        「連携しない」 thì chẳng mất gì nên không cảnh báo (TC-SAVE-3).
+ *      · Agent không chạy → KHÔNG bung hộp thoại nào cả. Bản trước bung
+ *        AgentOfflineDialog 「エージェントが起動していません」 ngay lúc mở; đã BỎ HẲN.
+ *        Agent chỉ còn lo đúng 2 mã 連携先: định danh máy do `ensureDeviceId` tự
+ *        enroll với cloud kể cả khi không có agent, nên 30 field kia đọc và ghi
+ *        bình thường, 2 combo 連携先 hiện 「連携しない」. TC-AGENT-1 canh chỗ này.
  *  - queries/agent-treatment-config-queries.ts: `useDeviceLinkConfig` đọc CHUNG
  *    query ['agent','config'] với màn 機器連携設定 / プリンター設定 (GET /v1/config),
  *    nhưng CHỈ để lấy 2 mã 連携先.
@@ -70,11 +74,10 @@ import { ADMIN_USER, JA } from './test-data'
  * bằng `-g` sẽ hỏng vì dialog chưa được mở. Luôn chạy cả file:
  *   npx playwright test tests/treatment-entry-setting-dialog.spec.ts
  *
- * TIỀN ĐỀ: AGENT ĐANG CHẠY. Nhánh 「エージェントが起動していません」 (mời khởi động,
- * 起動 / セットアップ / キャンセル) KHÔNG nằm trong phạm vi spec này — nó thuộc vòng
- * đời agent, không phải màn 診療入力設定. Vì thế ở đây không có testcase nào bấm
- * 起動 cả; dialog đó nếu có bung ra thì `openDialog()` chỉ bấm キャンセル cho khuất,
- * xem chú thích tại chỗ.
+ * TIỀN ĐỀ: nhóm TC-AGENT-2/3 và TC-LINK-* cần AGENT ĐANG CHẠY. Hộp thoại mời khởi
+ * động 「エージェントが起動していません」 (起動 / セットアップ / キャンセル) đã bị BỎ khỏi
+ * màn này — nó thuộc vòng đời agent, không phải màn 診療入力設定 — nên `openDialog()`
+ * không còn nhánh dọn nào, và TC-AGENT-1 chốt rằng nó không bung ra nữa.
  *
  * Nhóm TC-AGENT-* và TC-LINK-* cần agent thật nên tự skip khi không có
  * (macOS/Linux) — xem khối AGENT_AVAILABLE bên dưới. Nhóm TC-LOAD-* và TC-SAVE-*
@@ -123,6 +126,21 @@ const TAB_LABELS = ['表示設定', '入力形態・動作1', '入力形態・�
 
 /** Toast báo lưu xong — `toast.success('登録しました。')` cuối handleRegister. */
 const TOAST_SAVED = '登録しました。'
+
+/**
+ * Toast info của nhánh `!agentConfig`. Sau khi bỏ hộp thoại mời khởi động, nó CHỈ
+ * bắn khi 連携先 thực sự bị đổi — dùng làm chốt PHỦ ĐỊNH ở TC-SAVE-3.
+ */
+const TOAST_LINK_SKIPPED = '連携先は保存されませんでした（エージェント未接続）。'
+
+/** Tiêu đề hộp thoại mời khởi động agent — đã BỎ khỏi màn này (TC-AGENT-1). */
+const AGENT_OFFLINE_TITLE = 'エージェントが起動していません'
+
+/**
+ * Nhãn của `NO_CONNECTOR_OPTION` (linkCode 0) — mục "chưa nối thiết bị nào" mà
+ * CodMstSelect chèn thêm trên đầu mst_cod cdType 58.
+ */
+const NO_CONNECTOR_LABEL = '連携しない'
 
 /** Tab 表示設定 — 8 check trên + 2 check dưới, xen giữa là 2 combo 連携先. */
 const DISPLAY_CHECKS_TOP = [
@@ -249,7 +267,12 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
 
     /** Dialog chính. Tiêu đề có dấu cách thật nên match được nguyên văn. */
     let dialog: Locator
-    /** Dialog phụ của AgentOfflineDialog (cũng role="dialog" → phải lọc theo text). */
+    /**
+     * Hộp thoại mời khởi động agent — GIỜ PHẢI KHÔNG BAO GIỜ BUNG trên màn này.
+     *
+     * Giữ lại làm chốt phủ định cho TC-AGENT-1. Nó cũng mang role="dialog" nên
+     * phải lọc theo text mới tách được khỏi 診療入力設定.
+     */
     let offlineDialog: Locator
     /** Tabpanel ĐANG hiện — cũng chính là khối cuộn (`h-full overflow-y-auto`). */
     let panel: Locator
@@ -271,21 +294,13 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
     let loadedAgentConfig: AgentConfigBody | null = null
 
     /**
-     * Bấm F11 mở dialog, và dọn AgentOfflineDialog nếu nó bung ra.
+     * Bấm F11 mở dialog.
      *
-     * Việc dọn KHÔNG phải là testcase — spec này giả định agent đang chạy, nên ở
-     * máy có agent nhánh đó không bao giờ chạy tới. Nó tồn tại như lưới an toàn
-     * cho máy KHÔNG có agent (macOS/Linux): dialog offline nổi ĐÈ lên
-     * 診療入力設定 và nuốt mọi click, đúng kiểu hỏng dây chuyền spec 歯管 đã gặp.
-     * Nó hỏi lại sau mỗi lần đóng/mở (`offlineDismissed` reset theo prop `open`)
-     * nên phải dùng hàm này cho MỌI lần mở.
-     *
-     * THỨ TỰ CHỜ CÓ Ý NGHĨA: phải dọn dialog offline TRƯỚC rồi mới chốt
-     * 診療入力設定. AgentOfflineDialog cũng là Radix Dialog modal → lúc nó mở,
-     * Radix gắn aria-hidden lên phần còn lại của cây, KỂ CẢ portal của
-     * 診療入力設定. Chốt `expect(dialog).toBeVisible()` trước là chờ một phần tử
-     * đã bị gỡ khỏi accessibility tree: getByRole('dialog') không thấy nó, và
-     * testcase đỏ sau 30s ở đúng câu mà lẽ ra nhánh dọn bên dưới đã lo xong.
+     * KHÔNG còn nhánh dọn hộp thoại mời khởi động agent. Bản trước, trên máy không
+     * có agent (macOS/Linux) hộp thoại đó nổi ĐÈ lên 診療入力設定, nuốt mọi click và
+     * còn gắn aria-hidden lên phần cây còn lại nên `getByRole('dialog')` không thấy
+     * 診療入力設定 nữa — phải bấm キャンセル trước rồi mới chốt được. Màn này đã bỏ hẳn
+     * nó (TC-AGENT-1 canh), nên mở là thấy ngay.
      */
     async function openDialog() {
         // Đã mở sẵn (testcase trước để lại) thì thôi: F11 lúc này rơi vào scope của
@@ -294,13 +309,6 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
 
         // FKeyScopeProvider preventDefault F1–F12 nên F11 không bung fullscreen.
         await page.keyboard.press('F11')
-        // Chờ CÁI NÀO TỚI TRƯỚC. Máy có agent thì luôn là 診療入力設定; máy không có
-        // agent thì offline dialog tới trước và che mất cái kia.
-        await expect(dialog.or(offlineDialog).first()).toBeVisible({ timeout: 30000 })
-        if (await offlineDialog.isVisible().catch(() => false)) {
-            await offlineDialog.getByRole('button', { name: 'キャンセル' }).click()
-            await expect(offlineDialog).toBeHidden({ timeout: 10000 })
-        }
         await expect(dialog).toBeVisible({ timeout: 30000 })
     }
 
@@ -419,9 +427,7 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
         await expect(page.locator('[data-fkey="F11"]')).toBeVisible({ timeout: 60000 })
 
         dialog = page.getByRole('dialog').filter({ hasText: '診 療 入 力 設 定' })
-        offlineDialog = page
-            .getByRole('dialog')
-            .filter({ hasText: 'エージェントが起動していません' })
+        offlineDialog = page.getByRole('dialog').filter({ hasText: AGENT_OFFLINE_TITLE })
         panel = dialog.getByRole('tabpanel')
         rowOf = (label: string) => dialog.getByText(label, { exact: true }).locator('..')
         checkOf = (label: string) =>
@@ -731,6 +737,49 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
         await step()
     })
 
+    test('TC-AGENT-1 — mở dialog KHÔNG còn hỏi khởi động エージェント', async () => {
+        // Đóng rồi MỞ LẠI: bản trước hỏi lại sau MỖI lần đóng/mở (state
+        // `offlineDismissed` reset theo prop `open`), nên nhìn cái dialog đang mở
+        // sẵn từ testcase trước thì không chứng minh được gì.
+        if (await dialog.isVisible().catch(() => false)) {
+            await dialog.getByRole('button', { name: 'F10 戻る' }).click()
+            await expect(dialog).toBeHidden({ timeout: 10000 })
+        }
+
+        // Mốc chốt cho một vòng mở đã chạy xong. KHÔNG chờ được query agent: máy
+        // không có agent thì nó hỏng ở tầng mạng, không sinh response nào. Nhưng nó
+        // hỏng (loopback bị từ chối, tính bằng ms) TRƯỚC response này rất lâu, nên
+        // chờ cái chậm hơn là đủ để hộp thoại kia kịp bung nếu nó còn tồn tại.
+        const settingsRes = page.waitForResponse(
+            (res) => SETTINGS_INP_URL.test(res.url()) && res.request().method() === 'GET',
+            { timeout: 60000 },
+        )
+        await openDialog()
+        await settingsRes
+
+        await expect(
+            offlineDialog,
+            'màn 診療入力設定 không được hỏi khởi động agent nữa — 30/32 field không ' +
+                'cần agent, định danh máy do ensureDeviceId tự enroll với cloud',
+        ).toHaveCount(0)
+        // Và màn hình dùng được ngay, không bị dialog nào nổi đè nuốt click.
+        await expect(dialog.getByRole('tab')).toHaveCount(TAB_LABELS.length)
+
+        // Máy KHÔNG có agent: 2 combo 連携先 phải hiện đúng 「連携しない」 (mặc định
+        // chưa chọn) chứ không phải trigger rỗng, trong khi 30 field kia vẫn là dữ
+        // liệu thật đọc từ tenant_config/device_config (TC-LOAD-1, TC-LOAD-2).
+        if (!AGENT_AVAILABLE) {
+            await selectTab('表示設定')
+            for (const label of ['レントゲンシステム連携', '診療支援システム連携']) {
+                await expect(
+                    vendorSelectOf(label),
+                    `${label} phải rơi về 「${NO_CONNECTOR_LABEL}」 khi không có agent`,
+                ).toHaveText(NO_CONNECTOR_LABEL)
+            }
+        }
+        await step()
+    })
+
     test('TC-AGENT-2 — 連携先 lấy từ connector_config.linkCode của agent', async () => {
         test.skip(!AGENT_AVAILABLE, AGENT_SKIP_REASON)
         expect(loadedAgentConfig, 'TC-OPEN-1 chưa bắt được GET /v1/config').not.toBeNull()
@@ -929,14 +978,20 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
         try {
             await dialog.getByRole('button', { name: 'F9 登録' }).click()
             // Hai câu khác nhau: máy KHÔNG xác định được thì lỗi nằm chỗ khác và
-            // handleRegister nói thẳng, thay vì để người dùng bấm lại vô ích.
+            // handleRegister nói thẳng, thay vì để người dùng bấm lại vô ích. Câu đó
+            // KHÔNG còn mời khởi động agent — định danh máy lấy qua ensureDeviceId,
+            // agent không tham gia, nên chỉ enroll hỏng mới rơi vào nhánh này.
             await expect(
                 page.getByText(
                     loadedDeviceId === null
-                        ? '端末を特定できないため登録できません。エージェントを起動してください。'
+                        ? '端末を特定できないため登録できません。'
                         : '登録に失敗しました。',
                 ),
             ).toBeVisible({ timeout: 30000 })
+            await expect(
+                page.getByText('エージェントを起動してください'),
+                'câu lỗi vẫn mời khởi động agent — agent không liên quan tới định danh máy',
+            ).toHaveCount(0)
             // handleRegister return sớm → người dùng còn nguyên chỗ để thử lại.
             await expect(dialog, 'lưu hỏng mà vẫn đóng thì mất hết chỉnh sửa').toBeVisible()
         } finally {
@@ -985,6 +1040,13 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
             : (async () => {
                   await dialog.getByRole('button', { name: 'F9 登録' }).click()
                   await expect(page.getByText(TOAST_SAVED)).toHaveCount(1, { timeout: 60000 })
+                  // Testcase này KHÔNG đụng vào 連携先, nên nhánh `!agentConfig`
+                  // phải im lặng: máy không có agent để nguyên 「連携しない」 là trạng
+                  // thái bình thường, cảnh báo mỗi lần lưu làm nó trông như lỗi.
+                  await expect(
+                      page.getByText(TOAST_LINK_SKIPPED),
+                      'không đổi 連携先 mà vẫn cảnh báo — trạng thái bình thường bị báo như hỏng',
+                  ).toHaveCount(0)
                   await expect(dialog).toBeHidden({ timeout: 30000 })
               })()
         expect((await tenantRes).status(), 'PUT /tenant/settings/inp phải 2xx').toBeLessThan(300)

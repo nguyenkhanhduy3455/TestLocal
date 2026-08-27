@@ -183,7 +183,11 @@ public sealed class PatientSelectAssignProbeTests : UiTestBase
             Kq("W2", $"ENTER trên dòng 患者{row.PatNo} (user_no=0, att_dr={att?.AttDr}「{NameOf(att?.AttDr) ?? "?"}」) → {r}");
             Kq("W2b", r.Blocked
                 ? "⇒ WinForm CHẶN, KHÔNG rơi về att_dr — đúng frm203001.cs:698 (kiểm CỘT, không kiểm giá trị). " +
-                  "Bản web rơi về att_dr và MỞ màn (TC-DR-4B đã xanh) ⇒ XÁC NHẬN LỆCH."
+                  "Bản web rơi về att_dr và MỞ màn (TC-DR-4B đã xanh) ⇒ HAI BÊN KHÁC NHAU. " +
+                  "Không bên nào ghi dr_no = 0 nên KHÔNG phải lỗi dữ liệu; đây là quyết định sản " +
+                  "phẩm (chặn để bắt chọn, hay rơi về att_dr cho đỡ vướng). LƯU Ý: comment ở " +
+                  "lib/staff-assignment.ts:75-78 nói nhánh web là 「exactly as the else arm」 — " +
+                  "mà else arm chạy khi CỘT không tồn tại, nên bản web đang TƯỞNG mình giống WinForm."
                 : r.Opened
                     ? $"⇒ WinForm MỞ ĐƯỢC, nhãn lbDr = 「{_flow.DetailDoctorLabel(r.DetailWindow!)}」 " +
                       "— tức CÓ rơi về att_dr, giống bản web ⇒ KHÔNG phải lệch."

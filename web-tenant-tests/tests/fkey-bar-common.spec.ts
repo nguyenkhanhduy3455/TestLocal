@@ -228,12 +228,13 @@ test.describe('F-key bar — dialog INP phải dùng <FKeyBar> chung', () => {
     }
 
     /**
-     * Dọn AgentOfflineDialog 「エージェントが起動していません」 nếu nó bung ra.
+     * Dọn AgentOfflineDialog còn sót lại từ một màn ĐÃ AUDIT trước đó.
      *
      * Nó CŨNG mang role="dialog" và nổi ĐÈ lên dialog vừa mở, nên `topDialog()`
      * sẽ bắt trúng nó — lần chạy đầu đã vì thế mà báo nhầm 診療入力設定 là "không
-     * có nút F-key nào". Nó chỉ bung khi agent Windows không chạy; máy có agent
-     * thì nhánh này không bao giờ chạy tới.
+     * có nút F-key nào". Riêng 診療入力設定 thì KHÔNG còn bung nó nữa (đã bỏ khỏi
+     * màn đó), nhưng các luồng IN ẤN vẫn bung bản 「印刷エージェントが起動していません」
+     * — chuỗi lọc dưới đây là chuỗi con của nó nên vẫn dọn được cả hai.
      */
     async function dismissAgentOffline() {
         const offline = page.getByRole('dialog').filter({ hasText: 'エージェントが起動していません' })
@@ -354,11 +355,13 @@ test.describe('F-key bar — dialog INP phải dùng <FKeyBar> chung', () => {
     test('F11 設定 → 診療入力設定 (frm203035)', async () => {
         await audit('診療入力設定 (F11 設定)', 'treatment-entry-setting-dialog.tsx', async () => {
             await page.keyboard.press('F11')
-            await dismissAgentOffline()
-            // Bó theo text trong BODY chứ không `.last()`: nếu AgentOfflineDialog
-            // bung lại sau cú dọn thì `.last()` lại trúng nó. 「表示設定」 là tiêu đề
-            // nhóm của tab đầu (treatment-entry-setting-dialog.tsx:165) — title thì
-            // không dùng được vì bị giãn chữ 「診 療 入 力 設 定」 (Rule 13.1).
+            // Không dọn AgentOfflineDialog ở đây nữa: màn này đã bỏ hẳn lời mời khởi
+            // động agent (treatment-entry-setting-dialog.spec.ts TC-AGENT-1). Cú dọn
+            // chung trong `audit()` vẫn chạy trước đó, lo phần sót từ màn khác.
+            //
+            // Bó theo text trong BODY chứ không `.last()`: 「表示設定」 là tiêu đề nhóm
+            // của tab đầu (treatment-entry-setting-dialog.tsx) — title thì không dùng
+            // được vì bị giãn chữ 「診 療 入 力 設 定」 (Rule 13.1).
             return page.getByRole('dialog').filter({ hasText: '表示設定' })
         })
     })

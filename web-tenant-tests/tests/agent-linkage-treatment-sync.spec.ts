@@ -173,11 +173,10 @@ test.describe('連携先 — 診療入力設定(F11) ↔ 機器連携 đồng b�
         await expect(page.locator('[data-fkey="F11"]')).toBeVisible({ timeout: 60000 })
         await page.keyboard.press('F11')
         await expect(f11Dialog).toBeVisible({ timeout: 30000 })
-        // Agent đang chạy nên lời mời khởi động không được bung ra; nếu có thì dọn.
-        const offline = page.getByRole('dialog').filter({ hasText: 'エージェントが起動していません' })
-        if (await offline.isVisible({ timeout: 2000 }).catch(() => false)) {
-            await offline.getByRole('button', { name: 'キャンセル' }).click()
-        }
+        // Không còn nhánh dọn 「エージェントが起動していません」: màn 診療入力設定 đã bỏ hẳn
+        // lời mời khởi động agent — nó chỉ cần agent cho 2 mã 連携先, còn định danh
+        // máy do ensureDeviceId tự enroll. Xem treatment-entry-setting-dialog.spec.ts
+        // TC-AGENT-1.
     }
 
     async function closeF11() {

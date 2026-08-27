@@ -215,16 +215,37 @@ INSERT INTO wait (pat_no, user_no, rdate, chair) VALUES (5,  0, GETDATE(), 2);  
 | Câu | Đo được | Kết luận |
 |---|---|---|
 | `KQ-W1` | ENTER dòng 患者3 (`user_no=11「池田 忠雄」`, `att_dr=16「院」`) → **mở được**, `lbDr` = 「池田 忠雄」 | **DÒNG THẮNG** `att_dr` — đúng `frm203001.cs:698`, và **khớp bản web** |
-| `KQ-W2` | ENTER dòng 患者5 (`user_no=0`) → **BỊ CHẶN** 「ドクターを特定出来ません。…」 | ★ **LỆCH** — WinForm KHÔNG rơi về `att_dr`; bản web rơi về và MỞ màn (`TC-DR-4B` xanh) |
-| `KQ-W3` | DOUBLE-CLICK dòng → **im lặng** | ★ **LỆCH** — no-op đúng `frm203001.cs:303-309`; bản web mở màn bằng chính cử chỉ này (`TC-ROW-1` xanh) |
+| `KQ-W2` | ENTER dòng 患者5 (`user_no=0`) → **BỊ CHẶN** 「ドクターを特定出来ません。…」 | ★ **KHÁC** — WinForm KHÔNG rơi về `att_dr`; bản web rơi về và MỞ màn (`TC-DR-4B` xanh) |
+| `KQ-W3` | DOUBLE-CLICK dòng → **im lặng** | ★ **KHÁC** — no-op đúng `frm203001.cs:303-309`; bản web mở màn bằng chính cử chỉ này (`TC-ROW-1` xanh) |
 
-Vậy **điểm lệch #4 và #5 ở mục 4 nay đã có bằng chứng đo được**, không còn là suy luận
-từ source.
+#### ⚠️ `user_no = 0` MANG HAI NGHĨA KHÁC NHAU — phép so KQ-W2 ban đầu là SAI
 
-> `Tc1_ProbeWaitList` tách riêng khỏi `Tc0` là có chủ ý: `Tc0` đi qua chục bước và mỗi
-> bước để lại dấu vết (ô 患者番号 còn số cũ, cửa sổ bị lái đi), tới lượt hỏi 受付一覧 thì
-> không còn mốc sạch. Trong chính `Tc1`, `W2` cũng phải chạy **trước** `W1` vì `W1` điều
-> hướng sang 処置入力 rồi F10 về, mà lưới 受付一覧 KHÔNG tự dựng lại (phải F5).
+Đây là chỗ tôi kết luận vội và phải đính chính.
+
+| | ý nghĩa của `user_no = 0` |
+|---|---|
+| WinForm | **sentinel 未選択**. `IINMST2` không có dòng nào `USER_NO = 0`, và `defData` kiểm `UserNo > 0` (`frm203001.cs:705`) |
+| web (sau khi gộp `app_user`) | **user THẬT — owner của tenant**. Đo trên `t_tenant1.app_user`: `user_no=0, user_kbn=2, 「Son Tran」` |
+
+Nên seed `wait.user_no = 0` bên WinForm rồi đem so với bản web là **không cùng một
+tình huống**: cùng con số, hai nghĩa. `KQ-W2` chỉ chứng minh 「WinForm chặn khi
+`user_no = 0`」 — đúng, nhưng KHÔNG kết luận được gì về parity.
+
+**Tình huống so được** là 「受付 chưa gán Ｄｒ．」, mà bên WinForm biểu diễn bằng
+`NULL` chứ không phải `0`. Xem `KQ-W2` ở bảng trên (đã seed lại `user_no = NULL`).
+
+Việc web đặt owner vào `user_no = 0` là **cải tiến có chủ ý** (gộp `IINMST2` với tài
+khoản đăng nhập), và hệ quả của nó đã được xử lý ở chỗ khác: `TC-MST-1` của
+`treatment-header-staff.spec.ts` đòi dropdown 担当医 KHÔNG chứa `user_no = 0`, tức owner
+cố ý không được làm 担当医. Nhưng nó tạo ra một va chạm cần biết: **mọi đoạn code còn
+mang ngữ nghĩa `> 0` thừa kế từ WinForm sẽ âm thầm loại owner** — ví dụ
+`resolveStaffAssignment` trả `{ ok: false }` khi `drNo = 0`.
+
+#### Double-click (KQ-W3) — thêm lối vào, không phá gì
+
+Bên web là **thêm** một cử chỉ mà WinForm không có (câu `defData` trong
+`dgvView_CellDoubleClick` bị comment). Rủi ro thấp; nhiều khả năng nên giữ và ghi rõ
+là cố ý thêm, thay vì gỡ đi cho 「giống WinForm」.
 
 ### ĐIỂM LỆCH MỚI — focus sau khi bị chặn
 

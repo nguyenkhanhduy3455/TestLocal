@@ -57,6 +57,16 @@ import { rows, cells } from './virtual-grid'
  * CÒN LỆCH — mới đọc source, CHƯA đo được (máy WinForm có bảng `wait` rỗng):
  *
  * 4. **Nhánh 受付 đọc SỰ TỒN TẠI CỦA CỘT, không phải giá trị.**
+ *
+ *    ⚠️ ĐỌC KỸ TRƯỚC KHI SO: `user_no = 0` mang HAI NGHĨA khác nhau.
+ *      · WinForm — sentinel 未選択. `IINMST2` không có dòng `USER_NO = 0`, và
+ *        `defData` kiểm `UserNo > 0` (frm203001.cs:705).
+ *      · web sau khi gộp `app_user` — user THẬT, là **owner của tenant**:
+ *        `t_tenant1.app_user` có `user_no=0, user_kbn=2, 「Son Tran」`.
+ *    Nên 「dòng 受付 mang user_no = 0」 KHÔNG phải cùng một tình huống ở hai bên.
+ *    Tình huống so được là 「受付 chưa gán Ｄｒ．」, bên WinForm là `NULL`.
+ *    TC-DR-4B dưới đây vì thế chỉ đóng đinh HÀNH VI CỦA WEB, không kết luận parity.
+
  *      `if (dt.Columns.Contains("user_no")) UserNo = dt.Rows[i]["user_no"] else person.dr`
  *    (frm203001.cs:696-701). Lưới 受付患者一覧 LUÔN có cột đó (PatInfoList.cs:177),
  *    nên dòng mang `user_no = 0` ⇒ WinForm lấy `0` rồi **chặn E00027**, KHÔNG rơi về

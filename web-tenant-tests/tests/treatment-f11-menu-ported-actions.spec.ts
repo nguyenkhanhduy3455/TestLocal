@@ -78,10 +78,11 @@ import { ADMIN_USER, JA } from './test-data'
  *  1. `SanteiConfirmDialog` 「〜を算定しますか？」 bung ra sau khi lưới nạp xong và đè
  *     lên mọi click ⇒ `addLocatorHandler` bấm No (GUIDELINE Rule 14/14.1). Nó bung
  *     lại sau MỖI lần quay về màn 診療入力, nên `times` phải rộng tay.
- *  1b. Trên máy KHÔNG có agent, mở 処置入力設定 sẽ bung tiếp AgentOfflineDialog
- *     「エージェントが起動していません」 — cũng `role="dialog"`, nổi ĐÈ lên và nuốt cả
- *     click của handler ở (1). Phải dọn bằng `dismissAgentOffline()` chứ không
- *     thể bỏ qua.
+ *  1b. TỪNG có bẫy: trên máy KHÔNG có agent, mở 診療入力設定 bung tiếp
+ *     AgentOfflineDialog 「エージェントが起動していません」 — cũng `role="dialog"`, nổi ĐÈ
+ *     lên và nuốt cả click của handler ở (1). Màn đó đã BỎ HẲN lời mời khởi động
+ *     agent nên bẫy này hết, `dismissAgentOffline()` cũng đã gỡ theo. Xem
+ *     `treatment-entry-setting-dialog.spec.ts` TC-AGENT-1.
  *  2. Các testcase điều hướng làm page RỜI KHỎI `/treatments/{patNo}` ⇒ mọi
  *     testcase sau phải gọi `backToEntry()`. Đừng giả định page còn ở màn cũ.
  *  3. `guardCurrentMonth` chặn thao tác khi ô đang focus thuộc tháng cũ. Spec
@@ -250,23 +251,6 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
         await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
         // Header 患者情報 render 「合計:」 = màn detail đã sẵn sàng nhận F11.
         await expect(page.getByText('合計:').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
-    }
-
-    /**
-     * Đóng AgentOfflineDialog 「エージェントが起動していません」 nếu nó bung ra.
-     *
-     * Đây KHÔNG phải testcase — spec này không nói gì về vòng đời agent. Nó là
-     * lưới an toàn cho máy KHÔNG có agent (macOS/Linux): dialog đó nổi đè lên mọi
-     * thứ và nuốt sạch click, đúng kiểu hỏng dây chuyền mà
-     * `treatment-entry-setting-dialog.spec.ts` đã gặp.
-     */
-    async function dismissAgentOffline() {
-        const offline = page
-            .getByRole('dialog')
-            .filter({ hasText: 'エージェントが起動していません' })
-        if (!(await appeared(offline, 5_000))) return
-        await offline.getByRole('button', { name: 'キャンセル' }).click()
-        await expect(offline).toBeHidden({ timeout: 10_000 })
     }
 
     /**
@@ -464,12 +448,9 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
         // Nếu vẫn còn dây cũ thì đây là thứ hiện ra thay cho dialog.
         await expect(page.getByText('開発中')).toHaveCount(0)
 
-        // Máy không có agent thì 診療入力設定 bung tiếp AgentOfflineDialog và nó nổi
-        // ĐÈ lên, nuốt mọi click sau đó. Dọn trước khi bấm 戻る. Việc dialog đó có
-        // đúng hay không thuộc treatment-entry-setting-dialog.spec.ts, không phải
-        // đây — ở đây chỉ cần đường dẫn từ menu tới dialog là thông.
-        await dismissAgentOffline()
-
+        // Không cần dọn AgentOfflineDialog trước khi bấm 戻る nữa: màn 診療入力設定
+        // đã bỏ hẳn lời mời khởi động agent, nên không có gì nổi đè nuốt click.
+        // Ở đây chỉ cần đường dẫn từ menu tới dialog là thông.
         await dialog.getByRole('button', { name: 'F10 戻る' }).click()
         await expect(dialog).toBeHidden({ timeout: 10_000 })
         await step()
