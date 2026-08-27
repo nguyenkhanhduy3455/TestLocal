@@ -191,11 +191,23 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         await expect(caption, 'không thấy hàng Ｄｒ．trên header màn chi tiết').toBeVisible({
             timeout: 30000,
         })
-        await caption.locator('..').getByRole('button').nth(1).click()
+        // In cấu trúc hàng Ｄｒ．TRƯỚC khi click — nếu click trượt thì log nói được
+        // hàng đó thật ra có mấy nút và tên chúng là gì, thay vì chỉ 「không thấy combo」.
+        const row = caption.locator('..')
+        const buttons = await row.getByRole('button').all()
+        const shape = await Promise.all(
+            buttons.map(async (b, i) => `#${i}「${(await b.innerText()).trim()}」`),
+        )
+        console.log(`=== header hàng Ｄｒ．có ${buttons.length} nút: ${shape.join(' · ')}`)
+
+        await row.getByRole('button').nth(1).click()
+
         const combo = page.getByRole('combobox').first()
-        await expect(combo, 'click ô giá trị mà combo Ｄｒ．không hiện ra').toBeVisible({
-            timeout: 15000,
-        })
+        await expect(
+            combo,
+            `click ô giá trị mà combo Ｄｒ．không hiện ra. Hàng Ｄｒ．đang có ` +
+                `${buttons.length} nút: ${shape.join(' · ')}`,
+        ).toBeVisible({ timeout: 15000 })
         return combo
     }
 
