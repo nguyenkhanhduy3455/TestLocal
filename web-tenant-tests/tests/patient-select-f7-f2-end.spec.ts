@@ -76,10 +76,27 @@ const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
 
 /** `inp_config.acc_make` — 0 = 日単位, 1 = 月単位 (api/inp-config-api.ts AccMakeUnit). */
 const ACC_MAKE_MONTH = 1
-/** `inp_config.eiseiji_flg` — 0 = ẩn hàng 衛生士 (EiseijiFlg.Hidden). */
-const EISEIJI_HIDDEN = 0
+/**
+ * `inp.dispEiseisi` — 「衛生士を入力する」, thứ QUYẾT ĐỊNH hàng 衛生士.
+ *
+ * KHÔNG phải `inp_config.eiseiji_flg`: cái đó là 「衛生実地指導を算定しない」
+ * (frm506008.Designer.cs:2809), chỉ được đọc ở một chỗ duy nhất là 算定チェック
+ * `if (eiseiji_flg == 1) Chk_340_Cmn(...)` (Check.cs:903). Màn 患者選択 của
+ * WinForm đọc `XmlControl.OchaXml.InpInfo.DispEiseisi`, và bản web đã sửa lại
+ * cho đúng.
+ *
+ * Một giá trị nhưng HAI ngưỡng, và đó mới là điểm mấu chốt:
+ *   `if (DispEiseisi == 0) lblStaffNm.Visible = false`  frm203001.cs:542  ← ẨN
+ *   `if (StaffNo <= 0 && DispEiseisi == 1) → E00027`    frm203001.cs:721  ← BẮT BUỘC
+ * 処置入力設定 chỉ ghi 1 (tick) hoặc 9 (bỏ tick) (frm203003.cs:264), nên bỏ tick
+ * ⇒ hàng VẪN HIỆN mà 患者確定 không đòi 衛生士. Số 0 chỉ còn ở máy chưa từng lưu
+ * 設定 lần nào.
+ */
+const DISP_EISEISI_UNSET = 0
+const DISP_EISEISI_KEY = 'inp.dispEiseisi'
 
 const INP_CONFIG_URL = /\/tenant\/inp-config(\?|$)/
+const TENANT_SETTINGS_URL = /\/tenant\/settings\?keys=/
 const ACC_DATA_URL = /\/tenant\/treatment\/accounting\/data(\?|$)/
 const ACC_BULK_URL = /\/tenant\/treatment\/accounting\/bulk-create(\?|$)/
 
@@ -115,6 +132,8 @@ test.describe('診療入力（患者選択）— F7 会計作成 / F2 患者情�
 
     /** Payload GET /tenant/inp-config bắt được khi vào màn — nguồn của mọi assert cấu hình. */
     let inpConfig: InpConfig | null = null
+    /** `inp.dispEiseisi` bắt được từ GET /tenant/settings?keys=… — nguồn của TC-CFG-2. */
+    let dispEiseisi: number | null = null
 
     // ── Locator dùng lại ─────────────────────────────────────────────────────
 
@@ -252,6 +271,17 @@ test.describe('診療入力（患者選択）— F7 会計作成 / F2 患者情�
         // nên chỉ có ĐÚNG MỘT request trong cả phiên — cắm listener sau khi đã
         // vào /treatments là đã lỡ mất.
         page.on('response', (res) => {
+            if (res.request().method() === 'GET' && TENANT_SETTINGS_URL.test(res.url())) {
+                void res
+                    .json()
+                    .then((body) => {
+                        const values = (body as { data?: { values?: Record<string, unknown> } }).data
+                            ?.values
+                        const raw = values?.[DISP_EISEISI_KEY]
+                        if (raw !== undefined && raw !== null) dispEiseisi = Number(raw)
+                    })
+                    .catch(() => undefined)
+            }
             if (!INP_CONFIG_URL.test(res.url()) || res.request().method() !== 'GET') return
             void res
                 .json()
@@ -281,10 +311,10 @@ test.describe('診療入力（患者選択）— F7 会計作成 / F2 患者情�
 
     // ── 3. 衛生士欄 theo inp_config.eiseiji_flg ──────────────────────────────
 
-    test('TC-CFG-1 — màn gọi GET /tenant/inp-config (nguồn của eiseijiFlg + accMake)', async () => {
-        // Trước khi port, hàng 衛生士 là `const showHygienist = true` và màn KHÔNG
-        // hề đọc inp-config. Không thấy request này nghĩa là bản đang chạy chưa
-        // có bản port — mọi assert cấu hình phía dưới sẽ vô nghĩa.
+    test('TC-CFG-1 — màn đọc CẢ HAI nguồn cấu hình: inp-config (accMake) + settings (dispEiseisi)', async () => {
+        // inp-config giờ chỉ còn nuôi F7 (会計データ作成単位). Hàng 衛生士 chuyển sang
+        // `inp.dispEiseisi` đọc qua /tenant/settings — thiếu một trong hai thì các
+        // assert cấu hình phía dưới vô nghĩa.
         await expect
             .poll(() => inpConfig, {
                 message:
@@ -294,16 +324,25 @@ test.describe('診療入力（患者選択）— F7 会計作成 / F2 患者情�
             })
             .not.toBeNull()
 
+        await expect
+            .poll(() => dispEiseisi, {
+                message:
+                    'không bắt được GET /tenant/settings?keys=inp.dispEiseisi — hàng 衛生士 ' +
+                    'có còn đọc nhầm inp_config.eiseiji_flg không?',
+                timeout: 30000,
+            })
+            .not.toBeNull()
+
         console.log(
             `inp_config: acc_make=${inpConfig!.accMake} ` +
-                `(${inpConfig!.accMake === ACC_MAKE_MONTH ? '月単位' : '日単位'}), ` +
-                `eiseiji_flg=${inpConfig!.eiseijiFlg}`,
+                `(${inpConfig!.accMake === ACC_MAKE_MONTH ? '月単位' : '日単位'})` +
+                ` · settings: inp.dispEiseisi=${dispEiseisi}`,
         )
         await step()
     })
 
-    test('TC-CFG-2 — hàng 衛生士 hiện/ẩn ĐÚNG theo eiseiji_flg', async () => {
-        const hidden = inpConfig!.eiseijiFlg === EISEIJI_HIDDEN
+    test('TC-CFG-2 — hàng 衛生士 hiện/ẩn ĐÚNG theo inp.dispEiseisi', async () => {
+        const hidden = dispEiseisi === DISP_EISEISI_UNSET
         // Nhãn của StaffSelect là `{label}:` (staff-select.tsx:38) — dấu hai chấm
         // là thứ tách nó khỏi HEADER LƯỚI cùng tên `Dr.` / `患者番号`. Bỏ dấu này
         // ra là assert bám nhầm vào header và vẫn xanh dù panel 患者選択 hỏng.
@@ -316,17 +355,18 @@ test.describe('診療入力（患者選択）— F7 会計作成 / F2 患者情�
         if (hidden) {
             await expect(
                 staffLabel,
-                'eiseiji_flg=0 mà hàng 衛生士 vẫn render — gate đang bị bỏ qua',
+                'dispEiseisi=0 mà hàng 衛生士 vẫn render — gate đang bị bỏ qua',
             ).toHaveCount(0)
-            console.log('eiseiji_flg=0 → đã kiểm nhánh ẨN hàng 衛生士')
+            console.log('dispEiseisi=0 → đã kiểm nhánh ẨN hàng 衛生士')
         } else {
             await expect(
                 staffLabel,
-                'eiseiji_flg≠0 mà không thấy hàng 衛生士 — gate đang ẩn nhầm',
+                `dispEiseisi=${dispEiseisi} (≠0) mà không thấy hàng 衛生士 — gate đang ẩn nhầm. ` +
+                    'Bỏ tick 「衛生士を入力する」 ghi 9 chứ KHÔNG ghi 0, và 9 vẫn phải hiện hàng.',
             ).toBeVisible({ timeout: 15000 })
             console.log(
-                `eiseiji_flg=${inpConfig!.eiseijiFlg} → chỉ kiểm được nhánh HIỆN. ` +
-                    'Muốn kiểm nhánh ẩn phải đặt inp_config.eiseiji_flg = 0 rồi chạy lại.',
+                `dispEiseisi=${dispEiseisi} → chỉ kiểm được nhánh HIỆN. Nhánh ẩn cần giá trị 0, ` +
+                    'mà 処置入力設定 không bao giờ ghi 0 — chỉ máy chưa từng lưu 設定 mới có.',
             )
         }
         await step()
@@ -437,10 +477,12 @@ test.describe('診療入力（患者選択）— F7 会計作成 / F2 患者情�
         const handler = (req: { url: () => string }) => onReq(req.url())
         page.on('request', handler)
 
-        // Nhãn nút của confirmDialog là Yes/No (tiếng Anh) — chịu cả tiếng Nhật
-        // phòng khi call-site đổi sang truyền yesLabel/noLabel (Rule 13.2).
+        // F7 gọi `confirmDialog.okCancel(ja.Q00049(period))`, mà `okCancel` đặt
+        // `noLabel: 'キャンセル'` (confirm-dialog.ts) — KHÔNG phải Yes/No mặc định
+        // của confirmDialog. Chấp nhận cả ba nhãn để test không vỡ khi call-site
+        // đổi biến thể, nhưng phải có 「キャンセル」 thì mới bấm được cái đang hiện.
         await appDialog()
-            .getByRole('button', { name: /^(No|いいえ)$/ })
+            .getByRole('button', { name: /^(No|いいえ|キャンセル)$/ })
             .click()
         await expect(appDialog(), 'bấm No mà hộp xác nhận không đóng').toHaveCount(0)
 
@@ -463,7 +505,9 @@ test.describe('診療入力（患者選択）— F7 会計作成 / F2 患者情�
             { timeout: 120000 },
         )
         await appDialog()
-            .getByRole('button', { name: /^(Yes|はい)$/ })
+            // `okCancel` đặt `yesLabel: 'OK'` — nhãn Yes/はい chỉ có ở confirmDialog
+            // mặc định. Cùng lý do với TC-F7-2 ở trên.
+            .getByRole('button', { name: /^(Yes|はい|OK)$/ })
             .click()
 
         const data = await dataRes
