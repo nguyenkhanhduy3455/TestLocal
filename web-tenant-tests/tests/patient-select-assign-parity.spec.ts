@@ -200,14 +200,27 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         )
         console.log(`=== header hàng Ｄｒ．có ${buttons.length} nút: ${shape.join(' · ')}`)
 
-        await row.getByRole('button').nth(1).click()
-
+        // THỬ LẠI có giới hạn: combo chỉ mount khi `picking` bật (StaffField), và nó tự
+        // đóng lại ở `onBlur`. Một cú click rơi đúng lúc màn chi tiết còn đang render
+        // thì không bật được gì — đo 2026-08-27: cùng một hàng 2 nút 「Dr:」/「院」 mà
+        // lượt thì hiện combo, lượt thì không. Click một lần rồi assert là test chớp tắt.
         const combo = page.getByRole('combobox').first()
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            await row.getByRole('button').nth(1).click()
+            try {
+                await expect(combo).toBeVisible({ timeout: 5000 })
+                return combo
+            } catch {
+                if (attempt === 3) break
+                console.log(`    combo Ｄｒ．chưa hiện sau lần click #${attempt}, thử lại`)
+            }
+        }
+
         await expect(
             combo,
-            `click ô giá trị mà combo Ｄｒ．không hiện ra. Hàng Ｄｒ．đang có ` +
+            `click ô giá trị 3 lần mà combo Ｄｒ．không hiện ra. Hàng Ｄｒ．đang có ` +
                 `${buttons.length} nút: ${shape.join(' · ')}`,
-        ).toBeVisible({ timeout: 15000 })
+        ).toBeVisible({ timeout: 5000 })
         return combo
     }
 
@@ -231,6 +244,16 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
                 `${label ? ` aria-label=${label}` : ''}${value ? ` value=${value}` : ''}>` +
                 `${text ? ` 「${text}」` : ''}${near ? ` (trong: 「${near}」)` : ''}`
         })
+    }
+
+    /**
+     * Hàng 診療日 — nhãn + `EraDateField` (元号 combobox, rồi 3 ô 年/月/日).
+     *
+     * Ô đầu của control là trigger 元号; đó cũng là chỗ `EraDateFieldHandle.focus()`
+     * đặt con trỏ, tương ứng `_dtTrtDt.Focus()` bên WinForm (frm203001.cs:639).
+     */
+    function trtDtRow(): Locator {
+        return page.getByText('診療日', { exact: true }).locator('..')
     }
 
     function appDialog(): Locator {
@@ -463,15 +486,20 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         const expectedNm = doctorNameOf.get(attDrOfPatWithDr)
         expect(expectedNm, `att_dr=${attDrOfPatWithDr} không có tên trong mst_iin`).toBeTruthy()
 
-        // Mốc parity: WinForm đọc cùng giá trị này ở NHÃN lbDr (frm203002.cs:427).
+        // Đọc Ô GIÁ TRỊ TRƯỚC khi mở combo: `StaffField` THAY THẾ ô giá trị bằng combo
+        // khi `picking` bật, nên đọc sau là locator không còn tồn tại — đo 2026-08-27,
+        // `innerText` timeout 15s.
+        //
+        // Ô giá trị chỉ GHI LẠI, không assert: nó hiện 担当医 của DÒNG con trỏ đang đứng
+        // (port của Chg_DrName) nên phụ thuộc dữ liệu 処置 sẵn có của ngày đó, còn combo
+        // mới là thứ quyết định dr_no khi lưu.
+        const drValueCell = (await detailDrValueCell().innerText()).trim()
+
+        // Mốc parity: WinForm đọc cùng giá trị này ở combo cboDr (frm203002.cs:425).
         await expect(
             await openDetailDrCombo(),
             `combo trống ⇒ header phải mang att_dr=${attDrOfPatWithDr}「${expectedNm}」`,
         ).toHaveText(expectedNm!, { timeout: 30000 })
-        // Ô GIÁ TRỊ chỉ GHI LẠI, không assert: nó hiện 担当医 của DÒNG con trỏ đang
-        // đứng (port của Chg_DrName) nên phụ thuộc dữ liệu 処置 sẵn có của ngày đó,
-        // trong khi combo phía trên mới là thứ quyết định dr_no khi lưu.
-        const drValueCell = (await detailDrValueCell().innerText()).trim()
         console.log(
             `TC-DR-1: combo Dr = 「${expectedNm}」 (att_dr=${attDrOfPatWithDr}) · ` +
                 `ô giá trị Dr = 「${drValueCell}」 (att_st=${attStOfPatWithDr ?? 'NULL'})` +
@@ -747,6 +775,53 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         await clearDoctor()
     })
 
+    // ── TC-DT-1 ─────────────────────────────────────────────────────────────
+
+    test('TC-DT-1 — 診療日 sai: E00002 + focus TRẢ VỀ ô 診療日', async () => {
+        await clearPatNo()
+        await typePatNo(String(patWithDr))
+
+        // Xoá ô 年 ⇒ `japaneseEraToDate` trả undefined ⇒ `trtDtIso = null`
+        // ⇒ `openDetail` bung E00002 rồi return (frm203001.cs:636-639 bên WinForm).
+        const yearBox = trtDtRow().getByRole('textbox').nth(0)
+        const savedYear = await yearBox.inputValue()
+        await yearBox.fill('')
+        await page.keyboard.press('Tab')
+        await step()
+
+        await page.keyboard.press('End')
+
+        await expect(
+            appDialog(),
+            'End với 診療日 rỗng mà không chặn — có phải vẫn âm thầm lấy hôm nay?',
+        ).toBeVisible({ timeout: 15000 })
+        await expect(appDialog()).toContainText('診療日')
+        // Chuỗi thật là 「{field}が間違っています。」 (đã đo trên MSGTBL, KQ-2).
+        await expect(appDialog()).toContainText('間違っています')
+        await dismissDialog()
+
+        await expect(page, 'đã điều hướng dù 診療日 không hợp lệ').toHaveURL(
+            /\/treatments\/?(\?|$)/,
+        )
+
+        // WinForm: `_dtTrtDt.Focus()` (frm203001.cs:639) — CÓ, trái với ghi chú trong
+        // f359a467a. Bản web đặt con trỏ lên trigger 元号, tức ô ĐẦU của control.
+        focusAfter['E00002'] = await focusedDescription()
+        focusAfter['E00002.onTarget'] = String(
+            await trtDtRow()
+                .getByRole('combobox')
+                .first()
+                .evaluate((el) => el === document.activeElement),
+        )
+        console.log(`=== PARITY focus sau E00002 (web) === ${focusAfter['E00002']}`)
+
+        // Trả 年 về giá trị cũ cho các testcase sau.
+        await yearBox.fill(savedYear)
+        await page.keyboard.press('Tab')
+        await expect(yearBox).toHaveValue(savedYear)
+        await step()
+    })
+
     // ── TC-FOCUS-1 — phán xử ở CUỐI ─────────────────────────────────────────
 
     test('TC-FOCUS-1 — sau khi bị chặn, focus phải quay về ĐÚNG ô như WinForm', async () => {
@@ -764,6 +839,7 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         //   E00005          → cboPatNo.Focus()    (frm203001.cs:673)
         //   E00027「ドクター」 → cboUserNm.Focus()   (:708)
         //   E00027「衛生士」  → cboStaffNm.Focus()  (:724)
+        //   E00002          → _dtTrtDt.Focus()    (:639)
         //
         // ĐÃ ĐO trên WinForm thật 2026-08-27 (`run-confirm-patient.ps1 -Diagnostics`,
         // dòng KQ-7b): sau khi đóng E00005, focus nằm ở
