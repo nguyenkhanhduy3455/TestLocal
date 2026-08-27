@@ -138,9 +138,10 @@ public sealed class TreatmentHeaderStaffProbeTests : UiTestBase
                     (zero.Count == 0 ? "KHÔNG CÓ" : string.Join(" / ", zero.Select(x => x.ToString()))) +
                     " · user_kbn ngoài {0,1}: " +
                     (oddKbn.Count == 0 ? "KHÔNG CÓ" : string.Join(" / ", oddKbn.Select(x => x.ToString()))));
-            Log("    ★ LƯU Ý parity: dù master KHÔNG có user_no = 0 thì combo cboDr VẪN có một " +
-                "dòng trống USER_NO = 0 — makeIinMstCombo được gọi với spcFlg = true " +
-                "(frm203002.cs:597). Bản web (TC-MST-1) đòi dropdown KHÔNG chứa user_no = 0.");
+            Log("    LƯU Ý: combo cboDr có một dòng trống mang USER_NO = 0 (makeIinMstCombo " +
+                "spcFlg = true, frm203002.cs:597) — TRÙNG sentinel 未選択. Bản web cũng có dòng " +
+                "trống nhưng mã hoá bằng '__empty__' (staff-select.tsx:90) nên không đụng miền " +
+                "số. Cùng hành vi, khác cách mã hoá — KHÔNG phải điểm lệch.");
         });
 
         // ── KQ-5 ────────────────────────────────────────────────────────────
@@ -205,7 +206,7 @@ public sealed class TreatmentHeaderStaffProbeTests : UiTestBase
             Log("    → kỳ vọng theo source (frm203002.cs:8115): " +
                 "「{日}日診療分の担当ドクターを\\r\\n{cboDr.Text} に変更します。\\r\\n\\r\\nよろしいですか？」 " +
                 "— CHÚ Ý có MỘT DẤU CÁCH trước 「に変更します。」, và xuống dòng nằm TRƯỚC tên Ｄｒ．. " +
-                "Doc của bản web ghi 「{氏名}に変更します。」 (không dấu cách) — đối chiếu kỹ chỗ này.");
+                "Bản web dựng y hệt ở locales/ja.ts:102 — đã soát 2026-08-27, KHỚP.");
             Kq("7b", $"日 lúc bấm = 「{dayBefore}」 (câu hỏi phải bắt đầu bằng đúng số này)");
 
             // CHỈ bấm いいえ. はい sẽ đổi mọi dòng cùng ngày trong lưới.

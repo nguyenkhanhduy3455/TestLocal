@@ -219,7 +219,9 @@ public sealed class HeaderStaffFlow
     ///   {日}日診療分の担当ドクターを\r\n{cboDr.Text} に変更します。\r\n\r\nよろしいですか？
     /// </code>
     /// <para>Chú ý có <b>một dấu cách</b> giữa tên Ｄｒ．và 「に変更します。」, và xuống
-    /// dòng nằm TRƯỚC tên chứ không phải sau.</para>
+    /// dòng nằm TRƯỚC tên chứ không phải sau. Bản web dựng y hệt ở
+    /// <c>locales/ja.ts:102</c> (<c>drBulkChangeConfirm</c>) — đã soát 2026-08-27, KHỚP
+    /// từng ký tự, nên đây KHÔNG phải điểm lệch.</para>
     /// </summary>
     public BulkPrompt ClickCaption(TimeSpan? timeout = null)
     {

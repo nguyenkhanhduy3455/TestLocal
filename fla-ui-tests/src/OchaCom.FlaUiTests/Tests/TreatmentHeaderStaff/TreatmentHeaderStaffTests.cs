@@ -156,15 +156,21 @@ public sealed class TreatmentHeaderStaffTests : UiTestBase
             "(frm203001.cs:705). Chọn đúng người đó thì app coi như CHƯA chọn ai. " +
             "Dòng gặp phải: " + string.Join(" / ", zero.Select(x => x.ToString())));
 
-        // ★ LỆCH với bản web, ghi lại chứ KHÔNG assert: bên web TC-MST-1 đòi dropdown
-        //   担当医 tuyệt đối không chứa user_no = 0. Bên WinForm combo cboDr được dựng
-        //   bằng makeIinMstCombo(..., spcFlg: TRUE) (frm203002.cs:597) nên nó LUÔN có
-        //   một dòng trống USER_NO = 0 chèn ở index 0 (EditControl.cs:660-676) — đó là
-        //   dòng 未選択 CỐ Ý, không phải một bác sĩ lọt lưới.
-        Kq("MST-1b", "★ LỆCH: combo cboDr của WinForm LUÔN có dòng trống USER_NO=0 ở index 0 " +
-                     "(makeIinMstCombo spcFlg=true, frm203002.cs:597). Bản web TC-MST-1 đòi " +
-                     "dropdown KHÔNG chứa user_no=0 — hai bên khác nhau về Ý NGHĨA của số 0: " +
-                     "WinForm dùng nó làm dòng 未選択, web coi nó là dữ liệu bẩn.");
+        // KHÔNG phải điểm lệch — đã soát lại phía web 2026-08-27. CẢ HAI bên đều có một
+        // dòng trống ở đầu: WinForm qua `makeIinMstCombo(..., spcFlg: true)`
+        // (frm203002.cs:597 → EditControl.cs:660-676), web qua
+        // `<SelectItem value={EMPTY_SELECT_VALUE}>` (staff-select.tsx:90), và comment ở
+        // đó nói thẳng là mirror của `addBlank=true`.
+        //
+        // Khác biệt chỉ nằm ở CÁCH MÃ HOÁ dòng trống, và bản web an toàn hơn:
+        //   WinForm : dòng trống mang USER_NO = 0  ⇒ TRÙNG sentinel 未選択, nên một
+        //             bác sĩ thật mang user_no = 0 sẽ không phân biệt được với 「chưa chọn」
+        //   web     : dòng trống mang '__empty__'  ⇒ không đụng vào miền số
+        // Vì thế TC-MST-1 bên web (chặn user_no = 0 lọt vào options) là phòng thủ cho
+        // rủi ro mà WinForm KHÔNG có cách phòng — chứ không phải hai bên hành xử khác nhau.
+        Kq("MST-1b", "dòng trống: WinForm mã hoá bằng USER_NO=0 (trùng sentinel 未選択), " +
+                     "web bằng '__empty__' (ngoài miền số). Cùng hành vi, khác cách mã hoá — " +
+                     "KHÔNG phải điểm lệch.");
 
         if (oddKbn.Count > 0)
             Kq("MST-1c", "IINMST2 có 区分 ngoài {0,1} — đây chính là nhóm mà bản web sợ lọt " +
@@ -306,9 +312,11 @@ public sealed class TreatmentHeaderStaffTests : UiTestBase
         // ★ Chi tiết dễ port sai: có MỘT DẤU CÁCH giữa tên Ｄｒ．và 「に変更します。」,
         //   và xuống dòng nằm TRƯỚC tên chứ không phải sau (`... + vbCrLf + cboDr.Text
         //   + " に変更します。"`). Doc của bản web ghi 「{氏名}に変更します。」 — không cách.
+        // Bản web dựng đúng chuỗi này ở locales/ja.ts:102 (`drBulkChangeConfirm`), kể cả
+        // dấu cách trước 「に変更します。」 và vị trí xuống dòng — đã soát 2026-08-27, KHỚP.
         Kq("BULK-1b", text.Contains(" に変更します。")
-            ? "có DẤU CÁCH trước 「に変更します。」 — đúng frm203002.cs:8115"
-            : "★ KHÔNG có dấu cách trước 「に変更します。」 — khác source WinForm, đối chiếu bản web");
+            ? "có DẤU CÁCH trước 「に変更します。」 — đúng frm203002.cs:8115 và khớp web ja.ts:102"
+            : "★ KHÔNG có dấu cách trước 「に変更します。」 — LỆCH cả source WinForm lẫn web ja.ts:102");
 
         Assert.That(_flow.Answer(prompt.Dialog!, yes: false), Is.True,
             $"không tìm được nút 「いいえ」 trên hộp thoại 「{text}」. " +

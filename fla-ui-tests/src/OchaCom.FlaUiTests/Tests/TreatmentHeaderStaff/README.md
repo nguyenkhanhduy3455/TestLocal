@@ -66,7 +66,7 @@ NotExecuted  Tc2_LabelFollowsRowNotCombo          (TC-LBL-1)
   kế ba-control, và đúng thứ mà bản web vừa port.
 * Hộp thoại 一括変更 thật:
   `20日診療分の担当ドクターを⏎院 に変更します。⏎⏎よろしいですか？` — mở đầu đúng 日 của
-  DÒNG con trỏ, và **có dấu cách** trước 「に変更します。」.
+  DÒNG con trỏ, và **có dấu cách** trước 「に変更します。」. Khớp `ja.ts:102` bên web.
 * Bấm 「いいえ」 thì nhãn và combo đều không đổi.
 
 **`TC-LBL-1` `Ignore`** vì dataset máy này: mọi dòng có `dr_no > 0` đều bằng `att_dr`
@@ -82,19 +82,34 @@ có thì `Ignore` chứ không xanh rỗng nghĩa.
 > khi dòng mang `dr_no = 0`」, vì `Chg_DrName` chỉ rơi về `pintDrNo` khi ô **rỗng**,
 > mà 「0」 thì không rỗng.
 
-### Điểm lệch tìm ra
+### Đối chiếu parity — luồng này KHÔNG tìm ra điểm lệch nào
 
-**Ý nghĩa của `user_no = 0` khác nhau giữa hai bên.** Bản web (TC-MST-1) coi
-`user_no = 0` trong dropdown là **dữ liệu bẩn** cần chặn. WinForm thì cố ý chèn một
-dòng trống `USER_NO = 0` vào **chính** combo `cboDr` —
-`makeIinMstCombo(con, cboDr, KBN_DR, spcFlg: true)` (`frm203002.cs:597` →
-`EditControl.cs:660-676`) — vì `0` là sentinel 未選択 mà `defData` dựa vào
-(`frm203001.cs:705`). Master trên máy thật không có `user_no = 0`, nên rủi ro bên web
-đến từ tầng gộp `app_user`, không phải từ `IINMST2`.
+Soát lại phía web ngày 2026-08-27, cả hai chỗ ban đầu tưởng lệch đều **khớp**:
 
-`TC-MST-2` của bản web **không có** đối ứng WinForm: nó chặn request HTTP rồi gọi lại
-không kèm `userKbn`, mà WinForm đọc `IINMST2` thẳng qua ADO nên không có tầng nào để
-bỏ bộ lọc.
+**Văn bản 一括変更 — KHỚP từng ký tự.** Web dựng ở `locales/ja.ts:102`
+(`drBulkChangeConfirm`): `` `${day}日診療分の担当ドクターを\n${drNm} に変更します。\n\nよろしいですか？` ``
+— đúng dấu cách trước 「に変更します。」, đúng vị trí xuống dòng. Comment ở đó còn ghi rõ
+đây là 確定した文言 vì đi thẳng qua `Interaction.MsgBox` chứ không qua `MSGTBL`.
+
+**Dòng trống của combo — cùng hành vi, khác cách mã hoá.** Cả hai bên đều chèn một dòng
+trống ở đầu: WinForm bằng `makeIinMstCombo(..., spcFlg: true)` (`frm203002.cs:597` →
+`EditControl.cs:660-676`), web bằng `<SelectItem value={EMPTY_SELECT_VALUE}>`
+(`staff-select.tsx:90`, comment nói thẳng là mirror của `addBlank=true`).
+
+Khác biệt duy nhất là **cách mã hoá**, và bản web **an toàn hơn**:
+
+| | dòng trống mang giá trị | hệ quả |
+|---|---|---|
+| WinForm | `USER_NO = 0` | **trùng** sentinel 未選択 (`frm203001.cs:705`) ⇒ một bác sĩ thật mang `user_no = 0` sẽ không phân biệt được với 「chưa chọn」 |
+| web | `'__empty__'` | ngoài miền số ⇒ không có xung đột |
+
+Nên `TC-MST-1` bên web (chặn `user_no = 0` lọt vào options) là **phòng thủ cho một rủi
+ro mà WinForm không có cách phòng** — không phải hai bên hành xử khác nhau. Master trên
+máy thật cũng không có `user_no = 0` (`KQ-4`), nên rủi ro đó đến từ tầng gộp `app_user`
+phía web, không phải từ `IINMST2`.
+
+`TC-MST-2` **không có** đối ứng WinForm: nó chặn request HTTP rồi gọi lại không kèm
+`userKbn`, mà WinForm đọc `IINMST2` thẳng qua ADO nên không có tầng nào để bỏ bộ lọc.
 
 ## 4. BÀI HỌC LỚN NHẤT — app này KHÔNG nhận InvokePattern
 
