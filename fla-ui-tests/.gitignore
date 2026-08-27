@@ -8,8 +8,10 @@ TestResults/
 # Nhật ký + kết quả của mỗi lần chạy — sinh lại được, đừng commit.
 logs/
 treatment-grid-*.txt
-karte-auto-calc-KQ.txt
-inp-p1-dialog-KQ.txt
+# Mỗi luồng probe đẻ ra một file <tên-luồng>-KQ.txt. Trước đây liệt kê từng tên nên
+# luồng mới lại lọt vào `git status` của máy chạy test (máy Windows) — bắt hết bằng
+# một luật thay vì thêm tay từng dòng.
+*-KQ.txt
 *.trx
 
 # testsettings.local.json là file RIÊNG CỦA TỪNG MÁY: đường dẫn MENU.exe, chuỗi kết
