@@ -169,7 +169,58 @@ Chạy `.\run-confirm-patient.ps1 -Diagnostics`. Trích `confirm-patient-KQ.txt`
 | `KQ-4c` | bảng `wait` **rỗng** | `TC-DR-4` / `TC-ROW-1` sẽ `Ignore` trên máy này |
 | `KQ-10` | **F10 戻る từ frm203002 làm app ném unhandled exception** 「Index was out of range」 | lỗi thật của app, không phải của test — luồng phải bấm **Continue** để phiên sống tiếp |
 
-### CHẶN #1 — không đóng được hộp thoại của `MsgDialog`
+### ĐÃ GỠ — cả hai chặn cũ, và câu KQ-6
+
+**Nguyên nhân gốc: app KHÔNG nhận `InvokePattern` lẫn UIA `SetFocus` ở control nào.**
+Đo 2026-08-27 (xem thêm `Tests/TreatmentHeaderStaff/README.md` mục 4). Hệ quả và cách gỡ:
+
+| Chỗ kẹt | Vì sao | Cách gỡ |
+|---|---|---|
+| Hộp thoại `MsgDialog` không đóng | `dialog.FindAllDescendants()` trả **rỗng** trên modal này nên không tìm ra nút | duyệt bằng `Uia.Descendants` — thấy `Button id="2" name="OK" @(1005,580 75x23)` — rồi click đúng tâm |
+| Đoán toạ độ nút OK bị trượt | nút **lệch phải**, không nằm giữa hộp thoại (đoán x=963, cần x=1042) | ĐỌC rect từ cây UIA, đừng đoán tỉ lệ |
+| Combo Ｄｒ．không lái được | `Uia.Click` không bung dropdown | click **chuột thật** rồi `Down` + đọc nhãn từng bước |
+| `IsAlive(dialog)` báo sai | tham chiếu UIA cũ không mục nát, trả `true` cho cửa sổ đã đóng | truy vấn LẠI `FirstDialog()` mỗi vòng |
+
+**`KQ-6` đã có đáp án** (2026-08-27):
+
+```
+KQ-6a === chọn Ｄｒ．「副」 — đường đi qua combo: 「」(trống) → 「副」
+KQ-6  === combo = 1「副」 (att_dr=16) + 患者1 → MỞ ĐƯỢC 処置入力
+KQ-6b === nhãn lbDr = 「副」 · Ｄｒ．vừa chọn = 「副」 · att_dr của 患者マスタ = 「院」
+KQ-6c === TRNTRN tháng 2026-08 của 患者1: KHÔNG CÓ DÒNG NÀO
+```
+
+⇒ **WinForm GIỮ Ｄｒ．vừa chọn**, không lấy `att_dr`. Nhánh `Let_Data_frmPatId`
+(`:1054`, `DrId_fixed` luôn `false`) quả thật là **chết trong thực tế** —
+`frm203002.cs:425` ghi đè lại đúng như bản port đã lập luận. **KHÔNG phải điểm lệch.**
+
+> Lưu ý phạm vi: 患者1 KHÔNG có dòng TRNTRN nào trong tháng, nên đây là ca 「ngày sạch」.
+> Ca 「ngày đã có 処置」 (nơi `Chg_DrName` đọc cột 69 của dòng) vẫn chưa đo — nhưng đó
+> đúng là hành vi mà bản web đã CỐ Ý port (`TC-LBL-1` của
+> `treatment-header-staff.spec.ts`), nên hai bên cùng thiết kế.
+
+### ĐIỂM LỆCH MỚI — focus sau khi bị chặn
+
+| | sau `E00005` |
+|---|---|
+| WinForm | `AutomationId=「1001」 · Edit` — ô Edit **bên trong `cboPatNo`** (`1001` là id Win32 quen thuộc của edit con trong ComboBox). Đúng `cboPatNo.Focus()`, `frm203001.cs:673`. Đo 3 lượt, nhất quán. |
+| web | `<button>「F1患者検索」` — nút F-key đầu thanh dưới, tức thứ tự tab mặc định |
+
+⇒ WinForm trả con trỏ về ô vừa bị từ chối, người dùng gõ lại được ngay; bên web phải
+click vào ô trước. Nhiều khả năng do dialog của Radix restore focus **sau** lệnh
+`.focus()` trong `openDetail` (`onCloseAutoFocus`). `TC-FOCUS-1` của
+`patient-select-assign-parity.spec.ts` khoá điểm này.
+
+### CÒN LẠI — hạn chế của HARNESS, không phải của app
+
+Ô 患者番号 **chưa ghi đè được sau lần đầu**: `Ctrl+A` không select-all trong `TextBox`
+của WinForms, và `End`/`Shift+Home`/`Delete` cũng chưa ăn sau khi vừa đóng hộp thoại —
+các lần gõ NỐI vào nhau (ảnh chụp cho thấy ô mang `19282157`). Phép verify trong
+`SetPatNo` nay **bắt và ném** thay vì đo sai âm thầm, nên `KQ-8` / `KQ-5` tự dừng chứ
+không báo số liệu bịa. Hướng tiếp: gõ `BackSpace` theo độ dài hiện có, hoặc chờ ô nhận
+focus thật rồi mới gõ.
+
+### CHẶN CŨ #1 — không đóng được hộp thoại của `MsgDialog`
 
 MessageBox 「お茶コン」 (một nút OK, ảnh chụp ở `artifacts\screenshots`) **không đóng
 được từ tiến trình test**. Đã thử và hỏng **cả bốn**:
@@ -190,7 +241,7 @@ Chưa gỡ được cái này thì mỗi lượt chạy chỉ đo chắc chắn 
 Hướng tiếp theo: đổ cây UIA của CHÍNH hộp thoại (`Uia.DumpTree` trên window đó) để biết
 nó là lớp cửa sổ gì và nút OK nằm ở đâu trong cây — probe hiện chưa đổ.
 
-### CHẶN #2 — `KQ-6` (Ｄｒ．nào thắng trên header)
+### CHẶN CŨ #2 — `KQ-6` (Ｄｒ．nào thắng trên header) — ĐÃ TRẢ LỜI, xem trên
 
 Combo `cboUserNm` **không lái được qua UIA**. Đã thử và hỏng **cả bốn**:
 

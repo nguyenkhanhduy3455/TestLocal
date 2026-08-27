@@ -1,4 +1,5 @@
 using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Definitions;
 using FlaUI.Core.Input;
 using FlaUI.Core.WindowsAPI;
 using OchaCom.FlaUiTests.App;
@@ -157,62 +158,137 @@ public sealed class PatientSelectFlow
             }
 
             // Hộp thoại của MsgDialog là MessageBox 「お茶コン」 một nút OK (đã xem ảnh
-            // 2026-08-26). DismissOk tự bấm OK, không được thì Close(), rồi CHỜ tới khi
-            // nó thật sự biến mất — ném nếu không.
-            try
+            // 2026-08-26).
+            //
+            // KHÔNG dùng Dialogs.DismissOk: nó đi bằng ClickButton (InvokePattern) rồi
+            // Close(), mà app này KHÔNG nhận Invoke ở bất kỳ control nào — probe lượt
+            // 5-9 kẹt đúng ở đó. Thứ tự dưới đây là thứ đã chứng minh chạy được ở luồng
+            // TreatmentHeaderStaff (KQ-8): CHUỘT THẬT trước, mọi thứ khác là đường lùi.
+            // Thứ tự đã ĐO chứ không đoán: click đúng tâm nút đọc từ cây UIA là cách
+            // duy nhất chạy được trên hộp thoại này (2026-08-27).
+            if (!ClickButtonPhysically(dialog, "OK", "はい", "Yes"))
             {
-                Dialogs.DismissOk(dialog, TimeSpan.FromSeconds(10));
-            }
-            catch (Exception e)
-            {
-                DismissByKeyboard(dialog);
-                if (Dialogs.IsAlive(dialog)) ClickOkByCoordinates(dialog);
-                if (Dialogs.IsAlive(dialog))
-                    throw new InvalidOperationException(
-                        $"Không đóng được hộp thoại 「{text}」 ({e.GetType().Name}). Nó chắn mọi " +
-                        "thao tác sau đó và mọi phép đọc tiếp theo sẽ lấy phải nội dung của " +
-                        "chính nó (PROBE-GUIDELINE 3.4). Mở ảnh trong artifacts\\screenshots ra xem.", e);
+                if (!Dialogs.ClickButtonContaining(dialog, "OK", "はい", "Yes"))
+                    Dialogs.ClickButton(dialog, "OK", "はい", "Yes");
             }
             Waits.Step();
+
+            // Kiểm bằng TRUY VẤN MỚI, KHÔNG bằng Dialogs.IsAlive(dialog).
+            //
+            // Đo 2026-08-26/27: `IsAlive` trả `true` cho một cửa sổ ĐÃ đóng — tham chiếu
+            // UIA cũ không tự mục nát. Bám vào nó thì vừa báo đỏ oan (hộp thoại đã đóng
+            // từ lâu) vừa bỏ lỡ lúc nó thật sự đóng.
+            if (!WaitUntilGone(text)) DismissByKeyboard(dialog);
+
+            if (!WaitUntilGone(text))
+                throw new InvalidOperationException(
+                    $"Không đóng được hộp thoại 「{text}」 dù đã click đúng tâm nút đọc từ cây " +
+                    "UIA, Invoke và Enter/Esc. Nó chắn mọi thao tác sau đó và mọi phép đọc " +
+                    "tiếp theo sẽ lấy phải nội dung của chính nó (PROBE-GUIDELINE 3.4). " +
+                    "Mở ảnh trong artifacts\\screenshots ra xem.");
         }
         return seen;
     }
 
     /// <summary>
-    /// Bấm OK bằng CLICK CHUỘT THEO TOẠ ĐỘ — đường cuối cùng.
+    /// ĐỔ CÂY UIA của hộp thoại + rect của mọi phần tử con — để ĐỌC chứ không ĐOÁN.
     ///
-    /// <para>Đo 2026-08-26 (probe lượt 8): MessageBox 「お茶コン」 của
-    /// <c>MsgDialog.ShowWarningMsg</c> KHÔNG đóng được bằng <c>Dialogs.ClickButton</c>
-    /// (InvokePattern), <c>Window.Close()</c>, lẫn Enter/Esc — dù ảnh chụp cho thấy nó
-    /// là MessageBox một nút OK hoàn toàn bình thường. Cùng họ với cái bẫy
-    /// GradientButton mà repo đã gặp: control vẽ tay không nhận Invoke, phải click thật.</para>
-    ///
-    /// <para>Ưu tiên toạ độ CỦA CHÍNH nút nếu đọc được; không thì suy từ khung hộp
-    /// thoại — nút OK của MessageBox nằm giữa theo chiều ngang, cách đáy ~18%.</para>
+    /// <para>PROBE-GUIDELINE mục 2: chưa biết thì chụp/đổ ra xem, đừng đoán rồi thử.
+    /// Bản trước của luồng này đi đoán toạ độ nút OK theo tỉ lệ khung hộp thoại và
+    /// trượt — nút OK của MessageBox lệch phải chứ không nằm giữa.</para>
     /// </summary>
-    private static void ClickOkByCoordinates(Window dialog)
+    public string DescribeDialog(Window dialog)
+    {
+        var sb = new System.Text.StringBuilder();
+        try
+        {
+            var rect = Uia.RectOf(dialog);
+            sb.AppendLine($"  dialog rect = {rect?.ToString() ?? "null"}");
+            sb.AppendLine($"  dialog ClassName = 「{Uia.ClassNameOf(dialog)}」 · Name = 「{Txt.N(Uia.NameOf(dialog))}」");
+
+            var kids = Uia.Descendants(dialog, 6).ToList();
+            sb.AppendLine($"  đọc được {kids.Count} phần tử con:");
+            foreach (var k in kids)
+            {
+                var r = Uia.RectOf(k);
+                sb.AppendLine(
+                    $"    · type={Uia.ControlTypeOf(k)?.ToString() ?? "?"} " +
+                    $"id=「{Txt.N(Uia.AutomationIdOf(k))}」 name=「{Txt.N(Uia.NameOf(k))}」 " +
+                    $"class=「{Uia.ClassNameOf(k)}」 rect={r?.ToString() ?? "null"}");
+            }
+
+            sb.AppendLine("  ── cây UIA đầy đủ ──");
+            sb.AppendLine(Uia.DumpTree(dialog, maxDepth: 6));
+        }
+        catch (Exception e)
+        {
+            sb.AppendLine($"  (không đổ được: {e.GetType().Name}: {e.Message})");
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Bắn chuột vào chính phần tử Button đọc được trên hộp thoại.
+    ///
+    /// <para>Giữa <c>ClickButtonContaining</c> (đã dùng chuột nhưng khớp tên theo cách
+    /// riêng của nó) và <c>ClickOkByCoordinates</c> (đoán vị trí từ khung hộp thoại):
+    /// ở đây tự tìm Button rồi click vào tâm nó.</para>
+    /// </summary>
+    private static bool ClickButtonPhysically(Window dialog, params string[] names)
     {
         try
         {
-            var button = dialog.FindAllDescendants()
-                .FirstOrDefault(e => Uia.ControlTypeOf(e) == FlaUI.Core.Definitions.ControlType.Button);
-            if (button is not null && Uia.RectOf(button) is { Width: > 0 })
+            // Uia.Descendants (tự duyệt cây) chứ KHÔNG FindAllDescendants.
+            //
+            // Đo 2026-08-27: trên MessageBox modal này `dialog.FindAllDescendants()` trả
+            // về RỖNG — đó là lý do mọi cách bấm nút đều trượt suốt các lượt trước, và
+            // là lý do log từng in 「Các nút đọc được:」 trống trơn. Phép duyệt tay thì
+            // thấy đủ:
+            //
+            //   Button id="2"     name="OK"    class="Button" @(1005,580 75x23)
+            //   Text   id="65535" name="患者情報が登録されていません。"
+            //   Button id="Close" name="Close" @(1062,467 34x25)
+            //
+            // Chú ý nút OK LỆCH PHẢI, không nằm giữa hộp thoại — nên đoán toạ độ theo
+            // tỉ lệ khung là trượt (bản trước click x = giữa = 963, cần 1042).
+            foreach (var button in Uia.Descendants(dialog, 6))
             {
-                var (bx, by) = Uia.Center(button);
-                Uia.LeftClickPhysical(bx, by);
+                if (Uia.ControlTypeOf(button) != ControlType.Button) continue;
+
+                var name = Txt.N(Uia.NameOf(button));
+                // Bỏ nút Close của TitleBar — đóng bằng nó KHÔNG chạy nhánh OK của app.
+                if (name.Equals("Close", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!names.Any(n => name.Contains(n, StringComparison.OrdinalIgnoreCase))) continue;
+
+                var rect = Uia.RectOf(button);
+                if (rect is null || rect.Value.Width <= 0 || rect.Value.Height <= 0) continue;
+
+                var (x, y) = Uia.Center(button);
+                Uia.LeftClickPhysical(x, y);
                 Waits.Step();
-                if (!Dialogs.IsAlive(dialog)) return;
+                return true;
             }
-
-            var rect = Uia.RectOf(dialog);
-            if (rect is not { Width: > 0, Height: > 0 }) return;
-
-            var x = rect.Value.Left + rect.Value.Width / 2;
-            var y = rect.Value.Top + (int)(rect.Value.Height * 0.82);
-            Uia.LeftClickPhysical(x, y);
-            Waits.Step();
         }
-        catch { /* đây đã là đường cuối; hỏng thì để lời than ở DrainDialogs nói tiếp */ }
+        catch { /* đường lùi kế tiếp lo */ }
+        return false;
+    }
+
+    /// <summary>
+    /// Chờ tới khi KHÔNG còn hộp thoại nào mang đúng câu <paramref name="text"/>.
+    ///
+    /// <para>Hỏi lại <see cref="FirstDialog"/> mỗi vòng thay vì soi tham chiếu cũ — xem
+    /// ghi chú ở <see cref="DrainDialogs"/>.</para>
+    /// </summary>
+    private bool WaitUntilGone(string text, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(6));
+        while (DateTime.UtcNow < deadline)
+        {
+            var d = FirstDialog();
+            if (d is null || Txt.N(Dialogs.TextOf(d)) != text) return true;
+            Thread.Sleep(Waits.PollInterval);
+        }
+        return false;
     }
 
     /// <summary>
@@ -244,6 +320,35 @@ public sealed class PatientSelectFlow
 
         Keyboard.Press(VirtualKeyShort.ESCAPE);
         Waits.Step();
+    }
+
+    /// <summary>
+    /// Mô tả control ĐANG giữ focus — <c>AutomationId</c> + tên + kiểu.
+    ///
+    /// <para>Dùng để đo câu hỏi parity: sau khi bung E00005 / E00027 thì WinForm trả
+    /// con trỏ về đâu? Source nói <c>cboPatNo.Focus()</c> (frm203001.cs:673),
+    /// <c>cboUserNm.Focus()</c> (:708), <c>cboStaffNm.Focus()</c> (:724) — nhưng app
+    /// này đã nhiều lần hành xử khác source nên phải ĐO.</para>
+    ///
+    /// <para>LƯU Ý PROBE-GUIDELINE 3.4: nếu đọc ra tên nút (OK / はい / いいえ) thì hộp
+    /// thoại vẫn đang mở, và câu trả lời chưa có nghĩa gì — phải đóng nó trước đã.</para>
+    /// </summary>
+    public string FocusedDescription()
+    {
+        try
+        {
+            var e = _app.Automation.FocusedElement();
+            if (e is null) return "(không có control nào giữ focus)";
+
+            var id = Txt.N(Uia.AutomationIdOf(e));
+            var name = Txt.N(Uia.NameOf(e));
+            var type = Uia.ControlTypeOf(e)?.ToString() ?? "?";
+            return $"AutomationId=「{(id.Length == 0 ? "-" : id)}」 · Name=「{name}」 · {type}";
+        }
+        catch (Exception ex)
+        {
+            return $"(không đọc được: {ex.GetType().Name})";
+        }
     }
 
     // ── Màn 処置入力 ─────────────────────────────────────────────────────────

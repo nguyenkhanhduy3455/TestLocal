@@ -69,18 +69,55 @@ public sealed class PatientSelectScreen
 
     public string PatNoText() => Txt.N(Uia.ValueOf(PatNoCombo));
 
-    public void TypePatNo(string value)
-    {
-        var edit = Uia.EditInside(PatNoCombo);
-        Uia.SetText(edit, value);
-        Waits.Step();
-    }
+    public void TypePatNo(string value) => SetPatNo(value);
 
-    public void ClearPatNo()
+    public void ClearPatNo() => SetPatNo("");
+
+    /// <summary>
+    /// Ghi ô 患者番号 — CLICK CHUỘT THẬT trước, rồi Ctrl+A / Delete / gõ.
+    ///
+    /// <para><b>Không dùng <see cref="Uia.SetText"/>.</b> Hàm đó bắt đầu bằng
+    /// <c>e.Focus()</c> (UIA SetFocus), mà app này không nhận — cùng họ với việc nó
+    /// không nhận InvokePattern. Hệ quả đo được 2026-08-27: Ctrl+A/Delete rơi ra ngoài
+    /// ô, giá trị cũ nằm nguyên và số mới bị NỐI THÊM, nên 患者確定 kế tiếp đọc ra một
+    /// 患者番号 vô nghĩa rồi bung E00005 — log trông y như 「app chặn sai」 trong khi
+    /// thật ra ô chưa bao giờ được ghi.</para>
+    ///
+    /// <para>Khẳng định lại giá trị sau khi ghi: một phím rơi mất là mọi testcase sau
+    /// đo nhầm bệnh nhân mà vẫn chạy tiếp.</para>
+    /// </summary>
+    private void SetPatNo(string value)
     {
         var edit = Uia.EditInside(PatNoCombo);
-        Uia.SetText(edit, "");
+        ClickPhysically(edit, "ô 患者番号");
+
+        // End → Shift+Home → Delete, KHÔNG Ctrl+A.
+        //
+        // `TextBox` của WinForms không nhận Ctrl+A làm 全選択 (quirk cũ của WinForms;
+        // `Uia.SetText` dùng Ctrl+A nên cũng không xoá được ô này). Đo 2026-08-27:
+        // giá trị cũ nằm nguyên và các lần gõ NỐI VÀO NHAU — ảnh chụp cho thấy ô mang
+        // 「19282157」 sau khi gõ lần lượt 19282 rồi 15727, và 患者確定 bung E00005 vì
+        // số đó không có thật. Log khi đó trông y như 「app chặn sai bệnh nhân」.
+        Keyboard.Press(VirtualKeyShort.END);
+        Keyboard.TypeSimultaneously(VirtualKeyShort.SHIFT, VirtualKeyShort.HOME);
+        Keyboard.Press(VirtualKeyShort.DELETE);
         Waits.Step();
+
+        if (value.Length > 0)
+        {
+            Keyboard.Type(value);
+            Waits.Step();
+        }
+
+        // Đọc lại từ chính ô EDIT, không từ ComboBox: giá trị của combo không phản ánh
+        // ngay nội dung người dùng đang gõ.
+        var actual = Txt.N(Uia.ValueOf(edit));
+        if (actual == Txt.N(value)) return;
+
+        throw new InvalidOperationException(
+            $"Ghi ô 患者番号 = 「{value}」 nhưng đọc lại ra 「{actual}」. Ô chưa được dọn (End/" +
+            "Shift+Home/Delete không ăn), phím không tới được ô, hoặc có hộp thoại đang chắn " +
+            "(PROBE-GUIDELINE 3.4).");
     }
 
     // ── Ｄｒ． / 衛生士 ──────────────────────────────────────────────────────

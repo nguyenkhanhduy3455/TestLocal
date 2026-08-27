@@ -54,6 +54,7 @@ namespace OchaCom.FlaUiTests.Tests.PatientSelectAssign;
 ///  KQ-6   Combo CHỌN TAY (≠ att_dr) → header lbDr hiện ai?   ← câu quan trọng nhất
 ///  KQ-7   患者番号 không tồn tại → nguyên văn hộp thoại?
 ///  KQ-8   Bệnh nhân thiếu att_dr → nguyên văn hộp thoại? Sau khi OK còn ở 患者選択 không?
+///         Và FOCUS rơi về control nào sau khi đóng hộp thoại? (:673 / :708 / :724)
 ///  KQ-9   Lưới 受付一覧: double-click có mở màn không (source nói KHÔNG)? Enter thì sao?
 ///  KQ-10  F10 戻る từ 処置入力 có bung hộp thoại gì không?
 /// </code>
@@ -257,7 +258,23 @@ public sealed class PatientSelectAssignProbeTests : UiTestBase
             var r = _flow.ConfirmAndObserve(() => screen.ConfirmWithEnd());
             trace.Shot("05-KQ7-patno-khong-ton-tai");
             Kq("7", $"患者番号={missing} (không tồn tại) → {r}");
-            _flow.DrainDialogs();
+
+            // ĐỌC, KHÔNG ĐOÁN. Hộp thoại này đã chống lại cả bốn cách đóng ở các lượt
+            // trước; đổ thẳng cây UIA + rect của nó ra để biết nút OK trông thế nào và
+            // nằm ở đâu, thay vì tiếp tục thử mò (PROBE-GUIDELINE mục 2).
+            if (r.DialogWindow is not null)
+            {
+                Log("=== CÂY UIA CỦA HỘP THOẠI E00005 ===");
+                Log(_flow.DescribeDialog(r.DialogWindow));
+                trace.Shot("05a-hop-thoai-E00005");
+            }
+
+            try { _flow.DrainDialogs(); }
+            catch (Exception e) { Log($"    !! không đóng được: {e.Message}"); }
+            // ĐO SAU KHI ĐÓNG hộp thoại — còn hộp thoại thì focus là nút của nó.
+            Kq("7b", $"focus sau khi đóng E00005 = {_flow.FocusedDescription()} " +
+                     "(source nói cboPatNo.Focus(), frm203001.cs:673) · " +
+                     $"còn hộp thoại: {_flow.FirstDialog() is not null}");
         });
 
         // ── KQ-8 ────────────────────────────────────────────────────────────
@@ -276,6 +293,8 @@ public sealed class PatientSelectAssignProbeTests : UiTestBase
             Kq("8", $"患者{patWithoutDr} (att_dr ≤ 0) → {r}");
             Kq("8b", $"sau khi bung hộp thoại, frm203001 còn hiện: {screen.IsShowing()}");
             _flow.DrainDialogs();
+            Kq("8c", $"focus sau khi đóng E00027「ドクター」 = {_flow.FocusedDescription()} " +
+                     "(source nói cboUserNm.Focus(), frm203001.cs:708)");
         });
 
         // ── KQ-5 + KQ-6 chay CUOI CUNG ──────────────────────────────────────

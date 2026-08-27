@@ -33,45 +33,39 @@ import { rows, cells } from './virtual-grid'
  * (chạy bằng `.\run-confirm-patient.ps1`). Bảng tương ứng TC ở README mục 3 của
  * thư mục đó.
  *
- * ─── NĂM ĐIỂM LỆCH đã tìm ra khi đọc source WinForm ─────────────────────────
- * Bốn cái đầu chốt được từ source; cái thứ năm phải chạy probe trên máy Windows.
- * Mỗi cái có một testcase ĐÓNG ĐINH hành vi hiện tại của bản web, kèm ghi chú
- * WinForm làm gì khác — để hôm nào sửa cho khớp thì biết chính xác phải sửa gì.
+ * ─── TÌNH TRẠNG PARITY (cập nhật 2026-08-27) ────────────────────────────────
  *
- * 1. **`DispEiseisi` bind nhầm trường.** WinForm đọc
- *    `XmlControl.OchaXml.InpInfo.DispEiseisi` trong `C:\NEW_SIM2000\Ocha.xml`
- *    (XmlControl.cs:80). Bản web đọc `inp_config.eiseiji_flg` từ DB — mà cột đó
- *    bên WinForm là một tuỳ chọn 算定 khác hẳn, 「衛生実地指導を算定しない」
- *    (InpConfig.cs:28, dùng ở frm506008.cs:819). `frm203001` KHÔNG đọc cột đó lần nào.
+ * ĐÃ SỬA ở `aff63dd9e` (fix(web-tenant): E00027 を実文言に直し…), TC ở đây nay
+ * khoá lại để không tái phát:
  *
- * 2. **`DispEiseisi` có BA trạng thái, bản web chỉ biết hai.** Màn 処置入力設定 ghi
- *    `1` khi tick và **`9`** khi bỏ tick (frm203003.cs:264). Mà `:542` chỉ ẩn hàng khi
- *    `== 0`, còn `:721` chỉ bắt buộc khi `== 1`:
- *      · `1` → hiện + bắt buộc
- *      · `9` → **hiện + KHÔNG bắt buộc**   ← cấu hình thật khi người dùng bỏ tick
- *      · `0` → ẩn + không bắt buộc
- *    `EiseijiFlg` của web (`api/inp-config-api.ts:34`) chỉ có `{Hidden:0, Shown:1}` và
- *    suy `hygienistRequired = showHygienist`, tức **hiện ⇒ bắt buộc**. Ở đúng cấu hình
- *    phổ biến nhất (đã bỏ tick ⇒ 9) web CHẶN E00027「衛生士」 còn WinForm CHO QUA.
+ * 1. **`E00027` sai văn bản.** Thật (đọc `MSGTBL` trên SQL Server của máy WinForm,
+ *    probe `run-confirm-patient.ps1 -Diagnostics` dòng `KQ-2`, 2026-08-26):
+ *    「{0}を特定出来ません。{0}を選択して下さい。」. Bản cũ dùng câu ĐOÁN
+ *    「{field}が選択されていません。」 và `ja.ts:63` tự khai là 未確認. → TC-MSG-1.
  *
- * 3. **Nhánh 受付 đọc SỰ TỒN TẠI CỦA CỘT, không phải giá trị.**
+ * 2. **`DispEiseisi` bind nhầm trường.** WinForm đọc
+ *    `XmlControl.OchaXml.InpInfo.DispEiseisi`; bản cũ đọc `inp_config.eiseiji_flg`
+ *    — mà cột đó bên WinForm là 「衛生実地指導を算定しない」 (`InpConfig.cs:28`, chỉ
+ *    dùng ở `Check.cs:901` / `frm506008`), `frm203001` KHÔNG đọc lần nào. Nay đọc
+ *    `inp.dispEiseisi`. → TC-ST-1.
+ *
+ * 3. **`DispEiseisi` có BA trạng thái, bản cũ chỉ biết hai.** 処置入力設定 ghi `1 : 9`
+ *    (frm203003.cs:264); `:542` chỉ ẩn hàng khi `== 0`, `:721` chỉ bắt buộc khi
+ *    `== 1` ⇒ `9` = hiện mà KHÔNG bắt buộc. Bản cũ suy 「hiện ⇒ bắt buộc」 nên CHẶN
+ *    ở đúng cấu hình phổ biến nhất (đã bỏ tick). → TC-ST-1.
+ *
+ * CÒN LỆCH — mới đọc source, CHƯA đo được (máy WinForm có bảng `wait` rỗng):
+ *
+ * 4. **Nhánh 受付 đọc SỰ TỒN TẠI CỦA CỘT, không phải giá trị.**
  *      `if (dt.Columns.Contains("user_no")) UserNo = dt.Rows[i]["user_no"] else person.dr`
- *    (frm203001.cs:696-701). Lưới 受付患者一覧 LUÔN có cột đó (PatInfoList.cs:177), nên
- *    dòng mang `user_no = 0` ⇒ WinForm lấy `0` rồi **chặn E00027**, KHÔNG rơi về
- *    `att_dr`. Nhánh `else` chỉ dành cho các view khác (本日来院 / 検索一覧).
- *    Bản web viết `toUserNo(waitRowUserNo) || toUserNo(patientAttDr)` ⇒ rơi về `att_dr`
- *    và MỞ ĐƯỢC màn. TC-DR-4B đóng đinh chỗ này.
+ *    (frm203001.cs:696-701). Lưới 受付患者一覧 LUÔN có cột đó (PatInfoList.cs:177),
+ *    nên dòng mang `user_no = 0` ⇒ WinForm lấy `0` rồi **chặn E00027**, KHÔNG rơi về
+ *    `att_dr`. Bản web viết `toUserNo(waitRowUserNo) || toUserNo(patientAttDr)` ⇒ rơi
+ *    về `att_dr` và MỞ ĐƯỢC màn. → TC-DR-4B.
  *
- * 4. **Double-click trên lưới là no-op bên WinForm.** `dgvView_CellDoubleClick` có câu
+ * 5. **Double-click trên lưới là no-op bên WinForm.** `dgvView_CellDoubleClick` có câu
  *    `defData` BỊ COMMENT (frm203001.cs:303-309). Cửa vào thật của nhánh `selRow` là
- *    **Enter** trên lưới (`:287-296`). Bản web mở màn bằng `dblclick()`. TC-ROW-1.
- *
- * 5. **Ｄｒ．nào thắng trên header 処置入力 — PHẢI ĐO.** Ba đoạn WinForm cùng tranh
- *    nhau ghi: `Let_Data_frmPatId` (`:1054`, chạy vô điều kiện vì `DrId_fixed` không
- *    được gán `true` ở đâu cả), `cboDr.SelectedValue = formParam.UserNo`
- *    (frm203002.cs:425 → `:8095`), và `Chg_DrName` (modMain.cs:2125, lấy `dr_no` CỦA
- *    DÒNG khi ngày đó đã có 処置). TC-SEED-1 đóng đinh phía web; `KQ-6` của probe
- *    WinForm trả lời phía kia.
+ *    **Enter** trên lưới (`:287-296`). Bản web mở màn bằng `dblclick()`. → TC-ROW-1.
  *
  * ─── DỮ LIỆU ────────────────────────────────────────────────────────────────
  * Mọi 患者番号 / user_no đều DÒ TỪ DB lúc chạy (Rule 18). Spec KHÔNG bấm 登録.
@@ -85,10 +79,24 @@ import { rows, cells } from './virtual-grid'
 
 const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
 
-/** `EiseijiFlg.Hidden` — 0 = ẩn hàng 衛生士. */
-const EISEIJI_HIDDEN = 0
+/**
+ * `inp.dispEiseisi` — 「衛生士を入力する」, BA trạng thái theo quy ước WinForm.
+ *
+ * `処置入力設定` ghi `1 : 9` (frm203003.cs:264); `frm203001` ẩn hàng 衛生士 khi
+ * `== 0` (:542) và BẮT BUỘC 衛生士 khi `== 1` (:721) — hai ngưỡng khác nhau, nên
+ * `9` = hàng vẫn HIỆN mà KHÔNG bắt buộc.
+ */
+const DISP_EISEISI = { Unset: 0, On: 1, Off: 9 } as const
 
-const INP_CONFIG_URL = /\/tenant\/inp-config(\?|$)/
+/**
+ * Setting mà 患者選択 thật sự đọc.
+ *
+ * KHÔNG phải `inp_config.eiseiji_flg` — cột đó bên WinForm là 「衛生実地指導を算定
+ * しない」 (`InpConfig.cs:28`, dùng ở `Check.cs:901` / `frm506008`), và `frm203001`
+ * không đọc nó lần nào. Bản web đã sửa đúng chỗ này ở `aff63dd9e`.
+ */
+const TENANT_SETTINGS_URL = /\/tenant\/settings(\?|$)/
+const DISP_EISEISI_KEY = 'inp.dispEiseisi'
 
 /**
  * Nguyên văn E00027 của WinForm — ĐỌC TỪ `MSGTBL` trên máy Windows thật
@@ -107,7 +115,16 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
     let page: Page
     let step: () => Promise<void>
 
-    let eiseijiFlg: number | null = null
+    let dispEiseisi: number | null = null
+
+    /**
+     * Focus quan sát được sau mỗi hộp thoại chặn — TC-FOCUS-1 ở CUỐI file phán xử.
+     *
+     * Vì sao không assert ngay tại chỗ: file này `mode: 'serial'`, một fail (kể cả
+     * `expect.soft`) là 8 testcase sau KHÔNG CHẠY. Đã vấp thật 2026-08-27. Ghi lại rồi
+     * phán xử ở cuối thì vẫn đỏ đúng chỗ mà không mất phần đo còn lại.
+     */
+    const focusAfter: Record<string, string> = {}
 
     let patWithDr = 0
     let attDrOfPatWithDr = 0
@@ -183,6 +200,27 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
     }
 
     /** appDialog — PHẢI loại `aria-busy="true"` (busyOverlay cũng mang role này), Rule 13. */
+    /**
+     * Mô tả phần tử ĐANG giữ focus — để khi assert focus đỏ thì log nói được focus
+     * đang ở đâu, thay vì chỉ 「không phải chỗ này」.
+     */
+    async function focusedDescription(): Promise<string> {
+        return page.evaluate(() => {
+            const el = document.activeElement as HTMLElement | null
+            if (!el) return '(null)'
+            const label = el.getAttribute('aria-label') ?? ''
+            const role = el.getAttribute('role') ?? ''
+            const text = (el.textContent ?? '').trim().slice(0, 40)
+            const value = (el as HTMLInputElement).value ?? ''
+            // Nhãn của HÀNG chứa control — thứ duy nhất phân biệt được combo Dr. với
+            // combo 衛生士, vì cả hai đều render ra <button role="combobox"> trống.
+            const near = (el.closest('div')?.parentElement?.textContent ?? '').trim().slice(0, 30)
+            return `<${el.tagName.toLowerCase()}${role ? ` role=${role}` : ''}` +
+                `${label ? ` aria-label=${label}` : ''}${value ? ` value=${value}` : ''}>` +
+                `${text ? ` 「${text}」` : ''}${near ? ` (trong: 「${near}」)` : ''}`
+        })
+    }
+
     function appDialog(): Locator {
         return page.locator('[role="alertdialog"]:not([aria-busy="true"])')
     }
@@ -302,12 +340,13 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
 
         page.on('response', (res) => {
             if (res.request().method() !== 'GET') return
-            if (!INP_CONFIG_URL.test(res.url())) return
+            if (!TENANT_SETTINGS_URL.test(res.url())) return
             void res
                 .json()
                 .then((body) => {
-                    const data = (body as { data?: { eiseijiFlg?: number } }).data
-                    if (data) eiseijiFlg = Number(data.eiseijiFlg)
+                    const values = (body as { data?: { values?: Record<string, unknown> } }).data?.values
+                    const raw = values?.[DISP_EISEISI_KEY]
+                    if (raw !== undefined && raw !== null) dispEiseisi = Number(raw)
                 })
                 .catch(() => undefined)
         })
@@ -332,7 +371,7 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
 
     // ── TC-MSG-1 ────────────────────────────────────────────────────────────
 
-    test('TC-MSG-1 — nguyên văn E00027: bản web ĐOÁN SAI (đã đo MSGTBL trên máy thật)', async () => {
+    test('TC-MSG-1 — E00027 phải KHỚP nguyên văn MSGTBL của WinForm', async () => {
         skipWithReason(
             patWithoutDr === null,
             'dataset không có bệnh nhân nào thiếu 担当医 — không bung được E00027',
@@ -348,25 +387,25 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         await expect(appDialog()).toBeVisible({ timeout: 15000 })
         const wording = (await appDialog().innerText()).trim()
         console.log(`=== PARITY E00027 (web) === 「${wording.replace(/\s+/g, ' ')}」`)
-        console.log(
-            `=== PARITY E00027 (WinForm) === 「${WINFORM_E00027('ドクター')}」\n` +
-                '    ★ LỆCH: đã ĐỌC MSGTBL trên máy Windows thật 2026-08-26 (probe KQ-2) — ' +
-                'E00027 = 「{0}を特定出来ません。{0}を選択して下さい。」. Bản web dùng ' +
-                '「{field}が選択されていません。」, tức SAI cả cách diễn đạt lẫn số lần nhắc {field}. ' +
-                'locales/ja.ts:63 tự khai là 未確認 — giờ đã xác nhận, sửa được rồi.',
-        )
+        console.log(`=== PARITY E00027 (WinForm MSGTBL) === 「${WINFORM_E00027('ドクター')}」`)
 
-        // Đóng đinh câu HIỆN TẠI của web để lần sửa locales/ja.ts làm testcase này đỏ
-        // và người sửa biết phải cập nhật cả hai đầu.
-        await expect(
-            appDialog(),
-            'web không còn dùng khuôn 「…が選択されていません。」 — nếu vừa sửa theo MSGTBL thì ' +
-                'cập nhật luôn assert này sang WINFORM_E00027',
-        ).toContainText('選択されていません')
+        // Chuỗi thật đọc từ MSGTBL trên SQL Server của máy WinForm (probe
+        // `run-confirm-patient.ps1 -Diagnostics`, dòng KQ-2, 2026-08-26).
+        //
+        // Trước `aff63dd9e` bản web dùng câu ĐOÁN 「{field}が選択されていません。」 —
+        // `locales/ja.ts:63` đã tự khai là 未確認. Nay đã lấy đúng chuỗi thật, nên
+        // testcase này khoá lại để không ai quay về câu đoán.
         expect(
             wording.replace(/\s+/g, ''),
-            'web đã khớp WinForm — xoá điểm lệch #6 khỏi header spec và khỏi README của luồng FlaUI',
-        ).not.toContain(WINFORM_E00027('ドクター').replace(/\s+/g, ''))
+            'E00027 của web KHÔNG khớp MSGTBL của WinForm nữa — xem locales/ja.ts:69',
+        ).toContain(WINFORM_E00027('ドクター').replace(/\s+/g, ''))
+
+        await expect(
+            appDialog(),
+            'web quay lại khuôn ĐOÁN 「…が選択されていません。」 — đó là chuỗi sai, ' +
+                'chuỗi thật là 「…を特定出来ません。…を選択して下さい。」',
+        ).not.toContainText('選択されていません')
+
         await dismissDialog()
         await step()
     })
@@ -386,8 +425,16 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         await dismissDialog()
 
         await expect(page).toHaveURL(/\/treatments\/?(\?|$)/)
-        // WinForm: `cboPatNo.Focus()` (frm203001.cs:673). Web: `patientNoInputRef.focus()`.
-        await expect(patNoInput(), 'sau E00005 focus phải quay về ô 患者番号 như WinForm').toBeFocused()
+
+        // WinForm: `cboPatNo.Focus()` (frm203001.cs:673). Web: `patientNoInputRef.focus()`
+        // ngay sau khi `await alertDialog(...)` resolve.
+        //
+        // SOFT: đây là điểm parity đang NGỜ, và nó không được phép cắt ngang lượt chạy
+        // (file này `mode: 'serial'` nên một fail cứng là mất nốt 8 TC sau). Ghi lại
+        // focus thật để đối chiếu với phía WinForm.
+        focusAfter['E00005'] = await focusedDescription()
+        focusAfter['E00005.onTarget'] = String(await patNoInput().evaluate((el) => el === document.activeElement))
+        console.log(`=== PARITY focus sau E00005 (web) === ${focusAfter['E00005']}`)
         await step()
     })
 
@@ -462,61 +509,87 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         await dismissDialog()
 
         await expect(page).toHaveURL(/\/treatments\/?(\?|$)/)
-        // WinForm: `cboUserNm.Focus()` (frm203001.cs:708).
-        await expect(
-            staffSelect('Dr.'),
-            'sau E00027「ドクター」 focus phải quay về combo Dr. như WinForm',
-        ).toBeFocused()
+
+        // WinForm: `cboUserNm.Focus()` (frm203001.cs:708). SOFT — xem ghi chú ở TC-PAT-1.
+        focusAfter['E00027.dr'] = await focusedDescription()
+        focusAfter['E00027.dr.onTarget'] = String(
+            await staffSelect('Dr.').evaluate((el) => el === document.activeElement),
+        )
+        console.log(`=== PARITY focus sau E00027「ドクター」 (web) === ${focusAfter['E00027.dr']}`)
         await step()
     })
 
     // ── TC-ST-1 ─────────────────────────────────────────────────────────────
 
-    test('TC-ST-1 — thiếu 衛生士: web chặn theo eiseiji_flg — LỆCH với DispEiseisi của Ocha.xml', async () => {
+    test('TC-ST-1 — 衛生士: bắt buộc CHỈ KHI dispEiseisi === 1 (ba trạng thái, giống WinForm)', async () => {
         await expect
-            .poll(() => eiseijiFlg, { message: 'không bắt được GET /tenant/inp-config', timeout: 30000 })
+            .poll(() => dispEiseisi, {
+                message: 'không bắt được GET /tenant/settings?keys=inp.dispEiseisi',
+                timeout: 30000,
+            })
             .not.toBeNull()
 
         console.log(
-            `=== PARITY 衛生士 === web đọc inp_config.eiseiji_flg = ${eiseijiFlg}. ` +
-                'WinForm KHÔNG đọc cột này — nó đọc Ocha.xml InpInfo.DispEiseisi (XmlControl.cs:80), ' +
-                'và eiseiji_flg bên WinForm là tuỳ chọn 算定「衛生実地指導を算定しない」 (InpConfig.cs:28). ' +
-                'Đối chiếu với dòng `KQ-1b` / `KQ-ST-1b` của confirm-patient-KQ.txt.',
+            `=== PARITY 衛生士 === web đọc inp.dispEiseisi = ${dispEiseisi} ` +
+                `(${dispEiseisi === DISP_EISEISI.On ? 'On — hiện + BẮT BUỘC' : dispEiseisi === DISP_EISEISI.Off ? 'Off — hiện mà KHÔNG bắt buộc' : 'Unset — ẩn hàng'}). ` +
+                'Đây đúng là setting WinForm đọc (XmlControl.OchaXml.InpInfo.DispEiseisi), ' +
+                'KHÔNG phải inp_config.eiseiji_flg như bản trước aff63dd9e. ' +
+                'Đối chiếu dòng `KQ-1b` của confirm-patient-KQ.txt.',
         )
 
-        skipWithReason(
-            eiseijiFlg === EISEIJI_HIDDEN,
-            `eiseiji_flg=${eiseijiFlg} (ẩn hàng 衛生士) → không dựng được nhánh chặn`,
-        )
         skipWithReason(
             patWithoutSt === null,
             'dataset không có bệnh nhân nào CÓ 担当医 mà THIẾU 衛生士 (att_st=100 là 無所属, vẫn tính là có)',
         )
+
+        const rowShown = dispEiseisi !== DISP_EISEISI.Unset
+        const mustBlock = dispEiseisi === DISP_EISEISI.On
+
+        // Hàng 衛生士 hiện hay ẩn: `showHygienist = dispEiseisi !== 0`.
+        await expect(
+            staffSelect('衛生士'),
+            `dispEiseisi=${dispEiseisi} ⇒ hàng 衛生士 phải ${rowShown ? 'HIỆN' : 'ẨN'}`,
+        ).toHaveCount(rowShown ? 1 : 0)
 
         await clearPatNo()
         await clearDoctor()
         await typePatNo(String(patWithoutSt))
         await page.keyboard.press('End')
 
-        await expect(appDialog(), 'thiếu 衛生士 mà không chặn').toBeVisible({ timeout: 15000 })
-        await expect(
-            appDialog(),
-            'chặn nhầm ở 担当医 — bệnh nhân này CÓ att_dr nên lẽ ra qua được bước Dr.',
-        ).toContainText('衛生士')
-        await dismissDialog()
+        if (mustBlock) {
+            await expect(appDialog(), 'dispEiseisi=1 mà thiếu 衛生士 lại không chặn').toBeVisible({
+                timeout: 15000,
+            })
+            await expect(
+                appDialog(),
+                'chặn nhầm ở 担当医 — bệnh nhân này CÓ att_dr nên lẽ ra qua được bước Dr.',
+            ).toContainText('衛生士')
+            await expect(appDialog()).toContainText(WINFORM_E00027('衛生士'))
+            await dismissDialog()
 
-        await expect(page).toHaveURL(/\/treatments\/?(\?|$)/)
-        // WinForm: `cboStaffNm.Focus()` (frm203001.cs:724).
-        await expect(
-            staffSelect('衛生士'),
-            'sau E00027「衛生士」 focus phải quay về combo 衛生士 như WinForm',
-        ).toBeFocused()
-
-        console.log(
-            `    ★ LỆCH: web CHẶN vì eiseiji_flg=${eiseijiFlg} ≠ 0. WinForm chỉ chặn khi ` +
-                'DispEiseisi == 1; bỏ tick 「衛生士を入力する」 ghi 9 (frm203003.cs:264) ⇒ hàng vẫn HIỆN ' +
-                '(:542 chỉ ẩn khi == 0) mà KHÔNG bắt buộc (:721). Cấu hình đó web sẽ chặn, WinForm cho qua.',
-        )
+            await expect(page).toHaveURL(/\/treatments\/?(\?|$)/)
+            // WinForm: `cboStaffNm.Focus()` (frm203001.cs:724). SOFT — xem TC-PAT-1.
+            focusAfter['E00027.staff'] = await focusedDescription()
+            focusAfter['E00027.staff.onTarget'] = String(
+                await staffSelect('衛生士').evaluate((el) => el === document.activeElement),
+            )
+            console.log(`=== PARITY focus sau E00027「衛生士」 (web) === ${focusAfter['E00027.staff']}`)
+        } else {
+            // ĐÂY là điểm lệch cũ, nay đã sửa: dispEiseisi = 9 nghĩa là hàng vẫn HIỆN
+            // nhưng 患者確定 KHÔNG được chặn. Bản trước aff63dd9e suy 「hiện ⇒ bắt buộc」
+            // nên chặn ở đúng cấu hình phổ biến nhất, còn WinForm thì cho qua (:721
+            // chỉ kiểm `== 1`).
+            await expect(
+                page,
+                `dispEiseisi=${dispEiseisi} (≠ 1) mà web VẪN chặn — WinForm chỉ chặn khi ` +
+                    '== 1 (frm203001.cs:721). Đây đúng là điểm lệch mà aff63dd9e sửa.',
+            ).toHaveURL(/\/treatments\/\d+\?/, { timeout: 30000 })
+            console.log(
+                `TC-ST-1: dispEiseisi=${dispEiseisi} ⇒ KHÔNG chặn dù thiếu 衛生士, hàng vẫn ` +
+                    `${rowShown ? 'hiện' : 'ẩn'} — khớp WinForm.`,
+            )
+            await backToList()
+        }
         await step()
     })
 
@@ -660,6 +733,49 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
 
         await backToList()
         await clearDoctor()
+    })
+
+    // ── TC-FOCUS-1 — phán xử ở CUỐI ─────────────────────────────────────────
+
+    test('TC-FOCUS-1 — sau khi bị chặn, focus phải quay về ĐÚNG ô như WinForm', async () => {
+        skipWithReason(
+            Object.keys(focusAfter).length === 0,
+            'không testcase nào phía trên bung được hộp thoại chặn nên chưa có gì để phán xử',
+        )
+
+        for (const [key, value] of Object.entries(focusAfter)) {
+            if (key.endsWith('.onTarget')) continue
+            console.log(`=== PARITY focus === ${key} → ${value} (đúng ô: ${focusAfter[`${key}.onTarget`]})`)
+        }
+
+        // WinForm trả con trỏ về đúng ô vừa từ chối:
+        //   E00005          → cboPatNo.Focus()    (frm203001.cs:673)
+        //   E00027「ドクター」 → cboUserNm.Focus()   (:708)
+        //   E00027「衛生士」  → cboStaffNm.Focus()  (:724)
+        //
+        // ĐÃ ĐO trên WinForm thật 2026-08-27 (`run-confirm-patient.ps1 -Diagnostics`,
+        // dòng KQ-7b): sau khi đóng E00005, focus nằm ở
+        //     AutomationId=「1001」 · Edit
+        // — `1001` là id Win32 quen thuộc của ô Edit BÊN TRONG một ComboBox, tức đúng
+        // `cboPatNo`. Vậy WinForm THẬT SỰ trả con trỏ về ô 患者番号, người dùng gõ lại
+        // được ngay.
+        //
+        // Bên web (đo cùng ngày): focus rơi vào `<button>「F1患者検索」` — nút F-key đầu
+        // tiên của thanh dưới, tức thứ tự tab mặc định, KHÔNG phải ô vừa bị từ chối.
+        // Nhiều khả năng do dialog của Radix restore focus SAU lệnh `.focus()` trong
+        // `openDetail` (`onCloseAutoFocus`).
+        const wrong = Object.entries(focusAfter)
+            .filter(([k, v]) => k.endsWith('.onTarget') && v !== 'true')
+            .map(([k]) => k.replace('.onTarget', ''))
+
+        expect(
+            wrong,
+            'sau khi chặn, focus KHÔNG quay về ô vừa bị từ chối. Đang ở: ' +
+                wrong.map((k) => `${k} → ${focusAfter[k]}`).join(' · ') +
+                '. WinForm gọi Focus() ngay sau ShowWarningMsg (frm203001.cs:673/708/724) nên ' +
+                'người dùng gõ lại được ngay; bên web phải click vào ô trước. Đối chiếu ' +
+                'dòng KQ-7b / KQ-8c của confirm-patient-KQ.txt.',
+        ).toEqual([])
     })
 
     // ── helper ───────────────────────────────────────────────────────────────
