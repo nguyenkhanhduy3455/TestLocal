@@ -1,2 +1,9 @@
 node_modules/
 .DS_Store
+
+# Playwright chạy đúng chỗ thì đổ vào web-tenant-tests/ và đã bị .gitignore trong đó
+# chặn. Nhưng chạy nhầm từ thư mục GỐC thì nó đẻ ra ở đây — và một lần như vậy đã
+# lọt vào repo (test-results/.last-run.json, 2026-08-11). Chặn ở cả hai cấp.
+test-results/
+playwright-report/
+blob-report/
