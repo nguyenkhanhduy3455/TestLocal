@@ -249,13 +249,31 @@ public static class Uia
     /// <summary>
     /// Gửi 1 phím vật lý qua <c>SendInput</c>. Đi qua message queue của Windows → an
     /// toàn khi cửa sổ khác đang topmost (gửi tới foreground window).
+    ///
+    /// <para>Trả về <b>false</b> khi <c>SendInput</c> không chèn được sự kiện nào — kiểm
+    /// giá trị này trước khi kết luận 「app không phản ứng với phím」. Từ 2026-08-27 mới
+    /// có giá trị trả về: trước đó hàm này ÂM THẦM KHÔNG LÀM GÌ (xem
+    /// <see cref="Win32.INPUT"/>) và mọi luồng đều đọc ra 「WinForm nuốt phím」.</para>
     /// </summary>
-    public static void SendKey(ushort virtualKey)
+    public static bool SendKey(ushort virtualKey)
     {
         var inputs = new Win32.INPUT[2];
-        inputs[0] = new Win32.INPUT { type = Win32.INPUT_KEYBOARD_VAL, wVk = virtualKey };
-        inputs[1] = new Win32.INPUT { type = Win32.INPUT_KEYBOARD_VAL, wVk = virtualKey, dwFlags = Win32.KEYEVENTF_KEYUP_VAL };
-        Win32.SendInput((uint)inputs.Length, inputs, System.Runtime.InteropServices.Marshal.SizeOf<Win32.INPUT>());
+        inputs[0] = new Win32.INPUT
+        {
+            type = Win32.INPUT_KEYBOARD_VAL,
+            U = new Win32.InputUnion { ki = new Win32.KEYBDINPUT { wVk = virtualKey } }
+        };
+        inputs[1] = new Win32.INPUT
+        {
+            type = Win32.INPUT_KEYBOARD_VAL,
+            U = new Win32.InputUnion
+            {
+                ki = new Win32.KEYBDINPUT { wVk = virtualKey, dwFlags = Win32.KEYEVENTF_KEYUP_VAL }
+            }
+        };
+        var sent = Win32.SendInput((uint)inputs.Length, inputs,
+                                   System.Runtime.InteropServices.Marshal.SizeOf<Win32.INPUT>());
+        return sent == (uint)inputs.Length;
     }
 
     /// <summary>Di chuyển chuột tới tọa độ màn hình tuyệt đối (không click).</summary>
@@ -286,15 +304,65 @@ public static class Uia
         public const uint SWP_SHOWWINDOW = 0x0040;
         public const uint SWP_NOZORDER = 0x0004;
 
+        /// <summary>
+        /// <c>INPUT</c> của Winuser.h — <b>PHẢI</b> là <c>type</c> + một UNION, không phải
+        /// các trường của <c>KEYBDINPUT</c> nối thẳng vào sau.
+        ///
+        /// <para>Bản cũ khai báo phẳng (<c>type, wVk, wScan, dwFlags, time, dwExtraInfo</c>)
+        /// nên <c>Marshal.SizeOf</c> ra <b>32</b> trên x64 thay vì <b>40</b>: thiếu 4 byte
+        /// đệm sau <c>type</c> (union căn 8 byte) và thiếu phần thân của <c>MOUSEINPUT</c>,
+        /// thành viên lớn nhất của union. <c>SendInput</c> so <c>cbSize</c> với kích thước
+        /// nó chờ đợi, không khớp thì trả về <b>0</b> và <b>không gửi gì cả</b> — không
+        /// ngoại lệ, không lỗi, không dấu vết.</para>
+        ///
+        /// <para>ĐO ĐƯỢC 2026-08-27 ở luồng GuideSidePanel: F4 / Enter / ↑ / ↓ gửi bằng
+        /// <see cref="Uia.SendKey"/> đều KHÔNG có tác dụng dù 診療入力 đúng là cửa sổ
+        /// foreground, trong khi <c>FlaUI.Core.Input.Keyboard.Type</c> (đường khác) gõ được
+        /// chữ vào đúng ô đó. Đọc log mà không biết chuyện này thì kết luận sẽ là
+        /// 「WinForm nuốt phím」 — đổ oan cho app, đúng cái bẫy PROBE-GUIDELINE 3.4 cảnh báo.</para>
+        /// </summary>
         [StructLayout(LayoutKind.Sequential)]
         public struct INPUT
         {
             public uint type;
+            public InputUnion U;
+        }
+
+        [StructLayout(LayoutKind.Explicit)]
+        public struct InputUnion
+        {
+            [FieldOffset(0)] public MOUSEINPUT mi;
+            [FieldOffset(0)] public KEYBDINPUT ki;
+            [FieldOffset(0)] public HARDWAREINPUT hi;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct MOUSEINPUT
+        {
+            public int dx;
+            public int dy;
+            public uint mouseData;
+            public uint dwFlags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct KEYBDINPUT
+        {
             public ushort wVk;
             public ushort wScan;
             public uint dwFlags;
             public uint time;
             public IntPtr dwExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct HARDWAREINPUT
+        {
+            public uint uMsg;
+            public ushort wParamL;
+            public ushort wParamH;
         }
 
         [DllImport("user32.dll")]

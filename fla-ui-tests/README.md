@@ -151,6 +151,12 @@ src/OchaCom.FlaUiTests/
     │   ├── PatientSelectAssignDb.cs       truy vấn CHỈ ĐỌC person/iinmst2/wait/TRNTRN
     │   ├── PatientSelectAssignProbeTests.cs PROBE [Explicit] — 10 câu hỏi
     │   └── PatientSelectAssignTests.cs    TC-MSG-1, TC-PAT-1, TC-DR-1..4, TC-ST-1, TC-ROW-1, TC-SEED-1
+    ├── GuideSidePanel/                 tab 「ガイド」 + frm203017 — xem mục 8b
+    │   ├── README.md                      bảng tương ứng spec + 3 điểm LỆCH đo được
+    │   ├── GuideTabFlow.cs                 lái tab ガイド + dialog, KHÔNG assert
+    │   ├── MsgBoxWin32.cs                  đọc/bấm MessageBox bằng Win32 thuần (không UIA)
+    │   ├── GuideSidePanelProbeTests.cs     PROBE [Explicit] — 18 câu hỏi
+    │   └── GuideSidePanelTests.cs          TC-G1 … TC-G15
     └── InpP1Dialogs/                  ba dialog vừa port sang web — xem mục 8b
         ├── README.md                  bảng tương ứng với spec Playwright
         ├── InpP1MenuFlow.cs           F11 → 「９ オプション」 → mục con
@@ -241,6 +247,7 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 | `.\run-inp-p1-dialog.ps1` | F11 →「９ オプション」→ Step / チェック項目設定 · 部位選択 → F9 Br例 | `Tests/InpP1Dialogs/` | ⚠️ chỉ khi `-AllowSave` — `TRTSTATE`, `chkprm` |
 | `.\run-edit-treatment-rows.ps1` | Insert/Delete trên lưới 処置 → `AddRow` / `DeleteRow` (行追加・行削除) | `Tests/TreatmentGrid/` | ✖ không bấm F9 |
 | `.\run-confirm-patient.ps1` | End/F9/Enter ở 患者選択 → `frm203001.defData` (患者確定) | `Tests/PatientSelectAssign/` | ✖ không bấm F9, không seed `wait` |
+| `.\run-select-guide-treatment.ps1` | Click dòng ガイド → `hfgGuid1_CellDoubleClick` (ガイド処置選択 frm203017) | `Tests/GuideSidePanel/` | ✖ không bấm F9; 「リセット」 luôn trả lời Cancel |
 | `.\run-bulk-change-dr.ps1` | Click nhãn 「Ｄｒ」 → `lblDrLabel_Click` (担当医 一括変更) | `Tests/TreatmentHeaderStaff/` | ✖ chỉ sửa lưới trong bộ nhớ |
 | `.\run-edit-treatment-rows.ps1 -Case Probe_Advanced` | PROBE — dò hành vi, KHÔNG assert | `Tests/TreatmentGrid/` | ✖ |
 
@@ -302,6 +309,20 @@ giá trị. Chi tiết ở `Tests/PatientSelectAssign/README.md` mục 4.
 > ⚠️ **Chưa chạy lần nào trên Windows.** Chạy `.\run-confirm-patient.ps1 -Diagnostics`
 > **trước tiên**; đáp án nằm ở các dòng `=== KQ-n ===`, runner lọc sẵn ra
 > `confirm-patient-KQ.txt`.
+
+**GuideSidePanel** đo **đáp án** cho tab 「ガイド」 của `frm203002` và dialog
+`frm203017`「ガイド処置選択」 — nửa WinForm của
+`../web-tenant-tests/tests/guide-sidepanel-handler.spec.ts`. Không bấm F9 nên **không ghi
+DB**; nút 「リセット」 *có* ghi (`StepReset` → `UPDATE TRTSTATE`) nên mọi chỗ bấm nó đều
+trả lời **Cancel**.
+
+Đã chạy thật 2026-08-27 trên bệnh nhân 10: TC-G1…TC-G12 **xanh**; TC-G13…TC-G15 chưa
+chạy lại sau lần sửa cuối. Ba điểm **LỆCH** với bản web + ba cái bẫy đã trả giá (trong đó
+có một **lỗi của chính bộ test**: `Uia.SendKey` khai sai layout `INPUT` nên `SendInput`
+không gửi phím nào mà cũng không báo lỗi) nằm ở `Tests/GuideSidePanel/README.md` mục 4.
+
+> ⚠️ Luồng này đóng `frm203017` bằng **F10 / nút 戻る**, TUYỆT ĐỐI không Escape: Escape ở
+> dialog đó gọi `btnF9_Click`, tức 確定 (`frm203017.cs:180`).
 
 **TreatmentHeaderStaff** đo **đáp án** cho vùng 「Ｄｒ」 của header `frm203002`, nơi
 WinForm để **ba** control chồng nhau và mỗi cái trả lời một câu khác nhau: `lblDrLabel`
