@@ -43,7 +43,9 @@ import { rows, cells } from './virtual-grid'
  *        không đóng dấu 0 đè lên mặc định của màn chi tiết.
  *  - lib/staff-assignment.ts: 0 là sentinel 未選択 nên `att_dr = 0` bị coi như
  *    chưa gán; nhưng `att_st = 100` (無所属「－」) LÀ giá trị thật, không chặn.
- *  - locales/ja.ts: E00027「{field}が選択されていません。」, E00005「{field}が登録されていません。」.
+ *  - locales/ja.ts: E00027「{field}を特定出来ません。{field}を選択して下さい。」 (một
+ *    tham số, xuất hiện HAI lần trong câu — văn bản lấy từ MSGTBL thật, không phải
+ *    bản phục dựng cũ 「が選択されていません。」), E00005「{field}が登録されていません。」.
  *    Cả hai đi qua `alertDialog(..., { severity: 'warning' })` ⇒ role
  *    `alertdialog` một nút OK (GUIDELINE Rule 13).
  *  - BE: `WaitingPatientResponse.UserNo` là field MỚI của bản vá. TC-API-1 kiểm
@@ -75,9 +77,19 @@ import { rows, cells } from './virtual-grid'
 const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
 
 /** `inp_config.eiseiji_flg` — 0 = ẩn hàng 衛生士 (EiseijiFlg.Hidden). */
-const EISEIJI_HIDDEN = 0
+/**
+ * `inp.dispEiseisi` — 「衛生士を入力する」, giá trị theo quy ước WinForm.
+ *
+ * KHÔNG phải `inp_config.eiseiji_flg` (cái đó là 「衛生実地指導を算定しない」, chỉ
+ * dùng ở Check.cs:903). Một giá trị, HAI ngưỡng: `== 0` mới ẩn hàng
+ * (frm203001.cs:542), `== 1` mới bắt buộc (frm203001.cs:721). Bỏ tick ⇒ 9 ⇒ hàng
+ * vẫn hiện nhưng 患者確定 KHÔNG đòi 衛生士.
+ */
+const DISP_EISEISI_ON = 1
+const DISP_EISEISI_KEY = 'inp.dispEiseisi'
 
 const INP_CONFIG_URL = /\/tenant\/inp-config(\?|$)/
+const TENANT_SETTINGS_URL = /\/tenant\/settings\?keys=/
 const WAIT_LIST_URL = /\/tenant\/treatment\/wait-list(\?|$)/
 
 /** 患者番号 chắc chắn KHÔNG tồn tại — nhánh E00005. Cột `pat_no` là int32. */
@@ -105,6 +117,8 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
     let step: () => Promise<void>
 
     let inpConfig: InpConfig | null = null
+    /** `inp.dispEiseisi` bắt được từ GET /tenant/settings?keys=… */
+    let dispEiseisi: number | null = null
     /** Payload GET /tenant/treatment/wait-list bắt được — nguồn của TC-API-1. */
     let waitListItems: Record<string, unknown>[] | null = null
 
@@ -330,6 +344,17 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
         // chỉ có đúng một request trong cả phiên.
         page.on('response', (res) => {
             if (res.request().method() !== 'GET') return
+            if (TENANT_SETTINGS_URL.test(res.url())) {
+                void res
+                    .json()
+                    .then((body) => {
+                        const values = (body as { data?: { values?: Record<string, unknown> } }).data
+                            ?.values
+                        const raw = values?.[DISP_EISEISI_KEY]
+                        if (raw !== undefined && raw !== null) dispEiseisi = Number(raw)
+                    })
+                    .catch(() => undefined)
+            }
             if (INP_CONFIG_URL.test(res.url())) {
                 void res
                     .json()
@@ -446,8 +471,9 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
         await expect(appDialog()).toContainText('ドクター')
         await expect(
             appDialog(),
-            'nội dung khác locales/ja.ts E00027「{field}が選択されていません。」',
-        ).toContainText('選択されていません')
+            'nội dung khác locales/ja.ts E00027「{field}を特定出来ません。{field}を選択して下さい。」',
+        ).toContainText('を特定出来ません。')
+        await expect(appDialog()).toContainText('を選択して下さい。')
         await dismissDialog()
 
         await expect(page, 'đã sang màn chi tiết dù chưa chốt được 担当医').toHaveURL(
@@ -460,13 +486,16 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
 
     test('TC-ST-1 — không có nguồn nào cho 衛生士: E00027「衛生士」 khi hàng 衛生士 đang hiện', async () => {
         await expect
-            .poll(() => inpConfig, { message: 'không bắt được GET /tenant/inp-config', timeout: 30000 })
+            .poll(() => dispEiseisi, {
+                message: 'không bắt được GET /tenant/settings?keys=inp.dispEiseisi',
+                timeout: 30000,
+            })
             .not.toBeNull()
 
         skipWithReason(
-            inpConfig!.eiseijiFlg === EISEIJI_HIDDEN,
-            `eiseiji_flg=${inpConfig?.eiseijiFlg} (ẩn hàng 衛生士) → WinForm KHÔNG chặn ở 衛生士, ` +
-                'đặt inp_config.eiseiji_flg ≠ 0 rồi chạy lại mới kiểm được nhánh này',
+            dispEiseisi !== DISP_EISEISI_ON,
+            `inp.dispEiseisi=${dispEiseisi} → 「衛生士を入力する」 đang tắt nên WinForm KHÔNG ` +
+                'chặn ở 衛生士 (chỉ chặn khi == 1). Đặt nó = 1 rồi chạy lại mới kiểm được nhánh này',
         )
         skipWithReason(
             patWithoutSt === null,
@@ -481,7 +510,7 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
             appDialog(),
             'chặn nhầm ở 担当医 — bệnh nhân này CÓ att_dr, lẽ ra phải qua được bước Dr.',
         ).toContainText('衛生士')
-        await expect(appDialog()).toContainText('選択されていません')
+        await expect(appDialog()).toContainText('を特定出来ません。')
         await dismissDialog()
 
         await expect(page, 'đã sang màn chi tiết dù chưa chốt được 衛生士').toHaveURL(
