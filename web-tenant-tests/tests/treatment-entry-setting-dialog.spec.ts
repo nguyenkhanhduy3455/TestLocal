@@ -33,10 +33,20 @@ import { ADMIN_USER, JA } from './test-data'
  *          - picLink / medicalSupportLink → connector_config.linkCode của
  *            category xray / medical-support, vẫn ở agent qua PUT /v1/config
  *            (KHÔNG lưu lại thành setting).
- *      · Định danh máy đi bằng header `X-Ochacom-Device-Id` (64 hex thường), lấy
- *        từ GET /v1/agent, cache ở localStorage['ochacom.agent-id']. Thiếu header
- *        thì ĐỌC vẫn được (trả giá trị phòng khám + mặc định) nhưng GHI bị BE từ
- *        chối — không cho lưu 5 field mà bỏ rơi 25 field.
+ *      · Định danh máy đi bằng header `X-Ochacom-Device-Id`, giá trị là **GUID
+ *        của workstation do SERVER cấp** lúc đăng ký máy (`POST /tenant/config/
+ *        devices` → `DeviceResult.Id`), cache ở localStorage. BE đọc bằng
+ *        `HttpHeaderDeviceContextAccessor` → `Guid.TryParse`.
+ *
+ *        KHÔNG phải id của agent. Hai thứ này từng là một (agent tự tính ra 64
+ *        hex, browser lấy qua GET /v1/agent) nhưng đã tách hẳn — xem chú thích
+ *        của `useDeviceId`: 「It no longer falls back to the agent id」. Chuỗi 64
+ *        hex bây giờ chỉ còn là id của AGENT, và chỉ dùng ở các route
+ *        /tenant/agent-config (`AgentIdFormat`). Spec này từng assert nhầm sang
+ *        đó nên đỏ trên máy đã tách hai giá trị.
+ *
+ *        Thiếu header thì ĐỌC vẫn được (trả giá trị phòng khám + mặc định) nhưng
+ *        GHI vào tầng máy bị BE từ chối.
  *      · Flag theo quy ước WinForm 1 = bật, 9 = tắt.
  *      · Hai combo 連携先 đều là CodMstSelect cdType 58 kèm `leadingOption`
  *        NO_CONNECTOR_OPTION → CÓ mục 「連携しない」 (value '0'). Máy chưa nối thiết
@@ -456,8 +466,10 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
         if (loadedDeviceId !== null) {
             expect(
                 loadedDeviceId,
-                'định danh máy phải là 64 hex thường — BE kiểm bằng AgentIdFormat',
-            ).toMatch(/^[0-9a-f]{64}$/)
+                'định danh máy phải là GUID của workstation — BE parse bằng ' +
+                    'HttpHeaderDeviceContextAccessor → Guid.TryParse. Chuỗi 64 hex là id của ' +
+                    'AGENT, một giá trị KHÁC và chỉ dùng ở route /tenant/agent-config',
+            ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
         }
 
         const body = (await res.json()) as InpScreenGetBody
