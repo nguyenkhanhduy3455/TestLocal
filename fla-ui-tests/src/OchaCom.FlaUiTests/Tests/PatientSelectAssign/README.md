@@ -199,6 +199,33 @@ KQ-6c === TRNTRN tháng 2026-08 của 患者1: KHÔNG CÓ DÒNG NÀO
 > đúng là hành vi mà bản web đã CỐ Ý port (`TC-LBL-1` của
 > `treatment-header-staff.spec.ts`), nên hai bên cùng thiết kế.
 
+### NHÁNH 受付患者一覧 — ĐÃ ĐO (2026-08-27), hai điểm lệch được XÁC NHẬN
+
+Bảng `wait` trên máy đó vốn rỗng nên nhánh này treo suốt. Đã seed hai dòng:
+
+```sql
+INSERT INTO wait (pat_no, user_no, rdate, chair) VALUES (3, 11, GETDATE(), 1);  -- user_no ≠ att_dr
+INSERT INTO wait (pat_no, user_no, rdate, chair) VALUES (5,  0, GETDATE(), 2);  -- sentinel 未選択
+-- dọn:  DELETE FROM wait WHERE pat_no IN (3, 5);
+```
+
+`患者3` và `患者5` đều có `att_dr = 16「院」`, nên `user_no` của dòng tách được khỏi
+`att_dr`. Chạy `.\run-confirm-patient.ps1 -Case Tc1_ProbeWaitList`:
+
+| Câu | Đo được | Kết luận |
+|---|---|---|
+| `KQ-W1` | ENTER dòng 患者3 (`user_no=11「池田 忠雄」`, `att_dr=16「院」`) → **mở được**, `lbDr` = 「池田 忠雄」 | **DÒNG THẮNG** `att_dr` — đúng `frm203001.cs:698`, và **khớp bản web** |
+| `KQ-W2` | ENTER dòng 患者5 (`user_no=0`) → **BỊ CHẶN** 「ドクターを特定出来ません。…」 | ★ **LỆCH** — WinForm KHÔNG rơi về `att_dr`; bản web rơi về và MỞ màn (`TC-DR-4B` xanh) |
+| `KQ-W3` | DOUBLE-CLICK dòng → **im lặng** | ★ **LỆCH** — no-op đúng `frm203001.cs:303-309`; bản web mở màn bằng chính cử chỉ này (`TC-ROW-1` xanh) |
+
+Vậy **điểm lệch #4 và #5 ở mục 4 nay đã có bằng chứng đo được**, không còn là suy luận
+từ source.
+
+> `Tc1_ProbeWaitList` tách riêng khỏi `Tc0` là có chủ ý: `Tc0` đi qua chục bước và mỗi
+> bước để lại dấu vết (ô 患者番号 còn số cũ, cửa sổ bị lái đi), tới lượt hỏi 受付一覧 thì
+> không còn mốc sạch. Trong chính `Tc1`, `W2` cũng phải chạy **trước** `W1` vì `W1` điều
+> hướng sang 処置入力 rồi F10 về, mà lưới 受付一覧 KHÔNG tự dựng lại (phải F5).
+
 ### ĐIỂM LỆCH MỚI — focus sau khi bị chặn
 
 | | sau `E00005` |
@@ -210,6 +237,16 @@ KQ-6c === TRNTRN tháng 2026-08 của 患者1: KHÔNG CÓ DÒNG NÀO
 click vào ô trước. Nhiều khả năng do dialog của Radix restore focus **sau** lệnh
 `.focus()` trong `openDetail` (`onCloseAutoFocus`). `TC-FOCUS-1` của
 `patient-select-assign-parity.spec.ts` khoá điểm này.
+
+### THÊM BA CÁI BẪY UIA đã trả giá (2026-08-27)
+
+Tất cả cùng một gốc: **app không nhận `InvokePattern` lẫn UIA `SetFocus`**.
+
+| Bẫy | Triệu chứng | Cách đúng |
+|---|---|---|
+| **ESC trên `frm203001` = 患者確定** | probe bấm ESC để đóng dropdown → app lập tức xác nhận bệnh nhân và rời màn; mọi bước sau đỏ với 「không thấy cboUserNm」, nghe như sai locator | đóng dropdown bằng `Alt+Up`. `BaseForm` map `Escape` → `btnEndEsc_Click` (BaseForm.cs:616-627 → frm203001.cs:487-506) — cùng họ PROBE-GUIDELINE 3.3 |
+| **`Uia.Click` lên DÒNG lưới không dời con trỏ** | ENTER sau đó rơi vào hư không, 患者確定 「im lặng」 | click **chuột thật vào một Ô** của dòng, như `TreatmentGridOps.FocusCell` |
+| **Chọn dòng lưới TỰ ĐIỀN ô 患者番号** | đọc ô ra 「3」 = số bệnh nhân của dòng vừa chọn, tưởng ô bẩn | biết mà trừ ra; `btnEndEsc_Click` đọc `cboPatNo.Text` TRƯỚC lưới (`:500`) nên phải dọn ô nếu muốn đi nhánh `selRow` |
 
 ### CÒN LẠI — hạn chế của HARNESS, không phải của app
 

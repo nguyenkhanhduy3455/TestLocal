@@ -36,7 +36,9 @@
       Dong 診療入力 (khong luu) hoac tat han MENU.exe roi chay lai.
 
 .PARAMETER Case
-    Ten testcase le, vd "Tc3" hoac "PickedCombo". Bo trong = ca fixture assert.
+    Ten testcase le. Ten bat dau bang Tc0/Tc1_Probe duoc hieu la testcase cua
+    fixture PROBE (vd Tc1_ProbeWaitList); con lai la cua fixture assert (vd Tc3).
+    Bo trong = ca fixture assert.
 
 .PARAMETER Diagnostics
     Chay Tc0 (PROBE): do muoi cau hoi, KHONG assert, khong bao gio nem.
@@ -65,9 +67,13 @@ $ns = "OchaCom.FlaUiTests.Tests.PatientSelectAssign"
 # LOC THEO TEN LOP DAY DU — `--filter FullyQualifiedName~<chuoi>` la so KHOP CHUOI
 # CON, nen ten ngan long vao nhau: loc "PatientSelectAssignTests" ma khong can than
 # se vot ca PatientSelectAssignProbeTests. Bai hoc da tra gia o run-high-needs-freewd.ps1.
-if ($Diagnostics) {
+if ($Diagnostics -and $Case -eq "") {
     # Fixture PROBE mang [Explicit] nen luot chay du khong goi toi; loc dich danh thi chay.
     $filter = "FullyQualifiedName~$ns.PatientSelectAssignProbeTests"
+} elseif ($Case -like "Tc0*" -or $Case -like "Tc1_Probe*" -or $Diagnostics) {
+    # Testcase le NAM TRONG fixture PROBE — vd Tc1_ProbeWaitList. Phai loc theo lop
+    # PROBE, khong phai lop assert, neu khong `dotnet test` bao "No test matches".
+    $filter = "FullyQualifiedName~$ns.PatientSelectAssignProbeTests.$Case"
 } elseif ($Case -ne "") {
     $filter = "FullyQualifiedName~$ns.PatientSelectAssignTests&FullyQualifiedName~$Case"
 } else {

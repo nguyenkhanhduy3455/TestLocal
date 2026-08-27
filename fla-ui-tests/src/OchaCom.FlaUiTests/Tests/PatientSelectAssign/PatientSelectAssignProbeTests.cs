@@ -56,6 +56,7 @@ namespace OchaCom.FlaUiTests.Tests.PatientSelectAssign;
 ///  KQ-8   Bệnh nhân thiếu att_dr → nguyên văn hộp thoại? Sau khi OK còn ở 患者選択 không?
 ///         Và FOCUS rơi về control nào sau khi đóng hộp thoại? (:673 / :708 / :724)
 ///  KQ-9   Lưới 受付一覧: double-click có mở màn không (source nói KHÔNG)? Enter thì sao?
+///  KQ-11  Dòng 受付 mang user_no = 0: WinForm CHẶN hay rơi về att_dr? (điểm lệch #4)
 ///  KQ-10  F10 戻る từ 処置入力 có bung hộp thoại gì không?
 /// </code>
 ///
@@ -116,6 +117,144 @@ public sealed class PatientSelectAssignProbeTests : UiTestBase
     {
         try { action(); }
         catch (Exception e) { Log($"    !! bước 「{what}」 lỗi: {e.GetType().Name}: {e.Message}"); }
+    }
+
+    /// <summary>
+    /// <b>PROBE RIÊNG cho nhánh 受付患者一覧</b> — chạy trên app SẠCH, không dính
+    /// trạng thái của Tc0.
+    ///
+    /// <para>Vì sao tách ra: Tc0 đi qua chục bước (gõ 患者番号, mở/đóng hộp thoại, mở
+    /// combo, sang frm203002 rồi F10 về) và mỗi bước để lại dấu vết — đo 2026-08-27,
+    /// tới lượt hỏi 受付一覧 thì ô 患者番号 còn số cũ và cửa sổ đã bị lái đi. Nhánh này
+    /// chỉ cần ĐÚNG HAI thao tác nên chạy sạch là ra ngay.</para>
+    ///
+    /// <para>Tiền đề: bảng <c>wait</c> phải có dòng. Seed (chỉ ĐỌC thì không dựng được):</para>
+    /// <code>
+    ///   INSERT INTO wait (pat_no, user_no, rdate, chair) VALUES (3, 11, GETDATE(), 1);
+    ///   INSERT INTO wait (pat_no, user_no, rdate, chair) VALUES (5,  0, GETDATE(), 2);
+    ///   -- dọn:  DELETE FROM wait WHERE pat_no IN (3, 5);
+    /// </code>
+    /// <para>Chạy: <c>.\run-confirm-patient.ps1 -Case Tc1_ProbeWaitList</c></para>
+    /// </summary>
+    [Test, Order(1)]
+    [Description("Tc1 — PROBE nhánh 受付患者一覧: dòng thắng att_dr, và dòng user_no = 0")]
+    public void Tc1_ProbeWaitList()
+    {
+        using var trace = TestTrace.Begin();
+
+        Log("╔══════════════════════════════════════════════════════════════════╗");
+        Log("║ PROBE nhánh 受付患者一覧 — app sạch, chỉ hai thao tác             ║");
+        Log("╚══════════════════════════════════════════════════════════════════╝");
+
+        if (_db is null)
+        {
+            Kq("W0", $"KHÔNG đọc được DB — {DbUnavailableReason ?? "db.enabled = false"}");
+            return;
+        }
+
+        var waitRows = _db.WaitRows();
+        var doctors = _db.Doctors();
+        Kq("W0", $"bảng wait: {waitRows.Count} dòng — " +
+                 string.Join(" / ", waitRows.Select(w => $"患者{w.PatNo}→user_no={w.UserNo?.ToString() ?? "NULL"}")));
+        if (waitRows.Count == 0) return;
+
+        PatientSelectScreen? screen = null;
+        Safe("mở 患者選択", () => { screen = _flow.Open(); screen.DoctorRoster = doctors; trace.Shot("W0-man-patient-select"); });
+        if (screen is null) return;
+
+        string? NameOf(int? no) => doctors.FirstOrDefault(d => d.UserNo == no)?.UserNm;
+
+        // THỨ TỰ CÓ CHỦ Ý: W2 (điểm lệch #4) chạy TRƯỚC.
+        //
+        // W1 điều hướng sang 処置入力 rồi F10 quay về, và lưới 受付患者一覧 KHÔNG tự
+        // dựng lại — đo 2026-08-27: chạy W1 trước thì W2 báo 「không thấy dòng 患者5」.
+        // Câu quan trọng nhất phải được hỏi lúc màn hình còn sạch.
+        // ── W2: dòng mang user_no = 0 — ĐIỂM LỆCH #4 ────────────────────────
+        Safe("W2 dong user_no = 0", () =>
+        {
+            var row = waitRows.FirstOrDefault(w => w.UserNo == 0);
+            if (row is null) { Kq("W2", "không có dòng nào mang user_no = 0"); return; }
+
+            var att = _db.Attending(row.PatNo);
+            if (!screen!.SelectGridRowByPatNo(row.PatNo)) { Kq("W2", $"không thấy dòng 患者{row.PatNo}"); return; }
+
+            var r = _flow.ConfirmAndObserve(() => screen.ConfirmSelectedRowWithEnter());
+            trace.Shot("W2-user-no-0");
+            Kq("W2", $"ENTER trên dòng 患者{row.PatNo} (user_no=0, att_dr={att?.AttDr}「{NameOf(att?.AttDr) ?? "?"}」) → {r}");
+            Kq("W2b", r.Blocked
+                ? "⇒ WinForm CHẶN, KHÔNG rơi về att_dr — đúng frm203001.cs:698 (kiểm CỘT, không kiểm giá trị). " +
+                  "Bản web rơi về att_dr và MỞ màn (TC-DR-4B đã xanh) ⇒ XÁC NHẬN LỆCH."
+                : r.Opened
+                    ? $"⇒ WinForm MỞ ĐƯỢC, nhãn lbDr = 「{_flow.DetailDoctorLabel(r.DetailWindow!)}」 " +
+                      "— tức CÓ rơi về att_dr, giống bản web ⇒ KHÔNG phải lệch."
+                    : "⇒ im lặng — đọc ảnh trong artifacts trước khi kết luận");
+
+            if (r.Opened) Safe("F10 về", () => _flow.ReturnToPatientSelect(r.DetailWindow!));
+            else _flow.DrainDialogs();
+        });
+
+        // ── W1: dòng mang user_no > 0 và KHÁC att_dr ────────────────────────
+        Safe("W1 dong user_no hop le", () =>
+        {
+            WaitRow? row = null;
+            foreach (var w in waitRows)
+            {
+                if (w.UserNo is null or <= 0) continue;
+                var a = _db.Attending(w.PatNo);
+                if (a is not null && a.AttDr != w.UserNo) { row = w; break; }
+            }
+            if (row is null) { Kq("W1", "không có dòng nào user_no > 0 và khác att_dr"); return; }
+
+            var att = _db.Attending(row.PatNo);
+            if (!screen!.SelectGridRowByPatNo(row.PatNo)) { Kq("W1", $"không thấy dòng 患者{row.PatNo}"); return; }
+
+            var r = _flow.ConfirmAndObserve(() => screen.ConfirmSelectedRowWithEnter());
+            trace.Shot("W1-enter-tren-dong");
+            Kq("W1", $"ENTER trên dòng 患者{row.PatNo} (user_no={row.UserNo}「{NameOf(row.UserNo) ?? "?"}」, " +
+                     $"att_dr={att?.AttDr}「{NameOf(att?.AttDr) ?? "?"}」) → {r}");
+
+            if (r.Opened)
+            {
+                var lbl = _flow.DetailDoctorLabel(r.DetailWindow!);
+                Kq("W1b", $"nhãn lbDr = 「{lbl}」 ⇒ " +
+                          (lbl == NameOf(row.UserNo) ? "DÒNG THẮNG — khớp frm203001.cs:698"
+                           : lbl == NameOf(att?.AttDr) ? "★ att_dr THẮNG — KHÁC source"
+                           : "★ nguồn khác"));
+                Safe("F10 về", () =>
+                {
+                    _flow.ReturnToPatientSelect(r.DetailWindow!);
+                    screen = _flow.Screen;
+                    screen.DoctorRoster = doctors;
+                    // F5 = chgViewType(viewType.wait) — dựng lại lưới 受付患者一覧, vì
+                    // quay về từ 処置入力 KHÔNG tự làm mới nó.
+                    screen.RefreshWaitList();
+                });
+            }
+            else _flow.DrainDialogs();
+        });
+
+        // ── W3: double-click có phải no-op không ────────────────────────────
+        Safe("W3 double-click", () =>
+        {
+            var row = waitRows[0];
+            if (!screen!.SelectGridRowByPatNo(row.PatNo)) { Kq("W3", $"không thấy dòng 患者{row.PatNo}"); return; }
+
+            var c = Uia.Center(screen.ViewGrid);
+            var r = _flow.ConfirmAndObserve(() => Uia.DoubleClickPhysical(c.X, c.Y), TimeSpan.FromSeconds(8));
+            trace.Shot("W3-double-click");
+            Kq("W3", $"DOUBLE-CLICK dòng 患者{row.PatNo} → {r}" +
+                     (r.Silent
+                        ? "  ⇒ NO-OP, đúng source: dgvView_CellDoubleClick có câu defData BỊ COMMENT " +
+                          "(frm203001.cs:303-309). Bản web MỞ màn bằng chính cử chỉ này ⇒ XÁC NHẬN LỆCH."
+                        : "  ⇒ CÓ phản ứng — khác source, đọc lại frm203001.cs:303-309"));
+
+            if (r.Opened) Safe("F10 về", () => _flow.ReturnToPatientSelect(r.DetailWindow!));
+            else _flow.DrainDialogs();
+        });
+
+        Log("╔══════════════════════════════════════════════════════════════════╗");
+        Log("║ HẾT PROBE 受付一覧                                                ║");
+        Log("╚══════════════════════════════════════════════════════════════════╝");
     }
 
     [Test, Order(0)]
@@ -410,58 +549,129 @@ public sealed class PatientSelectAssignProbeTests : UiTestBase
             }
         });
 
-        // ── KQ-9 ────────────────────────────────────────────────────────────
+        // ── KQ-9 + KQ-11 — nhánh 受付患者一覧 ──────────────────────────────
         Safe("KQ-9 luoi 受付一覧", () =>
         {
             if (waitRows.Count == 0)
             {
-                Kq("9", "bỏ qua — bảng wait rỗng nên lưới 受付患者一覧 không có dòng nào");
+                Kq("9", "bỏ qua — bảng wait rỗng nên lưới 受付患者一覧 không có dòng nào. " +
+                        "Seed bằng: INSERT INTO wait (pat_no, user_no, rdate, chair) VALUES (…)");
                 return;
             }
 
-            screen!.ClearDoctor();
-            screen.ClearPatNo();
-            var target = waitRows[0];
-            var picked = screen.SelectGridRowByPatNo(target.PatNo);
-            Kq("9", $"chọn dòng 患者{target.PatNo} (user_no={target.UserNo?.ToString() ?? "NULL"}) trên lưới: " +
-                    (picked ? "được" : "KHÔNG thấy dòng đó"));
-            if (!picked) return;
-
-            // Double-click TRƯỚC: source nói nó là no-op, đo để chắc.
-            var center = Uia.Center(screen.ViewGrid);
-            var dbl = _flow.ConfirmAndObserve(
-                () => Uia.DoubleClickPhysical(center.X, center.Y),
-                TimeSpan.FromSeconds(6));
-            trace.Shot("07-KQ9-double-click");
-            Kq("9b", $"DOUBLE-CLICK trên dòng lưới → {dbl}" +
-                     (dbl.Silent
-                        ? "  ⇒ đúng như source: dgvView_CellDoubleClick có defData BỊ COMMENT (frm203001.cs:303-309). " +
-                          "Bản Playwright mở màn chi tiết bằng chính cử chỉ này ⇒ LỆCH."
-                        : "  ⇒ KHÁC source: source nói câu defData đang bị comment, mà thực tế lại có phản ứng."));
-            if (dbl.Opened)
+            // Dòng mang user_no > 0 và KHÁC att_dr — chỉ khi khác mới tách được hai nguồn.
+            WaitRow? usable = null;
+            foreach (var row in waitRows)
             {
-                Safe("F10 sau double-click", () => { _flow.ReturnToPatientSelect(dbl.DetailWindow!); screen = _flow.Screen; screen.DoctorRoster = doctors; });
-                return;
+                if (row.UserNo is null or <= 0) continue;
+                var att = _db!.Attending(row.PatNo);
+                if (att is not null && att.AttDr != row.UserNo) { usable = row; break; }
             }
-            _flow.DrainDialogs();
 
-            // Enter trên lưới = defData(inpKbn.selRow, …)
-            screen!.SelectGridRowByPatNo(target.PatNo);
-            var ent = _flow.ConfirmAndObserve(() => screen.ConfirmSelectedRowWithEnter());
-            trace.Shot("08-KQ9-enter");
-            Kq("9c", $"ENTER trên dòng lưới → {ent}");
-            if (ent.Opened)
+            if (usable is null)
             {
-                var lbl = _flow.DetailDoctorLabel(ent.DetailWindow!);
-                var rowNm = doctors.FirstOrDefault(d => d.UserNo == target.UserNo)?.UserNm;
-                Kq("9d", $"header lbDr = 「{lbl}」 · user_no của DÒNG = {target.UserNo?.ToString() ?? "NULL"} " +
-                         $"(「{rowNm ?? "?"}」)");
-                Safe("F10 sau Enter", () => { _flow.ReturnToPatientSelect(ent.DetailWindow!); screen = _flow.Screen; screen.DoctorRoster = doctors; });
+                Kq("9", "có dòng 受付 nhưng không dòng nào mang user_no > 0 KHÁC att_dr — " +
+                        "không tách được hai nguồn. Dòng đang có: " +
+                        string.Join(" / ", waitRows.Select(w =>
+                            $"患者{w.PatNo}→user_no={w.UserNo?.ToString() ?? "NULL"}")));
             }
             else
             {
-                _flow.DrainDialogs();
+                screen!.ClearDoctor();
+                screen.ClearPatNo();
+                var picked = screen.SelectGridRowByPatNo(usable.PatNo);
+                Kq("9", $"chọn dòng 患者{usable.PatNo} (user_no={usable.UserNo}) trên lưới: " +
+                        (picked ? "được" : "KHÔNG thấy dòng đó"));
+
+                if (picked)
+                {
+                    // DOUBLE-CLICK trước: source nói dgvView_CellDoubleClick có câu defData
+                    // BỊ COMMENT (frm203001.cs:303-309) nên phải là no-op.
+                    var center = Uia.Center(screen.ViewGrid);
+                    var dbl = _flow.ConfirmAndObserve(
+                        () => Uia.DoubleClickPhysical(center.X, center.Y),
+                        TimeSpan.FromSeconds(8));
+                    trace.Shot("07-KQ9-double-click");
+                    Kq("9b", $"DOUBLE-CLICK → {dbl}" +
+                             (dbl.Silent
+                                ? "  ⇒ đúng source: defData bị comment. Bản Playwright MỞ được màn " +
+                                  "bằng chính cử chỉ này ⇒ LỆCH."
+                                : "  ⇒ KHÁC source: source nói câu defData đang bị comment."));
+
+                    if (dbl.Opened)
+                    {
+                        Safe("F10 sau dbl", () => { _flow.ReturnToPatientSelect(dbl.DetailWindow!); screen = _flow.Screen; screen.DoctorRoster = doctors; });
+                    }
+                    else
+                    {
+                        _flow.DrainDialogs();
+
+                        // ENTER trên dòng = defData(inpKbn.selRow, …), frm203001.cs:287-296.
+                        screen!.SelectGridRowByPatNo(usable.PatNo);
+                        var ent = _flow.ConfirmAndObserve(() => screen.ConfirmSelectedRowWithEnter());
+                        trace.Shot("08-KQ9-enter");
+                        Kq("9c", $"ENTER trên dòng → {ent}");
+
+                        if (ent.Opened)
+                        {
+                            var lbl = _flow.DetailDoctorLabel(ent.DetailWindow!);
+                            var rowNm = doctors.FirstOrDefault(d => d.UserNo == usable.UserNo)?.UserNm;
+                            var att = _db!.Attending(usable.PatNo);
+                            var attNm = doctors.FirstOrDefault(d => d.UserNo == att?.AttDr)?.UserNm;
+                            Kq("9d", $"nhãn lbDr = 「{lbl}」 · user_no của DÒNG = {usable.UserNo}「{rowNm ?? "?"}」 " +
+                                     $"· att_dr = {att?.AttDr}「{attNm ?? "?"}」 ⇒ " +
+                                     (lbl == rowNm ? "DÒNG THẮNG (khớp frm203001.cs:698)"
+                                      : lbl == attNm ? "★ att_dr THẮNG — KHÁC source"
+                                      : "★ một nguồn khác"));
+                            Safe("F10 sau Enter", () => { _flow.ReturnToPatientSelect(ent.DetailWindow!); screen = _flow.Screen; screen.DoctorRoster = doctors; });
+                        }
+                        else
+                        {
+                            _flow.DrainDialogs();
+                        }
+                    }
+                }
             }
+
+            // ── KQ-11: dòng 受付 mang user_no = 0 ─────────────────────────────
+            //
+            // ĐÂY là điểm lệch #4. WinForm ở nhánh selRow kiểm SỰ TỒN TẠI CỦA CỘT chứ
+            // không kiểm giá trị (`dt.Columns.Contains("user_no")`, frm203001.cs:698), mà
+            // lưới 受付患者一覧 LUÔN có cột đó (PatInfoList.cs:177) — nên nó lấy luôn 0 rồi
+            // CHẶN E00027. Bản web viết `waitRowUserNo || patientAttDr` nên rơi về att_dr
+            // và MỞ ĐƯỢC màn (TC-DR-4B bên đó đã xanh).
+            var zeroRow = waitRows.FirstOrDefault(w => w.UserNo == 0);
+            if (zeroRow is null)
+            {
+                Kq("11", "không có dòng 受付 nào mang user_no = 0 — không dựng được điểm lệch #4. " +
+                         "Seed: INSERT INTO wait (pat_no, user_no, rdate) VALUES (<pat>, 0, GETDATE())");
+                return;
+            }
+
+            var attZero = _db!.Attending(zeroRow.PatNo);
+            screen!.ClearDoctor();
+            screen.ClearPatNo();
+            if (!screen.SelectGridRowByPatNo(zeroRow.PatNo))
+            {
+                Kq("11", $"không thấy dòng 受付 của 患者{zeroRow.PatNo} trên lưới");
+                return;
+            }
+
+            var r11 = _flow.ConfirmAndObserve(() => screen.ConfirmSelectedRowWithEnter());
+            trace.Shot("09-KQ11-user-no-0");
+            Kq("11", $"ENTER trên dòng 患者{zeroRow.PatNo} (user_no=0, att_dr={attZero?.AttDr}) → {r11}");
+            Kq("11b", r11.Blocked
+                ? "⇒ WinForm CHẶN, KHÔNG rơi về att_dr — đúng frm203001.cs:698 (kiểm cột, không kiểm giá trị). " +
+                  "Bản web rơi về att_dr và MỞ màn ⇒ XÁC NHẬN LỆCH."
+                : r11.Opened
+                    ? $"⇒ WinForm MỞ ĐƯỢC màn, nhãn lbDr = 「{_flow.DetailDoctorLabel(r11.DetailWindow!)}」 " +
+                      "— tức nó CÓ rơi về att_dr, giống bản web ⇒ KHÔNG phải lệch."
+                    : "⇒ im lặng, đọc ảnh trong artifacts trước khi kết luận");
+
+            if (r11.Opened)
+                Safe("F10 sau KQ-11", () => { _flow.ReturnToPatientSelect(r11.DetailWindow!); screen = _flow.Screen; screen.DoctorRoster = doctors; });
+            else
+                _flow.DrainDialogs();
         });
 
         Safe("don dep hop thoai con lai", () =>

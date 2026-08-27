@@ -91,17 +91,33 @@ public sealed class PatientSelectScreen
         var edit = Uia.EditInside(PatNoCombo);
         ClickPhysically(edit, "ô 患者番号");
 
-        // End → Shift+Home → Delete, KHÔNG Ctrl+A.
+        // Xoá bằng BACKSPACE từng ký tự — KHÔNG Ctrl+A, KHÔNG Shift+Home.
         //
-        // `TextBox` của WinForms không nhận Ctrl+A làm 全選択 (quirk cũ của WinForms;
-        // `Uia.SetText` dùng Ctrl+A nên cũng không xoá được ô này). Đo 2026-08-27:
-        // giá trị cũ nằm nguyên và các lần gõ NỐI VÀO NHAU — ảnh chụp cho thấy ô mang
-        // 「19282157」 sau khi gõ lần lượt 19282 rồi 15727, và 患者確定 bung E00005 vì
-        // số đó không có thật. Log khi đó trông y như 「app chặn sai bệnh nhân」.
-        Keyboard.Press(VirtualKeyShort.END);
-        Keyboard.TypeSimultaneously(VirtualKeyShort.SHIFT, VirtualKeyShort.HOME);
-        Keyboard.Press(VirtualKeyShort.DELETE);
-        Waits.Step();
+        // Đã thử và hỏng cả hai cách chọn-rồi-xoá (đo 2026-08-27):
+        //   Ctrl+A + Delete       → `Uia.SetText` dùng cách này; WinForms TextBox không
+        //                           nhận Ctrl+A làm 全選択 (quirk cũ)
+        //   End + Shift+Home + Delete → cũng không select được
+        // Hệ quả: giá trị cũ nằm nguyên, các lần gõ NỐI VÀO NHAU — ảnh chụp cho thấy ô
+        // mang 「19282157」 sau khi gõ lần lượt 19282 rồi 15727, rồi 患者確定 bung E00005
+        // vì số đó không có thật. Log khi ấy trông y như 「app chặn sai bệnh nhân」.
+        //
+        // Nhưng phím RÕ RÀNG tới được control (chính việc nối chuỗi chứng minh), nên
+        // BackSpace lặp là chắc ăn: đưa caret về cuối rồi xoá lùi dư ra vài nhịp.
+        // LẶP tới khi ô rỗng thật, đừng tin một lần đọc: `Uia.ValueOf` trên ô này đọc
+        // trễ (đo 2026-08-27 — tính số ký tự theo nó thì gõ thiếu BackSpace và còn sót).
+        var cleared = false;
+        for (var attempt = 0; attempt < 5 && !cleared; attempt++)
+        {
+            Keyboard.Press(VirtualKeyShort.END);
+            for (var i = 0; i < 16; i++) Keyboard.Press(VirtualKeyShort.BACK);
+            Waits.Step();
+            cleared = Txt.N(Uia.ValueOf(edit)).Length == 0;
+        }
+
+        if (!cleared)
+            throw new InvalidOperationException(
+                $"Không dọn được ô 患者番号 (còn 「{Txt.N(Uia.ValueOf(edit))}」 sau 5 lượt BackSpace). " +
+                "Phím không tới được ô, hoặc có hộp thoại đang chắn (PROBE-GUIDELINE 3.4).");
 
         if (value.Length > 0)
         {
@@ -115,9 +131,8 @@ public sealed class PatientSelectScreen
         if (actual == Txt.N(value)) return;
 
         throw new InvalidOperationException(
-            $"Ghi ô 患者番号 = 「{value}」 nhưng đọc lại ra 「{actual}」. Ô chưa được dọn (End/" +
-            "Shift+Home/Delete không ăn), phím không tới được ô, hoặc có hộp thoại đang chắn " +
-            "(PROBE-GUIDELINE 3.4).");
+            $"Ghi ô 患者番号 = 「{value}」 nhưng đọc lại ra 「{actual}」. Phím không tới được ô, " +
+            "hoặc có hộp thoại đang chắn (PROBE-GUIDELINE 3.4).");
     }
 
     // ── Ｄｒ． / 衛生士 ──────────────────────────────────────────────────────
@@ -204,6 +219,25 @@ public sealed class PatientSelectScreen
 
         var (x, y) = Uia.Center(element);
         Uia.LeftClickPhysical(x, y);
+        Waits.Step();
+    }
+
+    /// <summary>
+    /// Đóng dropdown đang bung mà KHÔNG chốt lựa chọn — bằng <c>Alt+Up</c>.
+    ///
+    /// <para><b>TUYỆT ĐỐI KHÔNG dùng ESC ở màn này.</b> <c>BaseForm</c> map
+    /// <c>Keys.Escape</c> về <c>btnEndEsc_Click</c> (BaseForm.cs:616-627), và
+    /// frm203001 override nó thành <b>患者確定</b> (frm203001.cs:487-506) — tức ESC
+    /// KHÔNG phải 「huỷ」 mà là 「xác nhận bệnh nhân」.</para>
+    ///
+    /// <para>Đã vấp thật 2026-08-27: probe bấm ESC để đóng dropdown sau khi đi hết
+    /// combo, app lập tức 患者確定 và rời khỏi 患者選択; mọi bước sau đó đỏ với
+    /// 「không thấy control cboUserNm」 — nghe như locator sai, thật ra màn hình đã bị
+    /// chính test lái đi. Cùng họ với PROBE-GUIDELINE 3.3 (ESC trên lưới 処置 = 戻る).</para>
+    /// </summary>
+    private static void CloseDropdown()
+    {
+        Keyboard.TypeSimultaneously(VirtualKeyShort.ALT, VirtualKeyShort.UP);
         Waits.Step();
     }
 
@@ -315,8 +349,7 @@ public sealed class PatientSelectScreen
             Waits.Step();
         }
 
-        Keyboard.Press(VirtualKeyShort.ESCAPE);
-        Waits.Step();
+        CloseDropdown();
         throw new InvalidOperationException(
             $"Mở dropdown rồi đi {maxSteps} bước vẫn không tới 「{wanted}」. Nhãn đi qua: " +
             string.Join(" → ", seen.Select(x => x.Length == 0 ? "「」" : $"「{x}」")));
@@ -342,8 +375,7 @@ public sealed class PatientSelectScreen
             Waits.Step();
         }
 
-        Keyboard.Press(VirtualKeyShort.ESCAPE);   // đóng lại, KHÔNG chốt lựa chọn
-        Waits.Step();
+        CloseDropdown();
         return seen;
     }
 
@@ -415,27 +447,44 @@ public sealed class PatientSelectScreen
     /// </summary>
     public void ConfirmSelectedRowWithEnter()
     {
-        Uia.Click(ViewGrid);
-        Waits.Step();
+        // KHÔNG click lại lưới ở đây: con trỏ đã được
+        // <see cref="SelectGridRowByPatNo"/> đặt bằng click chuột thật, và một cú
+        // Uia.Click(ViewGrid) (Invoke) vừa vô tác dụng vừa có thể dời con trỏ đi.
         Keyboard.Press(VirtualKeyShort.ENTER);
         Waits.Step();
     }
 
-    /// <summary>Chọn dòng lưới theo 患者番号; trả về false khi lưới không có dòng đó.</summary>
+    /// <summary>
+    /// Đặt con trỏ lưới lên dòng của một 患者番号, bằng CLICK CHUỘT THẬT vào một Ô.
+    ///
+    /// <para><b>Không <c>Uia.Click</c> lên phần tử DÒNG.</b> Đo 2026-08-27: Invoke trên
+    /// dòng KHÔNG dời <c>CurrentCellAddress</c> của <c>DataGridView</c> — Enter sau đó
+    /// rơi vào hư không và 患者確定 「im lặng」. Cùng đúng cái mà
+    /// <c>TreatmentGridOps.FocusCell</c> đã phải làm cho lưới 処置.</para>
+    ///
+    /// <para>Rect rỗng thì BỎ QUA dòng đó: <c>LeftClickPhysical</c> bắn vào toạ độ màn
+    /// hình nên <c>(0,0)</c> là click vào góc trái trên DESKTOP, app mất foreground.</para>
+    /// </summary>
     public bool SelectGridRowByPatNo(int patNo)
     {
         var grid = new WinFormsGrid(ViewGrid);
-        var rows = grid.RowElements();
-        foreach (var rowElement in rows)
+        foreach (var rowElement in grid.RowElements())
         {
             var row = grid.Row(rowElement);
             if (row.IsEmpty) continue;
-            if (row.Cells.Any(c => int.TryParse(Digits(c), out var n) && n == patNo))
-            {
-                Uia.Click(rowElement);
-                Waits.Step();
-                return true;
-            }
+            if (!row.Cells.Any(c => int.TryParse(Digits(c), out var n) && n == patNo)) continue;
+
+            var cells = Uia.Children(rowElement).ToList();
+            if (cells.Count == 0) continue;
+
+            // Ô đầu (患者番号) — luôn có và nằm trong khung nhìn nếu dòng đọc được.
+            var rect = Uia.RectOf(cells[0]);
+            if (rect is null || rect.Value.Width <= 0 || rect.Value.Height <= 0) continue;
+
+            var (x, y) = Uia.Center(cells[0]);
+            Uia.LeftClickPhysical(x, y);
+            Waits.Step();
+            return true;
         }
         return false;
     }
@@ -446,6 +495,19 @@ public sealed class PatientSelectScreen
     {
         try { Uia.ForceForeground(_window.Properties.NativeWindowHandle.ValueOrDefault); }
         catch { /* không lấy được handle thì bỏ qua, phím vẫn đi vào cửa sổ đang focus */ }
+    }
+
+    /// <summary>
+    /// F5 — dựng lại lưới ≪受付患者一覧≫ (<c>chgViewType(viewType.wait)</c>).
+    ///
+    /// <para>Quay về từ 処置入力 KHÔNG tự làm mới lưới, nên dòng 受付 vừa dùng có thể
+    /// không còn đọc được — đo 2026-08-27.</para>
+    /// </summary>
+    public void RefreshWaitList()
+    {
+        FocusWindow();
+        Keyboard.Press(VirtualKeyShort.F5);
+        Waits.Step();
     }
 
     /// <summary>Cửa sổ 患者選択 còn đang hiện không — sang frm203002 thì nó bị <c>Hide()</c>.</summary>
