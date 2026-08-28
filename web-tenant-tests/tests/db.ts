@@ -1325,6 +1325,75 @@ export async function findMstTrt(onDate: string, trtCd: number): Promise<MstTrtR
     })
 }
 
+// ─── insurance (患者保険情報) — 枝番 có hiệu lực tại một 診療日 ────────────────
+//
+// WinForm `modPat.GetValidSubCode2` (modPat.cs:205-222) duyệt danh sách 枝番 theo
+// `pat_br` TĂNG DẦN rồi dừng ở 枝番 đầu tiên có 資格取得年月日 (`br_dt`) LỚN HƠN 基準日
+// ⇒ 枝番 có hiệu lực = cái MỚI NHẤT đã lấy tư cách vào hoặc trước ngày đó. KHÔNG phải
+// `MAX(pat_br)`, và cũng KHÔNG phải cửa sổ 保険適用期間 (`med_st_dt`/`med_ed_dt`).
+//
+// Spec cần đọc chính bảng này để TỰ TÍNH kỳ vọng: hardcode dis_flg vào test sẽ xanh
+// giả ở tenant khác, còn tính từ dữ liệu thật thì assert vẫn là assert (Rule 15).
+
+export interface InsuranceBranch {
+    patBr: number
+    /** 資格取得年月日 — null = 「取得日不明」, luôn coi là đã có hiệu lực. */
+    brDt: string | null
+    /** 保険適用期間 — CHỈ để chứng minh nó KHÔNG tham gia việc chọn 枝番. */
+    medStDt: string | null
+    medEdDt: string | null
+    /** 身障者フラグ — >= 1 mở dòng 105 特１/特２ (modSave.cs:3097 / :3167). */
+    disFlg: number
+    /** 老人フラグ — == 1 chuyển cột điểm sang score3 (modSave.cs:3389). */
+    oldFlg: number
+}
+
+/** Mọi 枝番 còn sống của một bệnh nhân, theo `pat_br` tăng dần. */
+export async function insuranceBranches(patNo: number): Promise<InsuranceBranch[]> {
+    return withDb(async (c) => {
+        const r = await c.query<Record<string, unknown>>(
+            `SELECT pat_br, br_dt, med_st_dt, med_ed_dt, dis_flg, old_flg
+               FROM view_insurance_active
+              WHERE pat_no = $1
+              ORDER BY pat_br`,
+            [patNo],
+        )
+        return r.rows.map((row) => ({
+            patBr: Number(row['pat_br'] ?? 0),
+            brDt: row['br_dt'] === null || row['br_dt'] === undefined ? null : isoDay(row['br_dt']),
+            medStDt:
+                row['med_st_dt'] === null || row['med_st_dt'] === undefined
+                    ? null
+                    : isoDay(row['med_st_dt']),
+            medEdDt:
+                row['med_ed_dt'] === null || row['med_ed_dt'] === undefined
+                    ? null
+                    : isoDay(row['med_ed_dt']),
+            disFlg: Number(row['dis_flg'] ?? 0),
+            oldFlg: Number(row['old_flg'] ?? 0),
+        }))
+    })
+}
+
+/**
+ * 枝番 có hiệu lực tại `onDate` theo đúng luật của `GetValidSubCode2`.
+ * `null` = bệnh nhân không có 枝番 nào lấy tư cách vào/trước ngày đó.
+ */
+export function branchInForceOn(
+    branches: readonly InsuranceBranch[],
+    onDate: string,
+): InsuranceBranch | null {
+    const valid = branches.filter((b) => b.brDt === null || b.brDt <= onDate)
+    if (valid.length === 0) return null
+    // Mới nhất theo br_dt; trùng ngày thì 枝番 lớn hơn thắng (WinForm duyệt tăng dần
+    // và giữ cái cuối cùng khớp). br_dt null xếp thấp nhất — 枝番 có ngày luôn hơn.
+    return valid.reduce((best, b) =>
+        (b.brDt ?? '') > (best.brDt ?? '') || ((b.brDt ?? '') === (best.brDt ?? '') && b.patBr > best.patBr)
+            ? b
+            : best,
+    )
+}
+
 // ─── person (患者マスタ) — 担当医 / 衛生士 dùng làm fallback của 患者確定 ──────
 //
 // `frm203001.defData` lấy `person.dr` / `person.staff` khi combo Dr./衛生士 để

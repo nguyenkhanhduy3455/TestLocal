@@ -69,8 +69,10 @@
  * ─── NGOÀI PHẠM VI ───────────────────────────────────────────────────────────
  *  - GATE 更新区分 (変更/閲覧 không tự tính): phải đi qua F8 ở màn chọn bệnh nhân,
  *    đã có spec riêng `patient-select-f8-view-mode.spec.ts`.
- *  - 身障者 特別対応加算 (dis_flg ≥ 1, modSave.cs:3076-3088): chỉ bung với bệnh
- *    nhân có cờ khuyết tật — phụ thuộc dữ liệu, không tất định trên tenant demo.
+ *  - 身障者 特別対応加算 (dis_flg ≥ 1, modSave.cs:3097-3110): bệnh nhân demo mặc
+ *    định của file này (TEST_PAT_NO) có dis_flg = 0 nên nhánh đó không bung ở đây.
+ *    Nó được khoá riêng ở `auto-santei-insurance-branch.spec.ts`, cùng với câu hỏi
+ *    「枝番 nào cấp dis_flg khi nhập lùi ngày」 (modPat.GetValidSubCode2).
  */
 import { expect, test, type Page } from "@playwright/test";
 
