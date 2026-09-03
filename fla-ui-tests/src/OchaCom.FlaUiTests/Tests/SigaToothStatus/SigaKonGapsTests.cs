@@ -512,13 +512,28 @@ public sealed class SigaKonGapsTests : UiTestBase
     {
         using var trace = TestTrace.Begin();
 
+        // ⚠️ PHẢI ĐÓNG MÀN HÌNH THẬT TRƯỚC, rồi mới xoá dòng SIGA.
+        //
+        // `pGet_SIGA` — chỗ WinForm tạo dòng khi thiếu — chạy trong `modPat.Get_PatRs`, mà
+        // hàm đó chỉ được gọi từ 患者確定 ở frm203001 (frm203001.cs:1047). Mở lại màn hình
+        // khi frm203002 CÒN ĐANG MỞ là no-op: `AppNavigator.OpenTreatmentEntry` trả về cửa
+        // sổ có sẵn, không đi qua 患者選択, nên `pGet_SIGA` không chạy lần nào.
+        //
+        // Đo được 2026-09-03: bản đầu của testcase này đỏ sau 3 giây với 「app không tạo
+        // dòng」 — trong khi app chưa hề có cơ hội chạy đường tạo dòng.
+        var back = _flow.PressBack("いいえ", trace);
+        Log("đóng màn hình trước khi xoá dòng SIGA: " + back);
+        Assert.That(TreatmentScreenAlive(), Is.False,
+            "Không đóng được màn 診療入力 nên lượt mở lại sẽ là no-op và app không bao giờ chạy " +
+            $"pGet_SIGA. {back}");
+
         var deleted = _db.DeleteSigaRow(PatNo);
-        Log($"đã xoá {deleted} dòng SIGA của bệnh nhân {PatNo} — mở lại màn 診療入力 để xem app làm gì.");
+        Log($"đã xoá {deleted} dòng SIGA của bệnh nhân {PatNo} — mở lại 診療入力 để xem app làm gì.");
         Assert.That(_db.HasSigaRow(PatNo), Is.False, "harness: dòng SIGA chưa bị xoá thật");
 
         try
         {
-            // WinForm tạo dòng NGAY LÚC MỞ MÀN, không đợi F9: modKonSiga.pGet_SIGA
+            // WinForm tạo dòng NGAY LÚC 患者確定, không đợi F9: modKonSiga.pGet_SIGA
             // 「レコードがない場合作成する」 (modKonSiga.cs:70-84) và Siga.getSigaData cũng
             // tự chèn mặc định khi không tìm thấy (Siga.cs:113 → insertDefaultSiga).
             ReopenTreatmentScreen();
