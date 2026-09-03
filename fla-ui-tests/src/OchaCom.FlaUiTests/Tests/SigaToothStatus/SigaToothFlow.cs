@@ -174,7 +174,7 @@ public sealed class SigaToothFlow
     /// <para>PROBE-GUIDELINE 3.4: hộp thoại lạ chắn màn hình thì mọi assert sau đó đổ oan
     /// cho app. Trả về danh sách đã dẹp để testcase in ra thay vì im lặng.</para>
     /// </summary>
-    public IReadOnlyList<string> DismissAll(int maxRounds = 6)
+    public IReadOnlyList<string> DismissAll(int maxRounds = 6, TestTrace? trace = null)
     {
         var seen = new List<string>();
         for (var round = 0; round < maxRounds; round++)
@@ -189,8 +189,25 @@ public sealed class SigaToothFlow
                 catch { continue; }
 
                 seen.Add(text);
-                if (!Dialogs.ClickButton(d, "いいえ", "No", "キャンセル", "Cancel", "OK", "はい", "Yes"))
-                    Dialogs.ClickButtonContaining(d, "戻る");
+
+                // ⛔ KHÔNG BAO GIỜ có 「はい」/「Yes」 trong danh sách này.
+                //
+                // Hộp thoại hay chắn màn hình nhất ở đây là dirty gate
+                // 「処置データは、変更されています。保存しますか？」, và 「はい」 của nó là
+                // modSave.SaveData — XOÁ SẠCH rồi chèn lại TOÀN BỘ 処置行 của tháng. Một
+                // hàm mang tên 「dẹp hộp thoại」 mà lỡ tay bấm はい là ghi đè cả tháng dữ
+                // liệu bệnh nhân, và không có gì trong log nói cho biết điều đó vừa xảy ra.
+                //
+                // Không nút nào khớp thì để NGUYÊN hộp thoại và ghi lại nguyên văn:
+                // testcase đọc `seen` rồi tự quyết, còn hơn là bấm liều.
+                if (!Dialogs.ClickButton(d, "いいえ", "No", "キャンセル", "Cancel", "OK"))
+                {
+                    if (!Dialogs.ClickButtonContaining(d, "戻る"))
+                    {
+                        trace?.Note($"KHONG co nut an toan nao de dep hop thoai 「{text}」 — de nguyen.");
+                        return seen;
+                    }
+                }
                 Waits.TryUntil(() => !Uia.IsOnScreen(d), TimeSpan.FromSeconds(5));
             }
         }
@@ -894,7 +911,16 @@ public sealed class SigaToothFlow
             trace?.Note($"hop thoai sau khi chot: 「{text}」");
             trace?.Shot("hop-thoai-sau-chot");
 
-            var yes = answerYes == true && Txt.Has(text, CystConfirmFragment);
+            // ⛔ CHỐT CỨNG: không đường nào ở đây được phép bấm 「はい」 cho dirty gate.
+            // 「はい」 của 「処置データは、変更されています。保存しますか？」 là modSave.SaveData —
+            // xoá sạch rồi chèn lại TOÀN BỘ 処置行 của tháng. Chỉ `PressBack` mới được trả
+            // lời câu đó, và chỉ khi testcase nói rõ trả lời gì.
+            var isDirtyGate = Txt.Has(text, DirtyGateFragment);
+            if (isDirtyGate)
+                trace?.Note("⛔ gap dirty gate 「保存しますか」 giua luong nhap 処置 — tra loi 「いいえ」. " +
+                            "Dung nghia la co mot phim da roi xuong form (ESC? F10? F12?) truoc do.");
+
+            var yes = !isDirtyGate && answerYes == true && Txt.Has(text, CystConfirmFragment);
             if (!Dialogs.ClickButton(dialog, yes ? ["はい", "Yes"] : ["いいえ", "No", "OK"]))
                 Dialogs.ClickButtonContaining(dialog, "戻る");
             Waits.TryUntil(() => !Uia.IsOnScreen(dialog), TimeSpan.FromSeconds(10));
