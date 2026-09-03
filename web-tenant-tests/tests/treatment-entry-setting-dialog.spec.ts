@@ -307,9 +307,33 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
         // chính dialog, nơi không bind F11, nên bấm nữa cũng không có tác dụng gì.
         if (await dialog.isVisible().catch(() => false)) return
 
-        // FKeyScopeProvider preventDefault F1–F12 nên F11 không bung fullscreen.
-        await page.keyboard.press('F11')
-        await expect(dialog).toBeVisible({ timeout: 30000 })
+        // Đóng 診療入力設定 trả focus về ô 患者番号, mà ô đó MỞ popover lịch sử ngay
+        // khi nhận focus (patient-no-input.tsx `onFocus` → `setOpen(true)`; cờ
+        // `suppressOpenRef` chỉ nuốt đúng một lần cho cú auto-focus lúc mount).
+        // Popover là Radix Popover, mang role="dialog", nên FKeyScopeProvider coi
+        // nó là scope tiền cảnh và F11 của màn 患者選択 không còn tác dụng — F5/F7
+        // cũng vậy. Đây là hành vi ĐÚNG của app, không phải lỗi; test chỉ cần thu
+        // dọn trước khi bấm phím.
+        //
+        // ESC được chính input nuốt (`handleKeyDown` case 'Escape' có
+        // stopPropagation) nên nó chỉ khép popover, không lan lên thành ESC/End
+        // của màn nền. Vì vậy CHỈ bấm khi popover thực sự đang mở.
+        //
+        // Bọc trong `toPass` vì việc trả focus là BẤT ĐỒNG BỘ: popover có thể chưa
+        // kịp bung lúc ta soi lần đầu, và khi đó F11 lại ăn ngay. Vòng lặp lo cả
+        // hai thứ tự, thay vì đặt cược vào một thời điểm.
+        await expect(async () => {
+            // cmdk đặt accessible name của CommandList là "Suggestions".
+            const patNoHistory = page.getByRole('listbox', { name: 'Suggestions' })
+            if (await patNoHistory.isVisible().catch(() => false)) {
+                await page.keyboard.press('Escape')
+                await expect(patNoHistory).toBeHidden({ timeout: 3000 })
+            }
+
+            // FKeyScopeProvider preventDefault F1–F12 nên F11 không bung fullscreen.
+            await page.keyboard.press('F11')
+            await expect(dialog).toBeVisible({ timeout: 5000 })
+        }).toPass({ timeout: 60000, intervals: [1000, 2000, 3000] })
     }
 
     /** Combo 連携先 của một hàng LabeledRow trong dialog. */
