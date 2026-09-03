@@ -75,19 +75,33 @@ import { ADMIN_USER, JA } from './test-data'
  *     (`lib/code-mode-entry.ts` NO_MATCHING_TREATMENT_MSG).
  *  2. Bỏ cú pháp mở rộng "コード-枝番": ô 点 đi qua `conversionVal` (port
  *     Conversion.Val) nên "116-5" → 116, giống hệt WinForm.
- *  3. "abc" → Val = 0 → VẪN chạy nhánh tra cứu 点数 0 (không còn nuốt im lặng).
+ *  3. (sửa 2026-09-03) Ô 点 nay CHẶN ký tự không phải số đúng như
+ *     grdRegi_TextBox_KeyPress (frm203002.cs:3601) → "abc" không vào được ô, nhánh
+ *     Val("abc") = 0 là nhánh chết ở tầng UI; testcase đổi thành kiểm tra bộ lọc.
  *  4. Mã đặc biệt コードモード đã port: `classifyCodeModeEntry` + applyKasanCode
  *     (101-103) / setIsInputPick (50) / applyMisoutyaku (999) / homeVisit (333) /
  *     applyFreeTreatment (1-6, có trả 入力モード về 点数), và nhánh 自由処置+ePoint
  *     của 点列 (chuyển sang ô 回 đặt 回数 1 rồi đổi sang コードモード).
  *
- *  CÒN LỆCH — testcase CUỐI 「mã đặc biệt — quét toàn bộ」 viết kỳ vọng THEO WinForm
- *  nên phần này DỰ KIẾN CÒN FAIL; nó tự bắt lỗi từng mã và in bảng tổng kết:
- *  a. `commitPick` (đường ô 点) chưa route mã cần form nhập của frm203016 sau khi
- *     chọn trong 処置選択: 17 自費金額 / 179-5 残根数 / 202・203 IS — mới chỉ nối ở
- *     đường tab 個別 (`onKobetuPick`).
- *  b. Chưa có luật `intRowCnt == 1 && trt_cd != 17` (mã 17 phải LUÔN mở dialog dù
- *     master chỉ có 1 dòng).
+ *  CÒN LỆCH — 「Delete trong ô 点/回 của 日計」 (phát hiện 2026-09-03, CHƯA sửa app):
+ *  window keydown của 診療入力 (treatment-entry-detail.tsx:5336) coi phím Delete là
+ *  行削除 và `preventDefault()` nó kể cả khi con trỏ đang ở trong ô <input> của dòng
+ *  日計 — handleDeleteRow tự no-op với rowKey `:footer-`, nên KHÔNG xoá dòng nào,
+ *  nhưng ký tự cũng KHÔNG bị xoá. WinForm: khi editing control của DataGridView đang
+ *  giữ phím thì grdRegi_KeyDown không chạy, Delete xoá ký tự như bình thường
+ *  (grdRegi_TextBox_KeyPress còn ghi rõ 「Deleteｷｰは、このｲﾍﾞﾝﾄは発生しない」).
+ *  ⇒ Trong file này KHÔNG được dùng `fill('')` để xoá ô 点/回 của 日計 (Playwright
+ *  hiện thực fill rỗng bằng select-all + Delete → bị nuốt, giá trị cũ ở lại và cú
+ *  Enter kế tiếp tra cứu nhầm).
+ *
+ *  ĐÃ HẾT LỆCH — testcase CUỐI 「mã đặc biệt — quét toàn bộ」 trước đây được viết với
+ *  kỳ vọng WinForm và DỰ KIẾN đỏ; chạy lại 2026-09-03 thì 0 lệch: 101/102/103, 50,
+ *  999, 333, 1-6 (kèm lật 入力モード về 点数), 17 (self-pay), 179-5 (残根数),
+ *  202/203 (IS) và 点数=0 (danh sách hạn chế) đều đúng. Nếu nó đỏ trở lại thì là
+ *  REGRESSION, không phải "chưa port".
+ *
+ *  CÒN LỆCH — AutoSantei tự bung 「カルテ記載選択」 khi vào màn (xem drainAutoSantei):
+ *  không phải lỗi, nhưng spec BẮT BUỘC phải dọn, nếu không modal nuốt F-key + click.
  *
  * CHẠY TUẦN TỰ (`describe.serial`), dùng CHUNG một page vì app giới hạn số lần
  * login. Thứ tự testcase CÓ Ý NGHĨA (mode và dòng vừa thêm được dùng lại ở bước sau).
@@ -146,6 +160,13 @@ test.describe('診療入力 — ô 点/回 với 点数モード / コードモ�
     let picker: Locator
     /** Alert 0 kết quả. */
     let noTrtAlert: Locator
+    /**
+     * 「カルテ記載選択」 (frm203012 gType.Auto) do AutoSantei tự bung khi vào màn —
+     * KHÔNG nằm trong kịch bản của file này, nhưng nó là MODAL nên phải dọn:
+     * FKeyScopeProvider nuốt sạch F-key của màn nền khi có modal, và overlay của nó
+     * nuốt click lên lưới.
+     */
+    let karteCmtDialog: Locator
     /** Ô 療法・処置 của mọi dòng (data-grid-cell "<rowKey>|2") — đếm số dòng lưới. */
     let ryoCells: Locator
 
@@ -240,6 +261,40 @@ test.describe('診療入力 — ô 点/回 với 点数モード / コードモ�
         return (attr ?? '').replace(/\|2$/, '')
     }
 
+    /**
+     * Chờ chuỗi AutoSantei của màn 診療入力 chạy hết rồi dọn sạch.
+     *
+     * Đo trên BN 12138: `合計:` hiện ở ~t+1.7s nhưng LƯỚI mới dựng ở ~t+3s, rồi
+     * AutoSantei 算定 thẳng 歯科疾患管理料 (KHÔNG hỏi 「〜を算定しますか？」) → thêm 1
+     * dòng và bung 「カルテ記載選択」 ở ~t+4s, để nguyên đó. BN khác thì có confirm
+     * đứng trước. Không dọn thì: (a) rowCount nhảy giữa testcase đầu tiên, (b) modal
+     * làm FKeyBar của màn nền mất topmost ⇒ nút ON/OFF thành inert.
+     *
+     * Cả hai dialog đều do locator handler bấm, mà handler CHỈ chạy khi Playwright
+     * có action / assert auto-retry — nên vòng dưới vừa là cú hích cho handler, vừa
+     * là bằng chứng màn sạch LIÊN TỤC vài nhịp (cùng cách với
+     * guide-sidepanel-handler / pack-sidepanel-handler).
+     */
+    async function drainAutoSantei() {
+        for (let i = 0; i < 6; i++) {
+            await expect(page.getByText(/を算定しますか？/)).toHaveCount(0, { timeout: 20000 })
+            await expect(karteCmtDialog).toHaveCount(0, { timeout: 15000 })
+            await page.waitForTimeout(700)
+        }
+    }
+
+    /** Chờ lưới dựng xong VÀ số dòng đứng yên — mọi assert `rowCount()` dựa vào nó. */
+    async function waitGridSettled() {
+        await expect.poll(() => rowCount(), { timeout: 60000 }).toBeGreaterThan(0)
+        let prev = -1
+        for (let i = 0; i < 10; i++) {
+            const n = await rowCount()
+            if (n === prev) return
+            prev = n
+            await page.waitForTimeout(700)
+        }
+    }
+
     test.beforeAll(async ({ browser }) => {
         // Page tự tạo để cả file dùng chung MỘT lần login; ignoreHTTPSErrors vì
         // *.ochacom.local dùng cert tự ký (browser.newPage không kế thừa `use`).
@@ -267,6 +322,22 @@ test.describe('診療入力 — ô 点/回 với 点数モード / コードモ�
         await page.goto(`/treatments/${PAT_NO}`, { waitUntil: 'domcontentloaded' })
         await expect(page.getByText('合計:').first()).toBeVisible({ timeout: 60000 })
 
+        karteCmtDialog = page.getByRole('dialog').filter({ hasText: 'カルテ記載選択' })
+        // Chỗ DUY NHẤT được bấm 「F10 戻る」 của dialog này: tự click ở nơi khác sẽ bị
+        // chính handler chen ngang (Playwright chạy handler trước mỗi action) → dialog
+        // đóng trước, cú click gốc mất nút, timeout 15s.
+        await page.addLocatorHandler(
+            karteCmtDialog,
+            async () => {
+                await karteCmtDialog
+                    .getByRole('button', { name: 'F10 戻る' })
+                    .first()
+                    .click({ timeout: 3000 })
+                    .catch(() => {})
+            },
+            { times: 30 },
+        )
+
         modeBtn = page.locator('button[title^="点数/コード 入力モード切替"]')
         // Nhiều ngày trong tháng → nhiều dòng 日計; ô nhập nằm ở ngày DƯỚI CÙNG
         // (WinForm sau khi load cũng đặt CurrentCell ở dòng đáy).
@@ -277,6 +348,11 @@ test.describe('診療入力 — ô 点/回 với 点数モード / コードモ�
         ryoCells = page.locator('[data-grid-cell$="|2"]')
 
         await expect(footerTen, 'không thấy ô 点 của dòng 日計').toBeVisible({ timeout: 30000 })
+
+        // Lưới + AutoSantei phải xong TRƯỚC testcase đầu tiên, nếu không dòng 歯管 mà
+        // AutoSantei thêm sẽ rơi vào giữa một assert rowCount() nào đó.
+        await waitGridSettled()
+        await drainAutoSantei()
     })
 
     test.afterAll(async () => {
@@ -332,35 +408,40 @@ test.describe('診療入力 — ô 点/回 với 点数モード / コードモ�
         await step()
     })
 
-    test('点数モード — gõ chữ vào ô 点: Conversion.Val("abc") = 0 nên VẪN tra cứu', async () => {
-        // frm203002.cs:5596/5600 truyền `Conversion.Val(txtInp.Text)` cho CẢ HAI hàm
-        // tra cứu ⇒ rác bị ÉP KIỂU chứ không bị chặn: "abc" → 0 → chạy nhánh 点数 0
-        // (GetTrtmas :200 bó hẹp còn trt_cd ≥ 400 hoặc ∈ {144,157,201,234,236}).
-        // Web port bằng `lib/code-mode-entry.ts conversionVal` (trước đây dùng
-        // Number() ra NaN rồi nuốt im lặng — đã sửa 2026-07-23).
+    test('点数モード — ô 点 CHẶN ký tự không phải số (grdRegi_TextBox_KeyPress)', async () => {
+        // frm203002.cs:3601-3640 — với cột 3 (点) và 4 (回), MỌI KeyChar ngoài '0'-'9',
+        // BackSpace và Ctrl+C đều bị `eventArgs.Handled = true` (Ctrl+V cũng bị nuốt)
+        // ⇒ chữ cái KHÔNG BAO GIỜ vào được ô 点 của WinForm. Web port đúng bằng
+        // `shared/utils/digits-only-input.ts digitsOnlyInputProps` (onBeforeInput huỷ ký
+        // tự không phải số, chặn paste/drop).
+        //
+        // ⇒ Nhánh `Conversion.Val("abc") = 0` KHÔNG với tới được từ bàn phím; nó chỉ là
+        // lớp ép kiểu phòng thân ở tầng hàm và được phủ bởi unit test của `conversionVal`.
+        // (Trước 2026-09-03 testcase này gõ "abc" rồi đòi phải có tra cứu — sai parity,
+        // vì WinForm chặn ngay ở KeyPress.)
         const before = await rowCount()
-        await enterTen('abc')
+        await footerTen.click()
+        await footerTen.pressSequentially('abc')
+        await expect(footerTen, 'ô 点 phải từ chối ký tự không phải số').toHaveValue('')
 
-        // Có tra cứu thật ⇒ phải ra picker hoặc alert 該当処置はありません。 —
-        // tuyệt đối không được im lặng.
-        const settled = picker.or(noTrtAlert)
-        await expect(settled.first(), 'Val("abc") = 0 mà không hề tra cứu').toBeVisible({
-            timeout: 30000,
-        })
-        if ((await noTrtAlert.count()) > 0) {
-            await dismissNoTrtAlert()
-        } else {
-            // Danh sách 点数 0 phải là danh sách HẠN CHẾ của WinForm.
-            const codes = (await picker.getByTestId('cell-trtCd').allTextContents()).map((t) =>
-                Number(t.trim()),
-            )
-            const allow = new Set([144, 157, 201, 234, 236])
-            const wrong = codes.filter((c) => !(c >= 400 || allow.has(c)))
-            expect(wrong, `点数 0 lọt mã ngoài phạm vi: ${wrong.slice(0, 5).join(', ')}`).toEqual([])
-            await page.keyboard.press('F10')
-            await expect(picker).toBeHidden({ timeout: 10000 })
-        }
-        expect(await rowCount(), 'nhánh tra cứu 点数 0 không được tự thêm dòng').toBe(before)
+        // Lọc theo TỪNG ký tự như KeyPress: 「9a8」 chỉ còn 「98」.
+        await footerTen.pressSequentially('9a8')
+        await expect(footerTen, 'lọc phải theo từng ký tự, không nuốt cả chuỗi').toHaveValue('98')
+        // Xoá bằng BACKSPACE, không dùng fill('') / Delete: window keydown của lưới bắt
+        // phím Delete làm 行削除 và `preventDefault()` nó NGAY CẢ khi con trỏ đang nằm
+        // trong ô nhập 日計 (treatment-entry-detail.tsx:5336) ⇒ Delete không xoá được ký
+        // tự, mà Playwright `fill('')` chính là select-all + Delete. Xem mục ĐIỂM LỆCH
+        // 「Delete trong ô 点/回 của 日計」 ở đầu file.
+        await footerTen.press('Backspace')
+        await footerTen.press('Backspace')
+        await expect(footerTen, 'BackSpace phải xoá được ký tự').toHaveValue('')
+
+        // Enter trên ô đã bị lọc sạch = Enter rỗng → không tra cứu, không dialog.
+        await footerTen.press('Enter')
+        await expect(footerTen).toHaveValue('')
+        await expect(picker, 'ký tự rác mà vẫn mở 処置選択').toBeHidden()
+        await expect(noTrtAlert, 'ký tự rác mà vẫn bung alert').toHaveCount(0)
+        expect(await rowCount(), 'ký tự rác mà vẫn thêm dòng').toBe(before)
         await step()
     })
 
@@ -631,20 +712,33 @@ test.describe('診療入力 — ô 点/回 với 点数モード / コードモ�
         await step()
     })
 
-    test('コードモード — KHÔNG có cú pháp "コード-枝番": Val cắt tại "-" nên "116-5" = "116"', async () => {
-        // GetTrtmasCod chỉ query `trt_cd` (modMain.cs:588) còn ô 点 đi qua
-        // Conversion.Val → "116-5" đọc được tiền tố số là 116, dấu "-" kết thúc phép
-        // quét. ⇒ gõ "コード-枝番" phải cho kết quả Y HỆT gõ mỗi コード: picker mở với
-        // đủ 枝番, KHÔNG được lọc còn 1 dòng. (Bản web cũ tách "101-2" thành
-        // trtCd+trtSb — mở rộng ngoài WinForm, đã bỏ 2026-07-23.)
+    test('コードモード — KHÔNG có cú pháp "コード-枝番": dấu "-" bị ô 点 CHẶN', async () => {
+        // GetTrtmasCod chỉ query `trt_cd` (modMain.cs:588) — không hề có cú pháp
+        // 「コード-枝番」. Ở WinForm điều đó còn được chặn sớm hơn một tầng:
+        // grdRegi_TextBox_KeyPress (frm203002.cs:3620) chỉ cho '0'-'9' / BackSpace /
+        // Ctrl+C vào cột 3-4, nên dấu '-' KHÔNG BAO GIỜ gõ được vào ô 点 và nhánh
+        // Conversion.Val("116-5") = 116 là nhánh chết ở tầng UI. Gõ 「116-5」 thực tế
+        // để lại 「1165」 (lọc theo TỪNG ký tự).
+        // (Trước 2026-09-03 testcase này `fill("116-5")` rồi đòi picker mở theo 116 —
+        // sai parity, và với bộ lọc mới thì cả chuỗi bị từ chối nên nó đỏ.)
         const before = await rowCount()
-        await enterTen(`${foundCode}-${foundSb}`)
+        await footerTen.click()
+        await footerTen.pressSequentially(`${foundCode}-${foundSb}`)
+        await expect(footerTen, 'dấu "-" phải bị ô 点 từ chối').toHaveValue(
+            `${foundCode}${foundSb}`,
+        )
+        // Dọn ô bằng BackSpace (Delete bị lưới nuốt — xem ghi chú đầu file).
+        for (let i = 0; i < `${foundCode}${foundSb}`.length; i++) {
+            await footerTen.press('Backspace')
+        }
+        await expect(footerTen).toHaveValue('')
 
-        await expect(picker, 'Val cắt tại "-" nên vẫn phải mở picker theo コード').toBeVisible({
-            timeout: 30000,
-        })
+        // Và đây là điều 「không có cú pháp 枝番」 thực sự nói: gõ MỖI コード thì picker
+        // phải liệt kê ĐỦ 枝番, không có đường nào lọc còn 1 dòng.
+        await enterTen(foundCode)
+        await expect(picker).toBeVisible({ timeout: 30000 })
         const codes = await picker.getByTestId('cell-trtCd').allTextContents()
-        expect(codes.length, '"コード-枝番" bị hiểu thành lọc theo 枝番').toBeGreaterThanOrEqual(2)
+        expect(codes.length, 'picker phải liệt kê đủ 枝番 của コード').toBeGreaterThanOrEqual(2)
         for (const c of codes) {
             expect(c.trim()).toBe(foundCode)
         }
@@ -715,7 +809,7 @@ test.describe('診療入力 — ô 点/回 với 点数モード / コードモ�
     // Kỳ vọng viết theo WinForm (modMain.GetTrtmasCod :501-590 / GetTrtmas :174-490),
     // KHÔNG theo hành vi web hiện tại.
 
-    test('mã đặc biệt — quét toàn bộ theo kỳ vọng WinForm (dự kiến FAIL tới khi port xong)', async () => {
+    test('mã đặc biệt — quét toàn bộ theo kỳ vọng WinForm', async () => {
         // Quét ~10 kịch bản, mỗi kịch bản có thể phải chờ dialog → nới timeout.
         test.setTimeout(420_000)
 
