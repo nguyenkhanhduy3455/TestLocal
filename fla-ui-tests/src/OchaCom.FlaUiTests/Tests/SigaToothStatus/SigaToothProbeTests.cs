@@ -498,8 +498,8 @@ public sealed class SigaToothProbeTests : UiTestBase
     // ═════════════════════════════════════════════════════════════════════════
 
     [Test]
-    [Description("Probe — tab 病検, nút Ｐ変更, và dirty gate của F10 戻る")]
-    public void Tc2_Probe_PModeAndDirtyGate()
+    [Description("Probe — tab 病検 + Ｐ変更: nhánh KHÔNG có Ｐ, rồi dựng dòng Ｐ và đi trọn vòng")]
+    public void Tc2_Probe_PMode()
     {
         using var trace = TestTrace.Begin();
         _trace = trace;
@@ -511,7 +511,7 @@ public sealed class SigaToothProbeTests : UiTestBase
             Siga("1", "mốc");
         });
 
-        // ── KQ-13: tab 病検 + Ｐ変更 ────────────────────────────────────────
+        // ── KQ-13: tab 病検 + nút Ｐ変更 ────────────────────────────────────
         Try("13", "tab 病検: mở được không, lưới 病検 có gì, nút Ｐ変更 ở đâu", () =>
         {
             var opened = _flow.OpenByoukenTab(trace);
@@ -522,60 +522,115 @@ public sealed class SigaToothProbeTests : UiTestBase
             Kq("13", $"   nút Ｐ変更 (id={SigaToothFlow.PChangeButtonId}) = " +
                      (button is null ? "KHÔNG THẤY" : $"「{Txt.N(Uia.NameOf(button))}」 rect={Uia.RectOf(button)}"));
 
-            var rows = _flow.ByoukenRows();
-            Kq("13", $"   lưới 病検 có {rows.Count} dòng:");
-            foreach (var r in rows.Take(12)) Kq("13", "     " + r);
+            foreach (var r in _flow.ByoukenRows().Take(12)) Kq("13", "     " + r);
         });
 
-        var beforeP = _db?.ReadSiga(PatNo);
-        Window? toothDialog = null;
-        Try("13b", "bấm Ｐ変更 — tháng này CHƯA có 病名 Ｐ/Ｇ nên đây là nhánh 「không gom được gì」", () =>
+        // ── KQ-13a: bấm Ｐ変更 khi tháng CHƯA có 病名 Ｐ/Ｇ ──────────────────
+        Try("13a", "bấm Ｐ変更 khi tháng CHƯA có Ｐ/Ｇ — WinForm im lặng hay có báo?", () =>
         {
             var result = _flow.PressPChange(trace);
-            toothDialog = result.ToothDialog;
-            Kq("13b", $"   nút tồn tại? {result.ButtonFound}   mở 部位選択? {result.ToothDialogOpened}");
-            Kq("13b", $"   hộp thoại gặp: [{string.Join(" / ", result.Dialogs)}]");
-            Kq("13b", "   ⇒ WinForm KHÔNG có câu 「当月にＰ／Ｇの病名がありません。」 (frm203002.cs:6365-6383 " +
-                      "chỉ if/không else). Bản web bung alert — đây là một điểm LỆCH nếu đo được.");
+            Kq("13a", $"   nút tồn tại? {result.ButtonFound}   mở 部位選択? {result.ToothDialogOpened}");
+            Kq("13a", $"   hộp thoại gặp: [{string.Join(" / ", result.Dialogs)}]");
+            Kq("13a", "   ⇒ WinForm KHÔNG có câu 「当月にＰ／Ｇの病名がありません。」 (frm203002.cs:6362-6384 " +
+                      "chỉ if/không else). Bản web bung alert — LỆCH nếu đo được 「không mở, không báo」.");
+
+            if (result.ToothDialog is not null)
+            {
+                Kq("13a", "   ⚠️ dialog LẠI mở ⇒ tháng đã có sẵn 部位病名行 Ｐ/Ｇ. Đóng lại để đi tiếp.");
+                ToothSelectDialog.Close(App, result.ToothDialog, trace);
+            }
         });
 
-        // ── KQ-13c: nếu 部位選択 mở ra thì đi trọn vòng F11 → F3 → End ───────
-        Try("13c", "nếu Ｐ変更 mở được 部位選択: F11 全消去 → F3 ３～３ → End 確定 → 病名選択 → End", () =>
+        // ── KQ-13b: dựng một 部位病名行 mang 病名 Ｐ(103) ────────────────────
+        Try("13b", $"dựng 部位病名行 mang 病名 Ｐ({DisCdP}) trên ô {PermSlot} để MonthP có cái mà gom", () =>
         {
-            if (toothDialog is null)
+            var seat = PrepareSeat("13b", trace, resetTeeth: false);
+            if (seat is null) { Kq("13b", "   không dựng được chỗ đứng"); return; }
+
+            var set = _flow.SetBuiOnRow(seat, PermSlot, milk: false, disCd: DisCdP, trace: trace);
+            Kq("13b", "   " + set);
+            foreach (var line in _flow.DescribeGrid(limit: 30).TakeLast(8)) Kq("13b", "   " + line);
+
+            _flow.OpenByoukenTab(trace);
+            foreach (var r in _flow.ByoukenRows().Take(12)) Kq("13b", "   病検: " + r);
+        });
+
+        // ── KQ-13c: Ｐ変更 lần hai — đi trọn vòng tới Chk_PModeKesson ───────
+        var beforeP = _db?.ReadSiga(PatNo);
+        Try("13c", "Ｐ変更 lần hai: 部位選択 → F11 全消去 → F3 ３～３ → End → 病名選択 End → Q00100 はい", () =>
+        {
+            var result = _flow.PressPChange(trace);
+            Kq("13c", $"   mở 部位選択? {result.ToothDialogOpened}  hộp thoại: [{string.Join(" / ", result.Dialogs)}]");
+            if (result.ToothDialog is null)
             {
-                Kq("13c", "   bỏ qua: Ｐ変更 không mở 部位選択 (chưa có 部位病名行 mang Ｐ/Ｇ trong tháng).");
+                Kq("13c", "   ⇒ DỪNG: Ｐ変更 vẫn không mở 部位選択 dù đã có dòng Ｐ. Kiểm dis_cd1 của " +
+                          "dòng vừa dựng — MonthP đòi hFG1[40] = 103/104 VÀ hFG1[41] = 0 (chỉ MỘT 病名).");
                 return;
             }
 
-            Kq("13c", $"   ô đang sáng lúc mở = [{string.Join(",", ToothSelectDialog.MarkedSlots(toothDialog))}]");
-            ToothSelectDialog.ClearAll(toothDialog, trace);
-            Kq("13c", $"   sau F11 = [{string.Join(",", ToothSelectDialog.MarkedSlots(toothDialog))}]");
-            ToothSelectDialog.SelectIncisors(toothDialog, trace);
-            Kq("13c", $"   sau F3 = [{string.Join(",", ToothSelectDialog.MarkedSlots(toothDialog))}] " +
-                      "(F3 chỉ tác động lên VÙNG ĐANG CHỌN, mặc định 右上)");
+            var tooth = result.ToothDialog;
+            var oldSet = ToothSelectDialog.MarkedSlots(tooth);
+            Kq("13c", $"   tập Ｐ CŨ (ô đang sáng lúc mở) = [{string.Join(",", oldSet)}] — mong đợi [{PermSlot}]");
+
+            ToothSelectDialog.ClearAll(tooth, trace);
+            Kq("13c", $"   sau F11 全消去 = [{string.Join(",", ToothSelectDialog.MarkedSlots(tooth))}]");
+
+            ToothSelectDialog.SelectIncisors(tooth, trace);
+            var newSet = ToothSelectDialog.MarkedSlots(tooth);
+            Kq("13c", $"   sau F3 ３～３ = [{string.Join(",", newSet)}] (F3 chỉ tác động lên VÙNG ĐANG CHỌN, " +
+                      "mặc định 右上 ⇒ ô 5/6/7)");
             trace.Shot("pmode-sau-f3");
 
-            ToothSelectDialog.Confirm(toothDialog, trace);
-            var disease = Waits.TryFor(_flow.DiseaseDialog, TimeSpan.FromSeconds(12));
+            ToothSelectDialog.Confirm(tooth, trace);
+            var disease = Waits.TryFor(_flow.DiseaseDialog, TimeSpan.FromSeconds(15));
             Kq("13c", $"   病名選択 mở tiếp? {disease is not null}");
             if (disease is not null) _flow.ConfirmDiseaseDialog(trace);
 
-            var gate = _flow.WaitForDialog(SigaToothFlow.ApplyChangeFragment, TimeSpan.FromSeconds(15));
+            var gate = _flow.WaitForDialog(SigaToothFlow.ApplyChangeFragment, TimeSpan.FromSeconds(20));
             Kq("13c", "   Q00100 「変更を適用しますか」 bung? " + (gate is not null));
-            if (gate is not null)
+            if (gate is null)
             {
-                Kq("13c", $"   nguyên văn: 「{Txt.N(Dialogs.TextOf(gate))}」 nút mặc định 「{_flow.FocusedButtonName()}」");
-                trace.Shot("q00100");
-                _flow.Answer(gate, "はい", "Yes");
-                var s = Siga("13c", "sau Q00100 → はい (Chk_PModeKesson)", beforeP);
-                Kq("13c", "   ⇒ luật WinForm: MỌI ô 部位 = 0 ngoài 4 răng khôn (ô 0/15/16/31) đều thành " +
-                          "se = 4. Đếm số ô = 4 ở trên để biết luật 「phần bù」 có đúng không.");
+                Kq("13c", "   hộp thoại đang mở: " + _flow.DescribeDialogs());
+                return;
             }
-            _flow.DismissAll();
+
+            Kq("13c", $"   nguyên văn: 「{Txt.N(Dialogs.TextOf(gate))}」 — nút mặc định 「{_flow.FocusedButtonName()}」");
+            trace.Shot("q00100");
+            _flow.Answer(gate, "はい", "Yes");
+
+            Waits.TryUntil(() =>
+            {
+                var x = _db?.ReadSiga(PatNo);
+                return x is not null && Enumerable.Range(1, 32).Any(c => x.SeCol(c) == SigaKonDb.SeMissing);
+            }, TimeSpan.FromSeconds(20));
+
+            var s = Siga("13c", "sau Q00100 → はい (Chk_PModeKesson)", beforeP);
+            if (s is null) return;
+
+            var missing = Enumerable.Range(0, 32).Where(i => s.SeCol(i + 1) == SigaKonDb.SeMissing).ToList();
+            Kq("13c", $"   ô bị đánh 欠損: [{string.Join(",", missing)}] ({missing.Count} ô)");
+            Kq("13c", $"   tập Ｐ mới: [{string.Join(",", newSet)}]");
+            Kq("13c", "   4 răng khôn (0/15/16/31) có bị đánh không? " +
+                      string.Join(",", new[] { 0, 15, 16, 31 }.Select(i => $"{i}={s.SeCol(i + 1)}")));
+            Kq("13c", "   ⇒ LUẬT WinForm: mọi ô NGOÀI tập Ｐ mới và ngoài 4 răng khôn phải = 4. " +
+                      "Đối chiếu hai danh sách trên là biết luật 「phần bù」 (ISSUE-14) có đúng không.");
         });
 
-        // ── KQ-14: dirty gate của F10 戻る ──────────────────────────────────
+        Kq("2x", "HẾT Tc2.");
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Tc2b — dirty gate của F10 戻る (tách riêng: nó ĐÓNG màn hình)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Test]
+    [Description("Probe — F10 戻る: nguyên văn dirty gate, nút MẶC ĐỊNH, 「いいえ」 có lùi 歯式 không")]
+    public void Tc2b_Probe_DirtyGate()
+    {
+        using var trace = TestTrace.Begin();
+        _trace = trace;
+        trace.Shot("00-mo-man");
+
         var beforeBack = _db?.ReadSiga(PatNo);
         Try("14", "F10 戻る → dirty gate: nguyên văn, nút MẶC ĐỊNH, trả lời いいえ", () =>
         {
@@ -585,7 +640,7 @@ public sealed class SigaToothProbeTests : UiTestBase
             Kq("14", $"   nút MẶC ĐỊNH (con trỏ lúc vừa mở) = 「{back.DefaultButton}」");
             Kq("14", $"   màn hình 診療入力 đóng lại? {back.ScreenClosed}");
 
-            var s = Siga("14", "sau 「いいえ」 (RestoreData → Restore_SK)", beforeBack);
+            Siga("14", "sau 「いいえ」 (RestoreData → Restore_SK)", beforeBack);
             Kq("14", "   ⇒ Restore_SK chỉ lùi khi cờ pSiga_chg BẬT (modSave.cs:4684). SigaChg bật cờ; " +
                      "DelExtRec và Chk_PModeKesson thì KHÔNG. Chênh lệch ở trên nói cho biết cờ nào đang bật.");
         });
@@ -601,7 +656,7 @@ public sealed class SigaToothProbeTests : UiTestBase
             else Kq("14b", "   màn hình vẫn còn mở, không cần mở lại");
         });
 
-        Kq("2x", "HẾT Tc2.");
+        Kq("2b", "HẾT Tc2b.");
     }
 
     // ═════════════════════════════════════════════════════════════════════════
