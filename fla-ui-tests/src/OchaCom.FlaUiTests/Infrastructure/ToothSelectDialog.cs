@@ -392,16 +392,58 @@ public static class ToothSelectDialog
         return Txt.N(inner is null ? Uia.NameOf(holder) : Uia.ValueOf(inner));
     }
 
+    /// <summary>
+    /// Đọc CẢ 32 ô răng trong MỘT lượt duyệt cây, trả về map 「buiLabel{pos}{idx}」 → chữ.
+    ///
+    /// <para><b>Vì sao không gọi <see cref="ToothText"/> 32 lần.</b> Mỗi lần là một
+    /// <c>FindFirstDescendant</c> quét lại toàn bộ cây con của hộp thoại; đo 2026-09-03
+    /// (probe Tc0/Tc1) thì một lượt đọc đủ 32 ô tốn <b>~35 giây</b> — chiếm phần lớn thời
+    /// gian của cả testcase, và là lý do probe 4 phase chạm trần 15 phút của wrapper.
+    /// Duyệt MỘT lần rồi lọc theo AutomationId rẻ hơn hẳn.</para>
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> ReadAllTeeth(Window dialog)
+    {
+        var text = new Dictionary<string, string>();
+        var holders = new Dictionary<string, AutomationElement>();
+
+        foreach (var e in Uia.Descendants(dialog, maxDepth: 8))
+        {
+            var id = Uia.AutomationIdOf(e);
+            if (id.Length == 0) continue;
+
+            if (id.StartsWith("buiLabel", StringComparison.Ordinal))
+            {
+                holders[id] = e;
+            }
+            else if (Txt.Same(id, "lblBui"))
+            {
+                // Ô chữ nằm TRONG holder buiLabel{pos}{idx}; gắn theo id của cha.
+                try
+                {
+                    var parentId = Uia.AutomationIdOf(e.Parent);
+                    if (parentId.StartsWith("buiLabel", StringComparison.Ordinal))
+                        text[parentId] = Txt.N(Uia.ValueOf(e));
+                }
+                catch { /* cha vừa biến mất */ }
+            }
+        }
+
+        // Holder nào chưa có chữ từ lblBui thì lấy Name của chính nó (đường lui cũ).
+        foreach (var (id, element) in holders)
+            if (!text.ContainsKey(id)) text[id] = Txt.N(Uia.NameOf(element));
+
+        return text;
+    }
+
     /// <summary>Mọi ô răng ĐANG CÓ CHỮ, dạng 「pos-idx=chữ」 — để in vào nhật ký.</summary>
     public static IReadOnlyList<string> MarkedTeeth(Window dialog)
     {
+        var all = ReadAllTeeth(dialog);
         var marked = new List<string>();
         for (var pos = 1; pos <= 4; pos++)
             for (var idx = 1; idx <= 8; idx++)
-            {
-                var text = ToothText(dialog, pos, idx);
-                if (text is { Length: > 0 }) marked.Add($"{pos}-{idx}={text}");
-            }
+                if (all.TryGetValue(ToothId(pos, idx), out var t) && t.Length > 0)
+                    marked.Add($"{pos}-{idx}={t}");
         return marked;
     }
 
@@ -410,13 +452,12 @@ public static class ToothSelectDialog
     /// <summary>Các Ô 部位 (0..31) đang có chữ — cùng đơn vị với <c>bui1..bui32</c>.</summary>
     public static IReadOnlyList<int> MarkedSlots(Window dialog)
     {
+        var all = ReadAllTeeth(dialog);
         var slots = new List<int>();
         for (var pos = 1; pos <= 4; pos++)
             for (var idx = 1; idx <= 8; idx++)
-            {
-                var text = ToothText(dialog, pos, idx);
-                if (text is { Length: > 0 }) slots.Add(SlotOf(pos, idx));
-            }
+                if (all.TryGetValue(ToothId(pos, idx), out var t) && t.Length > 0)
+                    slots.Add(SlotOf(pos, idx));
         slots.Sort();
         return slots;
     }
