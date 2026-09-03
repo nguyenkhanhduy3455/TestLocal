@@ -1046,7 +1046,14 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
 
         // Nút của hộp thoại này là Yes / No / Cancel (data-modified-confirm-dialog.tsx:52-69).
         // F10 戻る mặc định highlight sẵn "No" — vẫn click tường minh cho chắc.
-        await page.getByRole('button', { name: /^No$/ }).first().click()
+        //
+        // PHẢI khoanh trong chính hộp thoại: từ 2026-08-26 (c6ebf8e5d 「右タブ4グリッドに
+        // 見出しクリックの並べ替えを追加」) tiêu đề cột 「No」 của tab 病検 là
+        // `role="button"`, nên `getByRole('button', { name: /^No$/ })` khớp 2 phần tử và
+        // `.first()` rơi vào TIÊU ĐỀ CỘT — bấm xong chỉ sort side panel, hộp thoại đứng
+        // im và TC đỏ y như app hỏng.
+        const gateDialog = page.getByRole('dialog').filter({ hasText: '保存しますか？' })
+        await gateDialog.getByRole('button', { name: 'No', exact: true }).click()
         await expect(gate, 'bấm No mà hộp thoại không đóng').toBeHidden({ timeout: 15_000 })
         await step()
 
