@@ -51,10 +51,14 @@
  *     title (Rule 13.1). Cha nhận diện bằng nút PCR, con bằng tab
  *     「カルテコメント一覧」 + caption group.
  *  2. `CmtAutoPickerDialog` (frm203012 gType.Auto) CŨNG có tab
- *     「カルテコメント一覧」 và cũng tên カルテ記載選択. Nó bung ra khi bấm **Yes**
- *     ở confirm 「〜を算定しますか？」 (Rule 14.1 — đã ghi trong
- *     TEST-PLAYPWRIGHT-GUIDELINE). ⇒ `installSanteiNo` bấm **No**, và mọi assert
- *     con đều kèm caption group để không nhận nhầm.
+ *     「カルテコメント一覧」, cùng tên カルテ記載選択, cùng footer F1/F9/F10 và cùng
+ *     4 cột — KHÔNG phân biệt được bằng cấu trúc. ⇒ mọi assert con đều kèm
+ *     caption group.
+ *     Bấm **No** ở confirm 「〜を算定しますか？」 KHÔNG thoát được nó: đo thực tế
+ *     (BN 11, hôm nay) là No cho 「歯科初診料」 xong thì 処置 kế 「歯科疾患管理料」
+ *     tự 算定 KHÔNG hỏi (POST /tenant/treatment/autosantei2) rồi bung picker đó
+ *     ra sau ~1s. `installSanteiNo` vì vậy chỉ giải quyết được nửa việc; nửa còn
+ *     lại là `clearOverlays` phải chờ hết nhịp cuối của chuỗi (xem chú thích ở đó).
  *  3. Lưới ẢO HOÁ: `[data-testid^="row-"]` chỉ có các dòng ĐANG trong khung nhìn.
  *     ⇒ không so sánh nguyên mảng trước/sau sort; chỉ assert quan hệ bất biến
  *     trên phần nhìn thấy (xem TC-3 / TC-4).
@@ -170,11 +174,25 @@ const drainAlerts = async (page: Page) => {
  * timeout 15s.
  */
 const clearOverlays = async (page: Page) => {
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 12; i++) {
     await drainAlerts(page)
-    if ((await anyDialog(page).count()) === 0) return
-    if (await anyDialog(page).filter({ hasText: SANTEI_CONFIRM }).count()) {
-      await page.waitForTimeout(400)
+    const santei = anyDialog(page).filter({ hasText: SANTEI_CONFIRM })
+    if (await santei.count()) {
+      // `installSanteiNo` mới là chỗ bấm No. Nó là locator handler nên chỉ chạy
+      // khi Playwright thực hiện action/assert auto-retry — vòng `waitForTimeout`
+      // trần KHÔNG kích hoạt nó, confirm nằm lì tới tận testcase sau. Assert
+      // auto-retry dưới đây chính là cú hích đó.
+      await expect(santei).toHaveCount(0, { timeout: 10000 }).catch(() => {})
+      continue
+    }
+    if ((await anyDialog(page).count()) === 0) {
+      // Chuỗi AutoSantei CÒN nhịp sau: trả lời No cho 「歯科初診料を算定しますか？」
+      // xong thì 処置 kế (歯科疾患管理料) tự 算定 KHÔNG hỏi và bung
+      // CmtAutoPickerDialog — cùng tên カルテ記載選択, cùng tab 「カルテコメント一覧」.
+      // Nó tới trễ ~1s, nên "0 dialog" ngay lúc này chưa có nghĩa là màn đã sạch:
+      // để mặc thì nó nổi ĐÈ lên lưới group ở testcase sau và nuốt mọi click.
+      await page.waitForTimeout(1500)
+      if ((await anyDialog(page).count()) === 0) return
       continue
     }
     await page.keyboard.press('F10')
@@ -215,7 +233,10 @@ test.describe('カルテ記載選択 — F6 (frm203011 → frm203012 Cult)', () 
 
   /** Mở lưới comment của group thứ `GRP_INDEX` (frm203012 Cult). */
   const openGroupList = async () => {
-    if ((await cmtList(page).count()) > 0) return
+    // `grpLabel` rỗng = lưới comment đang mở KHÔNG phải cái do ta bấm ra, mà là
+    // CmtAutoPickerDialog của AutoSantei (xem clearOverlays). Trả về sớm ở đó thì
+    // TC-2 đi so caption với chuỗi rỗng → strict-mode violation, đỏ oan.
+    if (grpLabel !== '' && (await cmtList(page).count()) > 0) return
     if ((await groupGrid(page).count()) === 0) await openGroupGrid()
 
     // Nút group nhận diện bằng NHÃN: `{cmtGrp} {grpNm}` → bắt đầu bằng chữ số

@@ -25,6 +25,15 @@ import { ADMIN_USER, JA } from './test-data'
  * lọt nhánh rỗng và bỏ quên alert, và overlay của alert đó chặn click của
  * testcase kế tiếp (đã từng làm testcase F10 timeout 30s).
  *
+ * BẪY THỨ HAI, cùng họ: MỌI modal đang mở đều làm F-key của màn nền CHẾT — không
+ * phải "không có tác dụng gì" mà là bị FKeyScopeProvider nuốt hẳn (nhánh
+ * `top && !topOwnsKeys` ⇒ preventDefault). AutoSantei tự bung 「カルテ記載選択」
+ * (frm203011) lúc vào màn 診療入力, không đoán được lúc nào; để nó đó rồi bấm
+ * Shift+F4 thì lưới ガイド đứng im ở list cũ (thường là list 全て表示 vừa nạp) và
+ * testcase 「Shift+F4 → dải 1000-1999」 đỏ y như thể BE lọc sai. Vì vậy
+ * dismissKarteCmtIfOpen() được gọi ở gotoTreatments + enterGuideRegular và cắm
+ * thêm locator handler; dismissPicker() cũng gõ lại F10 sau khi dọn.
+ *
  * ─── Nguồn WinForm ────────────────────────────────────────────────────────────
  *  - frm203002.cs:1974 getGuidNyuryokuInfo — nạp hfgGuid1 từ
  *    ImpMstTrt.getInpGuidNyuryokuData; `GuidNum = intRow + 1`, `GuidSyo = GUID_NM`
@@ -129,6 +138,18 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
     let noGuidAlert: Locator
     /** Alert E00024 「算定できる処置がありません。」 (frm203017 getViewData, :1015). */
     let noTrtAlert: Locator
+    /**
+     * Dialog カルテ記載選択 (frm203011) — AutoSantei tự bung khi vào màn 診療入力
+     * (歯科疾患管理料 được 自動算定 rồi kéo theo nó), thời điểm không đoán được.
+     *
+     * PHẢI ĐÓNG TRƯỚC KHI GÕ PHÍM. Nó là modal, mà FKeyScopeProvider nuốt SẠCH
+     * F-key của màn nền khi có modal đang mở (fkey-scope-provider.tsx: nhánh
+     * `top && !topOwnsKeys` ⇒ preventDefault, không dispatch cho ai). Bỏ mặc thì
+     * F4 / Shift+F4 / F5 im lặng không chạy: lưới ガイド giữ nguyên list cũ và
+     * testcase đỏ trông y như bug app (đã vấp: Shift+F4 không đổi sang STEP nên
+     * assert dải 1000-1999 đọc phải guid_cd của list 全て表示).
+     */
+    let karteCmtDialog: Locator
     /** Khung side panel (w-[450px]) — mọi locator lưới đều bám vào đây. */
     let sidePanel: Locator
     /**
@@ -162,6 +183,19 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
      */
     async function dismissPicker() {
         await page.keyboard.press('F10')
+        const closed = await picker
+            .waitFor({ state: 'hidden', timeout: 5000 })
+            .then(() => true)
+            .catch(() => false)
+        if (!closed) {
+            // Cú F10 vừa rồi bị nuốt vì một modal khác (カルテ記載選択) chen lên
+            // TRÊN picker — xem chú thích của karteCmtDialog. Dọn nó rồi gõ LẠI
+            // đúng phím F10, không click nút, để vẫn đang kiểm đường đi bàn phím.
+            await dismissKarteCmtIfOpen()
+            // Chỉ gõ lại khi picker VẪN còn: F10 của màn nền là 戻る — nó rời hẳn
+            // màn 診療入力 và làm hỏng mọi testcase sau.
+            if ((await picker.count()) > 0) await page.keyboard.press('F10')
+        }
         await expect(picker).toBeHidden({ timeout: 10000 })
     }
 
@@ -185,6 +219,14 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
             timeout: 30000,
         })
         return (await noTrtAlert.count()) > 0 ? 'empty' : 'rows'
+    }
+
+    /** Đóng カルテ記載選択 nếu nó đang mở; true = có đóng. */
+    async function dismissKarteCmtIfOpen(): Promise<boolean> {
+        if ((await karteCmtDialog.count()) === 0) return false
+        await karteCmtDialog.getByRole('button', { name: 'F10 戻る' }).first().click()
+        await expect(karteCmtDialog).toBeHidden({ timeout: 10000 })
+        return true
     }
 
     /** Đóng alert 「算定できる処置がありません。」 đang bung. */
@@ -233,6 +275,8 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
         )
         // Header 患者情報 render 「合計:」 khi màn detail đã dựng xong.
         await expect(page.getByText('合計:').first()).toBeVisible({ timeout: 60000 })
+        // AutoSantei có thể đã bung カルテ記載選択 — đóng trước khi ai đó gõ F-key.
+        await dismissKarteCmtIfOpen()
     }
 
     /** Envelope `{ data: [...] }` của BE có phải list rỗng không. */
@@ -258,6 +302,7 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
     async function enterGuideRegular() {
         await dismissPickerIfOpen()
         await dismissNoGuidAlert(1000)
+        await dismissKarteCmtIfOpen()
         const resp = page
             .waitForResponse(
                 (r) => r.url().includes('/tenant/guids') && !r.url().includes('/tenant/guids/step'),
@@ -315,17 +360,30 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
         await page.getByRole('button', { name: JA.submit }).click()
         await expect(page).toHaveURL(/\/$/)
 
-        await gotoTreatments()
-
+        // Gán locator TRƯỚC gotoTreatments: chính gotoTreatments đã cần
+        // karteCmtDialog để dọn popup của AutoSantei.
         picker = page.getByRole('dialog').filter({ hasText: 'ガイド番号' })
         noGuidAlert = page.getByText('該当ガイドがありません')
         noTrtAlert = page.getByText('算定できる処置がありません')
+        karteCmtDialog = page.getByRole('dialog').filter({ hasText: 'カルテ記載選択' })
         sidePanel = page.locator('div[class*="w-[450px]"]').first()
         rows = sidePanel.locator('div[class*="grid-cols-[46px_1fr]"][class*="cursor-pointer"]')
         noInput = page.locator('input[data-side-anchor]')
         prvBtn = sidePanel.getByRole('button', { name: '前回', exact: true })
         allBtn = sidePanel.getByRole('button', { name: '全て表示', exact: true })
         resetBtn = sidePanel.getByRole('button', { name: 'リセット', exact: true })
+
+        // Nó có thể bung LẠI giữa chừng (mỗi lần AutoSantei chạy) → để Playwright
+        // tự dọn trước mỗi thao tác, giống handler của 「…を算定しますか？」.
+        await page.addLocatorHandler(
+            karteCmtDialog,
+            async () => {
+                await karteCmtDialog.getByRole('button', { name: 'F10 戻る' }).first().click()
+            },
+            { times: 30 },
+        )
+
+        await gotoTreatments()
     })
 
     test.afterAll(async () => {
