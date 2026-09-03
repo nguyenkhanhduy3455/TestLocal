@@ -1,7 +1,7 @@
-namespace OchaCom.FlaUiTests.Tests.InpP1Dialogs;
+namespace OchaCom.FlaUiTests.Infrastructure;
 
 /// <summary>
-/// Mã Virtual-Key (Winuser.h) mà luồng này gửi qua <see cref="Infrastructure.Uia.SendKey"/>.
+/// Mã Virtual-Key (Winuser.h) mà luồng này gửi qua <see cref="Uia.SendKey"/>.
 ///
 /// <para><b>Vì sao không dùng <c>FlaUI.Core.Input.Keyboard</c>.</b> Cả ba dialog ở đây
 /// đều nghe phím ở tầng FORM (<c>BaseDialog.KeyPreview = true</c>, BaseDialog.cs:139) và
@@ -11,16 +11,21 @@ namespace OchaCom.FlaUiTests.Tests.InpP1Dialogs;
 /// không đổi và test đỏ ở một chỗ chẳng liên quan. <c>Uia.SendKey</c> gửi đúng virtual-key
 /// nên đi qua cùng đường mà bàn phím thật đi.</para>
 ///
-/// <para>Để ở đây (không thêm vào <c>Uia</c>) vì đây là hằng riêng của luồng: <c>Uia</c>
-/// chỉ giữ hai mã mà nhiều luồng dùng chung (VK_F11 / VK_RIGHT).</para>
+/// <para>Ban đầu là hằng riêng của <c>Tests/InpP1Dialogs</c>; nâng lên đây ngày 2026-09-03
+/// khi luồng thứ hai (<c>Tests/MenInput</c>) cần đúng những mã này — theo quy ước ở
+/// README mục 8b: dùng chung thì nâng lên <c>Infrastructure/</c>, không chép đôi.</para>
 /// </summary>
-internal static class Vk
+public static class Vk
 {
     public const ushort F7 = 0x76;
     public const ushort F9 = 0x78;
     public const ushort F10 = 0x79;
     public const ushort F11 = 0x7A;
     public const ushort F12 = 0x7B;
+
+    /// <summary>Escape — ở BaseDialog2 phím này chạy <c>btnF9_Click</c> (確定), KHÔNG phải huỷ
+    /// (BaseDialog2.cs:196-201). Xem <c>Tests/MenInput</c>.</summary>
+    public const ushort Escape = 0x1B;
 
     public const ushort Delete = 0x2E;
     public const ushort Left = 0x25;

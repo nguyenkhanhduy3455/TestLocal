@@ -103,7 +103,7 @@ internal static class KarteAutoCalcMenu
         Thread.Sleep(200);
         Uia.LeftClickPhysical(ox, oy);
         Thread.Sleep(300);
-        Uia.SendKey(InpP1Dialogs.Vk.Right);
+        Uia.SendKey(Vk.Right);
         Thread.Sleep(400);
         trace?.Step($"bung submenu 「{OptionMenuText}」");
 

@@ -516,7 +516,7 @@ public static class KarteAutoCalcDialog
         // lúc đó Invoke lại treo y như F9.
         var f10 = FindChrome(dialog, "btnF10", ListGridId);
         if (f10 is not null) { ClickModalOpener(f10); }
-        else { Uia.SendKey(InpP1Dialogs.Vk.F10); }
+        else { Uia.SendKey(Vk.F10); }
         Waits.Step();
     }
 }

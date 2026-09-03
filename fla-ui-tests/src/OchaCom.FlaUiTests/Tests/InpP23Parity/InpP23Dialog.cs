@@ -229,7 +229,7 @@ public static class InpP23Dialog
     {
         var f10 = KarteAutoCalcDialog.FindChrome(dialog, "btnF10", ListGridId);
         if (f10 is not null) KarteAutoCalcDialog.ClickModalOpener(f10);
-        else Uia.SendKey(InpP1Dialogs.Vk.F10);
+        else Uia.SendKey(Vk.F10);
         Waits.Step();
     }
 

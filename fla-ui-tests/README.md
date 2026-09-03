@@ -111,6 +111,8 @@ src/OchaCom.FlaUiTests/
 │   ├── Dialogs.cs                MessageBox (#32770): tìm, đọc chữ, bấm nút
 │   ├── NuisanceDialogWatcher.cs  luồng nền tự bấm 「いいえ」 cho hộp thoại nhiễu
 │   ├── ScreenCapture.cs          chụp toàn màn hình + DPI awareness
+│   ├── PixelProbe.cs             đọc MÀU NỀN control bằng pixel (UIA không phơi BackColor)
+│   ├── Vk.cs                     mã Virtual-Key gửi qua Uia.SendKey
 │   ├── TestTrace.cs              nhật ký + ảnh TỪNG BƯỚC (không chỉ 1 ảnh cuối test)
 │   └── UiTestBase.cs             1 phiên app cho cả fixture, chụp ảnh ở TearDown
 ├── App/
@@ -157,6 +159,13 @@ src/OchaCom.FlaUiTests/
     │   ├── MsgBoxWin32.cs                  đọc/bấm MessageBox bằng Win32 thuần (không UIA)
     │   ├── GuideSidePanelProbeTests.cs     PROBE [Explicit] — 18 câu hỏi
     │   └── GuideSidePanelTests.cs          TC-G1 … TC-G15
+    ├── MenInput/                      面入力 frm203035 — xem mục 8b
+    │   ├── README.md                     bảng tương ứng spec + 2 điểm LỆCH + 4 cái bẫy
+    │   ├── MenInputDb.cs                 CHỈ ĐỌC: INPCONFIG.MENINPUT_FLG + cột `men` của master
+    │   ├── MenInputFlow.cs               gõ mã → 処置選択 → chốt 枝番; đọc cột 2 và cột 72
+    │   ├── MenInputDialog.cs             frm203035: nhãn 5 mặt, phím 8/4/5/6/2, F9/F10/ESC
+    │   ├── MenInputProbeTests.cs         PROBE [Explicit] — 12 câu hỏi, không assert
+    │   └── MenInputTests.cs              TcM0 … TcM9
     └── InpP1Dialogs/                  ba dialog vừa port sang web — xem mục 8b
         ├── README.md                  bảng tương ứng với spec Playwright
         ├── InpP1MenuFlow.cs           F11 → 「９ オプション」 → mục con
@@ -249,6 +258,7 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 | `.\run-confirm-patient.ps1` | End/F9/Enter ở 患者選択 → `frm203001.defData` (患者確定) | `Tests/PatientSelectAssign/` | ✖ không bấm F9, không seed `wait` |
 | `.\run-select-guide-treatment.ps1` | Click dòng ガイド → `hfgGuid1_CellDoubleClick` (ガイド処置選択 frm203017) | `Tests/GuideSidePanel/` | ✖ không bấm F9; 「リセット」 luôn trả lời Cancel |
 | `.\run-bulk-change-dr.ps1` | Click nhãn 「Ｄｒ」 → `lblDrLabel_Click` (担当医 一括変更) | `Tests/TreatmentHeaderStaff/` | ✖ chỉ sửa lưới trong bộ nhớ |
+| `.\run-input-tooth-surfaces.ps1` | Chốt 枝番 `men=1` ở 処置選択 → `frm203035.fixProc` (面入力) | `Tests/MenInput/` | ✖ đọc cột ẩn 72, không bấm F9 |
 | `.\run-edit-treatment-rows.ps1 -Case Probe_Advanced` | PROBE — dò hành vi, KHÔNG assert | `Tests/TreatmentGrid/` | ✖ |
 
 > Thêm luồng mới thì giữ đúng quy ước này: `run-<động từ>-<đối tượng>.ps1` mô tả việc
@@ -332,6 +342,29 @@ THÊM MỚI, `Visible = false`). Chúng rất dễ bị gộp thành một khi p
 
 Đã chạy thật 2026-08-26: 4/5 xanh, `TC-LBL-1` `Ignore` vì dataset máy đó không tách
 được nhãn khỏi combo. Chi tiết + văn bản 一括変更 nguyên văn ở README của luồng.
+
+**MenInput** đo **đáp án** cho `frm203035`「面入力」 — nửa WinForm của
+`../web-tenant-tests/tests/men-input-dialog.spec.ts` (TC-M1…TC-M8). Hộp thoại này mở
+**sau** khi 処置 đã đáp xuống lưới, khi `mst_trt.men = 1` **và**
+`INPCONFIG.MENINPUT_FLG = 1`; mỗi lần F9 確定 nối một token `<歯 + 面文字>` vào **cả**
+cột 2 (療法・処置) **lẫn** cột 72 (`FREEWD`).
+
+Nó KHÔNG bấm F9 登録: cột 72 đọc thẳng từ lưới sau khi bật cột ẩn bằng cửa hậu của app,
+nên **không cần cờ nào và không ghi DB** — rẻ hơn hẳn bản Playwright, nơi TC-M8 phải bấm
+登録 rồi query `trn_trn.freewd` sau cờ `TEST_ALLOW_SAVE`.
+
+Đã chạy thật 2026-09-03 trên bệnh nhân 10. Hai thứ đáng biết nhất, cả hai đều đo được
+chứ không suy ra:
+
+- **「Mặt đang chọn」 chỉ đọc được bằng MÀU NỀN.** UIA không phơi ra `Control.BackColor`,
+  mà đó là tín hiệu duy nhất WinForm dùng (`White` ↔ `LightGray`, `frm203035.cs:596-627`).
+  Vì thế có `Infrastructure/PixelProbe.cs` — chụp rect của nhãn rồi lấy màu chiếm đa số.
+  Đây là công cụ dùng chung đầu tiên cho loại câu hỏi 「control này đang tô màu gì」.
+- **処置選択 VẪN MỞ phía sau 面入力** (`showDialog` modal lồng nhau, `frm203016.cs:1573`),
+  nên KHÔNG dùng lại được `HighNeedsFlow.CommitPick` — hàm đó coi 「picker đã đóng」 là
+  「chốt xong」 và sẽ bắn cú click đường lui vào đúng vùng mà 面入力 đang che.
+
+Hai điểm **LỆCH** với bản web + hai cái bẫy còn lại nằm ở `Tests/MenInput/README.md` mục 4-5.
 
 > **Bài học dùng chung, đọc trước khi viết luồng mới:** app này **không nhận
 > InvokePattern ở bất kỳ control nào**. `Uia.Click` lên nhãn / caption / dòng lưới đều
