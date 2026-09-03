@@ -41,7 +41,8 @@ import { ADMIN_USER, JA } from './test-data'
  *  - utils/tooth-info-layout.ts + utils/tooth-chart.ts: cỡ vòng tròn lấy từ
  *    designer WinForm — 永久歯 1-5 medium / 6-8 large, 乳歯 A-C small / D-E medium;
  *    vòng trong (咬合面) chỉ có ở variant 'nested' (4-8 và D-E).
- *  - locales/ja.ts: E00002 `${field}が正しくありません。`, Q00001
+ *  - locales/ja.ts: E00002 `${field}が間違っています。` (commit 4b25e1455 chỉnh lại
+ *    theo WinForm — KHÔNG phải 「が正しくありません。」), Q00001
  *    「登録してよろしいですか？」, I00001 「登録が完了しました。」
  *
  * Commit layout (798aa8c2) chuyển mọi 【…】 sang bố cục "caption cột trái cố định
@@ -1209,7 +1210,7 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
         await step()
     })
 
-    test('TC-DATE-2 — F8 với 年 rỗng → alert E00002 「日付が正しくありません。」', async () => {
+    test('TC-DATE-2 — F8 với 年 rỗng → alert E00002 「日付が間違っています。」', async () => {
         // japaneseEraToDate trả null → chặn TRƯỚC confirm Q00001.
         const yearBox = noRow.getByRole('textbox').nth(1)
         const keep = await yearBox.inputValue()
@@ -1218,7 +1219,7 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
         await dialog.getByRole('button', { name: 'F8 登録' }).click()
         const alert = page.getByRole('alertdialog')
         await expect(alert).toBeVisible({ timeout: 10000 })
-        await expect(alert.getByText('日付が正しくありません。')).toBeVisible()
+        await expect(alert.getByText('日付が間違っています。')).toBeVisible()
         await alert.getByRole('button', { name: 'OK' }).click()
         await expect(alert).toBeHidden({ timeout: 10000 })
 

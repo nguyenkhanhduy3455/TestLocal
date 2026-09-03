@@ -44,7 +44,8 @@ import { ADMIN_USER, JA } from './test-data'
  *  - utils/tooth-chart.ts: getToothSize / getToothVariant / TOOTH_SIZE_DEFAULTS
  *    — 3 cỡ vòng tròn (WinForm frm203045 ToothModelSize) và 2 kiểu marker;
  *    `surfaceFace` xoay 歯面 của răng hàm (4–8) một phần tư theo cung.
- *  - locales/ja.ts: E00002 `${field}が正しくありません。`, Q00002
+ *  - locales/ja.ts: E00002 `${field}が間違っています。` (commit 4b25e1455 chỉnh lại
+ *    theo WinForm — KHÔNG phải 「が正しくありません。」), Q00002
  *    「更新してよろしいですか？」, I00001 「登録が完了しました。」
  *
  * CHẠY TUẦN TỰ (`describe.serial`) và dùng CHUNG một page: app giới hạn số lần
@@ -844,7 +845,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await step()
     })
 
-    test('F9 印刷 (nút) với 年 rỗng → alert E00002 「日付が正しくありません。」', async () => {
+    test('F9 印刷 (nút) với 年 rỗng → alert E00002 「日付が間違っています。」', async () => {
         // WinForm btnF9: chỉ 日付チェック rồi printProc, KHÔNG confirm. Date hợp lệ
         // sẽ dựng datasource RPT203002 + gọi print agent (preview/in/offline —
         // phụ thuộc agent, không deterministic) nên chỉ test nhánh date-sai, nó
@@ -856,7 +857,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await dialog.getByRole('button', { name: 'F9 印刷' }).click()
         const alert = page.getByRole('alertdialog')
         await expect(alert).toBeVisible({ timeout: 10000 })
-        await expect(alert.getByText('日付が正しくありません。')).toBeVisible()
+        await expect(alert.getByText('日付が間違っています。')).toBeVisible()
         await alert.getByRole('button', { name: 'OK' }).click()
         await expect(alert).toBeHidden({ timeout: 10000 })
 
@@ -873,7 +874,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await page.keyboard.press('F9')
         const alert = page.getByRole('alertdialog')
         await expect(alert).toBeVisible({ timeout: 10000 })
-        await expect(alert.getByText('日付が正しくありません。')).toBeVisible()
+        await expect(alert.getByText('日付が間違っています。')).toBeVisible()
         await alert.getByRole('button', { name: 'OK' }).click()
         await expect(alert).toBeHidden({ timeout: 10000 })
 
@@ -1237,7 +1238,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await step()
     })
 
-    test('F8 登録 với 年 rỗng → alert E00002 「日付が正しくありません。」', async () => {
+    test('F8 登録 với 年 rỗng → alert E00002 「日付が間違っています。」', async () => {
         const yearBox = noRow.getByRole('textbox').nth(1)
         const keepYear = await yearBox.inputValue()
         await yearBox.fill('') // japaneseEraToDate trả null → chặn TRƯỚC confirm
@@ -1245,7 +1246,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await dialog.getByRole('button', { name: 'F8 登録' }).click()
         const alert = page.getByRole('alertdialog')
         await expect(alert).toBeVisible({ timeout: 10000 })
-        await expect(alert.getByText('日付が正しくありません。')).toBeVisible()
+        await expect(alert.getByText('日付が間違っています。')).toBeVisible()
         await alert.getByRole('button', { name: 'OK' }).click()
         await expect(alert).toBeHidden({ timeout: 10000 })
 
