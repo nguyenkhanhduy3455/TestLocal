@@ -110,6 +110,17 @@ public sealed class SigaKonGapsTests : UiTestBase
         if (db is null || !db.CanWrite || db.ProbeError() is not null) return;
 
         db.EnsureSigaRow(PatNo);
+
+        // ⚠️ CHỤP NGUYÊN TRẠNG Ở ĐÂY, TRƯỚC KHI ĐẶT MỐC.
+        // `OneTimeSetUp` chạy SAU hàm này, nên chụp ở đó là chụp phải chính cái mốc mình
+        // vừa ghi đè lên — và `OneTimeTearDown` sẽ 「khôi phục」 về mốc chứ không về nguyên
+        // trạng. Đã trả giá 2026-09-03: bệnh nhân test mất ba ô 欠損 có sẵn (se4/5/6 = 4)
+        // và hai ô 根数 (ekon11, nkon4 = 1), phải dựng lại bằng tay.
+        _sigaBefore = db.ReadSiga(PatNo);
+        Log($"nguyên trạng SIGA (chụp TRƯỚC khi đặt mốc): {_sigaBefore}");
+        _konBefore = db.ReadKon(PatNo);
+        Log($"nguyên trạng KON : {_konBefore}");
+
         db.ResetSigaToVital(PatNo);
         db.ResetKonToNull(PatNo, [PermEkonCol, CtrlSeCol], []);
         Log($"đặt mốc TRƯỚC khi mở app: mọi se* = {SigaKonDb.SeVital}, sn* = {SigaKonDb.SnVital}, " +
@@ -125,8 +136,7 @@ public sealed class SigaKonGapsTests : UiTestBase
         if (error is not null) IgnoreWithReason($"không kết nối được SQL Server: {error}");
         _db = db;
 
-        _sigaBefore = _db.ReadSiga(PatNo);
-        _konBefore = _db.ReadKon(PatNo);
+        // _sigaBefore / _konBefore đã chụp ở PrepareDataBeforeApp — KHÔNG chụp lại ở đây.
         _preexistingTestRows = _db.CountTrnRowsWithTrtCd(PatNo, TrtDate, SigaKonDb.TestTrtCds);
         _monthRowsBefore = _db.SnapshotMonthRowKeys(PatNo, TrtDate);
 

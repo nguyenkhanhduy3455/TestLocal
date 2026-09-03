@@ -10,6 +10,9 @@ Nửa **WinForm** của ba spec Playwright. Cùng một yêu cầu nghiệp vụ
 | `p-mode-kesson-siga.spec.ts` | `PModeKessonTests` | `frm203002.Chk_PModeKesson` (frm203002.cs:7446-7495) |
 | — (không có bên web) | `SigaToothProbeTests` | PROBE `[Explicit]`, 14 câu hỏi, KHÔNG assert |
 
+> ✅ **Chạy thật 2026-09-03 trên bệnh nhân 10, 診療月 2026-08: 21/21 XANH.**
+> `TcDEL` 7/7 (12,4 phút) · `TcGAP` 8/8 (chạy theo lô) · `TcPM` 6/6 (2,8 phút).
+
 Chạy: `.\run-change-tooth-status.ps1` — xem `-Diagnostics` ở mục 6.
 
 ---
@@ -295,6 +298,39 @@ bung ra. WinForm im lặng hoàn toàn. Bản web bung alert 「当月にＰ／�
    double-click lần đầu chỉ MỞ danh sách 病名サブコード — phải double-click thêm lần nữa.
    Nhận ra danh sách サブ bằng 「MỌI dòng cùng một コード」, không phải 「dòng đầu đổi」:
    sau khi chọn 「100 Ｃ」 lưới đổi sang 8 dòng Ｃ₁..Ｃo mà dòng đầu VẪN mang コード 100.
+
+### Bốn cái bẫy của chính bộ test, phát hiện khi chạy fixture assert
+
+6. **Nút MessageBox mang tên theo ngôn ngữ WINDOWS, không theo ngôn ngữ app.** Máy test
+   chạy Windows tiếng Anh nên dirty gate có nút **`[Yes, No, Cancel, Close]`**, không phải
+   `[はい, いいえ, キャンセル]`. `Dialogs.ClickButton` so khớp tuyệt đối rồi lặng lẽ trả
+   `false`. Hậu quả tệ hơn 「đỏ」 nhiều: **TcGAP6 XANH SAI một lượt** — hộp thoại chưa hề
+   được trả lời, mà testcase vẫn đọc DB và kết luận 「Restore_SK không lùi」. Nay `PressBack`
+   ánh xạ câu trả lời sang cả hai ngôn ngữ và **assert cú bấm có trúng nút không**.
+7. **`ReopenTreatmentScreen()` là NO-OP khi `frm203002` còn mở** — nó trả về cửa sổ có sẵn,
+   không đi qua 患者選択. Mà `pGet_SIGA` (chỗ tạo dòng SIGA khi thiếu) chỉ chạy trong
+   `modPat.Get_PatRs`, gọi từ 患者確定 (frm203001.cs:1047). TcGAP8 vì thế đỏ sau 3 giây với
+   「app không tạo dòng」 trong khi app chưa hề có cơ hội. Nay nó đóng màn hình thật trước.
+8. **`pSiga_old` chốt lúc 患者確定, không phải lúc test ghi DB.** Đặt mốc 歯式 ở
+   `OneTimeSetUp` là đặt SAU khi màn hình đã mở ⇒ `Restore_SK` lùi về một mốc khác mốc mình
+   tưởng, và TcGAP7 đỏ như thể `Restore_SK` không chạy (nó CÓ chạy). Mốc phải đặt trong
+   `PrepareDataBeforeApp()` — hook mà `UiTestBase` sinh ra đúng cho loại bẫy này.
+9. **Ảnh chụp nguyên trạng phải lấy TRƯỚC khi đặt mốc**, tức cũng trong
+   `PrepareDataBeforeApp()`. Chụp ở `OneTimeSetUp` là chụp phải chính cái mốc vừa ghi đè,
+   và teardown sẽ 「khôi phục」 về mốc chứ không về nguyên trạng. Đã trả giá: bệnh nhân test
+   mất ba ô 欠損 có sẵn (`se4/5/6 = 4`) và hai ô 根数 (`ekon11`, `nkon4 = 1`).
+
+### 🧹 Dọn dữ liệu: hai tầng, và vì sao tầng thứ hai phải có HÀNG RÀO
+
+Nhập một dòng 抜歯 làm app **tự chèn thêm**: hai dòng 麻酔 (`310`, `7321`) và một 部位病名行
+(`trt_cd 0`). `CleanupTestRows` chỉ biết ba mã 179/122/185 nên bỏ sót hết, và sau vài lượt
+chạy lưới dài thêm tới mức `InsertBlankRow` bắt đầu hụt (TcGAP3 đỏ vì HARNESS).
+
+`CleanupRowsNotIn` chụp bộ khoá `ngày|disp_no|trt_cd|trt_sb` lúc `PrepareDataBeforeApp` rồi
+xoá những dòng không có trong ảnh chụp. **Nhưng chỉ thế là chưa đủ**: F9 登録 có lúc đánh
+lại `disp_no`, khi đó dòng 初診/再診/加算 THẬT cũng rơi ra ngoài ảnh chụp. Bản đầu đã xoá oan
+hai dòng 加算 của bệnh nhân test. Nay điều kiện xoá là **GIAO** của 「không có trong ảnh
+chụp」 và 「`trt_cd` ∈ `GeneratedTrtCds` = [0, 122, 179, 185, 310, 7321]」.
 
 ### ⏱️ Thời gian thực đo được
 
