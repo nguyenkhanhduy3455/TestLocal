@@ -54,8 +54,8 @@ namespace OchaCom.FlaUiTests.Tests.InpP1Dialogs;
 /// </summary>
 public static class BrSampleFlow
 {
-    public const string ToothDialogId = "frm902003";
-    public const string ToothTitleFragment = "部位選択";
+    public const string ToothDialogId = ToothSelectDialog.DialogId;
+    public const string ToothTitleFragment = ToothSelectDialog.TitleFragment;
 
     public const string BrDialogId = "frm203049";
     public const string BrTitleFragment = "Ｂｒサンプル";
@@ -68,10 +68,10 @@ public static class BrSampleFlow
     public const string BrColumnBui = "部位";
 
     /// <summary>Vùng 左上 (LU) — <c>_pos</c> sau khi bấm <c>→</c> một lần từ RU.</summary>
-    public const int PosUpperLeft = 1;
+    public const int PosUpperLeft = ToothSelectDialog.PosUpperLeft;
 
     /// <summary>Vùng 右上 (RU) — <c>_pos = 2</c> lúc BuiInfo_Load (BuiInfo.cs:352).</summary>
-    public const int PosUpperRight = 2;
+    public const int PosUpperRight = ToothSelectDialog.PosUpperRight;
 
     /// <summary>Chỉ ba giá trị này tính là "đã chọn" (frm203049.cs:227).</summary>
     public static readonly int[] BridgeBuiValues = [1, 4, 6];
@@ -82,202 +82,50 @@ public static class BrSampleFlow
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 部位選択
+    // 部位選択 — nay do Infrastructure/ToothSelectDialog giữ
+    //
+    // Hiểu biết về frm902003 (bốn vùng, ánh xạ ô 部位, phím F, End = 確定) đã được
+    // NÂNG LÊN `Infrastructure/ToothSelectDialog` ngày 2026-09-03, khi luồng thứ hai
+    // (`Tests/SigaToothStatus`) cần chính hộp thoại này. README mục 8b: dùng chung thì
+    // nâng lên Infrastructure, KHÔNG chép đôi. Các hàm dưới đây giữ nguyên chữ ký cũ
+    // để `BrSampleTests` không phải sửa gì.
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Mở 部位選択 bằng cách click ô cột 部位 của lưới đăng ký.
-    ///
-    /// <para>Trả về <c>null</c> khi không dòng nào mở được — hồ sơ test toàn dòng
-    /// 日計/合計 (BuiDispFlg = 99) hoặc lưới rỗng. Testcase gọi hàm này phải
-    /// <c>IgnoreWithReason</c> chứ đừng đỏ: đó là chuyện dữ liệu của máy, không phải lỗi app.</para>
-    /// </summary>
-    public static Window? OpenToothDialog(OchaApp app, TreatmentEntryScreen screen, TestTrace? trace = null)
-    {
-        var already = FindToothDialog(app, screen);
-        if (already is not null)
-        {
-            trace?.Note($"{ToothDialogId} da mo san — dung lai");
-            return already;
-        }
+    /// <summary>Xem <see cref="ToothSelectDialog.OpenFromGrid"/>.</summary>
+    public static Window? OpenToothDialog(OchaApp app, TreatmentEntryScreen screen, TestTrace? trace = null) =>
+        ToothSelectDialog.OpenFromGrid(app, screen, trace);
 
-        var rows = screen.Regi.Grid.Rows(limit: 12);
-        trace?.Note($"luoi dang ky co {rows.Count} dong (da cat con 12)");
-        if (rows.Count == 0) return null;
+    /// <summary>Xem <see cref="ToothSelectDialog.Find"/>.</summary>
+    public static Window? FindToothDialog(OchaApp app, TreatmentEntryScreen screen) =>
+        ToothSelectDialog.Find(app, screen.Window);
 
-        for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
-        {
-            var row = rows[rowIndex];
-            var cells = Uia.Children(row.Element).ToList();
+    /// <summary>Xem <see cref="ToothSelectDialog.SelectUpperLeftTeeth"/>.</summary>
+    public static void SelectUpperLeftTeeth(Window toothDialog, IReadOnlyList<int> teeth, TestTrace? trace = null) =>
+        ToothSelectDialog.SelectUpperLeftTeeth(toothDialog, teeth, trace);
 
-            // Ô 部位: ưu tiên ô có MÔ TẢ chứa 部位 (Name của ô kèm tiêu đề cột),
-            // không có thì lui về chỉ số cột hiển thị.
-            var idx = -1;
-            var descs = row.CellDescriptions;
-            for (var c = 0; c < descs.Count && c < cells.Count; c++)
-                if (Txt.Has(descs[c], "部位")) { idx = c; break; }
-            if (idx < 0 && cells.Count > RegiGrid.Col.Bui) idx = RegiGrid.Col.Bui;
-            if (idx < 0) continue;
+    /// <summary>Xem <see cref="ToothSelectDialog.FocusToothMap"/>.</summary>
+    public static void FocusToothMap(Window toothDialog) => ToothSelectDialog.FocusToothMap(toothDialog);
 
-            trace?.Note($"thu mo 部位選択: dong {rowIndex}, o {idx} — 「{row}」");
-            Uia.MouseClick(cells[idx]);
-            Waits.Step();
+    /// <summary>F7 全顎 — xem <see cref="ToothSelectDialog.SelectWholeArch"/>.</summary>
+    public static void SelectWholeArch(Window toothDialog, TestTrace? trace = null) =>
+        ToothSelectDialog.SelectWholeArch(toothDialog, trace);
 
-            var dialog = Waits.TryFor(() => FindToothDialog(app, screen), TimeSpan.FromSeconds(4));
-            if (dialog is not null)
-            {
-                trace?.Note($"mo duoc 部位選択 tu dong {rowIndex}");
-                trace?.Shot("bui-dialog-mo");
-                return dialog;
-            }
-        }
+    /// <summary>Xem <see cref="ToothSelectDialog.ToothId"/>.</summary>
+    public static string ToothId(int pos, int idx) => ToothSelectDialog.ToothId(pos, idx);
 
-        trace?.Note("khong dong nao mo duoc 部位選択");
-        return null;
-    }
+    /// <summary>Xem <see cref="ToothSelectDialog.ToothText"/>.</summary>
+    public static string? ToothText(Window toothDialog, int pos, int idx) =>
+        ToothSelectDialog.ToothText(toothDialog, pos, idx);
 
-    /// <summary>
-    /// Tìm cửa sổ 部位選択.
-    ///
-    /// <para><c>ModalWindows</c> của cửa sổ CHỦ đi trước: frm902003 là dialog modal thuộc
-    /// sở hữu frm203002, mà <c>GetAllTopLevelWindows</c> không phải lúc nào cũng trả về
-    /// cửa sổ dạng đó — bẫy đã từng làm việc tìm MessageBox mù hẳn.</para>
-    /// </summary>
-    public static Window? FindToothDialog(OchaApp app, TreatmentEntryScreen screen)
-    {
-        try
-        {
-            foreach (var w in screen.Window.ModalWindows)
-                if (IsToothDialog(w)) return w;
-        }
-        catch { /* cửa sổ chủ đang bận */ }
+    /// <summary>Xem <see cref="ToothSelectDialog.MarkedTeeth"/>.</summary>
+    public static IReadOnlyList<string> MarkedTeeth(Window toothDialog) =>
+        ToothSelectDialog.MarkedTeeth(toothDialog);
 
-        var byId = app.Window(ToothDialogId);
-        if (byId is not null) return byId;
+    public static int MarkedToothCount(Window toothDialog) => ToothSelectDialog.MarkedToothCount(toothDialog);
 
-        try
-        {
-            foreach (var w in app.Windows())
-                if (IsToothDialog(w)) return w;
-        }
-        catch { /* */ }
-
-        return null;
-    }
-
-    private static bool IsToothDialog(Window w)
-    {
-        try
-        {
-            return Txt.Same(Uia.AutomationIdOf(w), ToothDialogId)
-                || Txt.Has(Uia.NameOf(w), ToothTitleFragment);
-        }
-        catch { return false; }
-    }
-
-    /// <summary>
-    /// Xoá sạch rồi chọn đúng các răng của vùng <b>左上 (LU)</b> bằng bàn phím.
-    /// Xem chú thích đầu lớp về Delete / → / phím số.
-    /// </summary>
-    public static void SelectUpperLeftTeeth(Window toothDialog, IReadOnlyList<int> teeth, TestTrace? trace = null)
-    {
-        FocusToothMap(toothDialog);
-
-        trace?.Step($"Delete (xoa 32 o) → → (RU sang LU) → {string.Join(",", teeth)}");
-        Uia.SendKey(Vk.Delete);
-        Thread.Sleep(150);
-        Uia.SendKey(Vk.Right);
-        Thread.Sleep(150);
-        foreach (var t in teeth)
-        {
-            Uia.SendKey(Vk.Digit(t));
-            Thread.Sleep(150);
-        }
-        Waits.Step();
-    }
-
-    /// <summary>
-    /// Đưa tiêu điểm vào sơ đồ răng <c>buiInfo1</c> (frm902003.Designer.cs:991).
-    ///
-    /// <para><b>Bắt buộc trước khi gửi Delete / mũi tên / phím số.</b> WinForms chuyển
-    /// <c>ProcessCmdKey</c> đi LÊN theo chuỗi cha của control ĐANG FOCUS. Focus nằm ngoài
-    /// <c>buiInfo1</c> (ví dụ trên một nút F-key) thì <c>BuiInfo.ProcessCmdKey</c>
-    /// (BuiInfo.cs:368) không bao giờ được gọi — phím bay vào hư không, ô răng không đổi,
-    /// và testcase đỏ ở bước sau với thông báo hoàn toàn sai địa chỉ.</para>
-    /// </summary>
-    public static void FocusToothMap(Window toothDialog)
-    {
-        InpP1MenuFlow.Focus(toothDialog);
-
-        var map = Uia.ById(toothDialog, "buiInfo1");
-        if (map is null) return;
-
-        try { map.Focus(); }
-        catch { /* UserControl không nhận Focus qua UIA — TabIndex 0 nên thường đã có sẵn */ }
-        Thread.Sleep(120);
-    }
-
-    /// <summary>F7 全顎 — chọn CẢ 32 răng ⇒ chắc chắn dính cả hai hàm (frm902003.cs:272-278).</summary>
-    public static void SelectWholeArch(Window toothDialog, TestTrace? trace = null)
-    {
-        InpP1MenuFlow.Focus(toothDialog);
-        trace?.Step("F7 全顎");
-        Uia.SendKey(Vk.F7);
-        Waits.Step();
-    }
-
-    /// <summary>AutomationId của một ô răng: <c>buiLabel{pos}{idx}</c> (BuiInfo.cs:799).</summary>
-    public static string ToothId(int pos, int idx) => $"buiLabel{pos}{idx}";
-
-    /// <summary>
-    /// Chữ đang hiện trên một ô răng. Rỗng ⟺ giá trị 0 hoặc 10
-    /// (<c>getToothText</c>, BuiInfo.cs:767). Không tìm thấy control → null.
-    /// </summary>
-    public static string? ToothText(Window toothDialog, int pos, int idx)
-    {
-        var holder = Uia.ById(toothDialog, ToothId(pos, idx));
-        if (holder is null) return null;
-
-        var inner = Uia.ById(holder, "lblBui");
-        return Txt.N(inner is null ? Uia.NameOf(holder) : Uia.ValueOf(inner));
-    }
-
-    /// <summary>Mọi ô răng ĐANG CÓ CHỮ, dạng 「pos-idx=chữ」 — để in vào nhật ký.</summary>
-    public static IReadOnlyList<string> MarkedTeeth(Window toothDialog)
-    {
-        var marked = new List<string>();
-        for (var pos = 1; pos <= 4; pos++)
-        {
-            for (var idx = 1; idx <= 8; idx++)
-            {
-                var text = ToothText(toothDialog, pos, idx);
-                if (text is { Length: > 0 }) marked.Add($"{pos}-{idx}={text}");
-            }
-        }
-        return marked;
-    }
-
-    public static int MarkedToothCount(Window toothDialog) => MarkedTeeth(toothDialog).Count;
-
-    /// <summary>
-    /// Đóng 部位選択 bằng <b>F12 戻る</b> (frm902003.cs:189-191 → <c>this.Close()</c>).
-    ///
-    /// <para>⚠️ Ở màn này F9 là 「Br例」 chứ không phải 登録, còn <c>End</c>/<c>Escape</c> gọi
-    /// <c>btnEntry_Click</c> (:192-197) — tức là XÁC NHẬN lựa chọn và đi tiếp sang 病名選択.
-    /// Bấm nhầm là ghi vào lưới 処置.</para>
-    /// </summary>
-    public static void CloseToothDialog(OchaApp app, Window toothDialog, TestTrace? trace = null)
-    {
-        if (!Uia.IsOnScreen(toothDialog)) return;
-
-        trace?.Step("dong 部位選択 bang F12 戻る");
-        InpP1MenuFlow.Focus(toothDialog);
-        Uia.SendKey(Vk.F12);
-
-        Waits.Until(() => app.Window(ToothDialogId) is null,
-                    "dialog frm902003 dong lai sau khi bam F12 戻る",
-                    TestSettings.Current.Run.DefaultTimeout);
-    }
+    /// <summary>Xem <see cref="ToothSelectDialog.Close"/> — F12 戻る, TUYỆT ĐỐI không Escape.</summary>
+    public static void CloseToothDialog(OchaApp app, Window toothDialog, TestTrace? trace = null) =>
+        ToothSelectDialog.Close(app, toothDialog, trace);
 
     // ─────────────────────────────────────────────────────────────────────────
     // Ｂｒサンプル

@@ -89,6 +89,25 @@
     "brNoMatchTeeth": [ 1, 8 ]
   },
 
+  "sigaTooth": {
+    "//": [
+      "Luong Tests/SigaToothStatus — 自歯状況 (SIGA) va 根数 (KON):",
+      "  SigaChg (input-time) / DelExtRec (xoa dong 抜歯) / Chk_PModeKesson (Ｐ変更) / SigaChg_Save (F9).",
+      "allowSave = true moi cho: dat 歯式 ve moc xuat phat, khoi phuc anh chup, va bam F9 登録.",
+      "Co RIENG, khong dung chung parity.allowSave: luong nay ghi hai bang ma khong luong nao",
+      "khac dung toi, va no ghi NGAY LUC NHAP chu khong doi F9 — chinh do la thu dang do."
+    ],
+    "allowSave": false,
+    "//permBuiSlot": "O 部位 0-based cho 永久歯. 10 = 左上3 => cot se11 / ekon11.",
+    "permBuiSlot": 10,
+    "//milkBuiSlot": "O 部位 0-based cho 乳歯. 6 = 右上Ｂ => cot sn4 (i<16 => i-2).",
+    "milkBuiSlot": 6,
+    "//controlBuiSlot": "O 部位 DOI CHUNG, khong bao gio duoc dung toi. 18 = 右下8 => se19.",
+    "controlBuiSlot": 18,
+    "//allowRowCleanup": "Xoa cac dong 179/122/185 ma luot chay de lai — chi khi thang test KHONG co san dong nao mang cac ma do.",
+    "allowRowCleanup": true
+  },
+
   "locators": {
     "//": "AutomationId = Control.Name bên WinForm. Nếu máy Windows soi Inspect thấy khác thì sửa ở đây, KHÔNG phải sửa code.",
     "kobetuTabItem": "個別",

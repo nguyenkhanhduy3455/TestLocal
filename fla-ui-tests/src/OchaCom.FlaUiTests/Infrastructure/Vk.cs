@@ -17,6 +17,7 @@ namespace OchaCom.FlaUiTests.Infrastructure;
 /// </summary>
 public static class Vk
 {
+    public const ushort F3 = 0x72;
     public const ushort F7 = 0x76;
     public const ushort F9 = 0x78;
     public const ushort F10 = 0x79;
@@ -33,6 +34,22 @@ public static class Vk
     public const ushort Right = 0x27;
     public const ushort Down = 0x28;
 
+    /// <summary>
+    /// End — 確定 của <c>frm902003</c>「部位選択」 và <c>frm902007</c>「病名選択」
+    /// (<c>btnEntry_Click</c>, frm902003.cs:196). Cũng là phím mà nút 「F9 登録」 của
+    /// 診療入力 thật sự gửi (frm203002.cs:882).
+    /// </summary>
+    public const ushort End = 0x23;
+
     /// <summary>Phím số hàng trên (Keys.D1..D8) — đúng nhánh <c>keyData >= Keys.D1</c> của BuiInfo.</summary>
     public static ushort Digit(int d) => (ushort)(0x30 + d);
+
+    /// <summary>
+    /// Chữ cái A..Z (<c>Keys.A</c> = 0x41 = mã ASCII chữ HOA).
+    ///
+    /// <para>Ở 部位選択 thì A..E là nhánh <b>乳歯</b> của <c>BuiInfo.ProcessCmdKey</c>
+    /// (BuiInfo.cs:420-427): nó đặt <c>NyusiFlg = true</c> nên ô nhận giá trị 11..19,
+    /// KHÁC hẳn phím số (1..9 = 永久歯). Đây là cách DUY NHẤT chọn răng sữa bằng bàn phím.</para>
+    /// </summary>
+    public static ushort Letter(int upperCaseAscii) => (ushort)upperCaseAscii;
 }

@@ -23,6 +23,7 @@ public sealed class TestSettings
     [JsonPropertyName("parity")] public ParitySection Parity { get; set; } = new();
     [JsonPropertyName("inpP1")] public InpP1Section InpP1 { get; set; } = new();
     [JsonPropertyName("highNeeds")] public HighNeedsSection HighNeeds { get; set; } = new();
+    [JsonPropertyName("sigaTooth")] public SigaToothSection SigaTooth { get; set; } = new();
     [JsonPropertyName("locators")] public Dictionary<string, string> Locators { get; set; } = new();
 
     private static TestSettings? _current;
@@ -205,6 +206,53 @@ public sealed class TestSettings
         [JsonPropertyName("brNoMatchTeeth")] public int[] BrNoMatchTeeth { get; set; } = [1, 8];
     }
 
+    /// <summary>
+    /// Luồng <c>Tests/SigaToothStatus</c> — 自歯状況 (<c>SIGA</c>) và 根数 (<c>KON</c>):
+    /// <c>SigaChg</c> / <c>DelExtRec</c> / <c>Chk_PModeKesson</c> / <c>SigaChg_Save</c>.
+    ///
+    /// <para>Cờ RIÊNG, không dùng chung <see cref="ParitySection.AllowSave"/>: luồng này
+    /// ghi vào HAI bảng mà không luồng nào khác đụng tới (<c>SIGA</c>, <c>KON</c>), và
+    /// nó ghi <b>ngay lúc nhập</b> chứ không đợi F9 — chính đó là thứ đang đo. Trộn cờ
+    /// thì bật parity là mở luôn đường ghi 歯式.</para>
+    ///
+    /// <para>Tương đương <c>TEST_ALLOW_SAVE=1</c> của ba spec Playwright:
+    /// <c>tooth-extraction-siga-restore</c>, <c>siga-kon-remaining-gaps</c>,
+    /// <c>p-mode-kesson-siga</c>.</para>
+    /// </summary>
+    public sealed class SigaToothSection
+    {
+        /// <summary>
+        /// Cho phép GHI: đặt 歯式 về mốc xuất phát, khôi phục ảnh chụp, và bấm F9 登録.
+        /// Mặc định tắt ⇒ cả ba fixture tự Ignore trước khi mở app.
+        /// </summary>
+        [JsonPropertyName("allowSave")] public bool AllowSave { get; set; }
+
+        /// <summary>
+        /// Ô 部位 (0-based) đem thử cho 永久歯. Mặc định 10 = 左上3 ⇒ cột <c>se11</c> /
+        /// <c>ekon11</c> — đúng ô mà cả ba spec Playwright dùng.
+        /// </summary>
+        [JsonPropertyName("permBuiSlot")] public int PermBuiSlot { get; set; } = 10;
+
+        /// <summary>
+        /// Ô 部位 (0-based) đem thử cho 乳歯. Mặc định 6 = 右上Ｂ ⇒ cột <c>sn4</c>
+        /// (<c>i &lt; 16 ⇒ i-2</c>, modSave.cs:995).
+        /// </summary>
+        [JsonPropertyName("milkBuiSlot")] public int MilkBuiSlot { get; set; } = 6;
+
+        /// <summary>
+        /// Ô 部位 (0-based) ĐỐI CHỨNG — không bao giờ được đụng tới. Mặc định 18 = 右下8
+        /// ⇒ cột <c>se19</c>.
+        /// </summary>
+        [JsonPropertyName("controlBuiSlot")] public int ControlBuiSlot { get; set; } = 18;
+
+        /// <summary>
+        /// Cho phép XOÁ các dòng 処置 mà chính lượt chạy để lại (<c>trt_cd</c> 179/122/185
+        /// trong tháng test). Chỉ chạy khi tháng đó KHÔNG có sẵn dòng nào mang các mã ấy
+        /// trước lượt chạy — xem <c>SigaKonDb.CleanupTestRows</c>.
+        /// </summary>
+        [JsonPropertyName("allowRowCleanup")] public bool AllowRowCleanup { get; set; } = true;
+    }
+
     public sealed class RunSection
     {
         [JsonPropertyName("stepMs")] public int StepMs { get; set; }
@@ -327,6 +375,8 @@ public sealed class TestSettings
         Set("OCHA_HIGH_NEEDS_PATCH", v => s.HighNeeds.AllowDisFlgPatch = ToBool(v));
         Set("OCHA_HIGH_NEEDS_SAVE", v => s.HighNeeds.AllowSave = ToBool(v));
         Set("OCHA_HIGH_NEEDS_PAT_NO", v => s.HighNeeds.BorrowPatNo = v);
+        Set("OCHA_SIGA_ALLOW_SAVE", v => s.SigaTooth.AllowSave = ToBool(v));
+        Set("OCHA_SIGA_ROW_CLEANUP", v => s.SigaTooth.AllowRowCleanup = ToBool(v));
         Set("OCHA_BR_TEETH", v => s.InpP1.BrTeeth = ToIntArray(v));
         Set("OCHA_BR_NO_MATCH_TEETH", v => s.InpP1.BrNoMatchTeeth = ToIntArray(v));
 
