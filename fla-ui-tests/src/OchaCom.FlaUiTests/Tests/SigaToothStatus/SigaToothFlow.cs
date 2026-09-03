@@ -1113,19 +1113,29 @@ public sealed class SigaToothFlow
                     $"→ tra loi 「{answer}」");
         trace?.Shot("dirty-gate");
 
-        // ⚠️ PHẢI kiểm cú bấm có trúng không. `Dialogs.ClickButton` so khớp TUYỆT ĐỐI tên nút;
-        // trượt một ký tự là nó lặng lẽ trả false. Bản đầu bỏ qua giá trị trả về, nên khi
-        // trượt thì hộp thoại nằm lại còn testcase vẫn đi tiếp đọc DB — và 「歯式 không đổi」
-        // lúc đó có thể chỉ là 「chưa ai trả lời câu hỏi」. Đo được 2026-09-03: cả TcGAP6 lẫn
-        // TcGAP7 đều thấy 「màn hình không đóng」 sau 「いいえ」, dấu hiệu đầu tiên của chuyện này.
-        var answered = Dialogs.ClickButton(gate, answer);
+        // ⚠️ NÚT CỦA MESSAGEBOX MANG TÊN THEO NGÔN NGỮ CỦA WINDOWS, KHÔNG THEO NGÔN NGỮ APP.
+        //
+        // Đo được 2026-09-03 trên máy test (Windows tiếng Anh): dirty gate có nút
+        // [Yes, No, Cancel, Close] — KHÔNG phải [はい, いいえ, キャンセル]. `Dialogs.ClickButton`
+        // so khớp TUYỆT ĐỐI nên 「いいえ」 không bao giờ trúng, và nó lặng lẽ trả false.
+        //
+        // Hậu quả nếu bỏ qua giá trị trả về: hộp thoại nằm lại, testcase vẫn đi tiếp đọc DB,
+        // và 「歯式 không đổi」 chỉ nghĩa là 「chưa ai trả lời câu hỏi」. TcGAP6 đã XANH SAI
+        // đúng một lượt vì thế. `SaveFlow.PressF9` né được vì nó có sẵn `EnglishOf`.
+        var names = answer switch
+        {
+            "はい" => new[] { "はい", "Yes", "Y" },
+            "いいえ" => ["いいえ", "No", "N"],
+            _ => ["キャンセル", "Cancel"],
+        };
+        var answered = Dialogs.ClickButton(gate, names);
         if (!answered)
         {
-            trace?.Note($"khong co nut nao ten CHINH XAC 「{answer}」 — thu so khop CHUA chuoi");
-            answered = Dialogs.ClickButtonContaining(gate, answer);
+            trace?.Note($"khong co nut nao ten chinh xac [{string.Join(",", names)}] — thu so khop CHUA chuoi");
+            answered = Dialogs.ClickButtonContaining(gate, names);
         }
         if (!answered)
-            trace?.Note($"⛔ KHONG BAM DUOC 「{answer}」. Nut that su co: [{string.Join(",", buttons)}]");
+            trace?.Note($"⛔ KHONG BAM DUOC [{string.Join(",", names)}]. Nut that su co: [{string.Join(",", buttons)}]");
 
         var gateClosed = Waits.TryUntil(() => !Uia.IsOnScreen(gate), TimeSpan.FromSeconds(20));
         var closed = Waits.TryUntil(() => !Uia.IsOnScreen(_screen.Window), TimeSpan.FromSeconds(10));
