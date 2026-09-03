@@ -385,15 +385,28 @@ public sealed class SigaKonGapsTests : UiTestBase
 
         ReopenIfClosed();
 
-        // Vế thứ hai: 「いいえ」 = KHÔNG lưu ⇒ dòng 抜歯 vẫn còn nguyên trong TRNTRN.
-        // Trạng thái tự mâu thuẫn: răng đã lành, dòng 抜歯 vẫn đó.
-        var stillThere = _flow.LastRowMatching("抜歯");
-        Assert.That(stillThere, Is.Not.Null,
-            "「いいえ」 = KHÔNG lưu ⇒ dòng 抜歯 chưa bao giờ bị xoá khỏi TRNTRN, nên mở lại tháng phải " +
-            "thấy nó y như cũ (RestoreData chỉ lùi 歯式/根数, không đụng TRNTRN). Không thấy dòng ⇒ " +
-            "màn hình đang hiển thị trạng thái ĐÃ VỨT BỎ như thể nó là dữ liệu thật.\n" +
-            "Lưới hiện tại:\n  " + string.Join("\n  ", _flow.DescribeGrid()));
-        Log($"dòng 抜歯 vẫn còn sau discard: {stillThere}");
+        // ── Vế thứ hai: 「いいえ」 = KHÔNG lưu ⇒ dòng 抜歯 vẫn còn nguyên trong TRNTRN ──
+        //
+        // ⚠️ HỎI DB, ĐỪNG HỎI LƯỚI. Đo được 2026-09-03: trả lời 「いいえ」 ở F10 戻る
+        // KHÔNG đóng màn hình (đo ra `đóng? False`), nên lưới vẫn đang hiển thị trạng thái
+        // TRONG BỘ NHỚ — tức là trạng thái đã xoá. Bản đầu của testcase này đọc lưới rồi
+        // kết luận 「dòng đã mất khỏi DB」 và đỏ oan, trong khi DB hoàn toàn nguyên vẹn.
+        // Bên Playwright né được vì nó `openTreatmentScreen()` nạp lại; ở đây hỏi thẳng DB
+        // vừa chắc chắn hơn vừa nói đúng điều cần khoá.
+        var rowsLeft = _db.CountTrnRowsWithTrtCd(PatNo, TrtDate, SigaToothFlow.ExtractionTrtCd);
+        Log($"số dòng 179 còn trong TRNTRN sau discard: {rowsLeft}");
+
+        Assert.That(rowsLeft, Is.GreaterThan(0),
+            "「いいえ」 = KHÔNG lưu ⇒ dòng 抜歯 (đã được F9 ở trên ghi xuống) chưa bao giờ bị xoá khỏi " +
+            "TRNTRN: RestoreData chỉ lùi 歯式/根数, không đụng bảng 処置 (modSave.cs:453-462).\n" +
+            "Đây chính là trạng thái TỰ MÂU THUẪN mà WinForm chấp nhận và bản web phải khớp: " +
+            $"răng đã về 生活歯 = {SigaKonDb.SeVital} trong khi dòng 抜歯 vẫn nằm nguyên trong DB.\n" +
+            "Bằng 0 nghĩa là 「いいえ」 đang xoá cả dữ liệu đã lưu — nguy hiểm hơn hẳn cái bug đang đo.");
+
+        // Và màn hình thì vẫn đang vẽ trạng thái ĐÃ VỨT BỎ — ghi lại để người đọc log thấy
+        // rõ hai thứ đang lệch nhau, chứ không assert (đó là hành vi của app, không phải lỗi).
+        Log("lưới sau discard (KHÔNG nạp lại, nên vẫn là trạng thái trong bộ nhớ):\n  " +
+            string.Join("\n  ", _flow.DescribeGrid().TakeLast(6)));
     }
 
     [Test, Order(7)]
