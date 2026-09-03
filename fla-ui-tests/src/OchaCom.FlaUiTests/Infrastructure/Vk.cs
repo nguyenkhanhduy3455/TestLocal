@@ -29,6 +29,15 @@ public static class Vk
     public const ushort Escape = 0x1B;
 
     public const ushort Delete = 0x2E;
+
+    /// <summary>
+    /// Insert — ở <c>frm902007</c>「病名選択」 phím này ĐỔI CHẾ ĐỘ của ô nhập giữa
+    /// 「選択番号」 (so với <c>dsp_cd</c>) và 「コード」 (so với <c>dis_cd</c>),
+    /// frm902007.cs:229-232. Trên lưới 処置 thì nó là 行追加 (frm203002.cs:3570).
+    /// </summary>
+    public const ushort Insert = 0x2D;
+
+    public const ushort Return = 0x0D;
     public const ushort Left = 0x25;
     public const ushort Up = 0x26;
     public const ushort Right = 0x27;

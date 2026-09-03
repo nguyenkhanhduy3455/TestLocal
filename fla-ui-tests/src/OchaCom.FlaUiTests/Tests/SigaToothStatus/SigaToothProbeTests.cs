@@ -71,6 +71,16 @@ public sealed class SigaToothProbeTests : UiTestBase
     private KonSnapshot? _konBefore;
     private int _preexistingTestRows;
 
+    /// <summary>
+    /// 病名 「Ｃ」 = <c>dis_cd</c> 100 — ĐO ĐƯỢC từ chính lưới 病名選択 (probe Tc0, ảnh
+    /// <c>06x_byoumei-dialog.png</c>): 1=100 Ｃ · 2=103 Ｐ · 3=102 Per · 4=101 Pul ·
+    /// 10=104 単Ｇ. Dùng Ｃ cho các luồng không cần Ｐ; Ｐ変更 thì phải là 103/104.
+    /// </summary>
+    private const int DisCdC = 100;
+
+    /// <summary>歯周炎 Ｐ — mã DUY NHẤT (cùng với 104 Ｇ) mà <c>MonthP</c> gom (frm203002.cs:7358).</summary>
+    private const int DisCdP = 103;
+
     private int PermSlot => Settings.SigaTooth.PermBuiSlot;
     private int MilkSlot => Settings.SigaTooth.MilkBuiSlot;
     private int ControlSlot => Settings.SigaTooth.ControlBuiSlot;
@@ -247,6 +257,15 @@ public sealed class SigaToothProbeTests : UiTestBase
 
         if (row is null) { Kq("2", "   ⇒ DỪNG: không có dòng nào để thao tác."); return; }
 
+        // ── KQ-2c: コードモード PHẢI bật TRƯỚC chuỗi 部位選択 ────────────────
+        Try("2c", "đưa ô 点 về コードモード (click nhãn lbInpMode) — phải làm TRƯỚC 部位選択", () =>
+        {
+            var ok = _flow.EnsureCodeMode();
+            Kq("2c", $"   EnsureCodeMode → {ok}, InpMode = 「{_flow.InpMode()}」");
+            Kq("2c", "   ⇒ làm ở đây vì nó CLICK vào nhãn, tức dời tiêu điểm ra khỏi lưới. " +
+                     "Làm sau 病名選択 là mất chỗ con trỏ mà fDis_Move_Cell vừa đặt.");
+        });
+
         // ── KQ-2b: chèn dòng trống để KHÔNG gõ đè lên dữ liệu có sẵn ─────────
         RegiRow? blank = null;
         Try("2b", "Insert 行追加 — chèn dòng trống tại con trỏ", () =>
@@ -265,7 +284,7 @@ public sealed class SigaToothProbeTests : UiTestBase
             var (pos, idx) = ToothSelectDialog.ToothAtSlot(PermSlot);
             Kq("3", $"   ô {PermSlot} ⇒ vùng pos={pos} răng {idx}; cột DB = se{SeCol(PermSlot)}");
 
-            var result = _flow.SetBuiOnRow(target!, PermSlot, milk: false, trace);
+            var result = _flow.SetBuiOnRow(target!, PermSlot, milk: false, disCd: DisCdC, trace: trace);
             Kq("3", "   " + result);
             Kq("4", $"   病名選択 mở tiếp sau End? {result.DiseaseDialogOpened}");
 
@@ -275,11 +294,11 @@ public sealed class SigaToothProbeTests : UiTestBase
 
         // ── KQ-6 + KQ-7: gõ 179, chốt 枝番 1, đọc SIGA NGAY ──────────────────
         var beforeEnter = _db?.ReadSiga(PatNo);
-        Try("6", "gõ mã 179 → 処置選択 → chốt 枝番 1 (抜歯手術(前歯))", () =>
+        Try("6", "gõ mã 179 NGAY TẠI CON TRỎ app vừa đặt → 処置選択 → chốt 枝番 1", () =>
         {
-            var onRow = _flow.Grid.Snapshot().FirstOrDefault(r => r.Index == target!.Index) ?? target!;
-            Kq("6", "   gõ mã lên dòng: " + onRow);
-            var result = _flow.EnterTreatment(onRow, SigaToothFlow.ExtractionTrtCd, trtSb: 1, trace: trace);
+            Kq("6", $"   InpMode = 「{_flow.InpMode()}」, editor đang mở? {_flow.Grid.IsEditing()}, " +
+                    $"ô đang giữ con trỏ = 「{_flow.Grid.FocusedCellName()}」");
+            var result = _flow.EnterTreatmentAtCursor(SigaToothFlow.ExtractionTrtCd, trtSb: 1, trace: trace);
             Kq("6", "   " + result);
             foreach (var line in _flow.DescribeGrid(limit: 25)) Kq("6", "   " + line);
             trace.Shot("sau-nhap-179");
@@ -344,6 +363,7 @@ public sealed class SigaToothProbeTests : UiTestBase
             Kon("1", "mốc");
         });
 
+        Kq("2", $"   EnsureCodeMode → {_flow.EnsureCodeMode()}, InpMode = 「{_flow.InpMode()}」");
         var row = _flow.InputRow();
         Kq("2", "   DÒNG 処置 CUỐI = " + (row?.ToString() ?? "KHÔNG có"));
         if (row is null) { Kq("2", "   ⇒ DỪNG."); return; }
@@ -358,11 +378,10 @@ public sealed class SigaToothProbeTests : UiTestBase
             Kq("8", $"   ô {MilkSlot} ⇒ vùng pos={pos} răng {idx} ⇒ phím 「{(char)('A' + idx - 1)}」; " +
                     $"cột DB = sn{SnCol(MilkSlot)}");
 
-            var set = _flow.SetBuiOnRow(seat, MilkSlot, milk: true, trace);
+            var set = _flow.SetBuiOnRow(seat, MilkSlot, milk: true, disCd: DisCdC, trace: trace);
             Kq("8", "   đặt 部位: " + set);
 
-            var onRow = _flow.Grid.Snapshot().FirstOrDefault(r => r.Index == seat.Index) ?? seat;
-            var enter = _flow.EnterTreatment(onRow, SigaToothFlow.ExtractionTrtCd, trtSb: 0, trace: trace);
+            var enter = _flow.EnterTreatmentAtCursor(SigaToothFlow.ExtractionTrtCd, trtSb: 0, trace: trace);
             Kq("8", "   nhập 179/0: " + enter);
 
             var s = Siga("8", "sau 179/0 trên răng sữa", beforeMilk);
@@ -394,12 +413,11 @@ public sealed class SigaToothProbeTests : UiTestBase
             if (last is null) { Kq("11", "   không còn dòng nào để thao tác"); return; }
             var target = _flow.InsertBlankRow(last, trace) ?? last;
 
-            var set = _flow.SetBuiOnRow(target, PermSlot, milk: false, trace);
+            var set = _flow.SetBuiOnRow(target, PermSlot, milk: false, disCd: DisCdC, trace: trace);
             Kq("11", "   đặt 部位: " + set);
 
-            var onRow = _flow.Grid.Snapshot().FirstOrDefault(r => r.Index == target.Index) ?? target;
-            var enter = _flow.EnterTreatment(onRow, SigaToothFlow.EmrTrtCd,
-                                             SigaToothFlow.EmrFourRootSb, trace: trace);
+            var enter = _flow.EnterTreatmentAtCursor(SigaToothFlow.EmrTrtCd,
+                                                     SigaToothFlow.EmrFourRootSb, trace: trace);
             Kq("11", "   nhập 122/3: " + enter);
 
             var k = Kon("11", "sau 122/3", beforeEmr);
@@ -417,12 +435,11 @@ public sealed class SigaToothProbeTests : UiTestBase
             if (last is null) { Kq("12", "   không còn dòng nào để thao tác"); return; }
             var target = _flow.InsertBlankRow(last, trace) ?? last;
 
-            var set = _flow.SetBuiOnRow(target, PermSlot, milk: false, trace);
+            var set = _flow.SetBuiOnRow(target, PermSlot, milk: false, disCd: DisCdC, trace: trace);
             Kq("12", "   đặt 部位: " + set);
 
-            var onRow = _flow.Grid.Snapshot().FirstOrDefault(r => r.Index == target.Index) ?? target;
-            var enter = _flow.EnterTreatment(onRow, SigaToothFlow.CystTrtCd,
-                                             trtSb: 0, answerYes: true, trace: trace);
+            var enter = _flow.EnterTreatmentAtCursor(SigaToothFlow.CystTrtCd,
+                                                     trtSb: 0, answerYes: true, trace: trace);
             Kq("12", "   nhập 185/0 (trả lời はい): " + enter);
             Kq("12", "   hộp thoại có đúng câu Q00200 không? " +
                      enter.Dialogs.Any(d => Txt.Has(d, SigaToothFlow.CystConfirmFragment)));

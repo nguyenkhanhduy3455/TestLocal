@@ -325,8 +325,84 @@ public sealed class SigaToothFlow
         return null;
     }
 
-    /// <summary>End 登録 của 病名選択 (frm902007.cs:203 → <c>btnEndEntry_Click</c>).</summary>
-    public bool ConfirmDiseaseDialog(TestTrace? trace = null)
+    /// <summary>Ô nhập số/mã của 病名選択 và nhãn cho biết nó đang ở chế độ nào.</summary>
+    public const string DiseaseNoBoxId = "txtNo";
+    public const string DiseaseNoLabelId = "lblNo";
+
+    /// <summary>
+    /// Xác nhận khi bấm End 登録 mà chưa chọn 病名 nào — ĐO ĐƯỢC 2026-09-03 (probe Tc0, KQ-3).
+    ///
+    /// <para>Trả lời 「いいえ」 ⇒ <c>ComParam</c> về null ⇒ <c>OpenDialogBuiAndByou</c> thoát
+    /// sớm và <b>部位 KHÔNG được ghi vào lưới</b>. Lượt probe đầu tiên đã dính đúng bẫy này:
+    /// 部位選択 chọn đúng ô 10 nhưng dòng lưới vẫn trắng, và 抜歯 sau đó lấy 部位 của
+    /// 部位病名行 CÓ SẴN phía trên (54321) — se4..se8 đổi thay vì se11.</para>
+    /// </summary>
+    public const string NoDiseaseConfirmFragment = "病名が選択されていません";
+
+    /// <summary>
+    /// Chọn một 病名 theo <c>dis_cd</c> trong 病名選択.
+    ///
+    /// <para>Ô nhập mặc định ở chế độ 「選択番号」 — Enter khi đó so với <c>dsp_cd</c>, tức
+    /// SỐ THỨ TỰ trong danh sách, thứ phụ thuộc dữ liệu. Bấm <c>Insert</c> đổi sang
+    /// 「コード」 (frm902007.cs:229-232), khi đó Enter so với <c>dis_cd</c> — con số ổn định
+    /// mà WinForm hard-code ở nơi khác (Ｐ = 103, Ｇ = 104).</para>
+    ///
+    /// <para>Không khớp mã nào thì app bung E00024 「該当病名…」 — hàm trả false và để
+    /// nguyên hộp thoại cho testcase quyết định.</para>
+    /// </summary>
+    public bool PickDisease(Window dialog, int disCd, TestTrace? trace = null)
+    {
+        var box = Uia.ById(dialog, DiseaseNoBoxId);
+        if (box is null)
+        {
+            trace?.Note($"khong thay o nhap 「{DiseaseNoBoxId}」 cua 病名選択");
+            return false;
+        }
+
+        var label = Uia.ById(dialog, DiseaseNoLabelId);
+        var modeBefore = label is null ? "?" : Txt.N(Uia.ValueOf(label));
+
+        trace?.Step($"病名選択: Insert (doi sang コード) roi go 「{disCd}」 + Enter");
+        try { box.Focus(); } catch { /* */ }
+        Thread.Sleep(150);
+        Uia.SendKey(Vk.Insert);
+        Thread.Sleep(250);
+
+        var modeAfter = label is null ? "?" : Txt.N(Uia.ValueOf(label));
+        trace?.Note($"che do o nhap: 「{modeBefore}」 → 「{modeAfter}」 (can 「コード」)");
+
+        Uia.SetText(box, disCd.ToString());
+        Uia.SendKey(Vk.Return);
+        Thread.Sleep(400);
+
+        var chosen = DiseaseNameText(dialog);
+        trace?.Note($"病名 dang chon sau khi go ma: 「{chosen}」");
+        return chosen.Length > 0;
+    }
+
+    /// <summary>Chuỗi 病名 đang được dựng trong 病名選択 (ô chữ trên cùng); rỗng = chưa chọn gì.</summary>
+    public string DiseaseNameText(Window dialog)
+    {
+        foreach (var id in new[] { "txtDisNm", "txtDis", "txtName" })
+        {
+            var box = Uia.ById(dialog, id);
+            if (box is not null) return Txt.N(Uia.ValueOf(box));
+        }
+        // Không biết AutomationId thì lấy Edit ĐẦU TIÊN của dialog — ô 病名 nằm trên cùng.
+        var edit = Uia.Descendants(dialog, maxDepth: 6)
+                      .FirstOrDefault(e => Uia.ControlTypeOf(e) == ControlType.Edit);
+        return edit is null ? "" : Txt.N(Uia.ValueOf(edit));
+    }
+
+    /// <summary>
+    /// End 登録 của 病名選択 (frm902007.cs:203 → <c>btnEndEntry_Click</c>), có xử lý câu
+    /// xác nhận 「病名が選択されていませんが、よろしいですか?」.
+    /// </summary>
+    /// <param name="acceptNoDisease">
+    /// Gặp câu xác nhận thì trả lời 「はい」 (true) hay 「いいえ」 (false). Trả lời いいえ là
+    /// HUỶ cả lượt đặt 部位 — xem <see cref="NoDiseaseConfirmFragment"/>.
+    /// </param>
+    public bool ConfirmDiseaseDialog(TestTrace? trace = null, bool acceptNoDisease = true)
     {
         var dialog = DiseaseDialog();
         if (dialog is null) return false;
@@ -334,16 +410,41 @@ public sealed class SigaToothFlow
         trace?.Step("End 登録 (病名選択)");
         ToothSelectDialog.FocusWindow(dialog);
         Uia.SendKey(Vk.End);
+
+        var confirm = WaitForDialog(NoDiseaseConfirmFragment, TimeSpan.FromSeconds(6));
+        if (confirm is not null)
+        {
+            var answer = acceptNoDisease ? "はい" : "いいえ";
+            trace?.Note($"bung 「{Txt.N(Dialogs.TextOf(confirm))}」 → tra loi 「{answer}」");
+            trace?.Shot("khong-chon-benh-danh");
+            if (!Dialogs.ClickButton(confirm, answer, acceptNoDisease ? "Yes" : "No"))
+                Dialogs.ClickButton(confirm, "OK");
+            Waits.TryUntil(() => !Uia.IsOnScreen(confirm), TimeSpan.FromSeconds(10));
+        }
+
         return Waits.TryUntil(() => DiseaseDialog() is null, TimeSpan.FromSeconds(15));
     }
 
     /// <summary>
-    /// Đặt 部位 của một dòng lưới về ĐÚNG một ô, đi trọn 部位選択 → 病名選択.
+    /// Đặt 部位 + 病名 cho một dòng lưới, đi trọn 部位選択 → 病名選択.
     ///
     /// <para><paramref name="milk"/> = true dùng phím A..E (乳歯, giá trị ô 11+). Gõ phím
     /// SỐ cho răng sữa là biến nó thành 永久歯 và nhánh SN/NKon không bao giờ chạy.</para>
+    ///
+    /// <para><paramref name="disCd"/> là <c>dis_cd</c> đem chọn ở 病名選択. <b>Nên luôn
+    /// truyền.</b> Bỏ trống thì End 登録 bung 「病名が選択されていませんが、よろしいですか?」
+    /// và — kể cả khi trả lời はい — dòng lưới không có 病名, nên nó KHÔNG trở thành
+    /// 部位病名行 đúng nghĩa. Với Ｐ変更 thì bắt buộc phải là 103 (Ｐ) hoặc 104 (Ｇ), vì
+    /// <c>MonthP</c> chỉ gom hai mã đó (frm203002.cs:7358/:7370).</para>
+    ///
+    /// <para><b>Sau khi hàm này trả về, con trỏ đã nằm ở ô 点 của một dòng MỚI, đang mở
+    /// editor</b> — <c>fDis_Move_Cell</c> (frm203002.cs:8621-8670) dời con trỏ sang dòng
+    /// kế rồi <c>CurrentCell = hFG1[3, y]</c>, và <c>frmDis_KeyFunc_EndKey_Method</c>
+    /// (:8395-8399) gọi <c>BeginEdit(true)</c>. Đó chính là chỗ gõ mã 処置 tiếp theo, xem
+    /// <see cref="EnterTreatmentAtCursor"/>.</para>
     /// </summary>
-    public BuiSetResult SetBuiOnRow(RegiRow row, int slot, bool milk, TestTrace? trace = null)
+    public BuiSetResult SetBuiOnRow(RegiRow row, int slot, bool milk, int? disCd = null,
+                                    TestTrace? trace = null)
     {
         var seen = new List<string>();
 
@@ -379,11 +480,56 @@ public sealed class SigaToothFlow
         if (diseaseOpened)
         {
             trace?.Shot("byoumei-dialog");
+            if (disCd is { } cd && !PickDisease(disease!, cd, trace))
+                trace?.Note($"KHONG chon duoc 病名 dis_cd = {cd} — 部位 se duoc ghi ma khong co 病名");
             ConfirmDiseaseDialog(trace);
         }
 
-        seen.AddRange(DismissAll());
         return new BuiSetResult(true, marked, diseaseOpened, seen);
+    }
+
+    /// <summary>
+    /// Gõ mã 処置 vào ĐÚNG chỗ con trỏ mà app vừa đặt, KHÔNG click lại ô nào.
+    ///
+    /// <para>Dùng ngay sau <see cref="SetBuiOnRow"/>: <c>fDis_Move_Cell</c> đã đưa con trỏ
+    /// tới ô 点 của dòng mới và mở editor, còn <c>ModMain.AutoBui</c> đã chép 部位 sang dòng
+    /// đó. Click lại là tự phá: mỗi cú click có thể rơi vào ô 部位 (mở lại 部位選択), và
+    /// chỉ số dòng thì đã xê dịch vì app vừa chèn thêm dòng.</para>
+    ///
+    /// <para>⚠️ <see cref="EnsureCodeMode"/> phải chạy TRƯỚC cả chuỗi 部位選択: nó click vào
+    /// nhãn <c>lbInpMode</c>, mà click là dời tiêu điểm ra khỏi lưới.</para>
+    /// </summary>
+    public bool EnterCodeAtCursor(int trtCd, TestTrace? trace = null)
+    {
+        if (!Txt.Same(InpMode(), "コード"))
+        {
+            trace?.Note($"CANH BAO — InpMode dang la 「{InpMode()}」, o 点 se hieu {trtCd} la SO DIEM");
+            return false;
+        }
+
+        trace?.Step($"go ma 「{trtCd}」 tai cho con tro (o 点 cua dong moi) roi Enter");
+        if (!_grid.IsEditing())
+        {
+            trace?.Note("editor chua mo — bam Enter de mo");
+            _grid.Press(VirtualKeyShort.RETURN);
+            Thread.Sleep(250);
+        }
+        _grid.Type(trtCd.ToString());
+        _grid.Press(VirtualKeyShort.RETURN);
+        Thread.Sleep(1200);
+        return true;
+    }
+
+    /// <summary>
+    /// Nhập trọn một 処置 từ chỗ con trỏ đang đứng: gõ mã → 処置選択 → chốt 枝番 → trả lời
+    /// hộp thoại. Xem <see cref="EnterCodeAtCursor"/> về việc vì sao không click lại.
+    /// </summary>
+    public EnterResult EnterTreatmentAtCursor(int trtCd, int trtSb, bool? answerYes = null,
+                                              TestTrace? trace = null)
+    {
+        if (!EnterCodeAtCursor(trtCd, trace))
+            return new EnterResult(false, false, false, []);
+        return FinishTreatmentEntry(trtSb, answerYes, trace);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -565,10 +711,18 @@ public sealed class SigaToothFlow
     public EnterResult EnterTreatment(RegiRow row, int trtCd, int trtSb, bool? answerYes = null,
                                       TestTrace? trace = null)
     {
-        var seen = new List<string>();
-
         if (!EnterCodeOnRow(row, trtCd, trace))
-            return new EnterResult(false, false, false, seen);
+            return new EnterResult(false, false, false, []);
+        return FinishTreatmentEntry(trtSb, answerYes, trace);
+    }
+
+    /// <summary>
+    /// Nửa sau của một lượt nhập: chờ 処置選択, chốt 枝番, trả lời hộp thoại nghiệp vụ,
+    /// đóng editor ô 回. Dùng chung cho cả hai lối vào (click ô hay gõ tại con trỏ).
+    /// </summary>
+    private EnterResult FinishTreatmentEntry(int trtSb, bool? answerYes, TestTrace? trace)
+    {
+        var seen = new List<string>();
 
         var picker = Waits.TryFor(Picker, TimeSpan.FromSeconds(20));
         if (picker is null)
@@ -581,7 +735,7 @@ public sealed class SigaToothFlow
         trace?.Shot("処置選択-mo");
         var committed = CommitPick(picker, trtSb, trace);
 
-        // Hộp thoại nghiệp vụ của IregCodChk (185, 困難者加算…) — trả lời rồi ghi lại.
+        // Hộp thoại nghiệp vụ của IregCodChk (185 抜歯同時, 困難者加算…) — trả lời rồi ghi lại.
         var dialog = Waits.TryFor(() => OpenDialogs().FirstOrDefault(), TimeSpan.FromSeconds(4));
         while (dialog is not null)
         {
@@ -600,7 +754,7 @@ public sealed class SigaToothFlow
             dialog = Waits.TryFor(() => OpenDialogs().FirstOrDefault(), TimeSpan.FromSeconds(3));
         }
 
-        // Sau khi chốt, app mở editor ô 回 — Enter để đóng, nếu không phím sau rơi vào editor.
+        // Chốt xong app mở editor ô 回 — Enter để đóng, nếu không phím sau rơi vào editor.
         if (_grid.IsEditing())
         {
             trace?.Note($"editor dang mo voi 「{_grid.EditorText()}」 — Enter de dong");
