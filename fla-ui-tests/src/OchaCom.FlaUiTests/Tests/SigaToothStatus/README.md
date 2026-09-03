@@ -237,5 +237,67 @@ Răng đối chứng `se19` đứng yên suốt cả bốn thao tác; không c�
 (「ＯＡ＋オーラ注歯科用カートリッジ …」, 11 点). Không phải test thêm vào — đừng đếm số dòng
 để kết luận gì.
 
-**Chưa đo:** `122/3` → `KON`, `185` → hộp thoại 抜歯同時, Ｐ変更 → `Chk_PModeKesson`,
-dirty gate của F10. Ba lượt probe Tc1/Tc2/Tc3 còn đang chạy.
+### 2026-09-03 (tiếp) — bốn đường ghi còn lại
+
+| Thao tác | Kết quả | Bấm F9 chưa? |
+|---|---|---|
+| chốt `122/3` ＥＭＲ(４根) trên ô 10 | `ekon11: NULL → 4` | **chưa** |
+| chốt `185/0` 歯根嚢胞摘出手術, trả lời `はい` | `se11: 0 → 4` | **chưa** |
+| Ｐ変更 → F11 → F3 → End → End → Q00100 `はい` | **22 ô** thành `se = 4` | **chưa** |
+
+**185 CÓ bung Q00200** nguyên văn 「歯根嚢胞摘出手術と同時に抜歯手術を行いましたか?」.
+
+### Luật 「phần bù」 của `Chk_PModeKesson` — ĐO ĐƯỢC, khớp source từng ô
+
+```
+tập Ｐ cũ  (部位選択 mở ra)  = [10]                    ← đúng dòng Ｐ vừa dựng
+sau F11 全消去              = []
+sau F3 ３～３               = [5,6,7,8,9,10]           ← 右上3~左上3, KHÔNG phải 3 ô
+ô bị đánh 欠損 sau 「はい」   = [1,2,3,4, 11,12,13,14, 17…30]   (22 ô)
+4 răng khôn (0/15/16/31)    = 0, 0, 0, 0              ← KHÔNG bị đụng
+乳歯 sn4                    = 5                        ← KHÔNG bị đụng
+```
+
+`{0..31} \ {tập Ｐ mới} \ {4 răng khôn}` = 4 + 4 + 14 = **22 ô** — khớp CHÍNH XÁC. Tức là
+WinForm thật đánh 欠損 cho **phần bù**, kể cả răng chưa bao giờ dính tới Ｐ (ISSUE-14).
+
+> 📌 **F3 ３～３ phủ CẢ HAI bên hàm trên** (ô 5..10 = 右上3 → 左上3), không phải chỉ vùng
+> đang chọn như đọc source đoán ra. Đây là lý do TcPM3 đọc tập Ｐ mới từ SƠ ĐỒ RĂNG chứ
+> không hard-code theo phím.
+
+### Hai hộp thoại — nguyên văn và nút MẶC ĐỊNH
+
+| Hộp thoại | Nguyên văn | Nút mặc định |
+|---|---|---|
+| Q00100 (Ｐ変更) | 「変更を適用しますか?  当月のすべての処置に適用されます。よろしいですか?」 | **Yes** |
+| dirty gate (F10 戻る) | 「処置データは変更されています。保存しますか?」 | **No** |
+
+Đo thêm ở dirty gate: trả lời 「いいえ」 **KHÔNG đóng màn hình** (đo được `False`), và
+`SIGA` **không đổi một cột nào** ⇒ đúng như source: `Chk_PModeKesson` không bật
+`pSiga_chg` nên `Restore_SK` bỏ qua nó.
+
+### Điểm LỆCH số 1 — nay đã ĐO ĐƯỢC, không còn là suy luận
+
+Bấm Ｐ変更 khi tháng chưa có 病名 Ｐ/Ｇ: 部位選択 **không mở**, và **không hộp thoại nào**
+bung ra. WinForm im lặng hoàn toàn. Bản web bung alert 「当月にＰ／Ｇの病名がありません。」
+— một thông báo WinForm không có.
+
+### Hai bẫy nữa của chính bộ test (đã sửa)
+
+4. **Đăng ký CÓ 病名 thì app cướp tiêu điểm khỏi lưới.**
+   `frmDis_KeyFunc_EndKey_Method` rẽ nhánh 「病名入力あり」 và — với `pInpOpt[9] == 1` như
+   máy test — bắn F4 rồi `txtGuid1Sel.Focus()` (frm203002.cs:8376-8384): panel nhảy sang
+   tab ガイド. Gõ tiếp lúc đó là gõ vào ô 選択№ của ガイド. Nhánh 「病名入力なし」 (:8393)
+   mới `grdRegi.Focus()` + `BeginEdit`. Vì thế ba luồng không cần 病名 truyền `disCd: null`,
+   còn `EnterCodeAtCursor` tự đưa con trỏ về ô 点 của dòng dưới 部位病名行 khi không thấy editor.
+
+5. **Gõ mã vào ô nhập của 病名選択 KHÔNG chọn được 病名** (mục 7 phía trên đã ghi), và
+   double-click lần đầu chỉ MỞ danh sách 病名サブコード — phải double-click thêm lần nữa.
+   Nhận ra danh sách サブ bằng 「MỌI dòng cùng một コード」, không phải 「dòng đầu đổi」:
+   sau khi chọn 「100 Ｃ」 lưới đổi sang 8 dòng Ｃ₁..Ｃo mà dòng đầu VẪN mang コード 100.
+
+### ⏱️ Thời gian thực đo được
+
+Sau khi tối ưu đọc sơ đồ răng (35s → 3s), một vòng
+「Insert → 部位選択 → 病名選択 → gõ mã → 処置選択」 còn **~2,5 phút**; probe Tc1b/Tc1c
+chạy hết 170-180s, Tc2 (hai vòng + Ｐ変更) hết 199s.
