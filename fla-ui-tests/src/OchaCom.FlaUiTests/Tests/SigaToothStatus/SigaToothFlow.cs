@@ -276,9 +276,16 @@ public sealed class SigaToothFlow
         _grid.Press(VirtualKeyShort.INSERT);
         Waits.Step();
 
+        // ⚠️ 「療法 rỗng」 KHÔNG đủ để nhận ra dòng trống: 部位病名行 cũng có ô 療法 rỗng
+        // (nó in 病名 ở ô đó chỉ khi có 病名). Đo được 2026-09-03 (probe Tc1, bước 12):
+        // fallback cũ vớ đúng dòng 部位病名行 「Ｂ」 rồi mở lại 部位選択 CỦA NÓ — tức là
+        // sửa dòng đang có thay vì tạo dòng mới. Dòng trống thật thì ô 点 cũng rỗng,
+        // còn 部位病名行 mang 「-」 (frm203002.Designer.cs — RegiTen ReadOnly cho dòng đó).
+        static bool IsEmptyRow(RegiRow r) => IsBlank(r.Ryo) && IsBlank(r.Ten);
+
         var rows = _grid.Snapshot();
-        var blank = rows.FirstOrDefault(r => r.Index == at.Index && IsBlank(r.Ryo))
-                    ?? rows.LastOrDefault(r => Txt.Int(r.Day) is not null && IsBlank(r.Ryo) && !IsSummaryRow(r));
+        var blank = rows.FirstOrDefault(r => r.Index == at.Index && IsEmptyRow(r))
+                    ?? rows.LastOrDefault(r => Txt.Int(r.Day) is not null && IsEmptyRow(r) && !IsSummaryRow(r));
 
         trace?.Note("dong trong sau Insert = " + (blank?.ToString() ?? "KHONG THAY"));
         return blank;
@@ -352,53 +359,90 @@ public sealed class SigaToothFlow
     /// </summary>
     public bool PickDisease(Window dialog, int disCd, TestTrace? trace = null)
     {
-        var box = Uia.ById(dialog, DiseaseNoBoxId);
-        if (box is null)
+        // ⚠️ ĐƯỜNG NÀY LÀ ĐƯỜNG ĐO ĐƯỢC, đừng đổi lại sang gõ mã vào ô txtNo.
+        //
+        // Lượt probe Tc1 (2026-09-03) đã thử đúng cách kia: bấm Insert để đổi ô nhập sang
+        // 「コード」 (nhãn ĐỔI THẬT, đọc được), gõ 100 rồi Enter — và 病名 vẫn KHÔNG được
+        // chọn: End 登録 ngay sau đó bung 「病名が選択されていませんが、よろしいですか?」.
+        //
+        // Trong khi `dgvView_CellDoubleClick` (frm902007.cs:480-487) gọi thẳng
+        // `chkDisSb(e.RowIndex)` — đúng hàm mà nhánh Enter cũng gọi, nhưng không phụ thuộc
+        // ô nhập đang ở chế độ nào. Đây cũng là cách 処置選択 được chốt, nên hai hộp thoại
+        // dùng chung một kiểu thao tác.
+        var rows = DiseaseRowElements(dialog);
+        trace?.Note($"病名選択 co {rows.Count} dong: " +
+                    string.Join(" · ", rows.Take(12).Select(r => $"{r.Code}={r.Name}")));
+
+        var target = rows.FirstOrDefault(r => Txt.Int(r.Code) == disCd);
+        if (target is null)
         {
-            trace?.Note($"khong thay o nhap 「{DiseaseNoBoxId}」 cua 病名選択");
+            trace?.Note($"KHONG thay 病名 dis_cd = {disCd} trong danh sach");
             return false;
         }
 
-        var label = Uia.ById(dialog, DiseaseNoLabelId);
-        var modeBefore = label is null ? "?" : Txt.N(Uia.ValueOf(label));
+        trace?.Step($"病名選択: double-click dong 「{target.Code} {target.Name}」");
+        DoubleClickRow(target);
+        Thread.Sleep(800);
 
-        trace?.Step($"病名選択: Insert (doi sang コード) roi go 「{disCd}」 + Enter");
-        try { box.Focus(); } catch { /* */ }
-        Thread.Sleep(150);
-        Uia.SendKey(Vk.Insert);
-        Thread.Sleep(250);
-
-        var modeAfter = label is null ? "?" : Txt.N(Uia.ValueOf(label));
-        trace?.Note($"che do o nhap: 「{modeBefore}」 → 「{modeAfter}」 (can 「コード」)");
-
-        Uia.SetText(box, disCd.ToString());
-        Uia.SendKey(Vk.Return);
-        Thread.Sleep(600);
-
-        // ⚠️ KHÔNG lấy 「ô 病名 còn rỗng」 làm dấu hiệu chọn hụt, và TUYỆT ĐỐI không gõ
-        // thêm một lần Enter nữa để "chọn lại".
-        //
-        // Đo được 2026-09-03 (probe Tc0 lượt 3): MỘT lần Enter là đủ — 部位 được ghi vào
-        // lưới (dòng [22] hiện 「 3 (1)」 = 左上3) và End 登録 KHÔNG bung câu
-        // 「病名が選択されていませんが」. Nhưng đọc `txtDisNm` ngay sau đó vẫn ra RỖNG:
-        // `chkDisSb` → `defData` cập nhật ô này trễ hơn một nhịp. Lượt trước đã kết luận
-        // nhầm là 「chọn hụt」 vì đúng chuyện đó.
-        //
-        // Gõ Enter lần hai khi thật ra đã chọn xong = CHỌN THÊM một 病名 thứ hai
-        // (`_intMaxDis` tăng, frm902007.cs:756), tức là âm thầm đổi dữ liệu đang đo.
-        // Dấu hiệu chọn hụt DUY NHẤT đáng tin là E00024「該当病名…」.
-        var error = Dialog("該当病名");
-        if (error is not null)
+        var chosen = DiseaseNameText(dialog);
+        if (chosen.Length > 0)
         {
-            var text = Txt.N(Dialogs.TextOf(error));
-            trace?.Note($"E00024: 「{text}」 — master khong co dis_cd = {disCd}");
-            trace?.Shot("e00024-benh-danh");
-            Dialogs.DismissOk(error);
-            return false;
+            trace?.Note($"病名 da chon: 「{chosen}」");
+            return true;
         }
 
-        trace?.Note($"病名 doc lai (co the tre mot nhip): 「{DiseaseNameText(dialog)}」");
-        return true;
+        // Mã có 病名サブコード thì `chkDisSb` ĐỔI lưới sang danh sách サブ và đợi chọn lần
+        // nữa (frm902007.cs:787-801) — chỉ mã KHÔNG có サブ mới đi thẳng `defData`.
+        var subRows = DiseaseRowElements(dialog);
+        var listChanged = subRows.Count > 0 && subRows[0].Code != rows.FirstOrDefault()?.Code;
+        trace?.Note($"chua thay 病名; danh sach co doi khong? {listChanged} — " +
+                    string.Join(" · ", subRows.Take(8).Select(r => $"{r.Code}={r.Name}")));
+        trace?.Shot("byoumei-sub");
+
+        if (!listChanged) return false;
+
+        trace?.Step($"病名サブコード: double-click dong dau 「{subRows[0].Code} {subRows[0].Name}」");
+        DoubleClickRow(subRows[0]);
+        Thread.Sleep(800);
+
+        chosen = DiseaseNameText(dialog);
+        trace?.Note($"病名 sau khi chon サブ: 「{chosen}」");
+        return chosen.Length > 0;
+    }
+
+    /// <summary>Một dòng của lưới 病名選択: 選択番号 / コード / 病名.</summary>
+    public sealed record DiseaseRow(int Index, AutomationElement Element, string No, string Code, string Name);
+
+    /// <summary>Các dòng DỮ LIỆU của <c>dgvView</c> trong 病名選択 (đã loại 「Top Row」).</summary>
+    public IReadOnlyList<DiseaseRow> DiseaseRowElements(Window dialog, int limit = 60)
+    {
+        var grid = Uia.ById(dialog, "dgvView");
+        if (grid is null) return [];
+
+        var list = new List<DiseaseRow>();
+        var index = 0;
+        foreach (var element in new WinFormsGrid(grid).RowElements(limit))
+        {
+            var cells = Uia.Children(element).ToList();
+            if (cells.Count < 2) continue;
+
+            var no = Txt.N(Uia.ValueOf(cells[0]));
+            if (Txt.Int(no) is null) continue;   // dòng tiêu đề
+
+            list.Add(new DiseaseRow(
+                index++, element, no,
+                cells.Count > 1 ? Txt.N(Uia.ValueOf(cells[1])) : "",
+                cells.Count > 2 ? Txt.N(Uia.ValueOf(cells[2])) : ""));
+        }
+        return list;
+    }
+
+    private static void DoubleClickRow(DiseaseRow row)
+    {
+        var cells = Uia.Children(row.Element).ToList();
+        if (cells.Count == 0) return;
+        var (x, y) = Uia.Center(cells[Math.Min(2, cells.Count - 1)]);
+        Uia.DoubleClickPhysical(x, y);
     }
 
     /// <summary>Nội dung lưới <c>dgvView</c> của 病名選択 — để nhật ký cho biết đang thấy danh sách nào.</summary>
