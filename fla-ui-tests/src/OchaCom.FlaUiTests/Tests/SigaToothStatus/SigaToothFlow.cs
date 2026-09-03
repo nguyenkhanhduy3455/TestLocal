@@ -393,13 +393,19 @@ public sealed class SigaToothFlow
 
         // Mã có 病名サブコード thì `chkDisSb` ĐỔI lưới sang danh sách サブ và đợi chọn lần
         // nữa (frm902007.cs:787-801) — chỉ mã KHÔNG có サブ mới đi thẳng `defData`.
+        //
+        // ⚠️ Nhận ra danh sách サブ bằng 「MỌI dòng đều mang cùng một コード」, KHÔNG phải
+        // 「dòng đầu đổi」. Đo được 2026-09-03 (probe Tc1): sau khi double-click 「100 Ｃ」,
+        // lưới đổi sang 4 cột 選択番号|コード|枝番|病名 với 8 dòng — mà dòng đầu VẪN mang
+        // コード 100, đúng bằng dòng đầu của danh sách trước đó. So dòng đầu vì thế luôn
+        // kết luận 「không đổi」 và cả bước chọn サブ bị bỏ qua.
         var subRows = DiseaseRowElements(dialog);
-        var listChanged = subRows.Count > 0 && subRows[0].Code != rows.FirstOrDefault()?.Code;
-        trace?.Note($"chua thay 病名; danh sach co doi khong? {listChanged} — " +
-                    string.Join(" · ", subRows.Take(8).Select(r => $"{r.Code}={r.Name}")));
+        var looksLikeSubList = subRows.Count > 0 && subRows.All(r => Txt.Int(r.Code) == disCd);
+        trace?.Note($"chua thay 病名; dang o danh sach サブ? {looksLikeSubList} — " +
+                    string.Join(" · ", subRows.Take(8).Select(r => $"{r.Code}/{r.Name}")));
         trace?.Shot("byoumei-sub");
 
-        if (!listChanged) return false;
+        if (!looksLikeSubList) return false;
 
         trace?.Step($"病名サブコード: double-click dong dau 「{subRows[0].Code} {subRows[0].Name}」");
         DoubleClickRow(subRows[0]);
@@ -429,10 +435,12 @@ public sealed class SigaToothFlow
             var no = Txt.N(Uia.ValueOf(cells[0]));
             if (Txt.Int(no) is null) continue;   // dòng tiêu đề
 
+            // Danh sách chính có 3 cột (選択番号|コード|病名); danh sách サブ có 4
+            // (選択番号|コード|枝番|病名). Tên luôn nằm ở ô CUỐI.
             list.Add(new DiseaseRow(
                 index++, element, no,
                 cells.Count > 1 ? Txt.N(Uia.ValueOf(cells[1])) : "",
-                cells.Count > 2 ? Txt.N(Uia.ValueOf(cells[2])) : ""));
+                Txt.N(Uia.ValueOf(cells[^1]))));
         }
         return list;
     }
