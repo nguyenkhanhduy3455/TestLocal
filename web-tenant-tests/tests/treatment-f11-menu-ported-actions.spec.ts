@@ -141,6 +141,8 @@ const OUTCOME_PUT_URL = /\/tenant\/patients\/\d+\/outcome(\?|$)/
 const ACC_PRECHECK_URL = /\/tenant\/treatment\/accounting\/precheck/
 /** LetAccData2 — bước GHI của 未精算データ作成. */
 const INSERT_UNPAID_URL = /\/tenant\/treatment\/accounting\/insert-unpaid(\?|$)/
+/** 未精算 の削除 — bước chạy TRƯỚC precheck trong runLetAccData2 (modAcc.cs:428). */
+const CLEAR_UNPAID_URL = /\/tenant\/treatment\/accounting\/clear-unpaid(\?|$)/
 
 // ── Nhãn lấy nguyên văn từ F11_MENU_ITEMS ────────────────────────────────────
 const MENU_KARTE = '4 カルテ'
@@ -246,11 +248,35 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
     /** Submenu đang mở của một mục cha (`options` / `tenki`). */
     const submenuOf = (key: string) => page.locator(`[data-sub="${key}"] [data-submenu]`)
 
-    /** Về lại màn 診療入力 của bệnh nhân test và chờ lưới dựng xong. */
+    /**
+     * Về lại màn 診療入力 của bệnh nhân test và chờ lưới dựng xong.
+     *
+     * Nạp lại tối đa 3 lần nếu ra TRANG TRẮNG. Đo 2026-09-03 (~2/6 lượt): `page.goto`
+     * xong nhưng app không render gì, KHÔNG có `pageerror` nào; probe bắt được thủ phạm
+     * là chính DEV SERVER — hàng loạt module ES trả `net::ERR_FAILED`, ví dụ
+     * `/src/features/treatments/api/kihon-def-api.ts`, nên route component không bao giờ
+     * nạp xong. Là nhiễu hạ tầng (Vite phục vụ vài trăm module qua nginx/HTTPS), không
+     * phải app chết — nhưng có log để lần nào phải nạp lại vẫn nhìn thấy, không giấu
+     * triệu chứng. (Cùng cách với `openTreatmentScreen` của siga-kon-remaining-gaps.)
+     */
     async function backToEntry() {
-        await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
-        // Header 患者情報 render 「合計:」 = màn detail đã sẵn sàng nhận F11.
-        await expect(page.getByText('合計:').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, {
+                waitUntil: 'domcontentloaded',
+            })
+            try {
+                // Header 患者情報 render 「合計:」 = màn detail đã sẵn sàng nhận F11.
+                await expect(page.getByText('合計:').first()).toBeVisible({
+                    timeout: attempt === 1 ? GRID_LOAD_TIMEOUT : GRID_LOAD_TIMEOUT / 2,
+                })
+                return
+            } catch (e) {
+                if (attempt === 3) throw e
+                console.log(
+                    `backToEntry: màn 診療入力 ra trang trắng (lần ${attempt}/3) — nạp lại`,
+                )
+            }
+        }
     }
 
     /**
@@ -625,6 +651,13 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
             .waitForResponse((r) => ACC_PRECHECK_URL.test(r.url()), { timeout: 60_000 })
             .catch(() => null)
 
+        // 未精算 の削除 (modAcc.cs:428 deleteTrtDtUnPaid) chạy TRƯỚC precheck trong
+        // runLetAccData2. Bắt riêng nó: nếu nó lỗi thì chuỗi dừng ngay tại đó và assert
+        // precheck bên dưới sẽ báo sai chỗ ("không gọi precheck") — mất công truy ngược.
+        const clearUnpaid = page
+            .waitForResponse((r) => CLEAR_UNPAID_URL.test(r.url()), { timeout: 60_000 })
+            .catch(() => null)
+
         try {
             await openMenu()
             await clickTopItem(MENU_ACC_DATA_ONLY)
@@ -648,6 +681,27 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
                 await page.getByRole('button', { name: 'OK', exact: true }).first().click()
                 await expect(checkGate).toBeHidden({ timeout: 10_000 })
             }
+
+            // ĐANG ĐỎ Ở ĐÂY (đo 2026-09-03) — LỖI THẬT CỦA BE, không phải test:
+            //   POST /tenant/treatment/accounting/clear-unpaid → 500
+            //   PLT.INTERNAL_ERROR 「42P01: relation "unpaid" does not exist」
+            // ClearDayUnpaidHandler dùng SoftDeleteAsync → ExecuteUpdateAsync và KHÔNG mở
+            // transaction, mà TenantSearchPathInterceptor chỉ đặt
+            // `SET LOCAL search_path TO t_<tenant>` cho lệnh non-SELECT KHI
+            // `command.Transaction is not null` (interceptor:60/101). Lệnh UPDATE vì thế
+            // chạy trên search_path mặc định (public) và không thấy bảng `unpaid` — bảng
+            // có thật trong schema t_tenant1 (đã kiểm bằng information_schema).
+            // Mọi caller SoftDeleteAsync khác đều nằm trong BeginTransactionAsync nên
+            // không dính; ClearDayUnpaidHandler (thêm ở ochacom-saas 4be021187, 2026-09-03)
+            // và DeleteUnpaidRecordsHandler là hai chỗ lẻ loi.
+            // Hệ quả: cả 「3 会計データ作成」 lẫn chuỗi F8 会計 đều dừng ở toast
+            // 「未精算データの削除に失敗しました」 ⇒ không bao giờ tạo được 未精算データ.
+            const cleared = await clearUnpaid
+            expect(
+                cleared === null ? null : cleared.status(),
+                '未精算 の削除 (clear-unpaid) lỗi ⇒ runLetAccData2 return false ngay, các bước sau ' +
+                    'không chạy. Xem chú thích ngay trên: 42P01 relation "unpaid" does not exist.',
+            ).toBeLessThan(400)
 
             const res = await precheck
             expect(
