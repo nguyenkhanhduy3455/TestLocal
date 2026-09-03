@@ -404,7 +404,11 @@ public sealed class SigaKonGapsTests : UiTestBase
 
         // 「いいえ」 ở dirty gate.
         var back = _flow.PressBack("いいえ", trace);
-        Log($"F10 戻る: gate 「{back.GateText}」, nút mặc định 「{back.DefaultButton}」, đóng? {back.ScreenClosed}");
+        Log("F10 戻る: " + back);
+        Assert.That(back.Answered, Is.True,
+            $"KHÔNG bấm trúng nút 「いいえ」 của dirty gate — nút thật sự có: [{string.Join(",", back.Buttons)}]. " +
+            "Không trả lời được thì mọi khẳng định phía sau vô nghĩa: 「歯式 không đổi」 khi đó chỉ " +
+            "nghĩa là chưa ai trả lời câu hỏi.");
         Assert.That(back.GateAsked, Is.True,
             "Xoá một dòng rồi F10 戻る phải bung 「処置データは変更されています。保存しますか？」 " +
             "(modSave.cs:154-226). Không bung ⇒ app không coi việc xoá là 「đã sửa」.");
@@ -475,8 +479,13 @@ public sealed class SigaKonGapsTests : UiTestBase
             "không chạy ⇒ cờ pSiga_chg cũng chưa bao giờ bật và TC này không kiểm được gì.");
 
         var back = _flow.PressBack("いいえ", trace);
-        Log($"F10 戻る: gate 「{back.GateText}」, nút mặc định 「{back.DefaultButton}」");
+        Log("F10 戻る: " + back);
         Assert.That(back.GateAsked, Is.True, "F10 戻る sau khi nhập 処置 phải bung dirty gate.");
+        Assert.That(back.Answered, Is.True,
+            $"KHÔNG bấm trúng nút 「いいえ」 — nút thật sự có: [{string.Join(",", back.Buttons)}]. " +
+            "Chưa trả lời được thì không thể kết luận gì về Restore_SK.");
+        Assert.That(back.GateClosed, Is.True,
+            "Bấm 「いいえ」 rồi mà hộp thoại không đóng ⇒ cú bấm không tới được app.");
 
         var afterDiscard = ReadSiga("sau 「いいえ」");
         Assert.That(afterDiscard.DiffFrom(atOpen), Is.Empty,

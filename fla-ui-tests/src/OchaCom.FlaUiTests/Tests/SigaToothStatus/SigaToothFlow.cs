@@ -1071,7 +1071,25 @@ public sealed class SigaToothFlow
     /// <c>ReopenTreatmentScreen</c>.</para>
     /// </summary>
     /// <param name="answer">「はい」 = Yes (LƯU THẬT), 「いいえ」 = No, 「キャンセル」 = Cancel.</param>
-    public sealed record BackResult(bool GateAsked, string GateText, string DefaultButton, bool ScreenClosed);
+    /// <param name="GateAsked">Dirty gate có bung không.</param>
+    /// <param name="GateText">Nguyên văn câu hỏi.</param>
+    /// <param name="DefaultButton">Nút đang giữ con trỏ lúc hộp thoại vừa mở.</param>
+    /// <param name="Buttons">TÊN THẬT của các nút — đọc để biết vì sao một cú bấm trượt.</param>
+    /// <param name="Answered">
+    /// Cú bấm có TRÚNG nút không. <b>Phải kiểm cái này.</b> Bản đầu chỉ bấm rồi đi tiếp, nên
+    /// khi tên nút không khớp tuyệt đối thì hộp thoại nằm lại mà testcase vẫn đọc DB và kết
+    /// luận như thể đã trả lời — 「歯式 không đổi」 khi ấy có thể chỉ là 「chưa ai trả lời」.
+    /// </param>
+    /// <param name="GateClosed">Hộp thoại đã đóng chưa.</param>
+    /// <param name="ScreenClosed">Màn hình 診療入力 có đóng theo không.</param>
+    public sealed record BackResult(bool GateAsked, string GateText, string DefaultButton,
+                                    IReadOnlyList<string> Buttons, bool Answered,
+                                    bool GateClosed, bool ScreenClosed)
+    {
+        public override string ToString() =>
+            $"gate={GateAsked} 「{GateText}」 nút=[{string.Join(",", Buttons)}] mặc định=「{DefaultButton}」 " +
+            $"bấm trúng={Answered} gate đóng={GateClosed} màn hình đóng={ScreenClosed}";
+    }
 
     public BackResult PressBack(string answer, TestTrace? trace = null)
     {
@@ -1085,19 +1103,47 @@ public sealed class SigaToothFlow
         if (gate is null)
         {
             trace?.Note("F10 KHONG bung dirty gate — hop thoai dang mo: " + DescribeDialogs());
-            return new BackResult(false, "", "", !Uia.IsOnScreen(_screen.Window));
+            return new BackResult(false, "", "", [], false, true, !Uia.IsOnScreen(_screen.Window));
         }
 
         var text = Txt.N(Dialogs.TextOf(gate));
         var defaultButton = FocusedButtonName();
-        trace?.Note($"dirty gate: 「{text}」 — nut mac dinh 「{defaultButton}」 → tra loi 「{answer}」");
+        var buttons = ButtonNames(gate);
+        trace?.Note($"dirty gate: 「{text}」 — nut [{string.Join(",", buttons)}], mac dinh 「{defaultButton}」 " +
+                    $"→ tra loi 「{answer}」");
         trace?.Shot("dirty-gate");
 
-        Dialogs.ClickButton(gate, answer);
-        Waits.TryUntil(() => !Uia.IsOnScreen(gate), TimeSpan.FromSeconds(20));
+        // ⚠️ PHẢI kiểm cú bấm có trúng không. `Dialogs.ClickButton` so khớp TUYỆT ĐỐI tên nút;
+        // trượt một ký tự là nó lặng lẽ trả false. Bản đầu bỏ qua giá trị trả về, nên khi
+        // trượt thì hộp thoại nằm lại còn testcase vẫn đi tiếp đọc DB — và 「歯式 không đổi」
+        // lúc đó có thể chỉ là 「chưa ai trả lời câu hỏi」. Đo được 2026-09-03: cả TcGAP6 lẫn
+        // TcGAP7 đều thấy 「màn hình không đóng」 sau 「いいえ」, dấu hiệu đầu tiên của chuyện này.
+        var answered = Dialogs.ClickButton(gate, answer);
+        if (!answered)
+        {
+            trace?.Note($"khong co nut nao ten CHINH XAC 「{answer}」 — thu so khop CHUA chuoi");
+            answered = Dialogs.ClickButtonContaining(gate, answer);
+        }
+        if (!answered)
+            trace?.Note($"⛔ KHONG BAM DUOC 「{answer}」. Nut that su co: [{string.Join(",", buttons)}]");
 
+        var gateClosed = Waits.TryUntil(() => !Uia.IsOnScreen(gate), TimeSpan.FromSeconds(20));
         var closed = Waits.TryUntil(() => !Uia.IsOnScreen(_screen.Window), TimeSpan.FromSeconds(10));
-        return new BackResult(true, text, defaultButton, closed);
+        trace?.Note($"gate dong? {gateClosed}   man hinh dong? {closed}");
+        return new BackResult(true, text, defaultButton, buttons, answered, gateClosed, closed);
+    }
+
+    /// <summary>Tên THẬT của mọi nút trên một hộp thoại — để biết vì sao một cú bấm trượt.</summary>
+    public static IReadOnlyList<string> ButtonNames(Window dialog)
+    {
+        try
+        {
+            return dialog.FindAllDescendants(cf => cf.ByControlType(ControlType.Button))
+                         .Select(b => Txt.N(Uia.NameOf(b)))
+                         .Where(n => n.Length > 0)
+                         .ToList();
+        }
+        catch { return []; }
     }
 
     /// <summary>

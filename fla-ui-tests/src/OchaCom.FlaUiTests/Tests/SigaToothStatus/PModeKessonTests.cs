@@ -388,7 +388,7 @@ public sealed class PModeKessonTests : UiTestBase
 
         _flow.DismissAll();
         var back = _flow.PressBack("いいえ", trace);
-        Log($"F10 戻る: gate bung? {back.GateAsked} — 「{back.GateText}」, nút mặc định 「{back.DefaultButton}」");
+        Log("F10 戻る: " + back);
 
         var after = ReadSiga("sau 「いいえ」");
         Assert.That(after.DiffFrom(before), Is.Empty,
