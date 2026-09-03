@@ -310,9 +310,13 @@ test.describe('SidePanel — 見出しクリックの並べ替え (frm203002 4�
     await step()
   }
 
+  /** 「カルテ記載選択」 do AutoSantei tự bung khi vào màn — xem chú thích ở beforeAll. */
+  let karteCmtDialog: Locator
+
   test.beforeAll(async ({ browser }) => {
     page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
     step = makeStep(page)
+    karteCmtDialog = page.getByRole('dialog').filter({ hasText: 'カルテ記載選択' })
     page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
 
     // Popup 「〜を算定しますか？」 của AutoSantei nổi đè và nuốt click — dọn tự động
@@ -328,6 +332,28 @@ test.describe('SidePanel — 見出しクリックの並べ替え (frm203002 4�
       { times: 30 },
     )
 
+    // …NHƯNG "No thì không kéo theo カルテ記載選択" chỉ đúng với BỆNH NHÂN CÓ confirm.
+    // Đo trên BN 12138 (mặc định của file này) ngày 2026-09-03: màn KHÔNG hỏi gì cả,
+    // AutoSantei 算定 thẳng 歯科疾患管理料 rồi bung 「カルテ記載選択」 (frm203012
+    // gType.Auto) ở khoảng t+4s và ĐỂ NGUYÊN. Nó là modal, nên expectNoDialogOpened
+    // đếm được 1 dialog và tố oan cú bấm tiêu đề là "mở dialog" (đúng lỗi
+    // Click-header-chọn-dòng của WinForm) — trong khi cú bấm hoàn toàn vô can.
+    //
+    // Đây là chỗ DUY NHẤT bấm 「F10 戻る」 của dialog đó: tự click ở nơi khác sẽ bị
+    // chính handler chen ngang (Playwright chạy handler trước mỗi action / mỗi assert
+    // auto-retry) → dialog đóng trước, cú click gốc mất nút, timeout.
+    await page.addLocatorHandler(
+      karteCmtDialog,
+      async () => {
+        await karteCmtDialog
+          .getByRole('button', { name: 'F10 戻る' })
+          .first()
+          .click({ timeout: 3000 })
+          .catch(() => {})
+      },
+      { times: 30 },
+    )
+
     await page.goto('/login', { waitUntil: 'domcontentloaded' })
     await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
     await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
@@ -337,6 +363,17 @@ test.describe('SidePanel — 見出しクリックの並べ替え (frm203002 4�
     const url = TRT_DT ? `/treatments/${PAT_NO}?trtDt=${TRT_DT}` : `/treatments/${PAT_NO}`
     await page.goto(url, { waitUntil: 'domcontentloaded' })
     await expect(page.getByText('合計:').first()).toBeVisible({ timeout: 60000 })
+
+    // 「合計:」 hiện ở ~t+1.7s nhưng AutoSantei còn chạy tới ~t+4s — phải chờ nó xong
+    // TRƯỚC testcase đầu tiên, nếu không dialog của nó rơi vào giữa suite. Cả hai
+    // dialog đều do locator handler bấm, mà handler CHỈ chạy khi có action / assert
+    // auto-retry, nên vòng dưới vừa là cú hích cho handler vừa là bằng chứng màn sạch
+    // LIÊN TỤC vài nhịp (cùng cách với guide/pack-sidepanel).
+    for (let i = 0; i < 6; i++) {
+      await expect(page.getByText(/を算定しますか？/)).toHaveCount(0, { timeout: 20000 })
+      await expect(karteCmtDialog).toHaveCount(0, { timeout: 15000 })
+      await page.waitForTimeout(700)
+    }
   })
 
   test.afterAll(async () => {
