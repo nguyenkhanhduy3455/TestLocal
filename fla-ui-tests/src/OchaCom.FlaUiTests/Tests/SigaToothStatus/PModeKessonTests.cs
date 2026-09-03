@@ -114,6 +114,19 @@ public sealed class PModeKessonTests : UiTestBase
             : "Cần sigaTooth.allowSave = true — Chk_PModeKesson tự nó là một lệnh GHI DB thật vào " +
               "bảng SIGA (frm203002.cs:7480-7491), chạy trong transaction riêng và commit ngay.";
 
+    /// <summary>
+    /// Đặt mốc 歯式 TRƯỚC khi app mở — xem chú thích cùng tên ở <see cref="SigaKonGapsTests"/>.
+    /// <c>pSiga_old</c> chốt lúc 患者確定, mọi lệnh ghi sau đó app không thấy.
+    /// </summary>
+    protected override void PrepareDataBeforeApp()
+    {
+        var db = SigaKonDb.CreateOrNull(Settings);
+        if (db is null || !db.CanWrite || db.ProbeError() is not null) return;
+        db.EnsureSigaRow(PatNo);
+        db.ResetSigaToVital(PatNo);
+        Log($"đặt mốc TRƯỚC khi mở app: mọi se* = {SigaKonDb.SeVital}, sn* = {SigaKonDb.SnVital}.");
+    }
+
     [OneTimeSetUp]
     public void PModeOneTimeSetUp()
     {

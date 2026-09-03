@@ -69,6 +69,20 @@ public sealed class SigaKonDb
     /// <summary>Ba mã 処置 mà luồng này nhập vào lưới — cũng là tập đem dọn.</summary>
     public static readonly int[] TestTrtCds = [179, 122, 185];
 
+    /// <summary>
+    /// MỌI mã 処置 mà một lượt chạy của luồng này có thể đẻ ra trên lưới.
+    ///
+    /// <para>Ngoài ba mã test còn có thứ <b>app tự chèn</b>: chốt một dòng 抜歯 kéo theo
+    /// 麻酔 (<c>310</c>, <c>7321</c> — đo được 2026-09-03), và đặt 部位 sinh ra một
+    /// 部位病名行 mang <c>trt_cd 0</c>.</para>
+    ///
+    /// <para><b>Đây là hàng rào an toàn của <see cref="CleanupRowsNotIn"/>.</b> Chỉ 「không
+    /// có trong ảnh chụp」 thôi là CHƯA ĐỦ để xoá: F9 登録 có lúc đánh lại <c>disp_no</c>,
+    /// và khi đó dòng 初診/再診/加算 THẬT cũng rơi ra ngoài ảnh chụp. Đã trả giá
+    /// 2026-09-03 — bản đầu xoá mất mấy dòng 加算 của bệnh nhân test.</para>
+    /// </summary>
+    public static readonly int[] GeneratedTrtCds = [0, 122, 179, 185, 310, 7321];
+
     private readonly string _connectionString;
     private readonly int _commandTimeout;
     private readonly bool _allowWrite;
@@ -387,8 +401,13 @@ public sealed class SigaKonDb
             while (reader.Read())
             {
                 var key = $"{reader["d"]}|{reader["disp_no"]}|{reader["trt_cd"]}|{reader["trt_sb"]}";
-                if (!snapshot.Contains(key))
-                    doomed.Add(((string)reader["d"], Convert.ToInt32(reader["disp_no"])));
+                if (snapshot.Contains(key)) continue;
+
+                // HÀNG RÀO: chỉ xoá mã mà chính luồng này có thể đẻ ra. Xem GeneratedTrtCds.
+                var trtCd = Convert.ToInt32(reader["trt_cd"]);
+                if (!GeneratedTrtCds.Contains(trtCd)) continue;
+
+                doomed.Add(((string)reader["d"], Convert.ToInt32(reader["disp_no"])));
             }
         }
 
@@ -407,7 +426,8 @@ public sealed class SigaKonDb
                 n += cmd.ExecuteNonQuery();
             }
         }
-        return $"đã xoá {n} dòng do lượt chạy đẻ ra (kể cả 麻酔 và 部位病名行 app tự chèn).";
+        return $"đã xoá {n} dòng do lượt chạy đẻ ra (chỉ trt_cd ∈ [{string.Join(",", GeneratedTrtCds)}] " +
+               "và không có trong ảnh chụp).";
     }
 
     /// <summary>
