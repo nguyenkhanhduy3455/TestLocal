@@ -67,6 +67,13 @@ public sealed class DelExtRecTests : UiTestBase
     private KonSnapshot? _konBefore;
     private int _preexistingTestRows;
 
+    /// <summary>
+    /// 「Dòng nào vốn đã có」 của tháng test. Dọn theo ảnh chụp này thay vì theo danh sách
+    /// mã: một lượt nhập 抜歯 làm app TỰ CHÈN thêm dòng 麻酔 và 部位病名行, những thứ đó ở
+    /// lại sau F9 và dồn dần cho tới khi lưới dài ra và harness bắt đầu hụt.
+    /// </summary>
+    private HashSet<string> _monthRowsBefore = [];
+
     private int PermSlot => Settings.SigaTooth.PermBuiSlot;
     private int MilkSlot => Settings.SigaTooth.MilkBuiSlot;
     private int ControlSlot => Settings.SigaTooth.ControlBuiSlot;
@@ -102,6 +109,7 @@ public sealed class DelExtRecTests : UiTestBase
         _sigaBefore = _db.ReadSiga(PatNo);
         _konBefore = _db.ReadKon(PatNo);
         _preexistingTestRows = _db.CountTrnRowsWithTrtCd(PatNo, TrtDate, SigaKonDb.TestTrtCds);
+        _monthRowsBefore = _db.SnapshotMonthRowKeys(PatNo, TrtDate);
 
         Log("╔══ NGUYÊN TRẠNG TRƯỚC LƯỢT CHẠY (chép lại nếu cần dựng tay) ══");
         Log($"║ SIGA: {_sigaBefore?.ToString() ?? "(KHÔNG có dòng nào)"}");
@@ -126,7 +134,10 @@ public sealed class DelExtRecTests : UiTestBase
             if (_sigaBefore is not null) { _db.RestoreSiga(PatNo, _sigaBefore); Log("dọn: SIGA trả về nguyên trạng."); }
             if (_konBefore is not null) { _db.RestoreKon(PatNo, _konBefore); Log("dọn: KON trả về nguyên trạng."); }
             if (Settings.SigaTooth.AllowRowCleanup)
+            {
                 Log("dọn: " + _db.CleanupTestRows(PatNo, TrtDate, _preexistingTestRows));
+                Log("dọn: " + _db.CleanupRowsNotIn(PatNo, TrtDate, _monthRowsBefore));
+            }
         }
         catch (Exception e) { Log($"dọn HỎNG: {e.Message} — dựng tay theo khối 「NGUYÊN TRẠNG」 ở trên."); }
     }

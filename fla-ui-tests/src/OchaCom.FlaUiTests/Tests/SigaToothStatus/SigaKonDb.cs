@@ -320,6 +320,97 @@ public sealed class SigaKonDb
     }
 
     /// <summary>
+    /// Ảnh chụp 「dòng nào vốn đã có」 của tháng test, dạng <c>ngày|disp_no|trt_cd|trt_sb</c>.
+    ///
+    /// <para><b>Vì sao là bộ khoá này chứ không phải <c>seq</c>.</b> F9 登録 xoá sạch rồi
+    /// chèn lại toàn bộ 処置行 của tháng, nên MỌI <c>seq</c> đều mới sau một lượt lưu —
+    /// ảnh chụp theo <c>seq</c> vô dụng (đúng cái bẫy đã ghi ở
+    /// <c>OchaDbParity.DescribeDirft</c>). Nhưng <c>disp_no</c> thì WinForm GIỮ NGUYÊN cho
+    /// dòng cũ (modSave.cs:306, lấy từ cột ẩn 50 của lưới) và chỉ cấp số mới cho dòng mới
+    /// (:5623). Vì thế bộ khoá này phân biệt được 「dòng vốn có」 với 「dòng lượt chạy đẻ ra」
+    /// kể cả sau khi bấm F9.</para>
+    /// </summary>
+    public HashSet<string> SnapshotMonthRowKeys(int patNo, DateTime month)
+    {
+        var (from, to) = MonthRange(month);
+        using var con = Open();
+        using var cmd = Command(con,
+            """
+            SELECT CONVERT(varchar(10), trt_dt, 120) AS d, disp_no, trt_cd, trt_sb
+              FROM TRNTRN
+             WHERE pat_no = @p AND trt_dt >= @f AND trt_dt < @t
+            """);
+        cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+        cmd.Parameters.Add("@f", SqlDbType.DateTime).Value = from;
+        cmd.Parameters.Add("@t", SqlDbType.DateTime).Value = to;
+
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+            keys.Add($"{reader["d"]}|{reader["disp_no"]}|{reader["trt_cd"]}|{reader["trt_sb"]}");
+        return keys;
+    }
+
+    /// <summary>
+    /// Xoá MỌI dòng của tháng test không có trong ảnh chụp <see cref="SnapshotMonthRowKeys"/>.
+    ///
+    /// <para>Cần vì <see cref="CleanupTestRows"/> chỉ biết ba mã 179/122/185, trong khi một
+    /// lượt nhập 抜歯 làm app <b>tự chèn thêm</b> dòng 麻酔 (<c>310</c>, <c>7321</c>) và một
+    /// 部位病名行 (<c>trt_cd 0</c>) — những thứ đó ở lại sau F9 và dồn dần. Đo được
+    /// 2026-09-03: sau vài lượt chạy, ngày test có 3 部位病名行 + 3 dòng 麻酔 thừa, lưới dài
+    /// ra và <c>InsertBlankRow</c> bắt đầu hụt ⇒ TcGAP3 đỏ vì HARNESS chứ không vì app.</para>
+    ///
+    /// <para>An toàn vì bộ khoá gồm cả <c>disp_no</c> — thứ WinForm giữ nguyên qua F9.</para>
+    /// </summary>
+    public string CleanupRowsNotIn(int patNo, DateTime month, HashSet<string> snapshot)
+    {
+        if (!_allowWrite) return "KHÔNG dọn: sigaTooth.allowSave = false.";
+        if (snapshot.Count == 0)
+            return "KHÔNG dọn: ảnh chụp rỗng — không phân biệt được dòng cũ với dòng mới.";
+
+        var (from, to) = MonthRange(month);
+        var doomed = new List<(string Day, int DispNo)>();
+
+        using (var con = Open())
+        using (var cmd = Command(con,
+            """
+            SELECT CONVERT(varchar(10), trt_dt, 120) AS d, disp_no, trt_cd, trt_sb
+              FROM TRNTRN
+             WHERE pat_no = @p AND trt_dt >= @f AND trt_dt < @t
+            """))
+        {
+            cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+            cmd.Parameters.Add("@f", SqlDbType.DateTime).Value = from;
+            cmd.Parameters.Add("@t", SqlDbType.DateTime).Value = to;
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                var key = $"{reader["d"]}|{reader["disp_no"]}|{reader["trt_cd"]}|{reader["trt_sb"]}";
+                if (!snapshot.Contains(key))
+                    doomed.Add(((string)reader["d"], Convert.ToInt32(reader["disp_no"])));
+            }
+        }
+
+        if (doomed.Count == 0) return "không có dòng thừa nào của lượt chạy này.";
+
+        var n = 0;
+        using (var con = Open())
+        {
+            foreach (var (day, dispNo) in doomed)
+            {
+                using var cmd = Command(con,
+                    "DELETE FROM TRNTRN WHERE pat_no = @p AND trt_dt = @d AND disp_no = @n");
+                cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+                cmd.Parameters.Add("@d", SqlDbType.DateTime).Value = DateTime.Parse(day);
+                cmd.Parameters.Add("@n", SqlDbType.Int).Value = dispNo;
+                n += cmd.ExecuteNonQuery();
+            }
+        }
+        return $"đã xoá {n} dòng do lượt chạy đẻ ra (kể cả 麻酔 và 部位病名行 app tự chèn).";
+    }
+
+    /// <summary>
     /// Xoá các dòng do lượt chạy để lại (<see cref="TestTrtCds"/> trong tháng test).
     ///
     /// <para><b>Chỉ chạy khi tháng đó xuất phát KHÔNG có dòng nào mang các mã ấy</b> —

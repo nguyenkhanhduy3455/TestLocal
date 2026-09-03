@@ -76,6 +76,13 @@ public sealed class SigaToothProbeTests : UiTestBase
     private int _preexistingTestRows;
 
     /// <summary>
+    /// 「Dòng nào vốn đã có」 của tháng test. Dọn theo ảnh chụp này thay vì theo danh sách
+    /// mã: một lượt nhập 抜歯 làm app TỰ CHÈN thêm dòng 麻酔 và 部位病名行, những thứ đó ở
+    /// lại sau F9 và dồn dần cho tới khi lưới dài ra và harness bắt đầu hụt.
+    /// </summary>
+    private HashSet<string> _monthRowsBefore = [];
+
+    /// <summary>
     /// 病名 「Ｃ」 = <c>dis_cd</c> 100 — ĐO ĐƯỢC từ chính lưới 病名選択 (probe Tc0, ảnh
     /// <c>06x_byoumei-dialog.png</c>): 1=100 Ｃ · 2=103 Ｐ · 3=102 Per · 4=101 Pul ·
     /// 10=104 単Ｇ. Dùng Ｃ cho các luồng không cần Ｐ; Ｐ変更 thì phải là 103/104.
@@ -126,6 +133,7 @@ public sealed class SigaToothProbeTests : UiTestBase
         _sigaBefore = _db.ReadSiga(PatNo);
         _konBefore = _db.ReadKon(PatNo);
         _preexistingTestRows = _db.CountTrnRowsWithTrtCd(PatNo, TrtDate, SigaKonDb.TestTrtCds);
+        _monthRowsBefore = _db.SnapshotMonthRowKeys(PatNo, TrtDate);
 
         // In ra stdout để cứu tay được nếu probe bị cắt giữa chừng.
         Log("╔══ NGUYÊN TRẠNG TRƯỚC PROBE (chép lại nếu cần dựng tay) ══");
@@ -148,7 +156,10 @@ public sealed class SigaToothProbeTests : UiTestBase
             if (_sigaBefore is not null) { _db.RestoreSiga(PatNo, _sigaBefore); Log("dọn: SIGA đã trả về nguyên trạng."); }
             if (_konBefore is not null) { _db.RestoreKon(PatNo, _konBefore); Log("dọn: KON đã trả về nguyên trạng."); }
             if (Settings.SigaTooth.AllowRowCleanup)
+            {
                 Log("dọn: " + _db.CleanupTestRows(PatNo, TrtDate, _preexistingTestRows));
+                Log("dọn: " + _db.CleanupRowsNotIn(PatNo, TrtDate, _monthRowsBefore));
+            }
         }
         catch (Exception e) { Log($"dọn HỎNG: {e.Message} — dựng tay theo khối 「NGUYÊN TRẠNG」 ở trên."); }
     }
