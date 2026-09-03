@@ -36,11 +36,18 @@
     từng bước, KHÔNG assert. Chạy cái này TRƯỚC khi đi sửa một testcase đỏ.
     Đáp án nằm ở các dòng "=== KQ-n ===", runner lọc sẵn ra siga-tooth-KQ.txt.
 
-    Probe có BỐN testcase, mỗi cái là một lượt riêng vì wrapper cắt ở 15 phút:
-        -Case Tc0   179 抜歯: SigaChg lúc nhập + DelExtRec lúc xoá
-        -Case Tc1   乳歯 179/0 · ＥＭＲ 122/3 → KON · 185 → hộp thoại 抜歯同時
-        -Case Tc2   病検 Ｐ変更 (Chk_PModeKesson) + dirty gate của F10 戻る
-        -Case Tc3   F9 登録 → SigaChg_Save
+    ⚠️ CHAY TUNG CASE MOT, dung chay ca fixture. Wrapper cat o 15 phut, ma MOT vong
+    「Insert → 部位選択 → 病名選択 → go ma → 処置選択」 ton 2-3 phut. Ngay 2026-09-03 mot
+    probe gop 4 vong da vuot tran: wrapper khong kip ghi ca dong TIMEOUT, MENU.exe va
+    dotnet o lai, may Windows phai khoi dong lai.
+
+    Probe co SAU testcase, moi cai TOI DA hai vong:
+        -Case Tc0    179 抜歯: SigaChg luc nhap + DelExtRec luc xoa
+        -Case Tc1a   乳歯 179/0: sn = 9 luc nhap, sn = 5 luc xoa
+        -Case Tc1b   ＥＭＲ 122/3 → KON
+        -Case Tc1c   185 → hop thoai 抜歯同時
+        -Case Tc2    病検 Ｐ変更 (Chk_PModeKesson) + dirty gate cua F10 戻る
+        -Case Tc3    F9 登録 → SigaChg_Save
 
 .PARAMETER Case
     Lọc theo tên testcase, vd "Tc0" hoặc "TcDEL1".

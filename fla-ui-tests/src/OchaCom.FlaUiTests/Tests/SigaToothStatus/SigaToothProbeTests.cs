@@ -16,14 +16,18 @@ namespace OchaCom.FlaUiTests.Tests.SigaToothStatus;
 ///
 /// <para>Mang <c>[Explicit]</c> nên lần chạy đủ KHÔNG gọi tới. Chạy bằng:</para>
 /// <code>
-///   .\run-change-tooth-status.ps1 -Diagnostics            # cả ba probe
-///   .\run-change-tooth-status.ps1 -Case Tc0               # chỉ probe 抜歯 / DelExtRec
-///   .\run-change-tooth-status.ps1 -Case Tc1               # chỉ probe ＥＭＲ / 歯根嚢胞
-///   .\run-change-tooth-status.ps1 -Case Tc2               # chỉ probe Ｐ変更 / dirty gate
+///   .\run-change-tooth-status.ps1 -Diagnostics -Case Tc0    # 179 抜歯 + DelExtRec
+///   .\run-change-tooth-status.ps1 -Diagnostics -Case Tc1a   # 乳歯 179/0
+///   .\run-change-tooth-status.ps1 -Diagnostics -Case Tc1b   # ＥＭＲ 122/3 → KON
+///   .\run-change-tooth-status.ps1 -Diagnostics -Case Tc1c   # 185 歯根嚢胞
+///   .\run-change-tooth-status.ps1 -Diagnostics -Case Tc2    # Ｐ変更 + dirty gate
+///   .\run-change-tooth-status.ps1 -Diagnostics -Case Tc3    # F9 登録
 /// </code>
-/// Tách ba testcase là CÓ Ý: mỗi lượt chạy từ xa bị wrapper cắt ở 15 phút, mà một vòng
-/// 「đặt 部位 → gõ mã → 処置選択」 tốn hàng chục giây. Gộp cả ba vào một testcase là bảo
-/// đảm bị TIMEOUT trước khi tới câu hỏi cuối.
+/// <b>CHẠY TỪNG CASE MỘT, đừng chạy cả fixture.</b> Wrapper cắt ở 15 phút, mà MỘT vòng
+/// 「Insert → 部位選択 → 病名選択 → gõ mã → 処置選択」 tốn 2-3 phút. Ngày 2026-09-03 một
+/// probe gộp 4 vòng đã vượt trần: wrapper không kịp ghi cả dòng TIMEOUT, MENU.exe và
+/// dotnet ở lại, và máy Windows phải khởi động lại. Mỗi testcase ở đây vì thế chỉ còn
+/// TỐI ĐA HAI vòng.
 ///
 /// ═══════════════════════════════════════════════════════════════════════════════
 /// PROBE NÀY GHI DB — và nó KHÔNG tránh được
@@ -348,29 +352,39 @@ public sealed class SigaToothProbeTests : UiTestBase
     //       (nửa WinForm của siga-kon-remaining-gaps.spec.ts)
     // ═════════════════════════════════════════════════════════════════════════
 
+    /// <summary>
+    /// Mốc + chỗ đứng dùng chung cho Tc1a/Tc1b/Tc1c. Trả về dòng trống vừa chèn;
+    /// null nghĩa là không dựng được chỗ đứng (đã ghi lý do vào KQ).
+    /// </summary>
+    private RegiRow? PrepareSeat(string tag, TestTrace trace, bool resetTeeth = true)
+    {
+        if (resetTeeth) ResetToothState(tag);
+        Kq(tag, $"   EnsureCodeMode → {_flow.EnsureCodeMode()}, InpMode = 「{_flow.InpMode()}」");
+
+        var row = _flow.InputRow();
+        Kq(tag, "   DÒNG 処置 CUỐI = " + (row?.ToString() ?? "KHÔNG có"));
+        if (row is null) return null;
+
+        var seat = _flow.InsertBlankRow(row, trace);
+        Kq(tag, "   dòng trống vừa chèn = " + (seat?.ToString() ?? "KHÔNG chèn được"));
+        return seat;
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Tc1a — 乳歯: SigaChg ghi SN = 9, DelExtRec trả về SN = 5
+    // ═════════════════════════════════════════════════════════════════════════
+
     [Test]
-    [Description("Probe — 乳歯 179/0, ＥＭＲ 122/3 → KON, 185 → hộp thoại 抜歯同時")]
-    public void Tc1_Probe_MilkEmrCyst()
+    [Description("Probe — 乳歯 179/0: sn = 9 lúc nhập, sn = 5 lúc xoá")]
+    public void Tc1a_Probe_MilkTooth()
     {
         using var trace = TestTrace.Begin();
         _trace = trace;
         trace.Shot("00-mo-man");
 
-        Try("1", "đặt lại mốc 歯式 rồi đọc", () =>
-        {
-            ResetToothState("1");
-            Siga("1", "mốc");
-            Kon("1", "mốc");
-        });
+        var seat = PrepareSeat("8", trace);
+        if (seat is null) { Kq("8", "   ⇒ DỪNG: không dựng được chỗ đứng."); return; }
 
-        Kq("2", $"   EnsureCodeMode → {_flow.EnsureCodeMode()}, InpMode = 「{_flow.InpMode()}」");
-        var row = _flow.InputRow();
-        Kq("2", "   DÒNG 処置 CUỐI = " + (row?.ToString() ?? "KHÔNG có"));
-        if (row is null) { Kq("2", "   ⇒ DỪNG."); return; }
-        var seat = _flow.InsertBlankRow(row, trace) ?? row;
-        Kq("2", "   dòng trống vừa chèn = " + seat);
-
-        // ── KQ-8: răng sữa ───────────────────────────────────────────────────
         var beforeMilk = _db?.ReadSiga(PatNo);
         Try("8", $"乳歯: đặt 部位 = ô {MilkSlot} ({ToothSelectDialog.DescribeSlot(MilkSlot)}) bằng phím A..E rồi 179/0", () =>
         {
@@ -390,11 +404,10 @@ public sealed class SigaToothProbeTests : UiTestBase
                               : $"   ⇒ sn{col} = {s.SnCol(col)} — WinForm ghi 9 (乳歯 欠損歯) nếu ô mang giá trị 11..19.");
         });
 
-        // ── KQ-10b: DelExtRec trên răng sữa — nhánh đọc pbui, không đọc dòng ─
         var beforeMilkDelete = _db?.ReadSiga(PatNo);
         Try("10b", "xoá dòng 抜歯 răng sữa — nhánh 乳歯 của DelExtRec đọc ModCommon.pbui (frm203002.cs:6158)", () =>
         {
-            var extRow = _flow.LastRowMatching("抜歯", "抜　歯");
+            var extRow = _flow.LastRowMatching("抜歯");
             if (extRow is null) { Kq("10b", "   KHÔNG thấy dòng 抜歯 để xoá"); return; }
 
             Kq("10b", "   " + _flow.DeleteRow(extRow, trace));
@@ -405,15 +418,28 @@ public sealed class SigaToothProbeTests : UiTestBase
                                   "(pbui đã bị đường khác ghi đè) — đây chính là câu hỏi cần đo.");
         });
 
-        // ── KQ-11: ＥＭＲ(４根) → KON ────────────────────────────────────────
+        Kq("1a", "HẾT Tc1a.");
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Tc1b — ＥＭＲ(４根) 122/3 → KON
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Test]
+    [Description("Probe — ＥＭＲ(４根) 122/3 có ghi 根数 4 vào KON không")]
+    public void Tc1b_Probe_EmrRootCount()
+    {
+        using var trace = TestTrace.Begin();
+        _trace = trace;
+        trace.Shot("00-mo-man");
+
+        var seat = PrepareSeat("11", trace);
+        if (seat is null) { Kq("11", "   ⇒ DỪNG: không dựng được chỗ đứng."); return; }
+
         var beforeEmr = _db?.ReadKon(PatNo);
         Try("11", $"ＥＭＲ(４根) 122/{SigaToothFlow.EmrFourRootSb} trên ô {PermSlot} → ekon{SeCol(PermSlot)} = 4?", () =>
         {
-            var last = _flow.InputRow();
-            if (last is null) { Kq("11", "   không còn dòng nào để thao tác"); return; }
-            var target = _flow.InsertBlankRow(last, trace) ?? last;
-
-            var set = _flow.SetBuiOnRow(target, PermSlot, milk: false, disCd: null, trace: trace);
+            var set = _flow.SetBuiOnRow(seat, PermSlot, milk: false, disCd: null, trace: trace);
             Kq("11", "   đặt 部位: " + set);
 
             var enter = _flow.EnterTreatmentAtCursor(SigaToothFlow.EmrTrtCd,
@@ -427,15 +453,28 @@ public sealed class SigaToothProbeTests : UiTestBase
                                  "(modSave.cs:790 / frm203016.cs:1150).");
         });
 
-        // ── KQ-12: 185 歯根嚢胞摘出手術 ─────────────────────────────────────
+        Kq("1b", "HẾT Tc1b.");
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Tc1c — 185 歯根嚢胞摘出手術 → hộp thoại 抜歯同時
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Test]
+    [Description("Probe — 185 có bung 「…同時に抜歯手術…」 không? はい thì 歯式 đổi gì")]
+    public void Tc1c_Probe_CystExtraction()
+    {
+        using var trace = TestTrace.Begin();
+        _trace = trace;
+        trace.Shot("00-mo-man");
+
+        var seat = PrepareSeat("12", trace);
+        if (seat is null) { Kq("12", "   ⇒ DỪNG: không dựng được chỗ đứng."); return; }
+
         var beforeCyst = _db?.ReadSiga(PatNo);
         Try("12", "185 歯根嚢胞摘出手術 → có bung 「…同時に抜歯手術…」 không? trả lời はい", () =>
         {
-            var last = _flow.InputRow();
-            if (last is null) { Kq("12", "   không còn dòng nào để thao tác"); return; }
-            var target = _flow.InsertBlankRow(last, trace) ?? last;
-
-            var set = _flow.SetBuiOnRow(target, PermSlot, milk: false, disCd: null, trace: trace);
+            var set = _flow.SetBuiOnRow(seat, PermSlot, milk: false, disCd: null, trace: trace);
             Kq("12", "   đặt 部位: " + set);
 
             var enter = _flow.EnterTreatmentAtCursor(SigaToothFlow.CystTrtCd,
@@ -450,7 +489,7 @@ public sealed class SigaToothProbeTests : UiTestBase
                                : $"   ⇒ se{col} = {s.SeCol(col)} — はい gọi SigaChg(179,0) nên phải là 4.");
         });
 
-        Kq("1x", "HẾT Tc1.");
+        Kq("1c", "HẾT Tc1c.");
     }
 
     // ═════════════════════════════════════════════════════════════════════════

@@ -133,15 +133,31 @@ Số liệu đo được trên máy thật nằm ở mục 7 (điền sau mỗi 
 
 ```powershell
 # 1) PROBE trước — bắt buộc khi máy/dữ liệu đổi. KHÔNG assert, chụp ảnh từng bước.
-.\run-change-tooth-status.ps1 -Diagnostics -Case Tc0 -AllowSave   # 179 抜歯: SigaChg + DelExtRec
-.\run-change-tooth-status.ps1 -Diagnostics -Case Tc1 -AllowSave   # 乳歯 · ＥＭＲ 122/3 · 185
-.\run-change-tooth-status.ps1 -Diagnostics -Case Tc2 -AllowSave   # Ｐ変更 · dirty gate
-.\run-change-tooth-status.ps1 -Diagnostics -Case Tc3 -AllowSave   # F9 登録
+.\run-change-tooth-status.ps1 -Diagnostics -Case Tc0  -AllowSave   # 179 抜歯: SigaChg + DelExtRec
+.\run-change-tooth-status.ps1 -Diagnostics -Case Tc1a -AllowSave   # 乳歯 179/0
+.\run-change-tooth-status.ps1 -Diagnostics -Case Tc1b -AllowSave   # ＥＭＲ 122/3 → KON
+.\run-change-tooth-status.ps1 -Diagnostics -Case Tc1c -AllowSave   # 185 歯根嚢胞
+.\run-change-tooth-status.ps1 -Diagnostics -Case Tc2  -AllowSave   # Ｐ変更 · dirty gate
+.\run-change-tooth-status.ps1 -Diagnostics -Case Tc3  -AllowSave   # F9 登録
 
-# 2) Rồi mới chạy testcase
-.\run-change-tooth-status.ps1 -AllowSave
+# 2) Rồi mới chạy testcase — CŨNG NÊN chạy từng nhóm
 .\run-change-tooth-status.ps1 -AllowSave -Case TcDEL
+.\run-change-tooth-status.ps1 -AllowSave -Case TcGAP
+.\run-change-tooth-status.ps1 -AllowSave -Case TcPM
 ```
+
+### ⏱️ Trần 15 phút của wrapper — giới hạn CỨNG, phải thiết kế quanh nó
+
+Một vòng 「Insert → 部位選択 → 病名選択 → gõ mã → 処置選択」 tốn **2-3 phút** trên máy thật.
+`runner-task.ps1` giết tiến trình test sau 15 phút.
+
+> 🔥 **2026-09-03:** một probe gộp 4 vòng đã vượt trần. Wrapper **không kịp ghi cả dòng
+> `TIMEOUT`/`END`**, `MENU.exe` + 4 tiến trình `dotnet` ở lại, và máy Windows treo tới
+> mức phải khởi động lại. Vì thế mọi testcase ở đây chỉ còn **tối đa hai vòng**, và luôn
+> chạy bằng `-Case`, không bao giờ chạy cả fixture một lượt.
+
+Và **đừng `schtasks /run` khi lượt trước chưa `END`** — nó chỉ in
+`INFO: … is currently running` rồi không làm gì. Kiểm dòng cuối `logs\runner.log` trước.
 
 Đáp án của probe nằm ở các dòng `=== KQ-n ===`, runner lọc sẵn ra `siga-tooth-KQ.txt`.
 Ảnh + nhật ký từng bước ở `bin\Debug\net8.0-windows\artifacts\screenshots\<tên test>\`.
