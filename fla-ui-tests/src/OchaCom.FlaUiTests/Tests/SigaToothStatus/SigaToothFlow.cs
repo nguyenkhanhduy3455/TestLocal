@@ -291,8 +291,16 @@ public sealed class SigaToothFlow
             _grid.FocusCell(at, RegiGrid.Col.Ryo);
         }
 
+        // AddRow chèn MỘT DataRow rồi Move_Txt() — không chạm DB, nhưng lưới vẫn cần một
+        // nhịp để dựng lại. `Waits.Step()` KHÔNG đủ: nó là `run.stepMs`, mặc định 0 ⇒ lượt
+        // chụp ngay sau đó có thể đọc lưới CŨ và kết luận 「Insert không chèn được」.
+        // Đo được 2026-09-03 (probe Tc1 bước 16): đúng cái đó, và nó chỉ lộ ra ở lượt nhập
+        // thứ ba khi lưới đã dài thêm. Chờ CÓ ĐIỀU KIỆN theo số dòng, y như
+        // `TreatmentGridBasicTests.Tc6`.
+        var countBefore = _grid.RowCount();
         _grid.Press(VirtualKeyShort.INSERT);
-        Waits.Step();
+        var grew = Waits.TryUntil(() => _grid.RowCount() == countBefore + 1, TimeSpan.FromSeconds(10));
+        trace?.Note($"so dong: {countBefore} → {_grid.RowCount()} (Insert an? {grew})");
 
         // ⚠️ 「療法 rỗng」 KHÔNG đủ để nhận ra dòng trống: 部位病名行 cũng có ô 療法 rỗng
         // (nó in 病名 ở ô đó chỉ khi có 病名). Đo được 2026-09-03 (probe Tc1, bước 12):
