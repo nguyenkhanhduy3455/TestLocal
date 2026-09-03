@@ -373,11 +373,40 @@ public sealed class SigaToothFlow
 
         Uia.SetText(box, disCd.ToString());
         Uia.SendKey(Vk.Return);
-        Thread.Sleep(400);
+        Thread.Sleep(600);
 
-        var chosen = DiseaseNameText(dialog);
-        trace?.Note($"病名 dang chon sau khi go ma: 「{chosen}」");
-        return chosen.Length > 0;
+        // ⚠️ KHÔNG lấy 「ô 病名 còn rỗng」 làm dấu hiệu chọn hụt, và TUYỆT ĐỐI không gõ
+        // thêm một lần Enter nữa để "chọn lại".
+        //
+        // Đo được 2026-09-03 (probe Tc0 lượt 3): MỘT lần Enter là đủ — 部位 được ghi vào
+        // lưới (dòng [22] hiện 「 3 (1)」 = 左上3) và End 登録 KHÔNG bung câu
+        // 「病名が選択されていませんが」. Nhưng đọc `txtDisNm` ngay sau đó vẫn ra RỖNG:
+        // `chkDisSb` → `defData` cập nhật ô này trễ hơn một nhịp. Lượt trước đã kết luận
+        // nhầm là 「chọn hụt」 vì đúng chuyện đó.
+        //
+        // Gõ Enter lần hai khi thật ra đã chọn xong = CHỌN THÊM một 病名 thứ hai
+        // (`_intMaxDis` tăng, frm902007.cs:756), tức là âm thầm đổi dữ liệu đang đo.
+        // Dấu hiệu chọn hụt DUY NHẤT đáng tin là E00024「該当病名…」.
+        var error = Dialog("該当病名");
+        if (error is not null)
+        {
+            var text = Txt.N(Dialogs.TextOf(error));
+            trace?.Note($"E00024: 「{text}」 — master khong co dis_cd = {disCd}");
+            trace?.Shot("e00024-benh-danh");
+            Dialogs.DismissOk(error);
+            return false;
+        }
+
+        trace?.Note($"病名 doc lai (co the tre mot nhip): 「{DiseaseNameText(dialog)}」");
+        return true;
+    }
+
+    /// <summary>Nội dung lưới <c>dgvView</c> của 病名選択 — để nhật ký cho biết đang thấy danh sách nào.</summary>
+    public IReadOnlyList<string> DiseaseRows(Window dialog, int limit = 12)
+    {
+        var grid = Uia.ById(dialog, "dgvView");
+        if (grid is null) return [];
+        return new WinFormsGrid(grid).Rows(limit).Select(r => r.ToString()).ToList();
     }
 
     /// <summary>Chuỗi 病名 đang được dựng trong 病名選択 (ô chữ trên cùng); rỗng = chưa chọn gì.</summary>
@@ -480,8 +509,10 @@ public sealed class SigaToothFlow
         if (diseaseOpened)
         {
             trace?.Shot("byoumei-dialog");
+            trace?.Note("danh sach 病名: " + string.Join(" · ", DiseaseRows(disease!)));
             if (disCd is { } cd && !PickDisease(disease!, cd, trace))
-                trace?.Note($"KHONG chon duoc 病名 dis_cd = {cd} — 部位 se duoc ghi ma khong co 病名");
+                trace?.Note($"KHONG chon duoc 病名 dis_cd = {cd} — danh sach dang hien: " +
+                            string.Join(" · ", DiseaseRows(disease!)));
             ConfirmDiseaseDialog(trace);
         }
 
