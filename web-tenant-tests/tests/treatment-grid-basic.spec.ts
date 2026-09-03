@@ -286,6 +286,19 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
         await step()
     }
 
+    /**
+     * Chờ mọi alert お茶コン đến trễ (算定チェック / SingleChk) bung ra rồi biến mất.
+     * Handler ở `beforeAll` lo phần bấm OK; hàm này chỉ ASSERT auto-retry để ép handler
+     * chạy và để chốt là màn đã sạch LIÊN TỤC vài nhịp — đoán bằng một `waitForTimeout`
+     * đơn lẻ thì trượt vì alert đi qua BE nên đến trễ.
+     */
+    async function settleAlerts() {
+        for (let i = 0; i < 5; i++) {
+            await expect(page.locator('[role="alertdialog"]')).toHaveCount(0, { timeout: 15_000 })
+            await page.waitForTimeout(600)
+        }
+    }
+
     /** Đặt con trỏ (focusedCell) vào một ô. */
     async function focusCell(key: string, col: number) {
         await cell(key, col).click()
@@ -403,6 +416,36 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
             async () => {
                 const back = page.getByRole('button', { name: /戻る/ }).last()
                 if (await back.count()) await back.click()
+            },
+            { times: 30 },
+        )
+
+        // Alert お茶コン (算定チェック / SingleChk …) — bung TRỄ sau khi một 処置 được chèn,
+        // và nó là modal có overlay nên nuốt mọi click lên lưới. Đã vấp thật 2026-09-03:
+        // TC-2 chèn 歯科再診料 (110-0) vào ngày đã có 歯科初診料 ⇒ alert 「…当日算定不可です。」
+        // đến trong lúc TC-3 chạy rồi nằm lại, TC-4 click ô 点 bị overlay chặn 15s.
+        // Cảnh báo đó là hành vi ĐÚNG của app (WinForm cũng MsgBox), file này không có TC
+        // nào đo alert, nên dọn tự động — nhưng LOG nội dung ra để không giấu triệu chứng.
+        // Alert có thể xếp hàng, nên dọn hết trong MỘT lần vào handler: addLocatorHandler
+        // đòi locator phải biến mất khi handler xong.
+        await page.addLocatorHandler(
+            page.locator('[role="alertdialog"]'),
+            async () => {
+                for (let i = 0; i < 8; i++) {
+                    const box = page.locator('[role="alertdialog"]').first()
+                    if (!(await box.count())) return
+                    const txt = (await box.innerText().catch(() => ''))
+                        .replace(/\s+/g, ' ')
+                        .slice(0, 120)
+                    const ok = box.getByRole('button', { name: 'OK' })
+                    if (!(await ok.count())) return
+                    console.log(`alert お茶コン tự bung → bấm OK: ${txt}`)
+                    await ok
+                        .first()
+                        .click({ timeout: 3000 })
+                        .catch(() => {})
+                    await page.waitForTimeout(300)
+                }
             },
             { times: 30 },
         )
@@ -544,6 +587,14 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
         // TC-8 cuối file (test.fail) vì bản web đang LỆCH — xem giải thích ở đó.
         focusedAfterInsert = await focusedCellId()
         console.log(`TC-2: ô đang giữ con trỏ sau khi chèn = ${focusedAfterInsert}`)
+
+        // Chèn 処置 xong là 算定チェック chạy một vòng BE rồi mới bung alert お茶コン
+        // (「…当日算定不可です。」 với bệnh nhân/ngày mặc định). Phải CHỜ nó xong ngay tại
+        // đây, đừng để trôi sang TC sau: `addLocatorHandler` chỉ chạy trước mỗi action /
+        // assert auto-retry, mà TC-3 đo bằng `keyboard.press('Enter')` — không phải action
+        // kích được handler — nên alert đến giữa chừng sẽ nuốt đúng cú Enter đang đo.
+        // Vòng dưới vừa là cú hích cho handler, vừa là bằng chứng màn đã sạch vài nhịp.
+        await settleAlerts()
     })
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -561,10 +612,14 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
         await step()
 
         // Ngay sau khi TC-2 chèn dòng, app còn đang dọn nốt (đóng dialog 算定 / カルテ記載
-        // 選択, dời con trỏ về footer). Cú Enter đầu có thể rơi vào lúc đó. Probe
-        // 2026-08-25 đã chứng minh Enter MỞ ĐƯỢC editor trên dòng ổn định, nên thử lại
-        // một nhịp trước khi kết luận là bản web thiếu tính năng.
-        if ((await cell(key, COL_KAI).locator('input').count()) === 0) {
+        // 選択, dời con trỏ về footer, alert 算定チェック đi một vòng BE). Cú Enter đầu có
+        // thể rơi vào lúc đó. Probe 2026-08-25 đã chứng minh Enter MỞ ĐƯỢC editor trên
+        // dòng ổn định, nên thử lại vài nhịp trước khi kết luận là bản web thiếu tính năng.
+        // (Một nhịp là chưa đủ: đo 2026-09-03, ~1/5 lượt vẫn trượt dù TC-2 đã settleAlerts.)
+        for (let attempt = 0; attempt < 3; attempt++) {
+            if ((await cell(key, COL_KAI).locator('input').count()) > 0) break
+            console.log(`TC-3: Enter chưa mở được editor — thử lại lần ${attempt + 1}/3`)
+            await settleAlerts()
             await focusCell(key, COL_RYO)
             await focusCell(key, COL_KAI)
             await page.keyboard.press('Enter')
