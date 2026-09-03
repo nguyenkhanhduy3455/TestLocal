@@ -153,13 +153,41 @@ const realAlert = (page: Page) => page.locator('[role="alertdialog"]:not(#tc2-fa
  * pointer event). `clearOverlays` chỉ chạy ở đầu mỗi TC nên không cứu được cái bung
  * ra giữa flow ⇒ dùng addLocatorHandler để Playwright tự dọn trước MỖI actionability
  * check (Rule 14). F10 = 戻る của dialog đó, không ghi gì.
+ *
+ * ⚠️ KHÔNG được dọn bằng `keyboard.press('F10')` (bản trước làm vậy và treo 15s).
+ * Đo 2026-09-03: lúc dialog này mở, 算定チェック của chính dòng 153-1 bung THÊM một
+ * alert お茶コン 「…を算定していますが、算定可能な部位…」 NẰM ĐÈ lên nó — tổng cộng 3
+ * dialog. Khi đó:
+ *   · F10 rơi vào alert foreground, không đóng được カルテ記載選択
+ *     (fkey-scope-provider.tsx:57-67: scope không nằm trong dialog foreground thì
+ *     phím bị `preventDefault` rồi nuốt);
+ *   · và click nút 「F10 戻る」 của カルテ記載選択 cũng timeout vì overlay của alert
+ *     chặn pointer event.
+ * ⇒ Phải DỌN ALERT TRƯỚC rồi mới đóng dialog, và đóng bằng NÚT (lúc đó nó mới là
+ * foreground). Không phải bug app: alert 算定チェック là cảnh báo thật của 処置 vừa nhập.
  */
 const installKarteAutoPickerClose = async (page: Page) => {
   await page.addLocatorHandler(
     page.getByText('カルテ記載選択', { exact: true }).first(),
     async () => {
-      await page.keyboard.press('F10')
-      await page.waitForTimeout(300)
+      // Dọn HẾT hàng đợi trong MỘT lần vào handler: `addLocatorHandler` đòi locator
+      // phải biến mất khi handler xong, mà đóng cái này xong cái kế bung ra ngay
+      // (mỗi 処置 do AutoSantei 算定 kéo theo một カルテ記載選択 riêng: 歯科疾患管理料 →
+      // 歯科衛生実地指導料１ …). Đóng đúng một cái là Playwright thấy locator vẫn hiện
+      // và quay vòng cho tới khi timeout — đúng triệu chứng của bản trước.
+      for (let i = 0; i < 8; i++) {
+        // Alert 算定チェック có thể xếp chồng bên trên — dọn trước, nếu không overlay
+        // của nó nuốt cú click vào nút 「F10 戻る」. (`realAlert` đã loại alert giả TC-2.)
+        await drainAlerts(page)
+        const karte = dialogBox(page).filter({ hasText: 'カルテ記載選択' })
+        if ((await karte.count()) === 0) return
+        await karte
+          .getByRole('button', { name: 'F10 戻る' })
+          .first()
+          .click({ timeout: 3000 })
+          .catch(() => {})
+        await page.waitForTimeout(300)
+      }
     },
     { times: 30 },
   )
@@ -382,8 +410,14 @@ test.describe('摘要コメント選択 — Enter window-level (frm203018)', () 
           // dọn một lần trước vòng lặp là hụt, alert đến muộn hơn thế.
           await drainAlerts(page)
           await page.evaluate(() => {
+            // Tìm #7 theo tiêu đề HIỆN TẠI 「摘要選択（…）」. Bản trước dò
+            // '摘要コメント選択' — tiêu đề CŨ, đã đổi ở commit 47ed1fecc — nên `d7`
+            // luôn undefined, `grid.focus()` KHÔNG BAO GIỜ chạy, focus ở nguyên
+            // SORT HEADER vừa bấm và cú Enter của TC-4 đi vào onKeyDown của header
+            // (đảo sort + preventDefault) chứ không 確定. Đây là lý do TC-4 đỏ, không
+            // phải app sai.
             const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'))
-            const d7 = dialogs.reverse().find((d) => d.textContent?.includes('摘要コメント選択'))
+            const d7 = dialogs.reverse().find((d) => /摘要選択（.+）/.test(d.textContent ?? ''))
             const grid = d7?.querySelector('div[tabindex="0"]')
             if (grid instanceof HTMLElement) grid.focus()
           })
@@ -403,7 +437,13 @@ test.describe('摘要コメント選択 — Enter window-level (frm203018)', () 
                 .slice(0, 40)
               return `ngoài dialog (${el.tagName.toLowerCase()} 「${nhan}」)`
             }
-            return el.getAttribute('data-testid')?.startsWith('row-') ? 'row' : 'grid'
+            // Phải soi ĐÍCH DANH grid wrapper. Bản trước chỉ loại 「row-…」 rồi coi
+            // mọi thứ khác là 'grid', nên khi focus kẹt ở 「header-dispText」 nó vẫn
+            // báo 'grid' và giấu luôn lỗi ở trên.
+            const id = el.getAttribute('data-testid') ?? ''
+            if (id.startsWith('row-')) return 'row'
+            if (id.startsWith('header-')) return `sort header (${id})`
+            return el.matches('div[tabindex="0"]') ? 'grid' : `khác (${el.tagName.toLowerCase()} ${id})`
           })
         },
         {
@@ -679,15 +719,13 @@ test.describe('摘要コメント選択 — Enter window-level (frm203018)', () 
     // 確定 xong là pack KẾ TIẾP mở ngay, và title của nó cũng khớp mọi locator dạng
     // 摘要選択（…）. Đo bằng THỨ ĐÁNG ĐO: dòng đã chọn có vào lưới 診療入力 hay không.
     //
-    // ⚠️ TC NÀY ĐANG ĐỎ với dữ liệu hiện tại. Đã đo bằng probe ngay sau cú Enter:
-    //   dialogs=1, title#7=1, checked=1, alerts=0  ⇒ dialog KHÔNG đóng, vệt tick vẫn
-    //   còn, không có alert nào chặn. Tức Enter không 確定 trong browser.
-    //   Trong khi đó TC-6/TC-7 (End/ESC → cùng handleConfirm, KHÔNG sort) xanh, và
-    //   unit test tương đương cũng xanh (bắn keydown vào đúng grid wrapper:
-    //   web-tenant `summary-comment-selection-winform-parity.test.tsx`).
-    //   ⇒ nghi chuỗi "click header sort → trả focus → Enter" trong browser: phần tử
-    //   nhận Enter hoặc `e.defaultPrevented` khác với jsdom. Cần một lần probe riêng
-    //   khi setup TC-0 ổn định (TC-0 hiện phải retry mới vào được 処置選択).
+    // ĐÃ TRUY XONG 2026-09-03 (trước đó TC này đỏ dài ngày, nghi app): KHÔNG phải
+    // bug app. `focusGridOfDialog` dò dialog bằng tiêu đề CŨ 「摘要コメント選択」 nên
+    // không tìm thấy #7 ⇒ `grid.focus()` không hề chạy ⇒ lúc bấm Enter focus vẫn
+    // nằm ở SORT HEADER vừa click. Đo tận nơi: cú Enter có
+    // `activeElement = DIV[header-dispText]` và `defaultPrevented = true` (header tự
+    // preventDefault rồi đảo sort), nên guard `isWindowKeyBlocked` chặn handler của
+    // #7 — đúng luật của TC-3. Sửa tiêu đề dò + siết lại phép kiểm focus là xanh.
     await clearOverlays(page)
     await expect
       .poll(async () => (await ryoCell(page).allInnerTexts()).join('\n'), {
