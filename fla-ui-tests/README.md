@@ -260,6 +260,7 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 | `.\run-select-guide-treatment.ps1` | Click dòng ガイド → `hfgGuid1_CellDoubleClick` (ガイド処置選択 frm203017) | `Tests/GuideSidePanel/` | ✖ không bấm F9; 「リセット」 luôn trả lời Cancel |
 | `.\run-bulk-change-dr.ps1` | Click nhãn 「Ｄｒ」 → `lblDrLabel_Click` (担当医 一括変更) | `Tests/TreatmentHeaderStaff/` | ✖ chỉ sửa lưới trong bộ nhớ |
 | `.\run-input-tooth-surfaces.ps1` | Chốt 枝番 `men=1` ở 処置選択 → `frm203035.fixProc` (面入力) | `Tests/MenInput/` | ✖ đọc cột ẩn 72, không bấm F9 |
+| `.\run-change-tooth-status.ps1` | chốt 処置 → `frm203016.SigaChg` · Delete → `DelExtRec` · Ｐ変更 → `Chk_PModeKesson` · F9 → `SigaChg_Save` (自歯状況変更・根数変更) | `Tests/SigaToothStatus/` | ⚠️ **CÓ** — `SIGA` + `KON`, và ghi **ngay lúc nhập** |
 | `.\run-edit-treatment-rows.ps1 -Case Probe_Advanced` | PROBE — dò hành vi, KHÔNG assert | `Tests/TreatmentGrid/` | ✖ |
 
 > Thêm luồng mới thì giữ đúng quy ước này: `run-<động từ>-<đối tượng>.ps1` mô tả việc
@@ -385,6 +386,26 @@ chứ không suy ra:
   「chốt xong」 và sẽ bắn cú click đường lui vào đúng vùng mà 面入力 đang che.
 
 Hai điểm **LỆCH** với bản web + hai cái bẫy còn lại nằm ở `Tests/MenInput/README.md` mục 4-5.
+
+**SigaToothStatus** đo **đáp án** cho hai bảng 歯牙 — `SIGA` (自歯状況) và `KON` (根数) —
+nửa WinForm của BA spec Playwright cùng lúc: `tooth-extraction-siga-restore`,
+`siga-kon-remaining-gaps`, `p-mode-kesson-siga`. Bảng tương ứng từng testcase ở
+`Tests/SigaToothStatus/README.md` mục 1.
+
+Điều làm luồng này khác mọi luồng khác: **ba trong bốn đường ghi 歯式 chạy TRƯỚC F9**.
+Chốt một 処置 抜歯 là `IregCodChk` → `SigaChg` phát `update Siga` ngay tại chỗ; xoá dòng
+đó là `DelExtRec` phát một câu nữa; Ｐ変更 là `Chk_PModeKesson`. Không có cách nào "chỉ
+nhìn" — vì thế cờ **riêng** `sigaTooth.allowSave`, và fixture chụp `SIGA`/`KON` ở
+`OneTimeSetUp`, in ra stdout, trả lại ở `OneTimeTearDown`.
+
+Đã chạy thật 2026-09-03 trên bệnh nhân 10 (診療月 2026-08). Hai chiều đo được:
+`179/1` trên ô 部位 10 ⇒ `se11: 0→4` **chưa bấm F9**; xoá dòng đó ⇒ `se11: 4→0`; răng sữa
+`179/0` trên ô 6 ⇒ `sn4: 5→9` rồi `9→5`. Sáu điểm LỆCH tìm được khi đọc source + ba cái
+bẫy của chính bộ test nằm ở README của luồng, mục 5 và mục 7.
+
+> ⚠️ Luồng này nâng `frm902003`「部位選択」 lên `Infrastructure/ToothSelectDialog.cs` —
+> trước đó nó nằm trong `Tests/InpP1Dialogs/BrSampleFlow`. `BrSampleFlow` giữ nguyên
+> chữ ký cũ, thân hàm uỷ nhiệm về lớp chung.
 
 > **Bài học dùng chung, đọc trước khi viết luồng mới:** app này **không nhận
 > InvokePattern ở bất kỳ control nào**. `Uia.Click` lên nhãn / caption / dòng lưới đều

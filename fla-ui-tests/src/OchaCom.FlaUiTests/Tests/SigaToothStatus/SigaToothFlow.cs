@@ -271,8 +271,26 @@ public sealed class SigaToothFlow
         trace?.Step($"dat con tro vao 「{at}」 roi bam Insert (行追加)");
         _grid.FocusCell(at, RegiGrid.Col.Ryo);
 
-        // Editor còn mở thì Insert đi vào TextBox chứ không vào lưới.
-        if (_grid.IsEditing()) _grid.Press(VirtualKeyShort.ESCAPE);
+        // ⛔ Editor còn mở thì Insert đi vào TextBox chứ không vào lưới — nhưng TUYỆT ĐỐI
+        // KHÔNG dùng ESC để đóng nó.
+        //
+        // `GradientDataGridView.ProcessDialogKey` trả false khi
+        // `RegularOperationEnterKeyDisable = true` (GradientDataGridView.cs:645-668, cờ đặt ở
+        // frm203002.Designer.cs:1116) ⇒ ESC KHÔNG được lưới xử lý, nó rơi xuống form thành
+        // 戻る và bung 「処置データは、変更されています。保存しますか？」. PROBE-GUIDELINE mục 3.3
+        // đã ghi đúng cái bẫy này, và probe Tc1 (2026-09-03) vẫn dính: hộp thoại đó chắn màn
+        // hình, cú click sau đó không mở được 部位選択, InpMode đọc ra rỗng, rồi cả testcase
+        // chết với 「không thấy control grdRegi」 — ba triệu chứng, không cái nào chỉ đúng
+        // nguyên nhân.
+        //
+        // Cách đóng editor đúng là DỜI CON TRỎ sang ô khác, y như `TreatmentGridBasicTests.LeaveEditor`.
+        if (_grid.IsEditing())
+        {
+            trace?.Note("editor con sot lai — doi con tro sang o 日 de roi khoi editor (KHONG dung ESC)");
+            _grid.FocusCell(at, RegiGrid.Col.Day);
+            _grid.FocusCell(at, RegiGrid.Col.Ryo);
+        }
+
         _grid.Press(VirtualKeyShort.INSERT);
         Waits.Step();
 
