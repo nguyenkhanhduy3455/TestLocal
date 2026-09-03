@@ -34,6 +34,15 @@
     "trung lap" nhung hoa ra la hong: no khao sat nhanh F trong khi testcase
     chay nhanh G, moi luat rut ra deu lech dia chi.
 
+.PARAMETER Fixture
+    Chon fixture:
+      ChgAccDataTests        (mac dinh) — phep GHI cua ChgAccData: ACCDAT + PERSON_EXP,
+                             xac minh bug ISSUE-1. GHI THAT vao so tien.
+      ChgAccDataParityTests  — nua WinForm cua ..\web-tenant-tests\tests\chg-acc-data-parity.spec.ts:
+                             nut MAC DINH cua tung hop thoai, deleteTrtDtUnPaid chay vo dieu kien,
+                             va nhanh G khong tao 未精算 moi. Tra loi いいえ cho hop 会計データ修正
+                             nen KHONG ghi so tien (chi seed roi tu don 1 dong ACCDAT + 1 dong UNPAID moc).
+
 .PARAMETER Case
     Loc theo ten testcase, vd "Tc8_2".
 
@@ -42,10 +51,13 @@
     .\run-fix-accounting-data.ps1 -Case Tc8_2
     .\run-fix-accounting-data.ps1 -StepMs 1200
     .\run-fix-accounting-data.ps1 -Diagnostics
+    .\run-fix-accounting-data.ps1 -Fixture ChgAccDataParityTests
 #>
 [CmdletBinding()]
 param(
     [string]$Case = "",
+    [ValidateSet("ChgAccDataTests", "ChgAccDataParityTests")]
+    [string]$Fixture = "ChgAccDataTests",
     [int]$StepMs = -1,
     [switch]$Diagnostics,
     [ValidateSet("Debug", "Release")]
@@ -64,7 +76,7 @@ if ($Diagnostics) {
 } elseif ($Case -ne "") {
     $filter = "FullyQualifiedName~$ns&FullyQualifiedName~$Case"
 } else {
-    $filter = "FullyQualifiedName~$ns.ChgAccDataTests"
+    $filter = "FullyQualifiedName~$ns.$Fixture"
 }
 
 $testArgs = @(

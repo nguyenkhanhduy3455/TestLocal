@@ -356,6 +356,113 @@ public sealed class OchaDbAccounting
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // 未精算 MỐC — chứng minh deleteTrtDtUnPaid chạy VÔ ĐIỀU KIỆN (modAcc.cs:428)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// <c>km_cd</c> của dòng 未精算 mốc. 99 nằm NGOÀI mọi dải thật (医療 40-49/57-58,
+    /// 自費 50) nên không đụng dòng nào của phòng khám, và cũng dễ nhận ra khi soi tay.
+    /// Cùng con số mà spec Playwright dùng (<c>MARKER_KM_CD</c>).
+    /// </summary>
+    public const int MarkerKmCd = 99;
+
+    /// <summary>Ghi chú của dòng mốc — teardown xoá theo đúng chuỗi này.</summary>
+    public const string MarkerNte = "E2E-CLEAR";
+
+    /// <summary>
+    /// <c>当日来院回数</c> của ngày test, đọc từ <c>TRNTRN.RAIIN_CNT</c>.
+    ///
+    /// <para><b>Bắt buộc phải khớp.</b> <c>UnPaid.deleteTrtDtUnPaid</c> lọc
+    /// <c>trt_cnt % 100 = @trt_cnt</c> (UnPaid.cs:357) với tham số là
+    /// <c>hFG1[71, dòng con trỏ]</c> — dòng mốc mang <c>trt_cnt</c> khác thì DELETE không
+    /// chạm tới nó và testcase đỏ oan, đổ lỗi cho WinForm.</para>
+    ///
+    /// <para>Trả 1 khi ngày đó không có 処置 nào (giá trị mặc định của app).</para>
+    /// </summary>
+    public int ReadRaiinCnt(int patNo, DateTime trtDt)
+    {
+        using var con = Open();
+        using var cmd = Cmd(con,
+            "SELECT TOP 1 RAIIN_CNT FROM TRNTRN WHERE PAT_NO = @p AND TRT_DT = @d " +
+            "AND ISNULL(DEL_FLG, 0) = 0 ORDER BY DISP_NO");
+        cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+        cmd.Parameters.Add("@d", SqlDbType.DateTime).Value = trtDt.Date;
+        var v = cmd.ExecuteScalar();
+        return v is null or DBNull ? 1 : Convert.ToInt32(v);
+    }
+
+    /// <summary>
+    /// Chèn một dòng 未精算 MỐC — đóng vai 「未精算 còn sót của lượt F8 trước」.
+    ///
+    /// <para>Mọi cột của <c>UNPAID</c> đều NOT NULL (trừ <c>NTE</c>) nên phải liệt kê đủ;
+    /// giá trị 0 hết, vì dòng này chỉ để xem nó có bị XOÁ hay không, không ai đọc số của nó.</para>
+    ///
+    /// <para>Xoá trước rồi chèn để chạy lại nhiều lượt không dồn rác.</para>
+    /// </summary>
+    public void InsertMarkerUnpaid(int patNo, DateTime trtDt, int trtCnt)
+    {
+        using var con = Open();
+
+        using (var del = Cmd(con,
+            "DELETE FROM UNPAID WHERE pat_no = @p AND trt_dt = @d AND km_cd = @km"))
+        {
+            del.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+            del.Parameters.Add("@d", SqlDbType.DateTime).Value = trtDt.Date;
+            del.Parameters.Add("@km", SqlDbType.Int).Value = MarkerKmCd;
+            del.ExecuteNonQuery();
+        }
+
+        var zeroCols = string.Join(", ", ScoreDColumns);
+        var zeroVals = string.Join(", ", ScoreDColumns.Select(_ => "0"));
+        using var cmd = Cmd(con,
+            $"""
+             INSERT INTO UNPAID
+                 (TRT_DT, TRT_CNT, PAT_NO, KM_CD, SCORE, CLAIM_AMT, DISCOUNT, TAX,
+                  ACCR_AMT, ACCR_TAX, APPR_AMT, APPR_TAX, RECE_AMT, RECE_TAX, RECE_KBN,
+                  PFLG, SFLG, GDS_CD, GDS_CNT, ATT_DR, ACC_TM, MEDS, TFLG, NTE,
+                  {zeroCols}, PAT_BR, LFLG)
+             VALUES
+                 (@d, @tc, @p, @km, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, GETDATE(), 0, 0, @nte,
+                  {zeroVals}, 0, 0)
+             """);
+        cmd.Parameters.Add("@d", SqlDbType.DateTime).Value = trtDt.Date;
+        cmd.Parameters.Add("@tc", SqlDbType.Int).Value = trtCnt;
+        cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+        cmd.Parameters.Add("@km", SqlDbType.Int).Value = MarkerKmCd;
+        cmd.Parameters.Add("@nte", SqlDbType.VarChar, 40).Value = MarkerNte;
+        cmd.ExecuteNonQuery();
+    }
+
+    private static readonly string[] ScoreDColumns =
+        Enumerable.Range(1, 14).Select(i => $"SCORE_D{i}").ToArray();
+
+    /// <summary>Dòng mốc còn sống không. <c>UNPAID</c> bị xoá CỨNG nên chỉ cần đếm.</summary>
+    public bool MarkerUnpaidExists(int patNo, DateTime trtDt)
+    {
+        using var con = Open();
+        using var cmd = Cmd(con,
+            "SELECT COUNT(*) FROM UNPAID WHERE pat_no = @p AND trt_dt = @d AND km_cd = @km");
+        cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+        cmd.Parameters.Add("@d", SqlDbType.DateTime).Value = trtDt.Date;
+        cmd.Parameters.Add("@km", SqlDbType.Int).Value = MarkerKmCd;
+        return ToInt(cmd.ExecuteScalar()!) > 0;
+    }
+
+    /// <summary>Xoá cứng dòng mốc — teardown gọi dù testcase xanh hay đỏ.</summary>
+    public int DeleteMarkerUnpaid(int patNo, DateTime trtDt)
+    {
+        using var con = Open();
+        using var cmd = Cmd(con,
+            "DELETE FROM UNPAID WHERE pat_no = @p AND trt_dt = @d AND km_cd = @km");
+        cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+        cmd.Parameters.Add("@d", SqlDbType.DateTime).Value = trtDt.Date;
+        cmd.Parameters.Add("@km", SqlDbType.Int).Value = MarkerKmCd;
+        return cmd.ExecuteNonQuery();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // Dọn dẹp
     // ═══════════════════════════════════════════════════════════════════════
 

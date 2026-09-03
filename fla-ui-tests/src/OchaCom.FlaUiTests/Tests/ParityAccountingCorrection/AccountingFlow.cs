@@ -44,13 +44,66 @@ public static class AccountingFlow
     public const string BranchFMarker = "入金指定額";
 
     /// <summary>Một hộp thoại đã gặp trên đường đi.</summary>
-    public sealed record Seen(string Text, string Answered, string[] Buttons);
+    /// <param name="DefaultButton">
+    /// Nút ĐANG GIỮ CON TRỎ lúc hộp thoại vừa mở — tức nút mà Enter sẽ bấm.
+    ///
+    /// <para>Đây là cách DUY NHẤT đo được tham số <c>MessageBoxDefaultButton</c> của
+    /// <c>MsgDialog.ShowYesNoMsg</c>: Win32 đặt style <c>BS_DEFPUSHBUTTON</c> cho nút mặc
+    /// định và giao con trỏ cho nó, còn UIA không phơi ra style đó. Rỗng = chưa đọc được.</para>
+    ///
+    /// <para>Vì sao đáng đo: WinForm cố tình để 「既に…会計処理…」 và 「差額」 mặc định
+    /// <b>Button2 = いいえ</b> (modAcc.cs:562, :581) nhưng 「…計上しますか？」 mặc định
+    /// <b>Button1 = はい</b> (modAcc.cs:956). Hai hộp đầu mà mặc định はい thì người dùng
+    /// bấm Enter theo phản xạ sẽ chồng thêm một 未精算 ĐỦ TIỀN lên ngày đã thu — thu tiền
+    /// hai lần. Đây là parity thật, không phải chi tiết thẩm mỹ.</para>
+    /// </param>
+    public sealed record Seen(string Text, string Answered, string[] Buttons, string DefaultButton = "")
+    {
+        public override string ToString() =>
+            $"「{Text}」 nut=[{string.Join("/", Buttons)}] mac dinh=「{DefaultButton}」 -> {Answered}";
+    }
+
+    /// <summary>
+    /// Tên nút đang giữ con trỏ trong hộp thoại — xem <see cref="Seen.DefaultButton"/>.
+    ///
+    /// <para>Hỏi <c>FocusedElement()</c> của cả tiến trình chứ không tìm trong cửa sổ:
+    /// MessageBox là modal, nó vừa mở là con trỏ đã ở nút mặc định của chính nó. Trả rỗng
+    /// khi không đọc được (đang chuyển tiếp) hoặc khi phần tử focus không phải Button.</para>
+    /// </summary>
+    public static string FocusedButtonName(OchaApp app)
+    {
+        try
+        {
+            var focused = app.Automation.FocusedElement();
+            if (focused is null) return "";
+            if (Uia.ControlTypeOf(focused) != FlaUI.Core.Definitions.ControlType.Button) return "";
+            return Txt.N(Uia.NameOf(focused)).Replace("&", "");
+        }
+        catch { return ""; }
+    }
+
+    /// <summary>Nhãn của nút PHỦ ĐỊNH, cả hai thứ tiếng (Windows tiếng Anh ra Yes/No).</summary>
+    public static bool IsNegativeButton(string name) =>
+        name is "いいえ" or "No" or "キャンセル" or "Cancel";
+
+    /// <summary>Nhãn của nút KHẲNG ĐỊNH.</summary>
+    public static bool IsAffirmativeButton(string name) =>
+        name is "はい" or "Yes" or "OK";
 
     /// <param name="Reached">Có tới được hộp thoại 「…計上しますか？」 không.</param>
     /// <param name="Trail">Mọi hộp thoại đã gặp, theo thứ tự — đây là chuỗi THẬT.</param>
     /// <param name="Diagnosis">Khi không tới đích: vì sao, nói bằng ngôn ngữ của modAcc.</param>
+    /// <param name="TargetDefaultButton">
+    /// Nút giữ con trỏ của hộp thoại ĐÍCH 「…計上しますか？」 — kỳ vọng は い (Button1,
+    /// modAcc.cs:956), ngược hẳn hai hộp phía trên. Xem <see cref="Seen.DefaultButton"/>.
+    /// </param>
     public sealed record Walk(
-        bool Reached, IReadOnlyList<Seen> Trail, Window? Target, string? Diagnosis = null);
+        bool Reached, IReadOnlyList<Seen> Trail, Window? Target, string? Diagnosis = null,
+        string TargetDefaultButton = "")
+    {
+        /// <summary>Hộp thoại trên đường đi có câu chữ chứa <paramref name="fragment"/>.</summary>
+        public Seen? SeenWith(string fragment) => Trail.FirstOrDefault(s => Txt.Has(s.Text, fragment));
+    }
 
     /// <summary>
     /// Luật trả lời cho các hộp thoại TRUNG GIAN.
@@ -174,8 +227,10 @@ public static class AccountingFlow
                 TimeSpan.FromSeconds(3));
             if (hit is not null)
             {
-                trace?.Note($"TOI DICH sau {trail.Count} hop thoai trung gian (duong {hit.Route})");
-                return new Walk(true, trail, hit.Dialog);
+                var targetDefault = FocusedButtonName(app);
+                trace?.Note($"TOI DICH sau {trail.Count} hop thoai trung gian (duong {hit.Route}); " +
+                            $"nut mac dinh = 「{targetDefault}」");
+                return new Walk(true, trail, hit.Dialog, null, targetDefault);
             }
 
             var any = Waits.TryFor(() => ModalDialogs.All(app, screen).FirstOrDefault(),
@@ -193,6 +248,9 @@ public static class AccountingFlow
 
             var text = Txt.N(Dialogs.TextOf(any));
             var buttons = ButtonNames(any);
+            // ⚠️ ĐỌC TRƯỚC KHI BẤM. Cú click dời con trỏ sang nút vừa bấm, nên hỏi sau
+            // là đo lại chính lựa chọn của mình chứ không phải mặc định của WinForm.
+            var defaultButton = FocusedButtonName(app);
 
             // Nhận ra nhánh SAI trước khi tra luật: 入金指定 không phải hộp thoại hỏi
             // đáp, và trả lời nó kiểu gì cũng không kéo về được nhánh G.
@@ -202,7 +260,7 @@ public static class AccountingFlow
                 trace?.Shot($"hop-thoai-{trail.Count + 1}-nhanh-F");
                 // 戻る: nút lui của chính cửa sổ đó. Nhãn là 「F10\n戻る」 nên phải so CHỨA.
                 var backed = Dialogs.ClickButtonContaining(any, "戻る", "Cancel", "Close");
-                trail.Add(new Seen(text, backed ? "F10 戻る (lui)" : "(KHONG BAM DUOC)", buttons));
+                trail.Add(new Seen(text, backed ? "F10 戻る (lui)" : "(KHONG BAM DUOC)", buttons, defaultButton));
                 return new Walk(false, trail, null, BranchFDiagnosis);
             }
 
@@ -215,13 +273,14 @@ public static class AccountingFlow
             var why = rule.Why ?? "KHONG KHOP LUAT NAO — tra loi phu dinh; neu day la hop " +
                                   "thoai kieu 「…続けますか」 thi PHAI them luat rieng";
 
-            trace?.Note($"hop thoai [{trail.Count + 1}]: 「{text}」 nut={string.Join("/", buttons)}");
+            trace?.Note($"hop thoai [{trail.Count + 1}]: 「{text}」 nut={string.Join("/", buttons)} " +
+                        $"mac dinh=「{defaultButton}」");
             trace?.Note($"  -> tra loi 「{answer[0]}」 ({why})");
             trace?.Shot($"hop-thoai-{trail.Count + 1}");
 
             if (!Dialogs.ClickButton(any, answer))
             {
-                trail.Add(new Seen(text, "(KHONG BAM DUOC)", buttons));
+                trail.Add(new Seen(text, "(KHONG BAM DUOC)", buttons, defaultButton));
                 trace?.Note($"  !! khong co nut nao trong {string.Join("/", answer)} — dung lai");
                 return new Walk(false, trail, null,
                     $"Cửa sổ cuối không có nút nào trong {string.Join("/", answer)}. Nếu nó là " +
@@ -229,7 +288,7 @@ public static class AccountingFlow
                     "lại đi qua đó (xem BranchFMarker).");
             }
 
-            trail.Add(new Seen(text, answer[0], buttons));
+            trail.Add(new Seen(text, answer[0], buttons, defaultButton));
             Waits.Step();
         }
 

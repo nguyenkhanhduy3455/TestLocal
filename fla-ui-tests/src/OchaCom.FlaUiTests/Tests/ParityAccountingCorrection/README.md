@@ -94,7 +94,8 @@ if (past_billing_amount == 0 || ModCommon.pAccLink == false) {  // nhánh F: t�
 
 | Tệp | Vai trò |
 |---|---|
-| `ChgAccDataTests.cs` | 3 testcase |
+| `ChgAccDataTests.cs` | 3 testcase — **phép GHI** của ChgAccData (ghi sổ tiền) |
+| `ChgAccDataParityTests.cs` | 5 testcase — **tầng màn hình**, nửa WinForm của spec Playwright (§8) |
 | `AccountingPreconditions.cs` | Dựng đủ 2 điều kiện của modAcc.cs:598 |
 | `AccountingFlow.cs` | Lái chuỗi hộp thoại F8 → 会計データ修正 |
 | `OchaDbAccounting.cs` | Đọc/ghi `ACCDAT` + `PERSON_EXP` + `accconfig`, ảnh chụp & khôi phục |
@@ -126,6 +127,86 @@ Cần chênh lệch theo 点数 chứ không chỉ theo tiền thì đổi
 `Tc8_2` dựng `dep_due = 10.000`, `ins_due_bal = 300`. Tổ hợp này là **bắt buộc**:
 nhánh mang bug chỉ chạy khi có **cả hai** số dư và số dư bị trừ **nhỏ hơn** mức
 chênh. Sai tổ hợp thì đi nhánh ngoài (vốn cộng dồn đúng) và chẳng chứng minh gì.
+
+---
+
+## 5b. `ChgAccDataParityTests` — nửa WinForm của `chg-acc-data-parity.spec.ts`
+
+Chạy: **`.\run-fix-accounting-data.ps1 -Fixture ChgAccDataParityTests`**
+
+Fixture `ChgAccDataTests` ở trên đo **phép ghi** (ACCDAT + PERSON_EXP, ISSUE-1). Fixture
+này đo ba thứ mà `../web-tenant-tests/tests/chg-acc-data-parity.spec.ts` đo và bên đây
+chưa ai đo — cả ba nằm ở tầng màn hình:
+
+| | Nội dung | Playwright | Kết quả 2026-09-03 |
+|---|---|---|---|
+| `TcCHG0` | Tiền đề + seed dòng 未精算 mốc | (beforeAll) | ✅ |
+| `TcCHG1` | Nút **mặc định** của 既存会計 và 会計データ修正 | TC-CHG-1 | ✅ |
+| `TcCHG2` | Nhánh G chỉ sửa sổ, **không** tạo 未精算 mới | TC-CHG-2 | ✅ |
+| `TcCHG3` | `deleteTrtDtUnPaid` chạy **vô điều kiện** | TC-CHG-3 | ✅ |
+| `TcCHG4` | Nút mặc định hộp 差額 | TC-CHG-1 | ⏭️ Ignore — dữ liệu (xem dưới) |
+
+**Nó KHÔNG ghi sổ tiền.** Trả lời **いいえ** cho hộp 会計データ修正, mà `ChgAccData` chỉ ghi
+trong nhánh `DialogResult.Yes` (modAcc.cs:956). Hai thứ nó có ghi đều tự dọn: dòng 会計 mốc
+(teardown khôi phục theo ảnh chụp) và dòng 未精算 mốc (`km_cd = 99`, xoá cứng).
+
+### Nút mặc định — đo được, và đây là parity thật
+
+UIA không phơi ra `MessageBoxDefaultButton`, nhưng Win32 **giao con trỏ** cho nút mặc định
+— nên `AccountingFlow.FocusedButtonName` đọc `FocusedElement()` NGAY khi hộp thoại vừa mở
+(phải đọc **trước** khi bấm, cú click dời con trỏ sang nút vừa bấm). Đo được:
+
+| Hộp thoại | Nguồn | Mặc định |
+|---|---|---|
+| 「処置データチェックでエラーがありました。このまま続けますか?」 | — | **Cancel** |
+| 「会計処理を行う日が本日でありません。よろしいですか。」 | — | **OK** |
+| 「既に、¥1,020 の会計処理がされていますが…作成してよろしいですか?」 | modAcc.cs:562 `Button2` | **No** |
+| 「処置点数が 0点追加されました。¥1,020預り金に計上しますか?」 | modAcc.cs:956 `Button1` | **Yes** |
+
+Hai hộp giữa **ngược nhau có chủ ý**. Mặc định はい cho hộp 既存会計 nghĩa là người dùng bấm
+Enter theo phản xạ sẽ chồng thêm một 未精算 **đủ tiền** lên ngày đã thu (nhánh :566 đặt
+`past_billing_amount = 0`) — **thu tiền hai lần**. Bản web trước đây để mặc định はい cho cả
+ba; đây là lỗi thật, không phải chi tiết thẩm mỹ.
+
+### `deleteTrtDtUnPaid` chạy vô điều kiện — chứng minh bằng dòng mốc
+
+`TcCHG0` chèn một dòng `UNPAID` mốc (`km_cd = 99`, `nte = 'E2E-CLEAR'`) đóng vai
+「未精算 còn sót của lượt F8 trước」. Sau lượt F8 nó **biến mất**, trong khi `TcCHG2` vừa chốt
+là nhánh G **không tạo dòng 未精算 nào** — nên chỗ duy nhất có thể xoá nó là modAcc.cs:428,
+chạy ngay sau cổng ngày và **trước** cả chỗ rẽ nhánh ở :598.
+
+> ⚠️ Dòng mốc phải mang đúng `trt_cnt` của ngày: `DELETE` lọc `trt_cnt % 100 = @trt_cnt`
+> (UnPaid.cs:357) với tham số là `hFG1[71, dòng con trỏ]`. Seed sai con số đó thì DELETE
+> không trúng và testcase đỏ oan, đổ lỗi cho WinForm. `OchaDbAccounting.ReadRaiinCnt` đọc
+> nó từ `TRNTRN.RAIIN_CNT`.
+
+### Hai chỗ bên này đo được ÍT HƠN bản Playwright — vì DỮ LIỆU
+
+Spec bên kia **giả lập** `precheck` nên dựng được mọi tổ hợp cờ. Ở đây `LetAccData2` tự tính
+từ 処置 + ACCDAT thật, mà bệnh nhân test là **公費単独** ⇒ `cur.insPrice` luôn 0 còn dòng 会計
+seed là ¥1.020:
+
+- **金額同一** (modAcc.cs:571) — không dựng được. Đó là nhánh mà TC-CHG-3 bên kia dùng;
+  `TcCHG3` chứng minh **cùng một điều** bằng nhánh G, vốn cũng không insert gì.
+- **hộp 差額** (modAcc.cs:578) — không dựng được, cần `cur >= past` ở cả ba vế. `TcCHG4` tự
+  `Ignore` kèm lý do; trỏ `patient.patNo` sang hồ sơ có 保険 tự trả khác 0 là nó bắt đầu
+  khẳng định.
+
+### 🐛 Cái bẫy đã trả giá: F8 chạy theo NGÀY CỦA DÒNG CON TRỎ
+
+Lượt chạy đầu (2026-09-03 14:50) **đỏ** và để lại rác: chuỗi F8 đi thẳng vào **nhánh F**
+(入金指定) dù tiền đề đã đủ. Lý do: `LetAccData2` lấy `dtTgtDate` từ ô 日 của **dòng con
+trỏ**, rồi `past_billing_amount` lấy từ ACCDAT của **đúng ngày đó**. Tiền đề chỉ seed 会計
+cho `patient.trtDate`; lưới của bệnh nhân test nay có **bốn** ngày (20, 3, 14, 25), con trỏ
+rơi vào ngày khác ⇒ `past_billing_amount = 0` ⇒ rẽ nhánh F ⇒ **ghi một dòng 未精算 vào ngày
+đó** — một ngày mà teardown (chỉ dọn `TrtDate`) không hề biết tới. Phải xoá tay.
+
+Chữa: `FocusRowOfTestDay` đặt con trỏ vào dòng của `TrtDate` trước khi bấm F8, dùng
+`AccountingDayFlow.RowForDay` + `FocusRow` của luồng `AccountingFocusedDay`.
+
+> ⚠️ **`ChgAccDataTests` cũng KHÔNG đặt con trỏ.** Hồi 2026-08-11 nó vẫn xanh vì lưới lúc
+> đó chỉ có một ngày — giờ thì không còn đúng. Đã ghi cảnh báo ngay trong file đó; chép
+> `FocusRowOfTestDay` sang khi nào có dịp chạy lại được lô ghi sổ tiền.
 
 ---
 

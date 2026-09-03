@@ -219,6 +219,22 @@ public sealed class ChgAccDataTests : UiTestBase
     }
 
     /// <summary>Tc8-1/Tc8-2 chỉ được bấm F8 khi Tc8-0 đã xanh — xem <see cref="_branchGReachable"/>.</summary>
+    /// <summary>
+    /// ⚠️ <b>CẢNH BÁO — fixture này KHÔNG đặt con trỏ vào dòng của <c>patient.trtDate</c>.</b>
+    ///
+    /// <para><c>LetAccData2</c> lấy <c>dtTgtDate</c> từ ô 日 của DÒNG CON TRỎ, rồi
+    /// <c>past_billing_amount</c> lấy từ <c>ACCDAT</c> của đúng ngày đó. Tiền đề chỉ seed
+    /// 会計 cho MỘT ngày, nên con trỏ rơi vào ngày khác là <c>past_billing_amount = 0</c>
+    /// ⇒ modAcc.cs:598 rẽ sang nhánh F, mở 入金指定 và GHI một dòng 未精算 vào ngày đó —
+    /// một ngày mà teardown ở đây (chỉ dọn <c>TrtDate</c>) không biết tới.</para>
+    ///
+    /// <para>Hồi 2026-08-11 lưới của bệnh nhân test chỉ có MỘT ngày nên chuyện này không
+    /// lộ ra. Đo lại 2026-09-03: lưới đã có ba ngày (3, 14, 25) và
+    /// <c>ChgAccDataParityTests</c> đỏ đúng vì lý do đó. Cách chữa nằm ở
+    /// <c>ChgAccDataParityTests.FocusRowOfTestDay</c> (dùng
+    /// <c>AccountingDayFlow.RowForDay</c> + <c>FocusRow</c>) — chép sang đây khi có dịp
+    /// chạy lại được lô ghi sổ tiền này.</para>
+    /// </summary>
     private void RequireBranchG()
     {
         if (!_branchGReachable)

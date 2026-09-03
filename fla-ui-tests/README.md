@@ -253,6 +253,7 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 |---|---|---|---|
 | `.\run-save-treatment-data.ps1` | F9 登録 → `modSave.SaveData` (処置データ登録) | `Tests/ParitySaveData/` | ⚠️ **CÓ** — `trn_trn` |
 | `.\run-fix-accounting-data.ps1` | F8 会計 → `modAcc.ChgAccData` (会計データ修正) | `Tests/ParityAccountingCorrection/` | ⚠️ **CÓ** — `acc_dat` + `person_exp` (**sổ tiền**) |
+| `.\run-fix-accounting-data.ps1 -Fixture ChgAccDataParityTests` | F8 会計 → cây quyết định `LetAccData2` (nút mặc định · `deleteTrtDtUnPaid`) | `Tests/ParityAccountingCorrection/` | ✖ trả lời いいえ nên không ghi sổ tiền |
 | `.\run-inp-p1-dialog.ps1` | F11 →「９ オプション」→ Step / チェック項目設定 · 部位選択 → F9 Br例 | `Tests/InpP1Dialogs/` | ⚠️ chỉ khi `-AllowSave` — `TRTSTATE`, `chkprm` |
 | `.\run-edit-treatment-rows.ps1` | Insert/Delete trên lưới 処置 → `AddRow` / `DeleteRow` (行追加・行削除) | `Tests/TreatmentGrid/` | ✖ không bấm F9 |
 | `.\run-confirm-patient.ps1` | End/F9/Enter ở 患者選択 → `frm203001.defData` (患者確定) | `Tests/PatientSelectAssign/` | ✖ không bấm F9, không seed `wait` |
@@ -274,6 +275,25 @@ ngay, không tốn công mở app.
 **ParityAccountingCorrection** xác minh 会計データ修正 (`ChgAccData`, lô 8). Nặng hơn:
 nó sửa **sổ tiền** — 会計 đã chốt và số dư 預り金/未収金. Cần tiền đề mà test không tự
 dựng được (ngày đã 窓口精算, `tre_acc_link = 1`).
+
+Thư mục này có **hai** fixture, chọn bằng `-Fixture`. `ChgAccDataTests` (mặc định) đo
+phép GHI — nó là cái sửa sổ tiền. `ChgAccDataParityTests` là nửa WinForm của
+`../web-tenant-tests/tests/chg-acc-data-parity.spec.ts`, đo **tầng màn hình** và
+**không** ghi sổ tiền: nó trả lời いいえ cho hộp 会計データ修正, mà `ChgAccData` chỉ ghi ở
+nhánh はい (modAcc.cs:956). Đã chạy thật 2026-09-03: 4/4 khẳng định xanh, `TcCHG4`
+`Ignore` vì dữ liệu (bệnh nhân test là 公費単独 nên hộp 差額 không mở được).
+
+Nó đo được thứ trước nay chưa ai đo: **nút MẶC ĐỊNH** của từng hộp thoại. UIA không
+phơi `MessageBoxDefaultButton` ra, nhưng Win32 giao CON TRỎ cho nút mặc định — đọc
+`FocusedElement()` NGAY khi hộp thoại vừa mở (trước khi bấm) là ra. Đo được: 既存会計 →
+`No` (Button2), 会計データ修正 → `Yes` (Button1). Hai hộp **ngược nhau có chủ ý**, và bản
+web trước đây để はい cả ba ⇒ bấm Enter theo phản xạ là **thu tiền hai lần**.
+
+> 🐛 Lượt chạy đầu của fixture mới đỏ vì một cái bẫy đáng nhớ: **F8 会計 chạy theo ngày
+> của DÒNG CON TRỎ**, không theo ngày mở màn hình. Lưới bệnh nhân test nay có bốn ngày
+> nên con trỏ rơi vào ngày chưa seed 会計 ⇒ rẽ nhánh F ⇒ ghi rác `UNPAID` vào một ngày mà
+> teardown không biết tới. `ChgAccDataTests` cũng chưa đặt con trỏ — xem cảnh báo trong
+> README của luồng, mục 5b.
 
 **TreatmentGrid** đo **đáp án** cho bảy thao tác CƠ BẢN nhất trên lưới 処置 của
 `frm203002` (`grdRegi` / `hFG1`): nhìn cột, chèn 処置 từ tab 個別, Enter, Tab, gõ số
