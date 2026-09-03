@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
 
+import { dbEnabled, deleteTreatmentRows, seedTreatmentRows } from './db'
 import { makeStep, skipWithReason } from './step'
 import { ADMIN_USER, JA } from './test-data'
 
@@ -44,16 +45,24 @@ import { ADMIN_USER, JA } from './test-data'
  *
  * ─── Cách spec chứng minh ────────────────────────────────────────────────────
  *  Không đọc DB. Bằng chứng nằm ở REQUEST mà FE bắn ra:
+ *      POST /tenant/treatment/accounting/clear-unpaid  { trtDt: 'YYYY-MM-DD', … }
  *      GET  /tenant/treatment/accounting/precheck?patNo=…&trtDt=YYYY-MM-DD
  *      POST /tenant/treatment/accounting/insert-unpaid  { trtDt: 'YYYY-MM-DD', … }
- *  Cả hai phải mang ngày của DÒNG CON TRỎ. Trước khi sửa, chúng luôn mang ngày
+ *  Cả ba phải mang ngày của DÒNG CON TRỎ. Trước khi sửa, chúng luôn mang ngày
  *  trên URL — đó chính là triệu chứng tester thấy.
  *
+ *  `clear-unpaid` là bản port của `UnPaid.deleteTrtDtUnPaid` mà LetAccData2 gọi
+ *  VÔ ĐIỀU KIỆN ở modAcc.cs:428 — tức là NGAY SAU cổng ngày và TRƯỚC precheck.
+ *  Spec ghi lại thứ tự gọi để chốt đúng vị trí đó: nếu ai đó dời nó xuống dưới
+ *  dialog (hoặc nhét lại vào trong `insert-unpaid`), thứ tự sẽ đổi và test đỏ.
+ *
  * ─── Ghi DB ──────────────────────────────────────────────────────────────────
- *  KHÔNG ghi gì. `page.route` CHẶN CỨNG hai endpoint ghi của chuỗi này
- *  (`insert-unpaid`, `correct`) và trả envelope giả, nên spec chạy hằng ngày
- *  được, không cần TEST_DB (GUIDELINE Rule 18.1). `precheck` là GET nên để đi
- *  thật, chỉ ghi lại URL.
+ *  KHÔNG ghi gì. `page.route` CHẶN CỨNG BA endpoint ghi của chuỗi này
+ *  (`clear-unpaid`, `insert-unpaid`, `correct`) và trả envelope giả, nên spec
+ *  chạy hằng ngày được, không cần TEST_DB (GUIDELINE Rule 18.1). `precheck` là
+ *  GET nên để đi thật, chỉ ghi lại URL.
+ *  ⚠️ `clear-unpaid` XOÁ MỀM dòng 未精算 của ngày — thêm endpoint ghi nào vào chuỗi
+ *  F8 thì phải chặn ở đây, nếu không spec hằng ngày bắt đầu sửa dữ liệu thật.
  *  TUYỆT ĐỐI không bấm Yes ở hộp 「処置データは変更されています」: Yes chạy bulk-save,
  *  xoá mềm cả tháng 処置 rồi chèn lại.
  *
@@ -82,12 +91,37 @@ import { ADMIN_USER, JA } from './test-data'
  *     F8 gần như luôn bung hộp 「処置データは変更されています」. Luôn trả lời No.
  *  8. Thứ tự cổng của F8 KHÔNG cố định (mỗi cổng có điều kiện riêng) ⇒ dùng vòng
  *     lặp `settleDialogs()` xử lý theo cái nào hiện ra, đừng chờ cứng theo thứ tự.
+ *  9. Khi 処置月 đang mở CHƯA có dòng nào của ngày mục tiêu, màn hình chạy
+ *     AutoSantei + 自動算定２ lúc nạp; 歯管(116/7) kéo theo hộp 「カルテ記載選択」
+ *     (frm203012) và hộp này Ở LẠI cho tới khi người dùng chọn. Nó KHÔNG phải hộp
+ *     「〜を算定しますか？」 nên `drainSanteiDialogs()` không đụng tới, mà nó nuốt luôn
+ *     phím F8 ⇒ chuỗi 会計 không chạy, `precheck` bằng 0 và test đỏ oan. Vét bằng
+ *     `drainKarteCmtDialogs()` (bấm F10戻る = không chọn dòng nào, không ghi gì).
  *
  * ─── KHÔNG kiểm ở đây ────────────────────────────────────────────────────────
  *  Nhánh 「会計処理を行う日の行にカーソルを合わせてください。」 (TryParse hỏng): trên web
  *  mọi dòng tháng hiện hành đều mang ngày thật và màn hình tự đặt con trỏ vào dòng
  *  cuối khi nạp, nên UI không dựng được trạng thái đó. Nhánh này đã có unit test
  *  `apps/web-tenant/src/features/treatments/lib/__tests__/accounting-target-date.test.ts`.
+ *
+ * ─── DỮ LIỆU: SPEC TỰ SEED ───────────────────────────────────────────────────
+ *  Cả bốn testcase cần bệnh nhân `TEST_PAT_NO` có 処置 ở HAI ngày của 処置月 đang
+ *  mở: ngày trên URL (TC-DATE-3) và một ngày khác (TC-DATE-1/2/4). DB dev gần như
+ *  luôn RỖNG ở tháng hiện hành, nên `beforeAll` tự dựng bằng `seedTreatmentRows`
+ *  (db.ts): 再診 + 外安全１(再診) cho `TRT_DT` và cho `SEED_OTHER_ISO`. `afterAll`
+ *  dọn lại bằng `deleteTreatmentRows`.
+ *
+ *  Seed nằm gọn trong vùng `disp_no >= SEED_DISP_BASE` (9000) nên KHÔNG đụng một
+ *  dòng thật nào của bệnh nhân — seed lẫn cleanup đều lọc theo vùng đó.
+ *
+ *  Cần `TEST_DB=1` trong `.env`. KHÔNG bật thì spec vẫn chạy được nhưng phụ thuộc
+ *  dữ liệu sẵn có: tháng rỗng ⇒ TC-DATE-1/2/4 tự skip. Khi đó muốn đo ba testcase
+ *  ấy thì trỏ màn hình về một tháng CÓ dữ liệu (lúc đó TC-DATE-3 tự skip):
+ *      TEST_TRT_DT=2026-07-10 npx playwright test tests/accounting-target-date.spec.ts --retries=0
+ *
+ *  Seed ngày HÔM NAY còn có tác dụng phụ đáng giá: 処置月 có sẵn dòng của ngày đó
+ *  ⇒ AutoSantei on-load tự bỏ qua (`dayHasRows`) ⇒ không bung 「カルテ記載選択」 lẫn
+ *  「〜を算定しますか？」, chuỗi F8 chạy sạch (xem BẪY 9).
  *
  * ─── Cách chạy ───────────────────────────────────────────────────────────────
  *   npx playwright test tests/accounting-target-date.spec.ts --retries=0
@@ -96,8 +130,9 @@ import { ADMIN_USER, JA } from './test-data'
  * page, và các testcase sau đều dựa vào `backToEntry()` của testcase trước.
  * `--retries=0` vì retry là chạy lại cả khối ⇒ thêm một lần login (Rule 10.1).
  *
- * Kỳ vọng: tất cả XANH. TC-DATE-3 tự skip khi màn hình không mở ở ngày hôm nay
- * hoặc lưới không có dòng nào của ngày hôm nay.
+ * Kỳ vọng với `TEST_DB=1`: cả 4 XANH (spec tự seed hai ngày cần thiết).
+ * Không có TEST_DB: TC-DATE-1/2/4 skip khi 処置月 chỉ có một ngày, và TC-DATE-3
+ * skip khi màn hình không mở ở ngày hôm nay.
  */
 
 const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
@@ -132,7 +167,34 @@ const TODAY_ISO = (() => {
 
 const GRID_LOAD_TIMEOUT = 60_000
 
+// ── Seed dữ liệu (chỉ chạy khi TEST_DB bật) ──────────────────────────────────
+/**
+ * Ngày THỨ HAI được seed trong 処置月 — chính là "dòng ngày cũ" của TC-DATE-1/2/4.
+ *
+ * Mặc định mùng 1; nếu màn hình mở đúng mùng 1 thì lùi sang mùng 2 để hai ngày
+ * không trùng nhau (điều kiện `pickRowOfOtherDay` mới có cái để chọn).
+ */
+const SEED_OTHER_DAY = SCREEN_DAY === '1' ? 2 : 1
+const SEED_OTHER_ISO = `${TRT_MONTH_PREFIX}${String(SEED_OTHER_DAY).padStart(2, '0')}`
+
+/**
+ * Hai 処置行 dựng cho MỖI ngày seed — đúng cặp mà dữ liệu thật của bệnh nhân mang
+ * ở đầu mỗi ngày, nên lưới/点数/会計 xử lý y như ngày thật.
+ *
+ * Cố tình KHÔNG dùng 初診(100): một 再診 duy nhất mỗi ngày thì không chạm nhánh
+ * 「１日２度来院」 (Chk_CMT704) lẫn hộp 初診を算定しますか？, chuỗi F8 sạch cổng.
+ */
+const SEED_ROWS = [
+    { trtCd: 110, trtSb: 0, trtPt: 59, trtCnt: 1, dspTrt: '再診' },
+    { trtCd: 108, trtSb: 9, trtPt: 2, trtCnt: 1, dspTrt: '外安全１(再診)' },
+] as const
+
 // ── Endpoint của chuỗi 会計 ───────────────────────────────────────────────────
+/**
+ * LetAccData2 bước XOÁ — POST, chạy vô điều kiện ngay sau cổng ngày
+ * (modAcc.cs:428). CHẶN: nó xoá mềm 未精算 thật.
+ */
+const ACC_CLEAR_UNPAID_URL = /\/tenant\/treatment\/accounting\/clear-unpaid(\?|$)/
 /** LetAccData2 bước ĐỌC — GET, mang `trtDt` trên query string. */
 const ACC_PRECHECK_URL = /\/tenant\/treatment\/accounting\/precheck/
 /** LetAccData2 bước GHI — POST, mang `trtDt` trong body. CHẶN, không cho ghi thật. */
@@ -180,15 +242,20 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
 
     /** Ngày mà FE thực sự gửi đi trong lượt bấm F8 gần nhất. Reset ở mỗi testcase. */
     const calls = {
+        clearUnpaid: [] as string[],
         precheck: [] as string[],
         insertUnpaid: [] as string[],
         correct: [] as string[],
+        /** Thứ tự gọi trong MỘT lượt F8 — chỉ cần biết cái nào chạy trước cái nào. */
+        order: [] as ('clear' | 'precheck')[],
     }
 
     function resetCalls() {
+        calls.clearUnpaid.length = 0
         calls.precheck.length = 0
         calls.insertUnpaid.length = 0
         calls.correct.length = 0
+        calls.order.length = 0
     }
 
     /** Hộp thoại theo NỘI DUNG, bắt cả `role="dialog"` lẫn `role="alertdialog"` (BẪY 6). */
@@ -219,6 +286,7 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
         await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
         await expect(page.getByText('合計:').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
         await drainSanteiDialogs()
+        await drainKarteCmtDialogs()
     }
 
     /**
@@ -234,6 +302,23 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
             if (!(await appeared(santei, 2_000))) return
             await page
                 .getByRole('button', { name: /^(No|いいえ)$/ })
+                .first()
+                .click()
+                .catch(() => {})
+        }
+    }
+
+    /**
+     * Đóng MỌI hộp 「カルテ記載選択」 (frm203012) còn treo (BẪY 9).
+     *
+     * 自動算定２ xếp hàng một hộp cho mỗi 処置 cần chọn コメント, hộp sau mở khi hộp
+     * trước đóng ⇒ phải lặp. F10戻る = không chọn dòng nào, WinForm cũng không ghi gì.
+     */
+    async function drainKarteCmtDialogs() {
+        const karte = page.locator('[role="dialog"]').filter({ hasText: 'カルテ記載選択' })
+        for (let i = 0; i < 10; i++) {
+            if (!(await appeared(karte.first(), 2_000))) return
+            await btn(karte.first(), /F10\s*戻る/)
                 .first()
                 .click()
                 .catch(() => {})
@@ -275,6 +360,7 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
     /** Bấm một phím F trên thanh F-key của màn nền (`data-fkey` do FKeyBar gắn). */
     async function pressFKey(fkey: string) {
         await drainSanteiDialogs()
+        await drainKarteCmtDialogs()
         await page.keyboard.press(fkey)
     }
 
@@ -355,6 +441,13 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
     const isoOf = (day: string) => `${TRT_MONTH_PREFIX}${day.padStart(2, '0')}`
 
     test.beforeAll(async ({ browser }) => {
+        // Dựng dữ liệu TRƯỚC khi mở màn hình lần đầu — `backToEntry()` cuối hook
+        // này phải thấy đủ hai ngày, nếu không TC-DATE-1 đọc lưới ra rỗng.
+        if (dbEnabled) {
+            await seedTreatmentRows(Number(PAT_NO), SEED_OTHER_ISO, [...SEED_ROWS])
+            await seedTreatmentRows(Number(PAT_NO), TRT_DT, [...SEED_ROWS])
+        }
+
         page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
         step = makeStep(page)
         page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
@@ -371,9 +464,25 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
             { times: 50 },
         )
 
+        // POST GHI — xoá 未精算 của ngày. Chặn cứng: đây là spec chạy hằng ngày,
+        // không được đụng dữ liệu thật.
+        await page.route(ACC_CLEAR_UNPAID_URL, async (route: Route) => {
+            const req = route.request()
+            if (req.method() !== 'POST') return route.fallback()
+            const body = JSON.parse(req.postData() ?? '{}') as { trtDt?: string }
+            calls.clearUnpaid.push(body.trtDt ?? '')
+            calls.order.push('clear')
+            await route.fulfill({
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ success: true, data: { deletedCount: 0 } }),
+            })
+        })
+
         // GET — để đi thật, chỉ ghi lại `trtDt` trên query string.
         await page.route(ACC_PRECHECK_URL, async (route: Route) => {
             calls.precheck.push(new URL(route.request().url()).searchParams.get('trtDt') ?? '')
+            calls.order.push('precheck')
             await route.continue()
         })
 
@@ -414,6 +523,11 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
 
     test.afterAll(async () => {
         await page?.close()
+        // Chỉ xoá vùng `disp_no >= SEED_DISP_BASE`, dòng thật của bệnh nhân còn nguyên.
+        if (dbEnabled) {
+            await deleteTreatmentRows(Number(PAT_NO), SEED_OTHER_ISO)
+            await deleteTreatmentRows(Number(PAT_NO), TRT_DT)
+        }
     })
 
     test('TC-DATE-1 — F8 với con trỏ ở NGÀY CŨ: mọi request 会計 mang ngày của dòng đó', async () => {
@@ -452,6 +566,22 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
         ).not.toContain(TRT_DT)
         expect(calls.precheck[0], 'precheck gửi sai 会計対象日').toBe(wantIso)
 
+        // modAcc.cs:428 — deleteTrtDtUnPaid chạy VÔ ĐIỀU KIỆN, ngay sau cổng ngày
+        // và TRƯỚC mọi dialog. Trước khi sửa, web chỉ xoá bên trong insert-unpaid
+        // nên các nhánh không insert bỏ sót bước này.
+        expect(
+            calls.clearUnpaid,
+            'F8 không gọi clear-unpaid — bước xoá 未精算 của LetAccData2 đang thiếu',
+        ).not.toHaveLength(0)
+        expect(calls.clearUnpaid[0], 'clear-unpaid xoá 未精算 của ngày khác dòng con trỏ').toBe(
+            wantIso,
+        )
+        expect(
+            calls.order[0],
+            `clear-unpaid phải chạy TRƯỚC precheck (modAcc.cs:428 nằm trên dialog 既存会計), ` +
+                `thứ tự đo được: ${JSON.stringify(calls.order)}`,
+        ).toBe('clear')
+
         // insert-unpaid chỉ chạy ở nhánh thực sự tạo dữ liệu; nếu có thì cũng phải
         // cùng một ngày. Không ép nó phải chạy: nhánh 既存会計/修正 kết thúc sớm là
         // hợp lệ theo modAcc.cs:571/712.
@@ -459,7 +589,9 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
             expect(iso, 'insert-unpaid ghi 未精算データ vào ngày khác với dòng con trỏ').toBe(wantIso)
         }
         console.log(
-            `precheck=${JSON.stringify(calls.precheck)} insert-unpaid=${JSON.stringify(calls.insertUnpaid)}`,
+            `clear-unpaid=${JSON.stringify(calls.clearUnpaid)} ` +
+                `precheck=${JSON.stringify(calls.precheck)} ` +
+                `insert-unpaid=${JSON.stringify(calls.insertUnpaid)}`,
         )
         await step()
     })
@@ -494,6 +626,12 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
             'Cancel mà vẫn gọi insert-unpaid — LetAccData2 phải return TRƯỚC bước tạo dữ liệu',
         ).toHaveLength(0)
         expect(calls.precheck, 'Cancel mà vẫn chạy precheck — return nằm sau cổng ngày').toHaveLength(0)
+        // `return true` của cổng ngày (modAcc.cs:389) nằm TRƯỚC deleteTrtDtUnPaid
+        // (:428) ⇒ Cancel thì 未精算 của ngày đó phải còn nguyên.
+        expect(
+            calls.clearUnpaid,
+            'Cancel mà vẫn xoá 未精算 — clear-unpaid đang bị đặt trên cổng ngày',
+        ).toHaveLength(0)
         await step()
     })
 
@@ -528,6 +666,7 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
             .poll(() => calls.precheck.length, { timeout: 60_000 })
             .toBeGreaterThan(0)
         expect(calls.precheck[0], 'precheck gửi sai ngày cho dòng hôm nay').toBe(TODAY_ISO)
+        expect(calls.clearUnpaid[0], 'clear-unpaid gửi sai ngày cho dòng hôm nay').toBe(TODAY_ISO)
         await step()
     })
 
@@ -566,6 +705,11 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
             .poll(() => calls.precheck.length, { timeout: 60_000 })
             .toBeGreaterThan(0)
         expect(calls.precheck[0], '「3 会計データ作成」 gửi sai 会計対象日').toBe(wantIso)
+        // Cùng LetAccData2 ⇒ lối vào này cũng phải xoá 未精算 của ngày.
+        expect(
+            calls.clearUnpaid[0],
+            '「3 会計データ作成」 không xoá 未精算 của 会計対象日 — nó gọi CHÍNH LetAccData2',
+        ).toBe(wantIso)
 
         // IDM_AccDataOnly_Click KHÔNG có showForm(ID204002).
         await expect(

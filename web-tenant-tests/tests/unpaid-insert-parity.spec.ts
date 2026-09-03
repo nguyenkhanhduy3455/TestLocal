@@ -58,7 +58,9 @@ import { ADMIN_USER, JA } from './test-data'
  *
  * ─── GHI DB — đọc kỹ trước khi chạy ──────────────────────────────────────────
  *  Spec CÓ ghi thật: mỗi lần F8 chạy `deleteTrtDtUnPaid` (xoá mềm dòng 未精算 của
- *  ngày đó) rồi chèn lại. Vì vậy:
+ *  ngày đó) rồi chèn lại. Từ 2026-09-03 bước xoá đó là một endpoint RIÊNG
+ *  (`POST …/accounting/clear-unpaid`, chạy ngay sau 日付チェック — modAcc.cs:428);
+ *  `insert-unpaid` vẫn tự xoá lần nữa nên hành vi tổng thể không đổi. Vì vậy:
  *   · bắt buộc `TEST_DB=1` (để assert) và `TEST_ALLOW_SAVE=1` (để cho phép ghi);
  *   · chỉ chọn NGÀY CHƯA CÓ 会計 済み (`view_acc_dat_active` trống cho ngày đó),
  *     nên không đụng vào dữ liệu đã quyết toán và cũng không bung hộp 既存会計;
