@@ -1137,7 +1137,12 @@ public sealed class SigaToothFlow
         if (!answered)
             trace?.Note($"⛔ KHONG BAM DUOC [{string.Join(",", names)}]. Nut that su co: [{string.Join(",", buttons)}]");
 
-        var gateClosed = Waits.TryUntil(() => !Uia.IsOnScreen(gate), TimeSpan.FromSeconds(20));
+        // Hỏi 「còn hộp thoại dirty gate nào đang mở không」 thay vì soi CHÍNH phần tử cũ:
+        // trả lời 「いいえ」 làm app đóng luôn màn 診療入力, và khi cửa sổ chủ biến mất thì
+        // phần tử MessageBox đã cache thành rác — `IsOnScreen` trên nó không còn nói lên
+        // điều gì (đo 2026-09-03: bấm trúng, màn hình ĐÃ đóng, mà nó vẫn báo 「chưa đóng」).
+        var gateClosed = Waits.TryUntil(() => Dialog(DirtyGateFragment) is null,
+                                        TimeSpan.FromSeconds(20));
         var closed = Waits.TryUntil(() => !Uia.IsOnScreen(_screen.Window), TimeSpan.FromSeconds(10));
         trace?.Note($"gate dong? {gateClosed}   man hinh dong? {closed}");
         return new BackResult(true, text, defaultButton, buttons, answered, gateClosed, closed);

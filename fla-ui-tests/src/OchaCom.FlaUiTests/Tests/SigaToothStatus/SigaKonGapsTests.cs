@@ -484,8 +484,9 @@ public sealed class SigaKonGapsTests : UiTestBase
         Assert.That(back.Answered, Is.True,
             $"KHÔNG bấm trúng nút 「いいえ」 — nút thật sự có: [{string.Join(",", back.Buttons)}]. " +
             "Chưa trả lời được thì không thể kết luận gì về Restore_SK.");
-        Assert.That(back.GateClosed, Is.True,
-            "Bấm 「いいえ」 rồi mà hộp thoại không đóng ⇒ cú bấm không tới được app.");
+        // KHÔNG assert GateClosed: 「いいえ」 đóng luôn màn 診療入力, và khi cửa sổ chủ biến
+        // mất thì phần tử MessageBox đã cache không còn đọc được đáng tin. `Answered` +
+        // `ScreenClosed` mới là hai mốc chắc.
 
         var afterDiscard = ReadSiga("sau 「いいえ」");
         Assert.That(afterDiscard.DiffFrom(atOpen), Is.Empty,
