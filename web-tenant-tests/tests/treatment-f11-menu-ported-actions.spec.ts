@@ -809,7 +809,13 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
         // dù có thêm dòng hay không. Trước đây chỗ này `skip` khi 行追加 bị disabled
         // (`canEditRow` cần một ô đang focus, mà cú click không phải lúc nào cũng
         // rơi vào ô sửa được) — hoá ra là tự bỏ chạy một testcase vẫn chạy đúng.
-        const editableCells = page.locator('[data-grid-cell]:not([data-footer-cell])')
+        // Click vào ô 療法・処置 (`|2`), KHÔNG phải một ô bất kỳ. `[data-grid-cell]`
+        // trần thì `.last()` hay rơi trúng ô 部位, mà một cú click đơn lên ô 部位 MỞ
+        // LUÔN 「部位選択」 — đúng parity WinForm grdRegi_CellClick (registration-table.tsx
+        // :731-737), không phải bug. Dialog đó là modal nên FKeyScope nuốt sạch F-key của
+        // màn nền ⇒ `openMenu()` ngay bên dưới bấm F11 ba lần đều vô hiệu và TC đỏ ở chỗ
+        // chẳng liên quan gì tới thứ nó đang đo. Ô 療法 chỉ đặt con trỏ, không kéo theo gì.
+        const editableCells = page.locator('[data-grid-cell$="|2"]:not([data-footer-cell])')
         await expect(editableCells.first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
         await editableCells.last().click()
 
