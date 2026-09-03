@@ -224,8 +224,11 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
     /** Đóng カルテ記載選択 nếu nó đang mở; true = có đóng. */
     async function dismissKarteCmtIfOpen(): Promise<boolean> {
         if ((await karteCmtDialog.count()) === 0) return false
-        await karteCmtDialog.getByRole('button', { name: 'F10 戻る' }).first().click()
-        await expect(karteCmtDialog).toBeHidden({ timeout: 10000 })
+        // Chỗ BẤM 「F10 戻る」 là locator handler ở beforeAll, không phải ở đây. Hàm
+        // này chỉ ASSERT auto-retry để ÉP Playwright chạy handler đó. Tự click sẽ
+        // tranh chấp: handler chen vào trước mỗi action, đóng dialog xong thì cú
+        // click gốc không còn nút để bấm → timeout 15s (đã vấp ở tab パック).
+        await expect(karteCmtDialog).toHaveCount(0, { timeout: 15000 })
         return true
     }
 
@@ -275,8 +278,34 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
         )
         // Header 患者情報 render 「合計:」 khi màn detail đã dựng xong.
         await expect(page.getByText('合計:').first()).toBeVisible({ timeout: 60000 })
-        // AutoSantei có thể đã bung カルテ記載選択 — đóng trước khi ai đó gõ F-key.
-        await dismissKarteCmtIfOpen()
+        await drainAutoSantei()
+    }
+
+    /**
+     * Chờ chuỗi AutoSantei chạy hết rồi dọn sạch.
+     *
+     * Confirm 「〜を算定しますか？」 do locator handler ở beforeAll bấm No — mà handler
+     * CHỈ chạy khi Playwright có action / assert auto-retry, nên phải assert (không
+     * phải waitForTimeout trần) mới ép nó chạy. Trả lời No xong thì 処置 kế tự 算定
+     * KHÔNG hỏi rồi bung カルテ記載選択 sau ~1s, nên còn phải chờ thêm một nhịp nữa
+     * mới dám nói màn đã sạch.
+     */
+    async function drainAutoSantei() {
+        // AutoSantei chạy SAU khi lưới dựng xong, và với bệnh nhân test thì nó
+        // KHÔNG hỏi gì: 算定 thẳng 歯科疾患管理料 (POST /tenant/treatment/autosantei2)
+        // rồi bung カルテ記載選択 ở khoảng t+2s và để NGUYÊN đó. Bệnh nhân khác thì
+        // có thêm confirm 「〜を算定しますか？」 phía trước.
+        //
+        // Cả hai dialog đều do locator handler ở beforeAll bấm — mà handler CHỈ chạy
+        // khi Playwright có action / assert auto-retry. Vòng dưới đây vừa là cú hích
+        // đó, vừa là bằng chứng màn đã sạch LIÊN TỤC vài nhịp (đoán bằng một
+        // `waitForTimeout` đơn lẻ thì trượt: dialog tới trễ ~2s, dọn hụt là nó nằm
+        // lại tới giữa suite rồi nuốt F-key / cướp focus).
+        for (let i = 0; i < 6; i++) {
+            await expect(page.getByText(/を算定しますか？/)).toHaveCount(0, { timeout: 20000 })
+            await expect(karteCmtDialog).toHaveCount(0, { timeout: 15000 })
+            await page.waitForTimeout(700)
+        }
     }
 
     /** Envelope `{ data: [...] }` của BE có phải list rỗng không. */
@@ -374,11 +403,16 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
         resetBtn = sidePanel.getByRole('button', { name: 'リセット', exact: true })
 
         // Nó có thể bung LẠI giữa chừng (mỗi lần AutoSantei chạy) → để Playwright
-        // tự dọn trước mỗi thao tác, giống handler của 「…を算定しますか？」.
+        // tự dọn trước mỗi thao tác. Đây là chỗ DUY NHẤT bấm 「F10 戻る」 của dialog
+        // này (xem dismissKarteCmtIfOpen), giống handler của 「…を算定しますか？」.
         await page.addLocatorHandler(
             karteCmtDialog,
             async () => {
-                await karteCmtDialog.getByRole('button', { name: 'F10 戻る' }).first().click()
+                await karteCmtDialog
+                    .getByRole('button', { name: 'F10 戻る' })
+                    .first()
+                    .click({ timeout: 3000 })
+                    .catch(() => {})
             },
             { times: 30 },
         )
@@ -1175,6 +1209,8 @@ test.describe('SidePanel — 選択№ + Enter parity 4 tab (病検/ガイド/�
     /** Dialog ガイド処置選択 (frm203017) / パック処置選択 (frm203014). */
     let guidePicker: Locator
     let packPicker: Locator
+    /** カルテ記載選択 do AutoSantei bung ra — xem chú thích ở khối trên. */
+    let karteCmtDialog: Locator
     /** Alert khi list 処置 của dialog rỗng (frm203017.cs:1015 / frm203014.cs:124). */
     let guideNoTrtAlert: Locator
     let packNoTrtAlert: Locator
@@ -1353,8 +1389,29 @@ test.describe('SidePanel — 選択№ + Enter parity 4 tab (病検/ガイド/�
         packPicker = page.getByRole('dialog').filter({ hasText: 'パック番号' })
         guideNoTrtAlert = page.getByText('算定できる処置がありません')
         packNoTrtAlert = page.getByText('算定可能な処置はありません')
+        karteCmtDialog = page.getByRole('dialog').filter({ hasText: 'カルテ記載選択' })
 
         gridCells = page.locator('[data-grid-cell]')
+
+        // Nhịp cuối của chuỗi AutoSantei — xem drainAutoSantei của khối trên.
+        // Khối này cũng phải dọn, nếu không dialog nằm lại và cướp focus / nuốt
+        // phím giữa suite (đã vấp: TC 「病検: № ngoài phạm vi」 đỏ vì nó).
+        await page.addLocatorHandler(
+            karteCmtDialog,
+            async () => {
+                await karteCmtDialog
+                    .getByRole('button', { name: 'F10 戻る' })
+                    .first()
+                    .click({ timeout: 3000 })
+                    .catch(() => {})
+            },
+            { times: 30 },
+        )
+        for (let i = 0; i < 6; i++) {
+            await expect(page.getByText(/を算定しますか？/)).toHaveCount(0, { timeout: 20000 })
+            await expect(karteCmtDialog).toHaveCount(0, { timeout: 15000 })
+            await page.waitForTimeout(700)
+        }
     })
 
     test.afterAll(async () => {

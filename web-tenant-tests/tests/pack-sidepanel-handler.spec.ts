@@ -93,6 +93,17 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
     /** Alert 「算定可能な処置はありません。」 khi パック không có 処置 nào tính được. */
     let noTrtAlert: Locator
     /**
+     * Dialog カルテ記載選択 (frm203012 gType.Auto) — nhịp CUỐI của chuỗi AutoSantei:
+     * trả lời No cho 「〜を算定しますか？」 xong thì 処置 kế tự 算定 KHÔNG hỏi
+     * (POST /tenant/treatment/autosantei2) rồi bung dialog này sau ~1s.
+     *
+     * Phải dọn trước khi chạy testcase. Nó là modal nên (a) FKeyScopeProvider nuốt
+     * sạch F-key của màn nền (nhánh `top && !topOwnsKeys` ⇒ preventDefault) và
+     * (b) nó GIỮ focus — testcase 「F10 → con trỏ quay lại ô 選択№」 đỏ chính vì
+     * dialog này chen vào đúng lúc, không phải vì refocusSidePanel hỏng.
+     */
+    let karteCmtDialog: Locator
+    /**
      * Dòng của tab パック. Header cũng dùng grid-cols-[42px_1fr] nên phải kèm
      * `cursor-pointer` (chỉ dòng dữ liệu mới có) để loại header ra.
      */
@@ -118,7 +129,54 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
             return
         }
         await page.keyboard.press('F10')
+        const closed = await picker
+            .waitFor({ state: 'hidden', timeout: 5000 })
+            .then(() => true)
+            .catch(() => false)
+        if (!closed) {
+            // F10 vừa rồi bị nuốt vì カルテ記載選択 chen lên trên picker — xem chú
+            // thích của karteCmtDialog. Dọn nó rồi gõ LẠI F10 (không click nút,
+            // để vẫn đang kiểm đường đi bàn phím), nhưng chỉ khi picker VẪN còn:
+            // F10 của màn nền là 戻る, gõ nhầm là rời hẳn màn 診療入力.
+            await dismissKarteCmtIfOpen()
+            if ((await picker.count()) > 0) await page.keyboard.press('F10')
+        }
         await expect(picker).toBeHidden({ timeout: 10000 })
+    }
+
+    /** Đóng カルテ記載選択 nếu nó đang mở; true = có đóng. */
+    async function dismissKarteCmtIfOpen(): Promise<boolean> {
+        if ((await karteCmtDialog.count()) === 0) return false
+        // Chỗ BẤM 「F10 戻る」 là locator handler ở beforeAll, không phải ở đây. Hàm
+        // này chỉ ASSERT auto-retry để ÉP Playwright chạy handler đó. Tự click sẽ
+        // tranh chấp: handler chen vào trước mỗi action, đóng dialog xong thì cú
+        // click gốc không còn nút để bấm → timeout 15s (đã vấp ở tab パック).
+        await expect(karteCmtDialog).toHaveCount(0, { timeout: 15000 })
+        return true
+    }
+
+    /**
+     * Chờ chuỗi AutoSantei chạy hết rồi dọn sạch, TRƯỚC khi testcase đầu tiên bắt
+     * đầu. Confirm 「〜を算定しますか？」 do locator handler bấm No — mà handler chỉ
+     * chạy khi Playwright có action/assert auto-retry, nên phải assert (không phải
+     * waitForTimeout trần) rồi mới chờ nhịp カルテ記載選択 phía sau.
+     */
+    async function drainAutoSantei() {
+        // AutoSantei chạy SAU khi lưới dựng xong, và với bệnh nhân test thì nó
+        // KHÔNG hỏi gì: 算定 thẳng 歯科疾患管理料 (POST /tenant/treatment/autosantei2)
+        // rồi bung カルテ記載選択 ở khoảng t+2s và để NGUYÊN đó. Bệnh nhân khác thì
+        // có thêm confirm 「〜を算定しますか？」 phía trước.
+        //
+        // Cả hai dialog đều do locator handler ở beforeAll bấm — mà handler CHỈ chạy
+        // khi Playwright có action / assert auto-retry. Vòng dưới đây vừa là cú hích
+        // đó, vừa là bằng chứng màn đã sạch LIÊN TỤC vài nhịp (đoán bằng một
+        // `waitForTimeout` đơn lẻ thì trượt: dialog tới trễ ~2s, dọn hụt là nó nằm
+        // lại tới giữa suite rồi nuốt F-key / cướp focus).
+        for (let i = 0; i < 6; i++) {
+            await expect(page.getByText(/を算定しますか？/)).toHaveCount(0, { timeout: 20000 })
+            await expect(karteCmtDialog).toHaveCount(0, { timeout: 15000 })
+            await page.waitForTimeout(700)
+        }
     }
 
     /** Số thứ tự (cột No.) của dòng i — cell đầu tiên trong dòng. */
@@ -166,8 +224,26 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
 
         picker = page.getByRole('dialog').filter({ hasText: 'パック番号' })
         noTrtAlert = page.getByText('算定可能な処置はありません')
+        karteCmtDialog = page.getByRole('dialog').filter({ hasText: 'カルテ記載選択' })
         rows = page.locator('div[class*="grid-cols-[42px_1fr]"][class*="cursor-pointer"]')
         noInput = page.locator('input[data-side-anchor]')
+
+        // Nó có thể bung LẠI giữa chừng (mỗi lần AutoSantei chạy) → để Playwright
+        // tự dọn trước mỗi thao tác. Đây là chỗ DUY NHẤT bấm 「F10 戻る」 của dialog
+        // này (xem dismissKarteCmtIfOpen), giống handler của 「…を算定しますか？」.
+        await page.addLocatorHandler(
+            karteCmtDialog,
+            async () => {
+                await karteCmtDialog
+                    .getByRole('button', { name: 'F10 戻る' })
+                    .first()
+                    .click({ timeout: 3000 })
+                    .catch(() => {})
+            },
+            { times: 30 },
+        )
+
+        await drainAutoSantei()
     })
 
     test.afterAll(async () => {
