@@ -61,6 +61,11 @@
 [CmdletBinding()]
 param(
     [string]$Case = "",
+    # Bo loc vstest THO, de chay NHIEU testcase roi rac trong mot luot:
+    #   -Filter "TcGAP1|TcGAP2"
+    # Can vi -Case chi so KHOP CHUOI (mot manh), khong OR duoc; ma ca fixture 8
+    # testcase thi vuot tran 15 phut cua wrapper.
+    [string]$Filter = "",
     [int]$StepMs = -1,
     [switch]$Diagnostics,
     [switch]$AllowSave,
@@ -76,7 +81,10 @@ if ($AllowSave)    { $env:OCHA_SIGA_ALLOW_SAVE = "1" }
 
 $ns = "OchaCom.FlaUiTests.Tests.SigaToothStatus"
 
-if ($Diagnostics) {
+if ($Filter -ne "") {
+    $parts = $Filter -split '\|' | ForEach-Object { "FullyQualifiedName~$ns&FullyQualifiedName~$($_.Trim())" }
+    $filter = $parts -join '|'
+} elseif ($Diagnostics) {
     $filter = "FullyQualifiedName~$ns.SigaToothProbeTests"
     if ($Case -ne "") { $filter = "$filter&FullyQualifiedName~$Case" }
 } elseif ($Case -ne "") {
