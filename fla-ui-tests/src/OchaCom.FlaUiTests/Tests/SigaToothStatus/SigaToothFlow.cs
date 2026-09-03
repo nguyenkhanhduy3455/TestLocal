@@ -202,17 +202,87 @@ public sealed class SigaToothFlow
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Dòng đem thao tác: có ngày, KHÔNG phải dòng 日計/合計.
+    /// Ô lưới coi như RỖNG: chuỗi trống, hoặc <c>「(null)」</c>.
     ///
-    /// <para>Dòng 日計 mang <c>BuiDispFlg = 99</c> nên vừa không mở được 部位選択 vừa bị
-    /// <c>DeleteRow</c> bỏ qua (frm203002.cs:3820) — chọn nhầm nó thì mọi bước sau im lặng
-    /// không làm gì và log trông y hệt 「app hỏng」.</para>
+    /// <para><c>Uia.ValueOf</c> lui về <c>NameOf</c> khi ô không có giá trị, và cầu MSAA của
+    /// <c>DataGridView</c> trả về đúng chữ <c>「(null)」</c> cho ô trống. Đo thật 2026-09-03
+    /// (probe Tc0, KQ-2): mọi ô 部位 của 処置行 đọc ra <c>「(null)」</c>. Không lọc chuỗi này
+    /// thì mọi phép thử 「ô có rỗng không」 đều trả false và bộ lọc dòng chọn nhầm dòng
+    /// tiêu đề tháng — lượt probe đầu tiên đã chọn đúng dòng đó rồi ném vì rect rỗng.</para>
     /// </summary>
-    public RegiRow? InputRow(int limit = 30) =>
+    public static bool IsBlank(string? cell) =>
+        Txt.N(cell) is "" or "(null)";
+
+    /// <summary>Dòng lưới KHÔNG phải dòng dữ liệu: tiêu đề tháng, 日計, 合計.</summary>
+    private static bool IsSummaryRow(RegiRow r) =>
+        Txt.Has(r.Ryo, "日計") || Txt.Has(r.Ryo, "合計") ||
+        Txt.Has(r.Ryo, "負担金") || Txt.Has(r.Ryo, "実日数");
+
+    /// <summary>
+    /// Dòng 処置 THẬT cuối cùng của lưới — chỗ đứng để chèn dòng mới.
+    ///
+    /// <para>Đo được 2026-09-03 (probe Tc0, KQ-2), hình dạng thật của <c>grdRegi</c> khi
+    /// 診療入力設定 bật 過去データ１画面表示:</para>
+    /// <code>
+    ///   [0]  (null) | R 08年07月 | (null) | (null) | (null)      ← tiêu đề THÁNG, rect RỖNG
+    ///   [1]  20 | 54321|…|(5) | C | - | -                        ← 部位病名行 (点 = 「-」)
+    ///   [2]  20 | (null) | 歯科初診料 | 272 | 1                   ← 処置行
+    ///   [3]  20 | R 08年07月 合計 | 実日数: 1日 272 点 | …        ← 合計 THÁNG
+    ///   …
+    ///   [14] 3 | (null) | [負担金 0円]  [日計 339点] | …          ← 日計行
+    /// </code>
+    /// Ba loại phải loại bỏ, mỗi loại vì một lý do khác nhau:
+    /// <list type="bullet">
+    ///   <item>tiêu đề tháng — <b>rect rỗng</b>, click vào nó bắn chuột ra (0,0) tức góc
+    ///     trái trên DESKTOP (xem <c>TreatmentGridOps.FocusCell</c>);</item>
+    ///   <item>日計/合計 — <c>linekbn</c> 10..15 / 99, <c>DeleteRow</c> và <c>AddRow</c>
+    ///     đều từ chối (frm203002.cs:3714 / :3843);</item>
+    ///   <item>部位病名行 — ô 点 là 「-」, gõ số vào đó bị <c>grdRegi_TextBox_KeyPress</c>
+    ///     chặn sạch (frm203002.cs:3599-3640).</item>
+    /// </list>
+    ///
+    /// <para>Lấy dòng <b>CUỐI</b> chứ không phải dòng đầu: lưới xếp tháng cũ trước, tháng
+    /// đang mở sau, nên dòng 処置 cuối cùng chắc chắn thuộc tháng đang mở. Dòng của tháng
+    /// khác mang <c>linekbn = 99</c> và mọi thao tác lên nó chỉ bung 「当月以外の操作は
+    /// できません」.</para>
+    /// </summary>
+    public RegiRow? InputRow(int limit = 60) =>
         _grid.Snapshot(limit)
-             .FirstOrDefault(r => r.Day.Trim().Length > 0
-                                  && !Txt.Has(r.Ryo, "日計")
-                                  && !Txt.Has(r.Ryo, "合計"));
+             .LastOrDefault(r => Txt.Int(r.Day) is not null
+                                 && Txt.Int(r.Ten) is not null
+                                 && !IsBlank(r.Ryo)
+                                 && !IsSummaryRow(r));
+
+    /// <summary>
+    /// Chèn MỘT dòng trống tại con trỏ bằng phím <c>Insert</c> (frm203002.cs:3570 →
+    /// <c>AddRow</c> :3703) rồi trả về dòng trống đó.
+    ///
+    /// <para><b>Vì sao phải chèn thay vì gõ đè lên dòng có sẵn.</b> Lưới khai
+    /// <c>AllowUserToAddRows = false</c> nên KHÔNG có dòng trống mời nhập ở cuối; gõ mã
+    /// vào ô 点 của một dòng đang có 処置 là SỬA chính dòng đó. Với fixture có bấm F9 thì
+    /// đó là ghi đè dữ liệu thật của bệnh nhân — chèn dòng mới thì dữ liệu cũ nguyên vẹn
+    /// và phần dọn dẹp chỉ việc xoá theo <c>trt_cd</c>.</para>
+    ///
+    /// <para>Đặt con trỏ vào ô <b>療法・処置</b>: ô 部位 sẽ MỞ 部位選択 khi click, và phím
+    /// Insert khi đó rơi vào hộp thoại chứ không vào lưới.</para>
+    /// </summary>
+    public RegiRow? InsertBlankRow(RegiRow at, TestTrace? trace = null)
+    {
+        trace?.Step($"dat con tro vao 「{at}」 roi bam Insert (行追加)");
+        _grid.FocusCell(at, RegiGrid.Col.Ryo);
+
+        // Editor còn mở thì Insert đi vào TextBox chứ không vào lưới.
+        if (_grid.IsEditing()) _grid.Press(VirtualKeyShort.ESCAPE);
+        _grid.Press(VirtualKeyShort.INSERT);
+        Waits.Step();
+
+        var rows = _grid.Snapshot();
+        var blank = rows.FirstOrDefault(r => r.Index == at.Index && IsBlank(r.Ryo))
+                    ?? rows.LastOrDefault(r => Txt.Int(r.Day) is not null && IsBlank(r.Ryo) && !IsSummaryRow(r));
+
+        trace?.Note("dong trong sau Insert = " + (blank?.ToString() ?? "KHONG THAY"));
+        return blank;
+    }
 
     /// <summary>Dòng CUỐI có 療法・処置 chứa một trong các chuỗi; null nếu không có.</summary>
     public RegiRow? LastRowMatching(params string[] anyOf) => _grid.LastRowMatching(anyOf);
