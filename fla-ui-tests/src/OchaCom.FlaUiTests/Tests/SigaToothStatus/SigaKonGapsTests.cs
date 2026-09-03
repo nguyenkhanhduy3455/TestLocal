@@ -67,9 +67,6 @@ public sealed class SigaKonGapsTests : UiTestBase
     private int PermEkonCol => PermSlot + 1;
     private int CtrlSeCol => ControlSlot + 1;
 
-    /// <summary>病名 Ｃ — đo được từ chính lưới 病名選択 (probe Tc0/Tc1): 100 = Ｃ.</summary>
-    private const int DisCdC = 100;
-
     private static void Log(string line) => TestContext.Out.WriteLine(line);
 
     protected override string? FixturePreflightSkipReason() =>
@@ -160,7 +157,7 @@ public sealed class SigaKonGapsTests : UiTestBase
             "Insert không chèn được dòng trống (AddRow từ chối khi linekbn = 99). Lưới:\n  " +
             string.Join("\n  ", _flow.DescribeGrid()));
 
-        var set = _flow.SetBuiOnRow(blank!, slot, milk: false, DisCdC, trace);
+        var set = _flow.SetBuiOnRow(blank!, slot, milk: false, disCd: null, trace);
         Assert.That(set.ToothDialogOpened, Is.True, $"không mở được 部位選択. {set}");
         Assert.That(set.MarkedSlots, Is.EqualTo(new[] { slot }),
             $"部位選択 phải sáng ĐÚNG ô {slot} ({ToothSelectDialog.DescribeSlot(slot)}). {set}");

@@ -284,7 +284,7 @@ public sealed class SigaToothProbeTests : UiTestBase
             var (pos, idx) = ToothSelectDialog.ToothAtSlot(PermSlot);
             Kq("3", $"   ô {PermSlot} ⇒ vùng pos={pos} răng {idx}; cột DB = se{SeCol(PermSlot)}");
 
-            var result = _flow.SetBuiOnRow(target!, PermSlot, milk: false, disCd: DisCdC, trace: trace);
+            var result = _flow.SetBuiOnRow(target!, PermSlot, milk: false, disCd: null, trace: trace);
             Kq("3", "   " + result);
             Kq("4", $"   病名選択 mở tiếp sau End? {result.DiseaseDialogOpened}");
 
@@ -378,7 +378,7 @@ public sealed class SigaToothProbeTests : UiTestBase
             Kq("8", $"   ô {MilkSlot} ⇒ vùng pos={pos} răng {idx} ⇒ phím 「{(char)('A' + idx - 1)}」; " +
                     $"cột DB = sn{SnCol(MilkSlot)}");
 
-            var set = _flow.SetBuiOnRow(seat, MilkSlot, milk: true, disCd: DisCdC, trace: trace);
+            var set = _flow.SetBuiOnRow(seat, MilkSlot, milk: true, disCd: null, trace: trace);
             Kq("8", "   đặt 部位: " + set);
 
             var enter = _flow.EnterTreatmentAtCursor(SigaToothFlow.ExtractionTrtCd, trtSb: 0, trace: trace);
@@ -413,7 +413,7 @@ public sealed class SigaToothProbeTests : UiTestBase
             if (last is null) { Kq("11", "   không còn dòng nào để thao tác"); return; }
             var target = _flow.InsertBlankRow(last, trace) ?? last;
 
-            var set = _flow.SetBuiOnRow(target, PermSlot, milk: false, disCd: DisCdC, trace: trace);
+            var set = _flow.SetBuiOnRow(target, PermSlot, milk: false, disCd: null, trace: trace);
             Kq("11", "   đặt 部位: " + set);
 
             var enter = _flow.EnterTreatmentAtCursor(SigaToothFlow.EmrTrtCd,
@@ -435,7 +435,7 @@ public sealed class SigaToothProbeTests : UiTestBase
             if (last is null) { Kq("12", "   không còn dòng nào để thao tác"); return; }
             var target = _flow.InsertBlankRow(last, trace) ?? last;
 
-            var set = _flow.SetBuiOnRow(target, PermSlot, milk: false, disCd: DisCdC, trace: trace);
+            var set = _flow.SetBuiOnRow(target, PermSlot, milk: false, disCd: null, trace: trace);
             Kq("12", "   đặt 部位: " + set);
 
             var enter = _flow.EnterTreatmentAtCursor(SigaToothFlow.CystTrtCd,

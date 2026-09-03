@@ -312,6 +312,20 @@ public sealed class SigaToothFlow
     /// <summary>Dòng CUỐI có 療法・処置 chứa một trong các chuỗi; null nếu không có.</summary>
     public RegiRow? LastRowMatching(params string[] anyOf) => _grid.LastRowMatching(anyOf);
 
+    /// <summary>
+    /// 部位病名行 CUỐI CÙNG trên lưới — nhận ra bằng ô 点 mang 「-」.
+    ///
+    /// <para>Đây là dòng mà <c>frmDis_Let_Data</c> vừa ghi 部位/病名 vào, và 処置 nhập ngay
+    /// sau đó sẽ thừa kế 部位 của nó (<c>ModMain.AutoBui</c>, frm203002.cs:8654).</para>
+    /// </summary>
+    public RegiRow? LastBuiLineRow(int limit = 60) =>
+        _grid.Snapshot(limit)
+             .LastOrDefault(r => Txt.Int(r.Day) is not null && Txt.N(r.Ten) is "-" or "－");
+
+    /// <summary>Dòng ngay SAU <paramref name="row"/> trong lượt quét hiện tại.</summary>
+    public RegiRow? RowAfter(RegiRow row, int limit = 60) =>
+        _grid.Snapshot(limit).FirstOrDefault(r => r.Index == row.Index + 1);
+
     /// <summary>In cả lưới ra nhật ký — bước đầu tiên của mọi lần đi tìm nguyên nhân.</summary>
     public IReadOnlyList<string> DescribeGrid(int limit = 30) =>
         _grid.Snapshot(limit).Select(r => r.ToString()).ToList();
@@ -609,11 +623,36 @@ public sealed class SigaToothFlow
         }
 
         trace?.Step($"go ma 「{trtCd}」 tai cho con tro (o 点 cua dong moi) roi Enter");
+
+        // ⚠️ Con trỏ CHỈ nằm sẵn trong editor của lưới khi 病名選択 đăng ký mà KHÔNG có 病名 nào.
+        //
+        // Đo được 2026-09-03 (probe Tc1): đăng ký CÓ 病名 thì `frmDis_KeyFunc_EndKey_Method`
+        // rẽ nhánh 「病名入力あり」 và — với `pInpOpt[9] == 1` như máy test — bắn F4 rồi
+        // `txtGuid1Sel.Focus()` (frm203002.cs:8376-8384): panel bên phải nhảy sang tab ガイド
+        // và tiêu điểm rời khỏi lưới. Gõ tiếp lúc đó là gõ vào ô 選択№ của ガイド.
+        // Nhánh 「病名入力なし」 (:8393-8398) mới `grdRegi.Focus()` + `BeginEdit(true)`.
+        //
+        // Vì thế: không thấy editor thì tự đưa con trỏ về ô 点 của dòng NGAY DƯỚI 部位病名行
+        // vừa dựng — đúng chỗ `fDis_Move_Cell` đã đặt (frm203002.cs:8656 `CurrentCell = hFG1[3, y]`).
         if (!_grid.IsEditing())
         {
-            trace?.Note("editor chua mo — bam Enter de mo");
-            _grid.Press(VirtualKeyShort.RETURN);
-            Thread.Sleep(250);
+            var buiLine = LastBuiLineRow();
+            var target = buiLine is null ? null : RowAfter(buiLine);
+            trace?.Note($"con tro KHONG o editor cua luoi (app da nhay sang tab ガイド?) — " +
+                        $"dua ve o 点 cua dong duoi 部位病名行: {target?.ToString() ?? "KHONG THAY"}");
+
+            if (target is null)
+            {
+                trace?.Note("khong tim duoc dong de go ma. Luoi:\n  " + string.Join("\n  ", DescribeGrid()));
+                return false;
+            }
+
+            _grid.FocusCell(target, RegiGrid.Col.Ten);
+            if (!_grid.IsEditing())
+            {
+                _grid.Press(VirtualKeyShort.RETURN);
+                Thread.Sleep(250);
+            }
         }
         _grid.Type(trtCd.ToString());
         _grid.Press(VirtualKeyShort.RETURN);

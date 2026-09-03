@@ -75,9 +75,6 @@ public sealed class DelExtRecTests : UiTestBase
     private int CtrlSeCol => ControlSlot + 1;
     private int MilkSnCol => MilkSlot < 16 ? MilkSlot - 2 : MilkSlot - 8;
 
-    /// <summary>病名 Ｃ — đo được từ chính lưới 病名選択 (probe Tc0): 100 = Ｃ.</summary>
-    private const int DisCdC = 100;
-
     private static void Log(string line) => TestContext.Out.WriteLine(line);
 
     protected override string? FixturePreflightSkipReason()
@@ -166,7 +163,7 @@ public sealed class DelExtRecTests : UiTestBase
             "khi linekbn = 99, tức con trỏ đang ở dòng của THÁNG KHÁC. Lưới hiện tại:\n  " +
             string.Join("\n  ", _flow.DescribeGrid()));
 
-        var set = _flow.SetBuiOnRow(blank!, slot, milk, DisCdC, trace);
+        var set = _flow.SetBuiOnRow(blank!, slot, milk, disCd: null, trace);
         Assert.That(set.ToothDialogOpened, Is.True,
             "Click ô 部位 phải mở 部位選択 (frm203002.cs:1686-1697). Không mở ⇒ dòng mang " +
             $"BuiDispFlg = 99. Hộp thoại gặp: [{string.Join(" / ", set.Dialogs)}]");
