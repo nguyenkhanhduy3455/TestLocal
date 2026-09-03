@@ -41,7 +41,12 @@ import { ADMIN_USER, JA } from './test-data'
  *      · 上顎削除 / 下顎削除 = clear 16 ô nửa trên / nửa dưới.
  *      · DOM order của cả cells lẫn labels = flat index 0..31 (上顎: RU 0-7,
  *        LU 8-15; 下顎: RD 16-23, LD 24-31).
- *  - locales/ja.ts: E00002 `${field}が正しくありません。`, Q00001
+ *  - locales/ja.ts: E00002 `${field}が間違っています。` (SỬA 2026-09-03 — không phải
+ *    「正しくありません」: commit 4b25e1455 「E00002 の文言を WinForm に合わせる」 đã
+ *    đổi theo template mà legacy để lại ở frm203002.cs:2202
+ *    `//E00002：{0}が間違っています。`; E00002 là MỘT dòng trong MSGTBL nên mọi màn
+ *    dùng chung, kể cả 日付チェック của 補管・義歯 / 歯科疾患管理 / 実地指導文書),
+ *    Q00001
  *    「登録してよろしいですか？」, I00001 「登録が完了しました。」
  *
  * CHẠY TUẦN TỰ (`describe.serial`) và dùng CHUNG một page: app giới hạn số lần
@@ -607,7 +612,7 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         await step()
     })
 
-    test('F9 印刷 với 年 rỗng → alert E00002 「日付が正しくありません。」', async () => {
+    test('F9 印刷 với 年 rỗng → alert E00002 「日付が間違っています。」', async () => {
         // WinForm btnF9: chỉ 日付チェック rồi printProc, KHÔNG confirm. Nhánh date
         // hợp lệ nằm ở nhóm TC-IN-* bên dưới.
         const yearBox = boxOf('年').getByRole('textbox').nth(0)
@@ -617,7 +622,7 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         await dialog.getByRole('button', { name: 'F9 印刷' }).click()
         const alert = page.getByRole('alertdialog')
         await expect(alert).toBeVisible({ timeout: 10000 })
-        await expect(alert.getByText('日付が正しくありません。')).toBeVisible()
+        await expect(alert.getByText('日付が間違っています。')).toBeVisible()
         await alert.getByRole('button', { name: 'OK' }).click()
         await expect(alert).toBeHidden({ timeout: 10000 })
 
@@ -849,7 +854,7 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         await dialog.getByRole('button', { name: 'F8 登録' }).click()
         const alert = page.getByRole('alertdialog')
         await expect(alert).toBeVisible({ timeout: 10000 })
-        await expect(alert.getByText('日付が正しくありません。')).toBeVisible()
+        await expect(alert.getByText('日付が間違っています。')).toBeVisible()
         await alert.getByRole('button', { name: 'OK' }).click()
         await expect(alert).toBeHidden({ timeout: 10000 })
 
