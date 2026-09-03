@@ -62,6 +62,12 @@ public sealed class SigaKonGapsTests : UiTestBase
     private int _preexistingTestRows;
 
     /// <summary>
+    /// 歯式 lúc màn 診療入力 MỞ RA — tức chính là <c>pSiga_old</c> mà <c>Restore_SK</c> lùi về.
+    /// Đặt bằng <see cref="PrepareDataBeforeApp"/>, đọc lại ở <c>OneTimeSetUp</c>.
+    /// </summary>
+    private SigaSnapshot? _sigaAtScreenOpen;
+
+    /// <summary>
     /// 「Dòng nào vốn đã có」 của tháng test. Dọn theo ảnh chụp này thay vì theo danh sách
     /// mã: một lượt nhập 抜歯 làm app TỰ CHÈN thêm dòng 麻酔 và 部位病名行, những thứ đó ở
     /// lại sau F9 và dồn dần cho tới khi lưới dài ra và harness bắt đầu hụt.
@@ -82,6 +88,33 @@ public sealed class SigaKonGapsTests : UiTestBase
             : "Cần sigaTooth.allowSave = true — luồng này nhập 処置 qua giao diện, và mỗi lượt " +
               "chốt là một 「update Siga/Kon」 thật (frm203016.cs:1275-1295). TcGAP8 còn XOÁ hẳn " +
               "dòng SIGA của bệnh nhân rồi dựng lại.";
+
+    /// <summary>
+    /// ⚠️ ĐẶT MỐC 歯式 TRƯỚC KHI APP MỞ — đây là chỗ DUY NHẤT làm được việc đó.
+    ///
+    /// <para><c>pSiga_old</c> / <c>pKon_old</c> — ảnh chụp mà <c>Restore_SK</c> lùi về — được
+    /// <c>modKonSiga.pGet_SIGA</c> nạp ĐÚNG MỘT LẦN lúc mở 診療入力 (modKonSiga.cs:70-84) và
+    /// giữ trong bộ nhớ suốt phiên. Mọi lệnh ghi thẳng vào bảng <c>SIGA</c> SAU thời điểm đó
+    /// app KHÔNG BAO GIỜ thấy.</para>
+    ///
+    /// <para>Đo được 2026-09-03: TcGAP7 đặt mốc ở <c>OneTimeSetUp</c> — chạy SAU khi nền
+    /// chung đã mở màn hình — nên <c>pSiga_old</c> giữ giá trị CŨ (se11 = 4 còn lại từ lượt
+    /// trước). 「いいえ」 lùi đúng về cái ảnh chụp đó, tức vẫn là 4, và testcase đỏ như thể
+    /// <c>Restore_SK</c> không chạy. Nó CÓ chạy — chỉ là lùi về một mốc khác mốc mình tưởng.</para>
+    ///
+    /// <para><see cref="UiTestBase.PrepareDataBeforeApp"/> sinh ra đúng cho loại bẫy này.</para>
+    /// </summary>
+    protected override void PrepareDataBeforeApp()
+    {
+        var db = SigaKonDb.CreateOrNull(Settings);
+        if (db is null || !db.CanWrite || db.ProbeError() is not null) return;
+
+        db.EnsureSigaRow(PatNo);
+        db.ResetSigaToVital(PatNo);
+        db.ResetKonToNull(PatNo, [PermEkonCol, CtrlSeCol], []);
+        Log($"đặt mốc TRƯỚC khi mở app: mọi se* = {SigaKonDb.SeVital}, sn* = {SigaKonDb.SnVital}, " +
+            "ekon ô thử = NULL ⇒ pSiga_old lúc mở màn chính là mốc này.");
+    }
 
     [OneTimeSetUp]
     public void GapsOneTimeSetUp()
@@ -104,8 +137,9 @@ public sealed class SigaKonGapsTests : UiTestBase
             $"[{string.Join(",", SigaKonDb.TestTrtCds)}]");
         Log("╚══════════════════════════════════════════════════════════════");
 
-        _db.ResetSigaToVital(PatNo);
-        _db.ResetKonToNull(PatNo, [PermEkonCol, CtrlSeCol], []);
+        // Giá trị app đã chốt vào pSiga_old lúc mở màn = đúng thứ PrepareDataBeforeApp vừa đặt.
+        _sigaAtScreenOpen = _db.ReadSiga(PatNo);
+        Log($"pSiga_old (suy ra) = {_sigaAtScreenOpen}");
     }
 
     [SetUp]
@@ -415,15 +449,23 @@ public sealed class SigaKonGapsTests : UiTestBase
     {
         using var trace = TestTrace.Begin();
 
-        // Mốc phải được chụp LÚC MỞ MÀN: pSiga_old nạp ở modKonSiga.pGet_SIGA khi frm203002
-        // mở ra. Vì thế đặt giá trị TRƯỚC rồi mở lại màn hình, không phải ngược lại.
-        _db.ResetSigaToVital(PatNo);
-        ReopenTreatmentScreen();
-        _flow = new SigaToothFlow(App, Screen);
+        // ⚠️ KHÔNG reset 歯式 ở đây rồi ReopenTreatmentScreen(): pSiga_old đã chốt từ lúc màn
+        // hình mở ra, và ReopenTreatmentScreen là NO-OP khi frm203002 còn đang mở
+        // (AppNavigator.OpenTreatmentEntry trả về cửa sổ có sẵn). Mốc được đặt ở
+        // PrepareDataBeforeApp — xem chú thích của hàm đó.
+        var atOpen = _sigaAtScreenOpen;
+        Assert.That(atOpen, Is.Not.Null, "không đọc được mốc lúc mở màn");
+        Assert.That(atOpen!.SeCol(PermSeCol), Is.EqualTo(SigaKonDb.SeVital),
+            $"Mốc lúc MỞ MÀN phải là 生活歯 = {SigaKonDb.SeVital}, đang là {atOpen.SeCol(PermSeCol)}. " +
+            "Khác đi thì pSiga_old cũng mang giá trị đó, và 「いいえ」 lùi về đúng nó — testcase sẽ " +
+            "không phân biệt được 「Restore_SK chạy」 với 「Restore_SK không chạy」.\n" +
+            "⚠️ TcGAP7 phải chạy trong LƯỢT RIÊNG (-Filter TcGAP7): các TC trước ghi SIGA sau khi " +
+            "màn hình đã mở, mà những lệnh ghi đó pSiga_old không hề thấy.");
 
-        var atOpen = ReadSiga("lúc mở màn (= pSiga_old)");
-        Assert.That(atOpen.SeCol(PermSeCol), Is.EqualTo(SigaKonDb.SeVital),
-            "harness: mốc lúc mở màn phải là 生活歯, nếu không cả testcase vô nghĩa.");
+        var current = ReadSiga("hiện tại (phải khớp mốc lúc mở màn)");
+        Assert.That(current.DiffFrom(atOpen), Is.Empty,
+            "SIGA đã bị đổi SAU khi màn hình mở ⇒ pSiga_old không còn khớp trạng thái hiện tại, " +
+            "và phép so cuối testcase mất nghĩa. Chạy TcGAP7 một mình.");
 
         EnterOnTooth(SigaToothFlow.ExtractionTrtCd, 1, PermSlot, null, trace);
 
