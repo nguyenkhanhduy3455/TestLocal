@@ -169,6 +169,57 @@ về mức rủi ro (`TRNTRN`/`ACC_DAT` là 処置行 và sổ tiền; ở đây
 
 ## 7. Đo được trên máy thật
 
-> Điền sau mỗi lượt chạy — mục này là bộ nhớ của luồng, đừng để trống.
+> Mục này là bộ nhớ của luồng. Điền sau mỗi lượt chạy, đừng để trống.
 
-_(chưa có: probe đang chạy lần đầu 2026-09-03)_
+### 2026-09-03 — bệnh nhân 10, 診療月 2026-08 (`MST_TRT266`)
+
+**Hai chiều của 歯式 đều chạy, và đều chạy NGAY LÚC NHẬP/XOÁ:**
+
+| Thao tác | Kết quả trong `SIGA` | Bấm F9 chưa? |
+|---|---|---|
+| chốt `179/1` 抜歯手術(前歯) trên ô 10 (左上3) | `se11: 0→4` | **chưa** |
+| xoá chính dòng đó | `se11: 4→0` | **chưa** |
+| chốt `179/0` 抜歯手術(乳歯) trên ô 6 (右上Ｂ, phím `B`) | `sn4: 5→9` | **chưa** |
+| xoá chính dòng đó | `sn4: 9→5` (KHÔNG phải 0) | **chưa** |
+
+Răng đối chứng `se19` đứng yên suốt cả bốn thao tác; không cột nào ngoài ô được chọn bị đụng.
+
+**Hình dạng thật của `grdRegi`** (診療入力設定 đang bật 過去データ１画面表示):
+
+```
+[0]  (null) | R 08年07月 | (null) | (null) | (null)   ← tiêu đề THÁNG, rect RỖNG
+[1]  20 | 54321|…|(5) | C | - | -                     ← 部位病名行, ô 点 = 「-」
+[2]  20 | (null) | 歯科初診料 | 272 | 1                ← 処置行
+[3]  20 | R 08年07月 合計 | 実日数: 1日 272 点 | …     ← 合計 THÁNG
+[14] 3  | (null) | [負担金 0円]  [日計 339点] | …      ← 日計行
+```
+
+Ô trống đọc ra chuỗi **`(null)`**, không phải rỗng. Tháng đang mở nằm **cuối** lưới.
+
+**Danh sách 病名選択** (đọc từ chính lưới):
+`1|100 Ｃ` · `2|103 Ｐ` · `3|102 Per` · `4|101 Pul` · `5|153 ,` · `6|151 →` · `7|107 GA` ·
+`8|317 義歯ハソン` · `9|110 Dul` · `10|104 単Ｇ` · `11|154 の疑い`
+
+**Ba cái bẫy đã trả giá trong chính bộ test này** (không phải lỗi app):
+
+1. **Ô trống của lưới đọc ra `(null)`.** Bộ lọc dòng đầu tiên vì thế chọn nhầm dòng
+   *tiêu đề tháng* — dòng đó có **rect rỗng**, và `FocusCell` ném đúng như nó được thiết kế
+   để ném (click vào rect rỗng = bắn chuột ra góc trái trên Desktop).
+2. **`部位病名行` cũng có ô 療法 rỗng.** `InsertBlankRow` vì thế nhận nhầm nó là "dòng
+   trống vừa chèn" rồi mở lại 部位選択 **của dòng đang có** — tức sửa dữ liệu thay vì tạo
+   mới. Dòng trống thật thì **ô 点 cũng rỗng**; 部位病名行 mang `-`.
+3. **Gõ mã vào ô nhập của 病名選択 KHÔNG chọn được 病名.** `Insert` đổi nhãn sang
+   「コード」 thật (đọc được), gõ `100` + Enter vẫn không chốt: End 登録 ngay sau đó bung
+   「病名が選択されていませんが、よろしいですか?」. Đường chạy được là **double-click dòng
+   lưới** — `dgvView_CellDoubleClick` gọi thẳng `chkDisSb` (frm902007.cs:480).
+   Trả lời 「いいえ」 cho câu đó là **huỷ cả lượt đặt 部位**: `ComParam` về null và
+   `OpenDialogBuiAndByou` thoát sớm, dòng lưới vẫn trắng. Lượt probe đầu tiên đã dính
+   đúng thế: 部位選択 chọn đúng ô 10 mà 抜歯 sau đó lại ghi `se4..se8`, vì nó lấy 部位 của
+   **部位病名行 có sẵn phía trên** (`54321`).
+
+**Ghi nhận thêm:** chốt một dòng 抜歯 làm app **tự chèn thêm một dòng 麻酔**
+(「ＯＡ＋オーラ注歯科用カートリッジ …」, 11 点). Không phải test thêm vào — đừng đếm số dòng
+để kết luận gì.
+
+**Chưa đo:** `122/3` → `KON`, `185` → hộp thoại 抜歯同時, Ｐ変更 → `Chk_PModeKesson`,
+dirty gate của F10. Ba lượt probe Tc1/Tc2/Tc3 còn đang chạy.
