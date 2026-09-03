@@ -308,10 +308,38 @@ test.describe('診療入力 — 点数 = getTensu trên mọi đường nhập +
         return raw.map((r) => ({ key: r.key, text: txt(r.text) }))
     }
 
-    /** Mở màn 診療入力 của `patNo` và chờ lưới sẵn sàng. */
+    /**
+     * Mở màn 診療入力 của `patNo` và chờ lưới sẵn sàng.
+     *
+     * Nạp lại tối đa 3 lần khi ra TRANG TRẮNG. Đo 2026-09-03: `goto` xong app không
+     * render gì, `合計:` không bao giờ xuất hiện dù chờ 90s, và KHÔNG có `pageerror`;
+     * probe cho thấy dev server trả `net::ERR_FAILED` cho hàng loạt module ES (vd
+     * /src/features/treatments/api/kihon-def-api.ts) nên route component không nạp xong.
+     * Nhiễu hạ tầng (Vite phục vụ vài trăm module qua nginx/HTTPS), không phải app chết —
+     * nhưng có log mỗi lần retry để không giấu triệu chứng. Gặp liên tục thì restart
+     * `pnpm dev` ở root ochacom-saas.
+     */
     async function openTreatments(patNo: number) {
-        await page.goto(`/treatments/${patNo}`, { waitUntil: 'domcontentloaded' })
-        await expect(page.getByText('合計:').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            await page.goto(`/treatments/${patNo}`, { waitUntil: 'domcontentloaded' })
+            const ok = await page
+                .getByText('合計:')
+                .first()
+                .waitFor({
+                    state: 'visible',
+                    timeout: attempt === 1 ? GRID_LOAD_TIMEOUT : GRID_LOAD_TIMEOUT / 3,
+                })
+                .then(() => true)
+                .catch(() => false)
+            if (ok) break
+            if (attempt === 3) {
+                await expect(
+                    page.getByText('合計:').first(),
+                    'màn 診療入力 ra trang trắng cả 3 lần nạp — xem chú thích ở openTreatments',
+                ).toBeVisible({ timeout: 5_000 })
+            }
+            console.log(`openTreatments: màn 診療入力 ra trang trắng (lần ${attempt}/3) — nạp lại`)
+        }
         footerTen = page.locator('input[data-footer-cell$=":footer-ten"]').last()
         await expect(footerTen, 'không thấy ô 点 của dòng 日計').toBeVisible({
             timeout: 30_000,
