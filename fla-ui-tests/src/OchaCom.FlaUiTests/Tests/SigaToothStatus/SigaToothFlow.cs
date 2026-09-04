@@ -78,6 +78,17 @@ public sealed class SigaToothFlow
     /// <summary>Chặn thao tác lên dòng ngoài tháng đang mở (frm203002.cs:6445).</summary>
     public const string OutOfMonthFragment = "当月以外の操作はできません";
 
+    /// <summary>
+    /// Hộp thoại .NET 「Unhandled exception has occurred in your application」 — app CHẾT,
+    /// không phải app HỎI.
+    ///
+    /// <para>Nút của nó là <b>Continue / Quit</b>, không phải はい/いいえ/OK, nên mọi vòng
+    /// 「dẹp hộp thoại」 thông thường đều trượt và LẶP VÔ HẠN. Đo được 2026-09-04: probe
+    /// Tc1e gặp nó rồi quay vòng 13 giây một lượt cho tới khi wrapper cắt ở phút thứ 15 —
+    /// đốt trọn một lượt chạy từ xa mà không thu thêm được gì.</para>
+    /// </summary>
+    public const string CrashDialogFragment = "Unhandled exception has occurred";
+
     /// <summary>frm902007「病名選択」 — End = 登録 (frm902007.cs:203).</summary>
     public const string DiseaseDialogId = "frm902007";
     public const string DiseaseTitleFragment = "病名選択";
@@ -189,6 +200,14 @@ public sealed class SigaToothFlow
                 catch { continue; }
 
                 seen.Add(text);
+
+                // App chết thì bấm Continue rồi thôi — xem CrashDialogFragment.
+                if (Txt.Has(text, CrashDialogFragment))
+                {
+                    trace?.Note("⛔ APP BUNG UNHANDLED EXCEPTION trong luc dep hop thoai.");
+                    Dialogs.ClickButton(d, "Continue");
+                    return seen;
+                }
 
                 // ⛔ KHÔNG BAO GIỜ có 「はい」/「Yes」 trong danh sách này.
                 //
@@ -921,6 +940,19 @@ public sealed class SigaToothFlow
             seen.Add(text);
             trace?.Note($"hop thoai sau khi chot: 「{text}」");
             trace?.Shot("hop-thoai-sau-chot");
+
+            // ⛔ App CHẾT thì DỪNG NGAY, đừng cố dẹp: hộp thoại .NET có nút Continue/Quit,
+            // không khớp bất cứ tên nào ở đây, nên vòng lặp sẽ quay mãi (đo 2026-09-04).
+            if (Txt.Has(text, CrashDialogFragment))
+            {
+                trace?.Note("⛔ APP BUNG UNHANDLED EXCEPTION — dung vong lap, tra ket qua ve testcase.");
+                trace?.Shot("app-crash");
+                // Continue = bảo app bỏ qua lỗi và đi tiếp; giữ app sống để còn chụp/đọc tiếp.
+                if (!Dialogs.ClickButton(dialog, "Continue"))
+                    trace?.Note("khong bam duoc 「Continue」 — de nguyen hop thoai.");
+                seen.Add(text);
+                return new EnterResult(true, true, committed || Picker() is null, seen);
+            }
 
             // ⛔ CHỐT CỨNG: không đường nào ở đây được phép bấm 「はい」 cho dirty gate.
             // 「はい」 của 「処置データは、変更されています。保存しますか？」 là modSave.SaveData —

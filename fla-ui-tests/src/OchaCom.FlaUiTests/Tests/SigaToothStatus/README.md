@@ -339,6 +339,46 @@ lại `disp_no`, khi đó dòng 初診/再診/加算 THẬT cũng rơi ra ngoài
 hai dòng 加算 của bệnh nhân test. Nay điều kiện xoá là **GIAO** của 「không có trong ảnh
 chụp」 và 「`trt_cd` ∈ `GeneratedTrtCds` = [0, 122, 179, 185, 310, 7321]」.
 
+### 2026-09-04 — hai chỗ nghi lệch cuối, nay đã ĐO ĐƯỢC
+
+**① `DelExtRec` nhánh 乳歯 lấy 部位 từ `ModCommon.pbui`, KHÔNG phải từ dòng bị xoá.**
+
+Kịch bản (probe `Tc1d`): 抜歯 răng sữa **A** (ô 6 → `sn4`) → 抜歯 răng sữa **B** (ô 5 →
+`sn3`) → **xoá dòng A**.
+
+```
+sau 抜歯 A          sn4 = 9
+sau 抜歯 B          sn4 = 9 · sn3 = 9
+sau khi XOÁ dòng A  sn3: 9 → 5     ← răng B, cái mà pbui đang giữ
+                    sn4  = 9       ← răng A, dòng THẬT SỰ bị xoá, KHÔNG đổi
+```
+
+⇒ WinForm trả **nhầm răng** về 健全歯. Đúng như source: hai nhánh cạnh nhau đọc hai
+nguồn khác nhau — 永久歯 đọc `arrBui` (dòng bị xoá, :6146), 乳歯 đọc `ModCommon.pbui`
+(:6158), mà `pbui` chỉ nạp lại khi NHẬP 処置 chứ không khi dời con trỏ.
+
+**Bản web KHÔNG tái hiện**: nó dùng `governingBuiOf(dòng bị xoá)`
+(`treatment-entry-detail.tsx:3152-3159`) nên trả đúng răng A. Đây là **điểm lệch thật**,
+và là loại lệch mà chép theo WinForm thì vô lý — cần khách quyết.
+
+**② `SigaChg` case 122 nhánh 乳歯 làm APP CHẾT.**
+
+Nhập `122/3` ＥＭＲ(４根) lên một RĂNG SỮA (probe `Tc1e`) ⇒ app bung hộp thoại .NET:
+
+```
+Unhandled exception has occurred in your application.
+Invalid column name 'NKon4'.
+```
+
+Đúng dòng source đã ngờ: `makeSql("NKon", …, ref strSiga)` (frm203016.cs:1155-1160) nhét
+tên cột của bảng **KON** vào câu `update **Siga**`. Nhánh 永久歯 ngay trên dùng `ref strKon`
+(đúng), và nhánh save-time `modSave.cs:800/804` cũng đúng — chỉ nhánh input-time này sai.
+
+> ⚠️ Hộp thoại đó có nút **Continue / Quit**, không khớp はい/いいえ/OK, nên mọi vòng
+> 「dẹp hộp thoại」 thông thường quay vô hạn — nó đốt trọn một lượt chạy 15 phút trước khi
+> được nhận diện. `SigaToothFlow` nay bắt `CrashDialogFragment`, bấm `Continue` và **dừng
+> vòng lặp ngay**.
+
 ### ⏱️ Thời gian thực đo được
 
 Sau khi tối ưu đọc sơ đồ răng (35s → 3s), một vòng
