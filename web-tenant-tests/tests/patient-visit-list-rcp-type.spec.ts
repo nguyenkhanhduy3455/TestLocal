@@ -29,7 +29,8 @@ import { emptyState, rows, scroller, skeletons } from './virtual-grid'
  *      · 12 cột đúng `_viewItem` của frm204008, id theo thứ tự:
  *        patNo / patNm / rcpTypeNm / trtDt / syosinLabel / insScore / insPrice /
  *        careScore / carePrice / jihiPrice / jihiTax / priceTotal.
- *      · CHỈ patNo + patNm sortable (`SORT_COMPARATORS`); mọi cột khác
+ *      · CHỈ patNo + patNm sortable (`SORT_COMPARATORS`) — xem chú thích ở
+ *        SORTABLE_COLS: đây là hành vi của web, KHÁC WinForm; mọi cột khác
  *        `enableSorting: false` ⇒ header của chúng KHÔNG có `aria-sort`
  *        (sort-header-dom.ts:43). レセプト種別 nằm trong nhóm không sort.
  *      · `title="来患一覧"`, `emptyText="対象データがありません"`.
@@ -92,13 +93,16 @@ import { emptyState, rows, scroller, skeletons } from './virtual-grid'
  * mình thì hai bên khớp nhau.
  *
  * Đối chiếu ngày 2026-09-04: 86/86 dòng trùng khít, cùng thứ tự, không lệch trường
- * nào. Ba điểm KHÁC còn lại nằm ngoài tầm spec này, xem
- * `fla-ui-tests/.../PatientVisitList/README.md` mục 6:
- *   · nhãn dòng 合計 (WinForm dùng khoảng trắng 全角 và độn 件数 4 ký tự,
- *     `GetPatientVisitListHandler.cs:183` dùng 半角 và độn 5);
- *   · WinForm sort được 10 cột mà bản web khoá `enableSorting: false`;
+ * nào. Xem `fla-ui-tests/.../PatientVisitList/README.md` mục 6. Tình trạng 3 điểm
+ * khác tìm được ở lần đối chiếu đó:
+ *   · nhãn dòng 合計 — ĐÃ SỬA. WinForm (frm204008.cs:807) dùng khoảng trắng 全角
+ *     U+3000 sau 「名」 và độn 件数 4 ký tự; handler từng dùng 半角 + độn 5.
+ *     `GetPatientVisitListHandlerTests` chốt đúng chuỗi WinForm nên không trôi lại;
+ *   · WinForm sort được 10 cột mà bản web khoá `enableSorting: false` — CHƯA xử lý,
+ *     chờ quyết định sản phẩm (xem chú thích ở SORTABLE_COLS);
  *   · ngược lại, bấm 患者番号 ở WinForm KHÔNG sort (handler dò nhầm tên cột
- *     「dsp_pat_no」, frm204008.cs:241) trong khi bản web sort được.
+ *     「dsp_pat_no」, frm204008.cs:242) trong khi bản web sort được — CHƯA xử lý.
+ *     Lưu ý 氏名 thì WinForm CÓ sort, bằng ComLibrary.kanaSort (50音順).
  */
 
 const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
@@ -144,7 +148,19 @@ const HEADER_LABELS: Record<ColId, string> = {
     priceTotal: '合計金額',
 }
 
-/** Chỉ 2 cột này sortable (SORT_COMPARATORS) — WinForm cũng chỉ sort 患者番号/氏名. */
+/**
+ * 2 cột web cho sort (SORT_COMPARATORS).
+ *
+ * KHÔNG phải parity — đo thật trên WinForm bằng bộ FlaUI thì ngược lại gần hết:
+ *  - 患者番号 KHÔNG sort: init() hạ xuống SortMode.Programmatic (frm204008.cs:411)
+ *    rồi handler dò tên cột "dsp_pat_no" (frm204008.cs:242) trong khi cột tên
+ *    "pat_no" → nhánh chết. Web sort được cột này là THÊM so với WinForm.
+ *  - 氏名 CÓ sort, qua ComLibrary.kanaSort (frm204008.cs:261) — 50音順, mà
+ *    comparator 'text' của web chưa chắc cho cùng thứ tự.
+ *  - 10 cột còn lại (kể cả レセプト種別) CÓ sort ở WinForm: InitViewItem để
+ *    SortMode.Automatic và frm204008 không gọi columnSortModeOff().
+ * Nên assert dưới đây chốt HÀNH VI HIỆN TẠI CỦA WEB, không phải luật WinForm.
+ */
 const SORTABLE_COLS: ReadonlySet<ColId> = new Set<ColId>(['patNo', 'patNm'])
 
 /** Một dòng của payload API (đã bỏ dòng 合計). */
@@ -507,7 +523,7 @@ test.describe('来患一覧 (frm204008) — レセプト種別 + chịu lỗi �
             } else {
                 expect(
                     ariaSort,
-                    `cột ${col} KHÔNG được sort (WinForm chỉ sort 患者番号/氏名)`,
+                    `cột ${col} sort được, nhưng web đang cố ý tắt sort cột này`,
                 ).toBeNull()
             }
         }

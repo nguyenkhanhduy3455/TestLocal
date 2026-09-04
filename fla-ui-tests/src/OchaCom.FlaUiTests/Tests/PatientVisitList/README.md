@@ -101,37 +101,56 @@ TC-RCP-3 (28) **trùng khít** hai bên. Một điểm lệch duy nhất trong d
 > đối chiếu được 34 (bỏ 52 vì bệnh nhân có nhiều 枝番). Lý do: WinForm lấy 枝番 từ chính
 > dòng `trntrn` nên tra được đúng bản 保険, còn payload của web không trả 枝番.
 
-## 6. Bốn điểm LỆCH so với bản web
+## 6. Bốn điểm LỆCH so với bản web — 2 đã sửa, 2 còn mở
 
-1. **Nhãn dòng 合計** — lệch thật, đã đo.
+> Đo lại 2026-09-04 trên nhánh **`demo1`** (`b1dced329`, chạy ở `tenant1.ochacom.local`):
+> **86/86 dòng trùng khít, cùng thứ tự, 0 lệch trên cả 10 trường, và dòng 合計 khớp
+> tới từng khoảng trắng.** Bộ WinForm chạy lại cùng lúc: 11/11 xanh, tức mốc so sánh
+> không trôi.
+
+1. ✅ **Nhãn dòng 合計 — ĐÃ SỬA** (`b2f1691f4 fix(api): 来患一覧の合計行を frm204008 と同じ書式に戻す`).
    * WinForm (`frm204008.cs:768`): `"合計" + 人数.PadLeft(5) + "名　（" + 件数.PadLeft(4) + "件）"`
      → `合計   36名　（  86件）` (khoảng trắng **全角** U+3000 sau 「名」, 件数 độn 4).
-   * API (`GetPatientVisitListHandler.cs:183`): `名 （` khoảng trắng **半角**, 件数
-     `PadLeft(5)` → `合計   36名 （   86件）`.
-   * Unit test `GetPatientVisitListHandlerTests.cs:246` đang chốt **đúng chuỗi sai đó**.
-   * `TC_BAND_2` khẳng định công thức WinForm, nên nó là chỗ ghi lại điểm lệch này.
+   * API trước đây dùng khoảng trắng **半角** + `PadLeft(5)` → `合計   36名 （   86件）`;
+     nay `GetPatientVisitListHandler.cs:174` đã dùng `\u3000` + `PadLeft(4)`.
+   * Unit test `GetPatientVisitListHandlerTests.cs` trước đây chốt **đúng chuỗi sai đó**;
+     nay ghi thẳng chuỗi WinForm và dẫn nguồn là số đo của bộ FlaUI này.
+   * `TC_BAND_2` vẫn là chỗ chốt công thức WinForm — nó là cái neo cho cả hai bên.
 
-2. **`レセプト種別` (và 9 cột khác) sort được ở WinForm, KHÔNG sort được ở web** — đã đo:
+2. ⬜ **`レセプト種別` (và 9 cột khác) sort được ở WinForm, KHÔNG sort được ở web** — CÒN MỞ, đã đo:
    bấm tiêu đề `レセプト種別` **sắp lại lưới**. `InitViewItem` đặt `SortMode.Automatic` cho
    **mọi** `TextBox` column (`GradientDataGridView.cs:441`), rồi `frm204008.init` hạ
    **riêng** `pat_no`/`pat_nm` xuống `Programmatic` (`frm204008.cs:397-401`) — nên 10 cột
    còn lại (`rcp_type`, `day`, điểm, tiền…) sort được. Bản web đặt `enableSorting: false`
    cho đúng 10 cột đó.
 
-3. **Bấm tiêu đề `患者番号` ở WinForm KHÔNG làm gì** — đã đo: lưới đứng yên.
+3. ⬜ **Bấm tiêu đề `患者番号` ở WinForm KHÔNG làm gì** — CÒN MỞ, đã đo: lưới đứng yên.
    `dgvView_CellMouseClick` dò `dgv.Columns[e.ColumnIndex].Name == "dsp_pat_no"`
    (`frm204008.cs:241`) trong khi `_viewItem` đặt tên cột là `"pat_no"` ⇒ nhánh sort đó
    **không bao giờ chạy**, và `SortMode` cũng đã bị hạ xuống `Programmatic` nên
    `DataGridView` không tự sort thay. Bản web thì `患者番号` **sort được**.
    (`氏名` thì cả hai bên đều sort — handler khớp đúng tên cột nên `ComLibrary.kanaSort`
    chạy bình thường.)
-   → cả 2 và 3 được `TC_SORT_1` chốt lại.
+   → cả 2 và 3 được `TC_SORT_1` chốt lại. Chưa bên nào đổi (kiểm lại 2026-09-04:
+   `frm204008.cs:241` vẫn dò `"dsp_pat_no"`, và TC-OPEN-2 bên Playwright vẫn xanh với
+   `aria-sort` chỉ có trên 患者番号/氏名). Đây là chuyện **quyết định sản phẩm**, không
+   phải bug thuần: ở điểm 3 thì bản web đang *đúng hơn* WinForm.
 
-4. **Cách chịu lỗi 一部負担金** — WinForm bung **một MessageBox E00100 cho MỖI dòng hỏng**
-   ngay trong luồng nền của thanh tiến trình (`buiPrice.cs:196-203`), và **vẫn thêm dòng
-   đó vào lưới** nếu có điểm khác 0. Bản web **loại** dòng đó ra và đẩy vào `warnings`.
-   Dataset demo không có ca hỏng nên chưa quan sát trực tiếp được — `TC_OPEN_1` chốt “0
-   hộp E00100” để cái ngày nó xuất hiện thì có người biết.
+4. ⚠️ **Cách chịu lỗi 一部負担金 — ĐÃ THU HẸP, phần còn lại là chủ ý.**
+   (`a7d443e4e feat: 一部負担金計算の失敗を WinForm と同じ粒度で扱う`,
+   `7e99c6d30 fix: 患者一人の計算失敗が全件を消さないようにする`,
+   `cdf1cc9b2 refactor: 失敗処理を BuiPriceService へ集約する`.)
+
+   Giờ hai bên **cùng một hạt**: một lỗi ứng với **một dòng** (bệnh nhân × ngày), không
+   còn chuyện một bệnh nhân hỏng làm mất cả danh sách. Khác biệt còn lại là **cách trình
+   bày, và có chủ ý**: WinForm bung một MessageBox E00100 **chặn màn hình** cho mỗi dòng
+   hỏng (`buiPrice.cs:196-203`) rồi **vẫn thêm dòng đó vào lưới** nếu có điểm khác 0;
+   bản web **bỏ dòng đó** và đẩy vào `warnings` — `GetPatientVisitListHandler.cs:107-112`
+   nói rõ lý do: một dòng tính hỏng có thể còn sót số lẻ, và 「một 来患 tính nửa vời không
+   được phép trình ra như một 来患 thật」.
+
+   Dataset demo không có ca hỏng nên vẫn chưa quan sát trực tiếp được — `TC_OPEN_1` chốt
+   “0 hộp E00100” để cái ngày nó xuất hiện thì có người biết.
 
 ## 7. Năm cái bẫy đã trả giá (đừng vấp lại)
 
