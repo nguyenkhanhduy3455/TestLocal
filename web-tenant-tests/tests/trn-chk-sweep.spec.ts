@@ -40,12 +40,15 @@ import { ADMIN_USER, JA } from './test-data'
  * スケーリング全ブロック / SRP全歯 (:1235/:1279) — KHÔNG lái được từ file này, vì tất cả
  * đều đọc `bui` (+ `dis_cd`) CỦA TỪNG DÒNG.
  *
- * `seedTreatmentRows` ghi thẳng `trn_trn`, nhưng lưới KHÔNG đọc 部位・病名 từ đó: nó
- * dựng lại chúng từ 部位病名行 đứng trên trong cùng ngày (`buildSaveRowsIndexed`,
- * treatment-grid-rows.ts). Dòng seed không có 部位病名行 nào phía trên nên payload F3
- * mang `bui` toàn 0 và `disCd` rỗng — TC-BASE in con số đó ra mỗi lần chạy để ai đọc
- * log cũng thấy ngay. Muốn phủ nốt thì phải seed được 部位病名行, là một mảng hạ tầng
- * riêng. Hiện chúng nằm ở `MonthlyCheckRulesTests` (unit, phía API).
+ * (CẬP NHẬT 2026-09-04) `seedTreatmentRows` nay seed được CẢ `bui` lẫn `disCd` /
+ * `disSb` / `dspDis`, nên một dòng seed tự nó thành 部位病名行 và payload F3 mang đúng
+ * 部位・病名 — `buiDisRow()` bên dưới dùng chính đường đó. Ghi chú cũ ("phải seed được
+ * 部位病名行, là một mảng hạ tầng riêng") KHÔNG còn đúng.
+ *
+ * Ba luật kia vì thế đã LÁI ĐƯỢC về nguyên tắc, chỉ là chưa ai viết TC: mỗi luật cần
+ * một bộ 部位 + 病名 riêng (Ｐ103/Ｇ104 cho :1253, 欠損病名 cho :1261, đủ block cho
+ * :1235/:1279). Trong lúc chưa có, phần TÍNH của chúng vẫn nằm ở
+ * `MonthlyCheckRulesTests` (unit, phía API).
  *
  * ─── Dữ liệu ─────────────────────────────────────────────────────────────────
  * Seed qua `seedTreatmentRows` (vùng `disp_no >= SEED_DISP_BASE`, idempotent, dọn ở
@@ -59,9 +62,11 @@ const PAT_NO = Number(process.env.TEST_PAT_NO ?? '12138')
 /**
  * Tháng test = tháng hiện hành.
  *
- * Bệnh nhân PHẢI có sẵn dòng thật mang 病名 ở tháng này, nếu không `Chk_Buidis_Cmn`
- * bắn và cắt mất Chkrol999. TC-BASE assert đúng điều kiện đó, nên giả định hỏng sẽ
- * đỏ ngay ở testcase đầu kèm lời giải thích, chứ không đỏ mơ hồ ở TC sau.
+ * Tháng này PHẢI có ít nhất một dòng mang 病名, nếu không `Chk_Buidis_Cmn` bắn và cắt
+ * mất Chkrol999. TRƯỚC 2026-09-04 spec trông chờ DỮ LIỆU NỀN của bệnh nhân có sẵn thứ
+ * đó — giả định vỡ mỗi đầu tháng và mỗi khi spec khác ghi đè tháng của bệnh nhân test.
+ * Nay `buiDisRow()` tự seed, spec không còn phụ thuộc dữ liệu nền. TC-BASE vẫn assert
+ * điều kiện đó để nếu seed hỏng thì đỏ ngay ở testcase đầu kèm lời giải thích.
  */
 const TRT_DT =
     process.env.TEST_TRT_DT ??
@@ -112,6 +117,15 @@ const MONTHLY_MSGS = [
     MSG_MISSING_TOOTH,
     MSG_ROL999,
 ] as const
+
+/**
+ * 部位 32 ô — chỉ bật ô 11 (0-based 10) = 永久歯 左上3. Lưới chỉ coi một dòng là
+ * 部位病名行 khi nó có 部位 KHÁC 0, nên phải có ô này thì 病名 mới đi kèm được.
+ */
+const BUI_UPPER_LEFT_3 = Array.from({ length: 32 }, (_, i) => (i === 10 ? 1 : 0))
+/** Ｃ (う蝕) — 病名コード phổ biến nhất trong dữ liệu thật, chỉ cần khác 0. */
+const DIS_CD_C = 100
+const DIS_NM_C = 'Ｃ'
 
 const CHECK_LIST_LABEL = '処置データチェック エラー一覧'
 /** RegExp chứ không phải glob — `/check` không được kéo theo `/check-single`. */
@@ -198,7 +212,7 @@ test.describe('診療入力 — 一括 診療チェック: 月次チェック đ
     const count = (msgs: readonly string[], needle: string) =>
         msgs.filter((m) => m.includes(needle)).length
 
-    /** Dòng 保険 vô hại — chỉ để tháng chắc chắn có 処置点数. */
+    /** Dòng 保険 vô hại — chỉ để tháng chắc chắn có 処置点数. KHÔNG mang 病名. */
     const visitRow = () => ({
         trtCd: VISIT_CD,
         trtSb: VISIT_SB,
@@ -206,6 +220,34 @@ test.describe('診療入力 — 一括 診療チェック: 月次チェック đ
         trtCnt: 1,
         jihiFlg: 0,
         dspTrt: VISIT_NM,
+    })
+
+    /**
+     * Dòng CÕNG 部位 + 病名 — tự dựng tiền đề 「tháng CÓ 病名」 cho TC-BASE / TC-ROL999.
+     *
+     * `Chk_Buidis_Cmn` (Check.cs:1241) bắn khi CẢ THÁNG không có `dis_cd` nào khác 0,
+     * và bắn là `return` ngay (:1246) — cắt sạch 4 luật 月次 phía sau, tức TC-ROL999
+     * không còn gì để đo. Vì vậy hai TC đó BẮT BUỘC tháng phải có 病名.
+     *
+     * TRƯỚC 2026-09-04 file trông chờ DỮ LIỆU NỀN của bệnh nhân có sẵn 病名 trong tháng
+     * hiện hành (xem docblock cũ của TRT_DT). Giả định đó vỡ mỗi đầu tháng, và vỡ thêm
+     * mỗi khi spec khác ghi đè tháng của bệnh nhân test: đo 2026-09-04, CẢ TENANT không
+     * một bệnh nhân nào có dòng mang 病名 trong tháng 2026-09 ⇒ TC-BASE đỏ đúng câu
+     * 「当月に部位・病名がない可能性があります。」. Tự seed thì hết phụ thuộc.
+     *
+     * ⚠️ TC-BUIDIS KHÔNG được dùng dòng này — nó cần đúng tình huống tháng KHÔNG có
+     * 病名 để `Chk_Buidis_Cmn` nổ.
+     */
+    const buiDisRow = () => ({
+        trtCd: VISIT_CD,
+        trtSb: VISIT_SB,
+        trtPt: 0,
+        trtCnt: 1,
+        jihiFlg: 0,
+        dspTrt: `${VISIT_NM}(部位病名)`,
+        bui: BUI_UPPER_LEFT_3,
+        disCd: [DIS_CD_C],
+        dspDis: DIS_NM_C,
     })
 
     /** Một dòng スケーリング với 算定回数 cho trước. */
@@ -253,7 +295,7 @@ test.describe('診療入力 — 一括 診療チェック: 月次チェック đ
      * hiện thêm là do tình huống đó chứ không phải do dữ liệu nền.
      */
     test('TC-BASE — mốc: panel lấy dữ liệu thật, chưa có câu 月次 nào', async () => {
-        const msgs = await sweep(TRT_DT, [visitRow()])
+        const msgs = await sweep(TRT_DT, [visitRow(), buiDisRow()])
 
         console.log(`TC-BASE: panel có ${msgs.length} message (dữ liệu nền của bệnh nhân)`)
 
@@ -290,7 +332,13 @@ test.describe('診療入力 — 一括 診療チェック: 月次チェック đ
      * port nhầm sang per-row ⇒ 3 câu giống hệt nhau.
      */
     test('TC-ROL999 — 1初診内スケーリング回数超過 ra ĐÚNG MỘT câu cho cả tháng', async () => {
-        const msgs = await sweep(TRT_DT, [visitRow(), scalingRow(2), scalingRow(2), scalingRow(2)])
+        const msgs = await sweep(TRT_DT, [
+            visitRow(),
+            buiDisRow(),
+            scalingRow(2),
+            scalingRow(2),
+            scalingRow(2),
+        ])
 
         expect(
             count(msgs, MSG_ROL999),
