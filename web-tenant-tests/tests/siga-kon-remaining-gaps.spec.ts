@@ -31,15 +31,29 @@ import { closeDialogs } from './virtual-grid'
  * 診療入力 — BỐN gap còn lại của 自歯状況変更 / 根数変更 (siga & kon).
  *
  * ĐẶC TÍNH KIỂM THỬ: mọi assert bám THEO WINFORM (src/OCHACOM), không bám theo
- * code web. Các TC gắn 🐛 ĐỎ là gap THẬT của bản port, KHÔNG phải test viết sai.
+ * code web. Từ 2026-09-03 cả bốn gap đã đóng nên KHÔNG còn TC nào gắn 🐛: một TC đỏ
+ * từ đây là HỒI QUY thật, không phải "gap đã biết".
  *
  * ═════════════════════════════════════════════════════════════════════════════
  * BỐN GAP TRONG FILE NÀY
  * ═════════════════════════════════════════════════════════════════════════════
  *  A. TC-3       ＥＭＲ(４根) 122/3 → `ekon_n = 4` / `nkon_n = 4`  (modSave.cs:770-808)
  *  B. TC-4/4b    歯根嚢胞摘出手術 185 + 抜歯同時 → 欠損歯          (modSave.cs:1031-1085)
- *  C. TC-5       「いいえ」 ở dirty gate → RestoreData / Restore_SK  (modSave.cs:453-462)
+ *  C. TC-5/5b    「いいえ」 ở dirty gate → RestoreData / Restore_SK  (modSave.cs:453-462)
  *  D. TC-6       bệnh nhân KHÔNG có dòng `siga` → F9 phải tạo rồi ghi (modKonSiga.cs:77)
+ *
+ * ── CẬP NHẬT 2026-09-03: GAP C ĐÃ ĐƯỢC PORT, TC-5 ĐÃ VIẾT LẠI ────────────────
+ * Nhánh `fix/inp-siga-delextrec-pmode-kesson` thêm ba đường ghi 歯式/根数 chạy TRƯỚC
+ * F9 (`SigaChg`, `DelExtRec`, `Chk_PModeKesson`) và port luôn `Restore_SK`. Đúng cái
+ * ngày mà bản cũ của TC-5 đã dự báo: 「TC này sẽ ĐỎ đúng lúc có người thêm một đường
+ * ghi 歯式/根数 chạy TRƯỚC F9 … mà quên phần lùi」.
+ *
+ * Nhưng WinForm KHÔNG lùi cả ba — và đó mới là điều phải khoá:
+ *   · `SigaChg`         BẬT `pSiga_chg` ⇒ 「いいえ」 LÙI            → TC-5b
+ *   · `DelExtRec`       KHÔNG bật cờ    ⇒ 「いいえ」 KHÔNG lùi      → TC-5
+ *   · `Chk_PModeKesson` KHÔNG bật cờ    ⇒ 「いいえ」 KHÔNG lùi      → p-mode-kesson-siga.spec.ts
+ * Bất biến cũ ("discard xong DB phải y nguyên") vì thế đã SAI, không phải chỉ lạc
+ * hậu. Xem `userapp/inp-p0-open-issues.md` ISSUE-15.
  *
  * ── LỊCH SỬ CHẠY THẬT (tenant1 local, PAT_NO 12138) ─────────────────────────
  * 2026-08-03 — TRƯỚC khi sửa: 3 passed / 3 failed. Cả bốn gap đều được tái hiện:
@@ -47,6 +61,11 @@ import { closeDialogs } from './virtual-grid'
  *   TC-4 ✘ hộp thoại 抜歯同時 KHÔNG bung; se_11 = 0, sn_4 = 5
  *   TC-5 ✓ cả hai vế xanh ⇒ hồ sơ gap C ĐÓNG (xem mục 「TC-5 …」 bên dưới)
  *   TC-6 ✘ POST bulk-save → 200 nhưng dòng siga VẪN KHÔNG CÓ ⇒ mất 歯式 ÂM THẦM
+ *
+ * 2026-09-03 — SAU nhánh `fix/inp-siga-delextrec-pmode-kesson`: cả bốn gap đã đóng.
+ *   TC-5 được VIẾT LẠI (bất biến cũ đã sai — xem khối 「HAI NỬA BẤT ĐỐI XỨNG」) và
+ *   thêm TC-5b. Kỳ vọng hiện tại: TOÀN BỘ XANH. Một TC đỏ từ đây trở đi là HỒI QUY
+ *   thật, không còn là "gap đã biết".
  *
  * 2026-08-03 — SAU commit d42ee857 「診療入力の登録で自歯状況・根数が反映されない不具合を
  *   修正」: TC-3 → ekon_11 = 4 / nkon_4 = 4; TC-6 → 「dòng siga ĐÃ CÓ, se_11 = 4」;
@@ -65,13 +84,15 @@ import { closeDialogs } from './virtual-grid'
  * ═════════════════════════════════════════════════════════════════════════════
  * VÌ SAO FILE NÀY KHÔNG DÙNG `describe.serial`
  * ═════════════════════════════════════════════════════════════════════════════
- * `serial` = một test đỏ thì MỌI test sau bị skip. File này cố tình chứa nhiều
- * testcase được dự đoán ĐỎ, nên `serial` sẽ chỉ cho nhìn thấy gap đầu tiên.
+ * `serial` = một test đỏ thì MỌI test sau bị skip. File này ra đời để phơi BỐN gap
+ * cùng lúc, nên `serial` sẽ chỉ cho nhìn thấy gap đầu tiên.
  * Dùng `mode: 'default'`: các test vẫn chạy TUẦN TỰ trong CÙNG một worker (nên
  * `page` chung tạo ở `beforeAll` vẫn hợp lệ, cả file login MỘT lần — Rule 10.1 /
- * Rule 19) nhưng KHÔNG fail-fast ⇒ một lượt chạy thấy đủ cả bốn gap.
- * `retries: 0` cũng là cố ý: các TC này được thiết kế để đỏ, retry chỉ tốn thêm
- * một vòng login + setup.
+ * Rule 19) nhưng KHÔNG fail-fast ⇒ một lượt chạy thấy đủ cả bốn mặt.
+ * GIỮ NGUYÊN kể cả khi cả bốn gap đã đóng (2026-09-03): mỗi TC dựng lại dữ liệu của
+ * chính nó bằng `resetMonthTo()`, nên chúng độc lập, và khi có hồi quy thì một lượt
+ * chạy vẫn cho thấy hồi quy đó ảnh hưởng mấy mặt.
+ * `retries: 0` cũng là cố ý: retry chỉ tốn thêm một vòng login + setup.
  *
  * Trong MỖI testcase gap, các vế đều dùng `expect.soft` để một lần chạy thấy hết
  * các mặt của cùng một defect, thay vì sửa xong vế này mới lòi vế kia.
@@ -142,10 +163,13 @@ import { closeDialogs } from './virtual-grid'
  *     (modSave.cs:2000-2115) lẫn bản port đều không ghi nó xuống DB.
  *     Class-doc của chính file đó đã tự nhận: 「EMR-4根 (122/3) and 歯根嚢胞摘出 (185)
  *     根数 writes are still pending」 (:29-30).
- *  C. `SaveTreatmentsHandler.cs:36` — TODO ghi thẳng 「TODO Restore_SK — restore
- *     root/tooth state when the save is cancelled」. FE `treatment-entry-detail.tsx`
- *     :1431-1452 (chuỗi F8) và :1606-1625 (F10 戻る): nhánh `choice === 'no'` KHÔNG
- *     làm gì, chỉ đi tiếp.
+ *  C. ✅ ĐÃ PORT 2026-09-03. FE giữ `toothStatusSnapshotRef` (= `pSiga_old`/`pKon_old`,
+ *     chụp ở lần fetch ĐẦU sau khi mount) và `toothStatusChgRef` (= `pSiga_chg`/
+ *     `pKon_chg`); cả ba cửa 「いいえ」 (F9 / F10 戻る / F12 メニュー) gọi
+ *     `POST /tenant/siga/restore`, và F9 gửi kèm `toothStatusRestore` để BE chạy
+ *     `Restore_Siga`/`Restore_Kon` ngay trước `SigaChg_Save`.
+ *     ⚠️ `Restore_TrtState` (người thứ ba của `RestoreData`) VẪN chưa port — web vẫn
+ *     chưa có đường ghi `trt_state` nào để mà lùi (ISSUE-6).
  *  D. `SaveTreatmentsHandler.cs:218-235`:
  *         var siga = await db.Sigas.FirstOrDefaultAsync(...);
  *         if (siga is not null) { Revert(...); Apply(...); }
@@ -154,28 +178,26 @@ import { closeDialogs } from './virtual-grid'
  *     nhân đăng ký BẰNG MÀN 患者登録 CỦA BẢN WEB mới có.
  *
  * ═════════════════════════════════════════════════════════════════════════════
- * TC-5 (Restore_SK) — ĐÃ CHẠY: XANH CẢ HAI VẾ, hồ sơ gap C ĐÓNG
+ * TC-5 / TC-5b (Restore_SK) — HAI NỬA BẤT ĐỐI XỨNG, ĐỌC KỸ TRƯỚC KHI SỬA
  * ═════════════════════════════════════════════════════════════════════════════
- * WinForm ghi `siga`/`kon` NGAY LÚC NHẬP (`SigaChg`, `DelExtRec`), tức DB đã bẩn
- * TRƯỚC khi người dùng kịp quyết định lưu hay không ⇒ nó BẮT BUỘC phải có
- * `Restore_SK` để lùi. Bản port hoãn TOÀN BỘ việc ghi tới F9 ⇒ ở nhánh 「いいえ」
- * chẳng có gì để lùi. Nói cách khác: `Restore_SK` chưa port KHÔNG tự động là bug —
- * thiết kế mới làm nó thành thừa cho `siga`/`kon`.
- *   · vế (a) của TC-5 là **lưới an toàn, kỳ vọng XANH**: bất biến "discard xong DB
- *     phải y nguyên". Nó sẽ ĐỎ đúng ngày có ai thêm một đường ghi 歯式/根数 chạy
- *     TRƯỚC F9 (port 欠損確認 / 部位選択 kiểu WinForm / DelExtRec tức thời) mà quên
- *     phần lùi — khi đó `Restore_SK` từ "thừa" thành "bắt buộc", và đây là chỗ báo.
- *   · vế (b) **ĐÃ CHẠY 2026-08-03 ⇒ XANH**: comment `treatment-entry-detail.tsx`
- *     :1449-1451 nói 「the freshly-invalidated TRN list achieves the same on
- *     re-mount」 — nhánh 'no' KHÔNG gọi mutation nên KHÔNG có invalidate nào, nhưng
- *     thực tế vẫn đúng vì sửa đổi của lưới nằm trong STATE của component chứ không
- *     ghi vào cache React Query; mở lại màn hình là component re-mount và seed lại
- *     từ dữ liệu server chưa hề bị đụng. Log của lượt chạy xác nhận dòng
- *     「抜歯(前歯)-discard」 quay lại đủ trên lưới sau khi bấm No.
- *   ⇒ KẾT LUẬN: `Restore_SK` chưa port KHÔNG gây triệu chứng nào quan sát được ở
- *     bản hiện tại. Giữ TC-5 lại thuần tuý như lưới an toàn cho tương lai; ĐỪNG
- *     xếp nó vào danh sách bug phải sửa.
+ * WinForm ghi `siga`/`kon` NGAY LÚC NHẬP, tức DB đã đổi TRƯỚC khi người dùng kịp
+ * quyết định lưu hay không ⇒ nó phải có `Restore_SK` để lùi. Nhưng cái van của
+ * `Restore_SK` là cờ `pSiga_chg` / `pKon_chg` (modSave.cs:4684/:4689), và chỉ
+ * `SigaChg` bật cờ đó (frm203016.cs:1282/:1295). Hai đường ghi kia thì không:
  *
+ *   · TC-5b — phiên có NHẬP 処置 (185 + はい → `SigaChg(179,0)`): cờ BẬT ⇒ 「いいえ」
+ *     phải lùi 歯式 về đúng snapshot lúc mở màn. Đây là vế CHỨNG MINH `Restore_SK`
+ *     thật sự chạy; thiếu nó thì một bản port "không ghi gì trước F9" cũng làm TC-5
+ *     xanh y hệt (đúng là chuyện đã xảy ra ở lần chạy 2026-08-03).
+ *
+ *   · TC-5 — phiên CHỈ XOÁ dòng 抜歯 (`DelExtRec`): cờ KHÔNG bật ⇒ 「いいえ」 KHÔNG
+ *     lùi. Kết quả là một trạng thái TỰ MÂU THUẪN mà WinForm chấp nhận: răng đã về
+ *     健全歯 trong khi dòng 抜歯 vẫn còn nguyên trong `trn_trn` (vì không lưu thì
+ *     không có gì bị xoá). Nghe như bug — và đúng là bug, nhưng là bug CỦA WINFORM,
+ *     port nguyên theo quyết định 2026-08-25. Hồ sơ: ISSUE-15.
+ *
+ * ⛔ ĐỪNG "sửa" TC-5 thành "sau 「いいえ」 thì siga phải y nguyên". Bất biến đó chỉ
+ *    đúng hồi bản port chưa ghi gì trước F9; nay nó mâu thuẫn với chính WinForm.
  * ═════════════════════════════════════════════════════════════════════════════
  * VÌ SAO 185 PHẢI NHẬP QUA UI, KHÔNG SEED DB (bẫy đã vấp — đừng lặp lại)
  * ═════════════════════════════════════════════════════════════════════════════
@@ -334,6 +356,8 @@ const SN_VITAL = 5
 const SN_MISSING = 9
 
 const BULK_SAVE_PATH = '/tenant/treatment/bulk-save'
+/** Endpoint `Restore_SK` — 「いいえ」 ở dirty gate (`TenantSigaEndpoints.cs`). */
+const RESTORE_PATH = '/tenant/siga/restore'
 
 /** Câu hỏi WinForm bung ra khi chốt 185 (frm203016.cs:1047). */
 const CYST_CONFIRM_RE = /歯根嚢胞摘出手術と同時に抜歯手術を行いましたか/
@@ -724,7 +748,7 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
     // GAP A — ＥＭＲ(４根) 122/3 → 根数 4 (modSave.cs:770-808)
     // ═════════════════════════════════════════════════════════════════════════
 
-    test(`TC-3 — 🐛 ＥＭＲ(４根) 122/${EMR_SB_4ROOT} phải ghi 根数 ${EMR_ROOT_CNT} vào bảng kon`, async () => {
+    test(`TC-3 — ＥＭＲ(４根) 122/${EMR_SB_4ROOT} phải ghi 根数 ${EMR_ROOT_CNT} vào bảng kon`, async () => {
         // Trạng thái xuất phát: cả ba răng CHƯA có 根数 (NULL — BẪY 3).
         await ensureKonRow(Number(PAT_NO))
         await writeKonTeeth(Number(PAT_NO), {
@@ -997,10 +1021,62 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
 
     // ═════════════════════════════════════════════════════════════════════════
     // GAP C — 「いいえ」 ở dirty gate → RestoreData / Restore_SK
-    //         ĐỌC khối 「TC-5 KHÔNG hứa sẽ đỏ」 ở đầu file trước khi diễn giải.
+    //         ĐỌC khối 「TC-5 / TC-5b — HAI NỬA BẤT ĐỐI XỨNG」 ở đầu file TRƯỚC khi
+    //         diễn giải kết quả: hai TC này kỳ vọng NGƯỢC NHAU và cả hai đều đúng.
     // ═════════════════════════════════════════════════════════════════════════
 
-    test('TC-5 — ⚠️ 「いいえ」 ở dirty gate: RestoreData / Restore_SK', async () => {
+    /**
+     * Bấm F10 戻る rồi trả lời 「いいえ」 ở hộp thoại dirty gate.
+     * Chờ `POST /tenant/siga/restore` nếu nó có bay ra (chỉ khi cờ đã bật).
+     */
+    async function exitWithoutSaving(): Promise<number | null> {
+        await closeDialogs(page)
+        const restored = page
+            .waitForResponse(
+                (r) => r.url().includes(RESTORE_PATH) && r.request().method() === 'POST',
+                { timeout: 20_000 },
+            )
+            .catch(() => null)
+
+        await page.getByRole('button', { name: /F10\s*戻る/ }).click()
+
+        const gate = page.getByText('処置データは変更されています。保存しますか？')
+        await expect(
+            gate,
+            'Sửa lưới rồi bấm F10 戻る PHẢI bung 「処置データは変更されています。保存しますか？」 ' +
+                '(modSave.ExitWithoutSaving:177). Không bung nghĩa là hasUnsavedGridEdits() không ' +
+                'nhận ra thao tác vừa rồi — đó lại là một gap KHÁC, ghi lại rồi báo riêng.',
+        ).toBeVisible({ timeout: 20_000 })
+        await step()
+
+        // PHẢI khoanh trong chính hộp thoại: từ 2026-08-26 (c6ebf8e5d 「右タブ4グリッドに
+        // 見出しクリックの並べ替えを追加」) tiêu đề cột 「No」 của tab 病検 là
+        // `role="button"`, nên `getByRole('button', { name: /^No$/ })` khớp 2 phần tử và
+        // `.first()` rơi vào TIÊU ĐỀ CỘT — bấm xong chỉ sort side panel, hộp thoại đứng
+        // im và TC đỏ y như app hỏng.
+        const gateDialog = page.getByRole('dialog').filter({ hasText: '保存しますか？' })
+        await gateDialog.getByRole('button', { name: 'No', exact: true }).click()
+        await expect(gate, 'bấm No mà hộp thoại không đóng').toBeHidden({ timeout: 15_000 })
+        await step()
+
+        const res = await restored
+        console.log(`「いいえ」 → POST ${RESTORE_PATH}: ${res ? res.status() : 'KHÔNG có request nào'}`)
+        return res ? res.status() : null
+    }
+
+    /** Chênh lệch từng cột giữa hai snapshot, dạng chuỗi đọc được. */
+    function sigaDrift(before: SigaSnapshot, after: SigaSnapshot): string[] {
+        return [
+            ...after.se
+                .map((v, i) => ({ col: `se_${i + 1}`, b: before.se[i], a: v }))
+                .filter((d) => d.b !== d.a),
+            ...after.sn
+                .map((v, i) => ({ col: `sn_${i + 1}`, b: before.sn[i], a: v }))
+                .filter((d) => d.b !== d.a),
+        ].map((d) => `${d.col}: ${d.b}→${d.a}`)
+    }
+
+    test('TC-5 — 「いいえ」 KHÔNG lùi cái DelExtRec vừa ghi (pSiga_chg không bật)', async () => {
         // Dựng một 歯式 ĐÃ LƯU rồi mới sửa lưới — không có mốc đã lưu thì nhánh
         // discard chẳng chứng minh được gì.
         await writeSigaTeeth(Number(PAT_NO), { se: { [PERM_SE_COL]: SE_VITAL } })
@@ -1020,7 +1096,6 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
         const status = await saveF9()
         expect(status, `POST ${BULK_SAVE_PATH} phải thành công`).toBeLessThan(400)
         const sAtMoc = await mustReadSiga()
-        const kAtMoc = await readKon(Number(PAT_NO))
         expect(
             seOf(sAtMoc, PERM_SE_COL),
             `chưa dựng được mốc 歯式 đã lưu (se_${PERM_SE_COL} phải là ${SE_MISSING}) ⇒ nhánh discard ` +
@@ -1028,70 +1103,43 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
         ).toBe(SE_MISSING)
         await step()
 
-        // Sửa lưới (xoá dòng) rồi F10 戻る → chọn No.
+        // Xoá dòng 抜歯 — DelExtRec ghi 健全歯 NGAY (không đợi F9, không bật cờ).
         await deleteRowByText(NM.extDiscard)
-        await step()
-        await closeDialogs(page)
-        await page.getByRole('button', { name: /F10\s*戻る/ }).click()
-
-        const gate = page.getByText('処置データは変更されています。保存しますか？')
-        await expect(
-            gate,
-            'Xoá một dòng rồi bấm F10 戻る PHẢI bung 「処置データは変更されています。保存しますか？」 ' +
-                '(modSave.ExitWithoutSaving:177 / treatment-entry-detail.tsx:1606-1612). ' +
-                'Không bung nghĩa là hasUnsavedGridEdits() không nhận ra thao tác 行削除 — đó lại là ' +
-                'một gap KHÁC, ghi lại rồi báo riêng.',
-        ).toBeVisible({ timeout: 20_000 })
+        const sAfterDelete = await mustReadSiga()
+        expect(
+            seOf(sAfterDelete, PERM_SE_COL),
+            `Xoá dòng 179/${EXT_SB} phải gọi DelExtRec ngay lúc xoá (frm203002.cs:3949 → :6185) ` +
+                `⇒ se_${PERM_SE_COL} về ${SE_VITAL} TRƯỚC khi bấm bất cứ nút lưu nào. ` +
+                `Đang là ${seOf(sAfterDelete, PERM_SE_COL)}.`,
+        ).toBe(SE_VITAL)
         await step()
 
-        // Nút của hộp thoại này là Yes / No / Cancel (data-modified-confirm-dialog.tsx:52-69).
-        // F10 戻る mặc định highlight sẵn "No" — vẫn click tường minh cho chắc.
-        //
-        // PHẢI khoanh trong chính hộp thoại: từ 2026-08-26 (c6ebf8e5d 「右タブ4グリッドに
-        // 見出しクリックの並べ替えを追加」) tiêu đề cột 「No」 của tab 病検 là
-        // `role="button"`, nên `getByRole('button', { name: /^No$/ })` khớp 2 phần tử và
-        // `.first()` rơi vào TIÊU ĐỀ CỘT — bấm xong chỉ sort side panel, hộp thoại đứng
-        // im và TC đỏ y như app hỏng.
-        const gateDialog = page.getByRole('dialog').filter({ hasText: '保存しますか？' })
-        await gateDialog.getByRole('button', { name: 'No', exact: true }).click()
-        await expect(gate, 'bấm No mà hộp thoại không đóng').toBeHidden({ timeout: 15_000 })
-        await step()
+        const restoreStatus = await exitWithoutSaving()
 
-        // ── vế (a) LƯỚI AN TOÀN, kỳ vọng XANH ────────────────────────────────
+        // ── vế (a) — bất biến parity: 「いいえ」 KHÔNG hoàn tác DelExtRec ──────────
         const s = await mustReadSiga()
-        const k = await readKon(Number(PAT_NO))
-        const seDrift = s.se
-            .map((v, i) => ({ col: `se_${i + 1}`, before: sAtMoc.se[i], after: v }))
-            .filter((d) => d.before !== d.after)
-        const snDrift = s.sn
-            .map((v, i) => ({ col: `sn_${i + 1}`, before: sAtMoc.sn[i], after: v }))
-            .filter((d) => d.before !== d.after)
-        const konDrift =
-            k && kAtMoc
-                ? [
-                      ...k.ekon
-                          .map((v, i) => ({ col: `ekon_${i + 1}`, before: kAtMoc.ekon[i], after: v }))
-                          .filter((d) => d.before !== d.after),
-                      ...k.nkon
-                          .map((v, i) => ({ col: `nkon_${i + 1}`, before: kAtMoc.nkon[i], after: v }))
-                          .filter((d) => d.before !== d.after),
-                  ]
-                : []
         expect
             .soft(
-                [...seDrift, ...snDrift, ...konDrift].map(
-                    (d) => `${d.col}: ${d.before}→${d.after}`,
-                ),
-                '(a) LƯỚI AN TOÀN — kỳ vọng XANH. Sau khi chọn 「いいえ」, `siga` và `kon` phải Y HỆT lúc ' +
-                    'trước khi sửa lưới. WinForm đạt điều đó bằng `RestoreData` → `Restore_SK` ' +
-                    '(modSave.cs:453-462 + 4649-4743); bản port đạt điều đó bằng cách KHÔNG ghi gì ' +
-                    'trước F9.\nTC này sẽ ĐỎ đúng lúc có người thêm một đường ghi 歯式/根数 chạy TRƯỚC ' +
-                    'F9 (port 欠損確認, 部位選択 kiểu WinForm, DelExtRec tức thời…) mà quên phần lùi — ' +
-                    'khi đó `Restore_SK` từ "thừa" trở thành "bắt buộc", và đây là chỗ báo.',
+                seOf(s, PERM_SE_COL),
+                `(a) DelExtRec CỐ Ý không bật pSiga_chg (WinForm phát một \`update Siga\` trần, ` +
+                    'frm203002.cs:6185-6190), nên `Restore_SK` bỏ qua nó (modSave.cs:4684) và răng ' +
+                    `PHẢI ở lại ${SE_VITAL} sau 「いいえ」. Ra ${SE_MISSING} nghĩa là DelExtRec đang ` +
+                    'bị arm cờ nhầm — lúc đó một thao tác xoá rồi huỷ sẽ khôi phục cả những 欠損 mà ' +
+                    'người dùng thật sự muốn bỏ. Xem inp-p0-open-issues.md ISSUE-15.',
             )
-            .toEqual([])
+            .toBe(SE_VITAL)
+        expect
+            .soft(
+                restoreStatus,
+                '(a2) Phiên CHỈ xoá ⇒ cả hai cờ đều false ⇒ FE không được gửi request nào tới ' +
+                    `${RESTORE_PATH} (toothStatusRestorePayload trả undefined). Có request nghĩa là ` +
+                    'cờ đang bị bật sai chỗ.',
+            )
+            .toBeNull()
 
-        // ── vế (b) CHƯA BIẾT trước khi chạy ──────────────────────────────────
+        // ── vế (b) — dòng 処置 chưa hề bị xoá khỏi trn_trn ────────────────────
+        // 「いいえ」 = KHÔNG lưu, nên bản ghi vẫn còn. Đây chính là trạng thái tự mâu
+        // thuẫn mà WinForm chấp nhận: răng đã lành nhưng dòng 抜歯 vẫn nằm đó.
         await openTreatmentScreen()
         await ensureBottomMounted()
         const rows = await gridRows()
@@ -1106,14 +1154,66 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
             .soft(
                 findRow(rows, NM.extDiscard),
                 `(b) 「いいえ」 = KHÔNG lưu ⇒ dòng 抜歯 chưa bao giờ bị xoá khỏi \`trn_trn\`, nên mở lại ` +
-                    'tháng phải thấy nó y như cũ. WinForm làm điều này bằng `RestoreData` ' +
-                    '(modSave.cs:128/215).\nBản port bỏ trống nhánh đó và trông vào re-mount: comment ' +
-                    '`treatment-entry-detail.tsx:1449-1451` nói 「the freshly-invalidated TRN list ' +
-                    "achieves the same」 — nhưng nhánh 'no' KHÔNG gọi mutation nên KHÔNG có invalidate " +
-                    'nào cả.\nKhông thấy dòng ⇒ màn hình đang hiển thị trạng thái ĐÃ VỨT BỎ như thể nó ' +
-                    'là dữ liệu thật: người dùng tưởng đã xoá xong, trong khi DB vẫn giữ nguyên dòng đó.',
+                    'tháng phải thấy nó y như cũ (RestoreData chỉ lùi 歯式/根数, không đụng trn_trn).\n' +
+                    'Không thấy dòng ⇒ màn hình đang hiển thị trạng thái ĐÃ VỨT BỎ như thể nó là dữ ' +
+                    'liệu thật: người dùng tưởng đã xoá xong, trong khi DB vẫn giữ nguyên dòng đó.',
             )
             .toBeDefined()
+        await step()
+    })
+
+    test('TC-5b — 「いいえ」 PHẢI lùi cái SigaChg vừa ghi (Restore_SK thật sự chạy)', async () => {
+        // Vế đối xứng của TC-5, và là vế duy nhất chứng minh `Restore_SK` có chạy:
+        // 185 + はい gọi SigaChg(179,0) ⇒ ghi 欠損歯 NGAY và BẬT pSiga_chg
+        // (frm203016.cs:1049 + :1282). Không bấm F9. 「いいえ」 phải trả răng về đúng
+        // snapshot lúc mở màn (modSave.cs:455-463 → :4700).
+        //
+        // ⚠️ Thứ tự BẮT BUỘC: writeSigaTeeth TRƯỚC seedBuiProviderRow, vì
+        // `resetMonthTo` mở lại màn hình và CHÍNH lúc đó FE mới chụp snapshot
+        // (`toothStatusSnapshotRef`, chốt ở lần fetch siga/kon đầu tiên sau mount).
+        // Đảo thứ tự thì snapshot mang giá trị cũ và assert dưới đây vô nghĩa.
+        await writeSigaTeeth(Number(PAT_NO), { se: { [PERM_SE_COL]: SE_VITAL } })
+        await seedBuiProviderRow()
+        const sAtOpen = await mustReadSiga()
+        expect(
+            seOf(sAtOpen, PERM_SE_COL),
+            `harness: se_${PERM_SE_COL} phải là ${SE_VITAL} lúc mở màn`,
+        ).toBe(SE_VITAL)
+
+        const asked = await enterCystViaUi(true)
+        expect(asked, 'hộp thoại 抜歯同時 không bung — xem TC-4').toBe(true)
+
+        // Chưa F9, nhưng 歯式 phải đã đổi: SigaChg ghi ngay lúc chốt 処置.
+        const sAfterEntry = await mustReadSiga()
+        console.log(`sau khi nhập 185「はい」 (chưa F9): se_${PERM_SE_COL} = ${seOf(sAfterEntry, PERM_SE_COL)}`)
+        expect(
+            seOf(sAfterEntry, PERM_SE_COL),
+            `SigaChg ghi 歯式 NGAY lúc chốt 処置, trước 登録 (frm203016.IregCodChk → :1049/:1282). ` +
+                `Vẫn là ${SE_VITAL} nghĩa là đường ghi eager không chạy ⇒ TC này không kiểm được gì, ` +
+                'và cờ pSiga_chg cũng chưa bao giờ bật.',
+        ).toBe(SE_MISSING)
+        await step()
+
+        const restoreStatus = await exitWithoutSaving()
+        expect
+            .soft(
+                restoreStatus,
+                `SigaChg BẬT pSiga_chg ⇒ 「いいえ」 phải gọi ${RESTORE_PATH} (RestoreData → Restore_SK, ` +
+                    'modSave.cs:455-463). Không có request nào ⇒ nhánh 「いいえ」 vẫn đang bỏ trống.',
+            )
+            .toBeLessThan(400)
+
+        const sAfterDiscard = await mustReadSiga()
+        console.log(`sau 「いいえ」: se_${PERM_SE_COL} = ${seOf(sAfterDiscard, PERM_SE_COL)}`)
+        expect
+            .soft(
+                sigaDrift(sAtOpen, sAfterDiscard),
+                'Sau 「いいえ」, `siga` phải Y HỆT lúc MỞ MÀN: Restore_Siga ghi lại 50 cột từ ' +
+                    'snapshot `pSiga_old` (modSave.cs:4700-4729 — SE1..SE32 + SN1..SN18). ' +
+                    'Còn chênh lệch nghĩa là 欠損 do một 処置 CHƯA ĐƯỢC LƯU nằm lại DB vĩnh viễn: ' +
+                    'răng đó biến mất khỏi 部位選択 mà không có dòng 処置 nào giải thích.',
+            )
+            .toEqual([])
         await step()
     })
 
@@ -1122,7 +1222,7 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
     //         XẾP CUỐI vì đây là testcase phá trạng thái nặng nhất.
     // ═════════════════════════════════════════════════════════════════════════
 
-    test('TC-6 — 🐛 thiếu dòng siga: F9 phải TẠO rồi ghi, không được im lặng bỏ qua', async () => {
+    test('TC-6 — thiếu dòng siga: F9 phải TẠO rồi ghi, không được im lặng bỏ qua', async () => {
         try {
             await resetMonthTo([
                 {

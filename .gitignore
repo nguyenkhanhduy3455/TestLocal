@@ -7,3 +7,18 @@ node_modules/
 test-results/
 playwright-report/
 blob-report/
+
+# Ảnh chụp màn hình do test đẻ ra — KHÔNG commit.
+# Chúng nặng (fkey-shots/ 3,4 MB cho 16 tấm, capture-results/ 1,0 MB cho 4 tấm), sinh
+# lại được bất cứ lúc nào bằng chính lượt chạy, và mỗi lượt lại ra một bộ khác nên
+# diff vô nghĩa. Ảnh của FlaUI (artifacts/screenshots/) đã bị fla-ui-tests/.gitignore
+# chặn sẵn; luật này lo nốt phần đổ ra thư mục gốc.
+*.png
+
+# Hai thư mục OUTPUT của test, ignore CẢ THƯ MỤC chứ không chỉ ảnh trong đó:
+#   fkey-shots/      ảnh + index.html (gallery sinh tự động, có đóng dấu giờ chạy)
+#   capture-results/ ảnh chụp của spec 口腔内情報
+# `index.html` chỉ là 16 thẻ <img> trỏ vào chính những ảnh đã ignore, nên commit nó là
+# commit một trang toàn ảnh vỡ, lại còn đổi mỗi lượt chạy vì có timestamp.
+fkey-shots/
+capture-results/
