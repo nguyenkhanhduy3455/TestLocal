@@ -126,6 +126,21 @@
     "disCd": 103
   },
 
+  "visitList": {
+    "//": [
+      "Luong Tests/PatientVisitList — 来患一覧 frm204008 (nua WinForm cua",
+      "web-tenant-tests/tests/patient-visit-list-rcp-type.spec.ts).",
+      "CHI DOC: mo man hinh, bam 集計, doc luoi + xuat CSV. Khong ghi DB.",
+      "",
+      "sinryoYm = 200601 de KHOP TEST_SINRYO_YM cua spec Playwright: dataset demo co",
+      "36 benh nhan / 86 dong (benh nhan x ngay) o thang do — du da dang ins_kbn",
+      "1/2/9/10 va old_flg 0/1/4 ma van chay nhanh. De trong = tu chon thang <= maxPatients."
+    ],
+    "sinryoYm": "200601",
+    "maxPatients": 60,
+    "searchTimeoutMinutes": 8
+  },
+
   "locators": {
     "//": "AutomationId = Control.Name bên WinForm. Nếu máy Windows soi Inspect thấy khác thì sửa ở đây, KHÔNG phải sửa code.",
     "kobetuTabItem": "個別",

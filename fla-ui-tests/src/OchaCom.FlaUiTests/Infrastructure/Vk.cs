@@ -27,6 +27,12 @@ public static class Vk
 
     public const ushort F3 = 0x72;
 
+    /// <summary>F4 — ở <c>frm204008</c>「来患一覧」 là 「CSV出力」 (frm204008.cs:312).</summary>
+    public const ushort F4 = 0x73;
+
+    public const ushort F5 = 0x74;
+    public const ushort F8 = 0x77;
+
     /// <summary>F6 — ở <c>frm203002</c> là 「コメント」 ⇒ mở <c>frm203011</c>「カルテ記載選択」
     /// (frm203002.cs:826 → :4717). Chỉ đúng khi <c>ShiftFlg == false</c>.</summary>
     public const ushort F6 = 0x75;
@@ -62,6 +68,15 @@ public static class Vk
     /// 診療入力 thật sự gửi (frm203002.cs:882).
     /// </summary>
     public const ushort End = 0x23;
+
+    /// <summary>Page Up / Page Down — cách DUY NHẤT cuộn một <c>DataGridView</c> mà không
+    /// đụng tới dòng tiêu đề: cầu MSAA→UIA không phơi ScrollPattern cho control này, và
+    /// click vào thanh cuộn thì phải đoán toạ độ (PROBE-GUIDELINE 3.1).</summary>
+    public const ushort Prior = 0x21;
+    public const ushort Next = 0x22;
+
+    /// <summary>Home — về ô đầu DÒNG (Ctrl+Home mới về ô đầu LƯỚI).</summary>
+    public const ushort Home = 0x24;
 
     /// <summary>Phím số hàng trên (Keys.D1..D8) — đúng nhánh <c>keyData >= Keys.D1</c> của BuiInfo.</summary>
     public static ushort Digit(int d) => (ushort)(0x30 + d);

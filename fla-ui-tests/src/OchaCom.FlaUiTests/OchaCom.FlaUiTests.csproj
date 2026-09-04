@@ -26,6 +26,9 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="NUnit" Version="4.2.2" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+    <!-- Shift_JIS (code-page 932): CSV do F4 CSV出力 ghi ra dùng mã đó (ExcelIO.cs:388),
+         mà .NET 8 chỉ mang sẵn Unicode + Latin1. Xem VisitListScreen.RegisterShiftJis. -->
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>

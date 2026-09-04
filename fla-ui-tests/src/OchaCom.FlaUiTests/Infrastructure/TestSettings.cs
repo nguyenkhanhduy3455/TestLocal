@@ -25,6 +25,7 @@ public sealed class TestSettings
     [JsonPropertyName("highNeeds")] public HighNeedsSection HighNeeds { get; set; } = new();
     [JsonPropertyName("sigaTooth")] public SigaToothSection SigaTooth { get; set; } = new();
     [JsonPropertyName("perioKensa")] public PerioKensaSection PerioKensa { get; set; } = new();
+    [JsonPropertyName("visitList")] public VisitListSection VisitList { get; set; } = new();
     [JsonPropertyName("locators")] public Dictionary<string, string> Locators { get; set; } = new();
 
     private static TestSettings? _current;
@@ -286,6 +287,32 @@ public sealed class TestSettings
         [JsonPropertyName("disCd")] public int DisCd { get; set; } = 103;
     }
 
+    public sealed class VisitListSection
+    {
+        /// <summary>
+        /// 診療年月 (yyyyMM) đem đo ở màn 来患一覧. Để trống = tự chọn tháng có dữ liệu mà
+        /// KHÔNG quá <see cref="MaxPatients"/> bệnh nhân.
+        ///
+        /// <para>Mặc định 200601 để khớp <c>TEST_SINRYO_YM</c> của
+        /// <c>web-tenant-tests/tests/patient-visit-list-rcp-type.spec.ts</c>: hai bên phải
+        /// đo CÙNG một tháng thì con số mới so được với nhau.</para>
+        /// </summary>
+        [JsonPropertyName("sinryoYm")] public string SinryoYm { get; set; } = "200601";
+
+        /// <summary>
+        /// Trần số bệnh nhân khi tự chọn tháng.
+        ///
+        /// <para>frm204008 gọi <c>getBuiPrice2</c> cho TỪNG (bệnh nhân × ngày), mỗi lượt là
+        /// vài truy vấn — tháng 600 bệnh nhân của dataset demo chạy hàng chục phút, vượt
+        /// trần <c>TimeoutMinutes</c> của wrapper và làm treo cả máy Windows chứ không chỉ
+        /// đỏ (xem PROBE-GUIDELINE).</para>
+        /// </summary>
+        [JsonPropertyName("maxPatients")] public int MaxPatients { get; set; } = 60;
+
+        /// <summary>Trần thời gian cho MỘT lượt 集計 (phút).</summary>
+        [JsonPropertyName("searchTimeoutMinutes")] public int SearchTimeoutMinutes { get; set; } = 8;
+    }
+
     public sealed class RunSection
     {
         [JsonPropertyName("stepMs")] public int StepMs { get; set; }
@@ -416,6 +443,8 @@ public sealed class TestSettings
         Set("OCHA_SIGA_ROW_CLEANUP", v => s.SigaTooth.AllowRowCleanup = ToBool(v));
         Set("OCHA_PERIO_ALLOW_SETTING_CHANGE", v => s.PerioKensa.AllowSettingChange = ToBool(v));
         Set("OCHA_PERIO_DIS_CD", v => s.PerioKensa.DisCd = int.Parse(v));
+        Set("OCHA_SINRYO_YM", v => s.VisitList.SinryoYm = v);
+        Set("OCHA_VISIT_MAX_PATIENTS", v => s.VisitList.MaxPatients = int.Parse(v));
         Set("OCHA_BR_TEETH", v => s.InpP1.BrTeeth = ToIntArray(v));
         Set("OCHA_BR_NO_MATCH_TEETH", v => s.InpP1.BrNoMatchTeeth = ToIntArray(v));
 
