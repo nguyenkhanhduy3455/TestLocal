@@ -269,6 +269,7 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 | `.\run-input-tooth-surfaces.ps1` | Chốt 枝番 `men=1` ở 処置選択 → `frm203035.fixProc` (面入力) | `Tests/MenInput/` | ✖ đọc cột ẩn 72, không bấm F9 |
 | `.\run-change-tooth-status.ps1` | chốt 処置 → `frm203016.SigaChg` · Delete → `DelExtRec` · Ｐ変更 → `Chk_PModeKesson` · F9 → `SigaChg_Save` (自歯状況変更・根数変更) | `Tests/SigaToothStatus/` | ⚠️ **CÓ** — `SIGA` + `KON`, và ghi **ngay lúc nhập** |
 | `.\run-move-perio-exam-cursor.ps1` | Enter/←/→ trong 歯周基本・精密検査 → `getMoveIndex` / `getMoveIndexArrow`, rẽ theo 検査順 `pInpOpt[36]` | `Tests/PerioKensaOrder/` | ✖ không bấm F9; ⚠️ `-AllowSettingChange` GHI **`Ocha.xml` của MÁY** |
+| `.\run-unpaid-raiin-cnt.ps1` | F8 会計 → `modAcc.LetAccData2` với 当日来院回数 (`hfgRaiinCnt` → `hFG1[71]` → `UNPAID.TRT_CNT`) | `Tests/UnpaidRaiinCnt/` | ⚠️ **CÓ** — seed `TRNTRN` (disp_no 9101-9103) + `UNPAID` của ngày test |
 | `.\run-edit-treatment-rows.ps1 -Case Probe_Advanced` | PROBE — dò hành vi, KHÔNG assert | `Tests/TreatmentGrid/` | ✖ |
 
 > Thêm luồng mới thì giữ đúng quy ước này: `run-<động từ>-<đối tượng>.ps1` mô tả việc
