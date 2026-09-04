@@ -21,12 +21,19 @@
  *        KHÔNG bao giờ 確定.
  *      · formBase_KeyDown (:167-172): `Keys.End` VÀ `Keys.Escape` đều gọi
  *        `btnF9_Click` ⇒ ESC là 確定, không phải huỷ.
+ *      · initProc (:431-437): `this.ActiveControl = dgvView` khi lưới có dòng
+ *        ⇒ mở lên là ↑/↓ chạy ngay, không phải click chuột trước
+ *        (§3.23(1)). Nhánh rỗng `this.Close()` không tới được: cmtAutoNeedsPick
+ *        chỉ xếp hàng batch có ≥2 comment.
  *      · btnF9_Click (:226) + fixProc (:1350-1364): `*` còn sót → dấu cách,
  *        trim từng dòng, bỏ dòng rỗng, cắt 300 byte; dòng vượt số pick →
  *        手入力 cmt_cd 7999.
  *  - components/cmt-auto-picker-dialog.tsx
  *      · Tab 「カルテコメント一覧」, 4 cột id: dispNo / cmtCd / cmtSb / cmtNm.
  *      · Ô テキスト = primitive Textarea → `textbox` DUY NHẤT trong dialog.
+ *      · Lưới nằm trong một wrapper `tabIndex={0}` (Tab-stop, §3.23(3)); DÒNG
+ *        của VirtualListTable cũng focus được nên locator phải loại
+ *        `[data-index]` ra, nếu không sẽ bắt trúng dòng thay vì wrapper.
  *      · Footer: F1 部位 / F9 確定 / F10 戻る. `End` bind ẩn (hidden) — chính nó
  *        làm ESC-close của DraggableDialog đứng im (useEscapeClose).
  *      · onConfirm → karteCommentToPick → trtNm = cmtNm (KHÔNG có
@@ -89,6 +96,13 @@ const rows = (page: Page) => picker(page).locator('[data-testid^="row-"]')
 const textBox = (page: Page) => picker(page).getByRole('textbox')
 /** Nút trong picker — bó vào dialog vì màn nền cũng có 戻る (Rule 10.3). */
 const pickerBtn = (page: Page, name: RegExp) => picker(page).getByRole('button', { name })
+/**
+ * Wrapper `tabIndex={0}` bọc lưới — control mà `initProc` focus. Loại
+ * `[data-index]` vì dòng của lưới cũng có tabindex.
+ */
+const gridContainer = (page: Page) =>
+  picker(page).locator('[tabindex="0"]:not([data-index])').first()
+
 /** Ô răng đang bật trong 部位選択 — `title="Type: N"` (tooth-selection-dialog:265). */
 const activeTeeth = (page: Page) => buiDialog(page).locator('button[title^="Type:"]')
 /** Cột 療法・処置 của lưới 診療入力 — RegiCol.ryo = 2. */
@@ -145,6 +159,23 @@ test('カルテ記載選択 自動表示 — F1 部位 / getAsta / btnDummy / En
   await expectAutoPickerOpened(page, PAT_NO, TRT_DT)
   await expect(rows(page).first()).toBeVisible({ timeout: 20000 })
   await step()
+
+  // ───────────────────────────────────────────────────────────────────────
+  // TC-0 — initProc đặt focus vào LƯỚI (this.ActiveControl = dgvView)
+  // Phải đo NGAY khi dialog vừa bung, trước mọi click của các TC dưới.
+  // ───────────────────────────────────────────────────────────────────────
+  await expect
+    .poll(
+      () =>
+        gridContainer(page).evaluate((el) => el === document.activeElement),
+      {
+        message:
+          'initProc phải focus lưới khi có dòng (frm203012.cs:431-437) — không thì ' +
+          'người nhập phải click chuột mới ↑/↓ được',
+        timeout: 10000,
+      },
+    )
+    .toBe(true)
 
   // ───────────────────────────────────────────────────────────────────────
   // TC-1 — defData chèn `cmt_nm` + XUỐNG DÒNG tại caret

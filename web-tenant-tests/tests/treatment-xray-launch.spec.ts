@@ -1,5 +1,9 @@
 /**
- * レントゲンボタン — khởi chạy 画像編集ソフト từ màn 診療入力 (frm203002).
+ * Ô dùng chung 画像 / レントゲン trên thanh công cụ màn 診療入力 (frm203002).
+ *
+ * Hai nửa của MỘT chỗ trống, loại trừ nhau theo 連携先 (PicLink):
+ *   · レントゲン → khởi chạy 画像編集ソフト qua agent (phần lớn file này);
+ *   · 画像(&P)   → mở hộp thoại 画像取込 (frm203024) — nhóm TC-GAZOU ở cuối bài.
  *
  * ── FACT từ WinForm (nguồn gốc chuẩn) ────────────────────────────────────────
  * `frm203002.cs:1070-1086` — `btnRoentgen_Click` switch theo `ModCommon.pInpOpt[28]`
@@ -19,12 +23,28 @@
  * `frm203001.cs:998` — `pstrPatId = formParam.PatNo.ToString()`, tức 患者番号 TRẦN,
  *   KHÔNG pad 0 → TC-REQ-2.
  *
+ * ── FACT từ WinForm — nửa 画像 ───────────────────────────────────────────────
+ * `frm203002.Designer.cs:2366,2368` — `btnGazou.Text = "画像(&P)"`, `Visible = false`.
+ *   Nhãn có `(&P)` nghĩa là nút CÓ access key Alt+P, y như &R/&H/&J/&K/&S.
+ * `frm203002.cs:3103-3145` — `btnGazou.Visible = true` CHỈ khi `pInpOpt[28]` ∈ {1,3,4};
+ *   5/6/12/15 dựng btnRoentgen thay vào chỗ đó, mã khác ẩn cả hai.
+ * `frm203002.cs:1096-1102` — `btnGazou_Click` còn kiểm lại `btnGazou.Visible` rồi mới
+ *   `formControl.showDialog(ID203024)`.
+ * ⇒ WinForm phân giải access key trên control ĐANG HIỆN, nên Alt+P phải CHẾT khi
+ *   レントゲン đang chiếm chỗ (TC-GAZOU-2) hoặc khi không có agent (TC-SHOW-3).
+ *
  * ── Phía web ────────────────────────────────────────────────────────────────
  * `category-tabs.tsx` — 画像 và レントゲン DÙNG CHUNG một chỗ trên thanh công cụ,
  *   loại trừ nhau: PIC_LINK_MODES_SHOW_GAZOU {1,3,4} → 画像(&P);
  *   PIC_LINK_MODES_SHOW_ROENTGEN {5,6,12,15} → レントゲン; mã khác → ẩn CẢ HAI.
  *   Trong 4 mã hiện レントゲン chỉ PIC_LINK_MODES_LAUNCH_EXE {12,15} gọi agent;
  *   5 và 6 vẫn là 開発中 vì hai cơ chế đó chưa port.
+ * `category-tabs.tsx` — bảng `actionsRef` gom access key và bắt theo `e.code`
+ *   (macOS gõ Alt+P ra `π` chứ không ra `p`, đọc `e.key` là chết mnemonic).
+ *   `KeyP` chỉ được ĐĂNG KÝ khi `showGazou` — đúng luật "control ẩn thì access key
+ *   không tồn tại" ở trên. Trước bản vá `fix/inp-gazou-alt-p-mnemonic` thì bảng này
+ *   chỉ có 5/6 phím (&R &H &J &K &S), nhãn vẫn in `(&P)` mà bấm không ăn.
+ * `treatment-entry-detail.tsx:5776,6054` — `onImageClick` → `<ImageDialog>`.
  * `treatment-entry-detail.tsx handleRoentgen` → `lib/agent-xray.ts`
  *   → `POST /v1/xray/launch { patientId }` → 200 `{ reused }` là xong.
  * Agent `XrayEndpoints.cs` tự đọc `imgEditSoft` từ settings của MÁY nó và tự dựng
@@ -95,6 +115,17 @@ const PIC_LINK = {
 const BTN_ROENTGEN = 'レントゲン'
 const BTN_GAZOU = '画像(&P)'
 
+/** Mnemonic của btnGazou — web bắt theo `e.code` nên Playwright gửi 'Alt+p' là đúng. */
+const ALT_GAZOU = 'Alt+p'
+
+/**
+ * Nhận diện hộp thoại 画像 bằng nhãn TRONG THÂN, không bằng tiêu đề: title là
+ * 「画 像」 giãn chữ nên không match được (GUIDELINE Rule 13.1), và chuỗi 「画像」
+ * còn nằm ở cả radio 取込対象 lẫn tab bar của chính hộp thoại đó.
+ * `image-dialog.tsx` — 取込対象 là nhãn cố định của khối đầu tiên.
+ */
+const GAZOU_DIALOG_MARK = '取込対象'
+
 /** Tiêu đề hộp thoại lỗi — `agent-xray.ts` XRAY_LAUNCH_DIALOG_TITLE. */
 const DIALOG_TITLE = 'レントゲンソフト連携'
 /** `notify-under-development.ts`. */
@@ -120,6 +151,12 @@ interface XrayLaunchBody {
     [key: string]: unknown
 }
 
+/**
+ * Chờ sau khi gõ một phím LẼ RA không có tác dụng: không có gì để `expect` chờ đợi,
+ * nên phải để trôi qua đủ lâu rồi mới khẳng định "không có gì mở ra".
+ */
+const KEY_SETTLE_MS = 1500
+
 /** Chờ màn 診療入力 ở lần nạp ĐẦU (Vite dev server phải transform cả module graph). */
 const SCREEN_LOAD_TIMEOUT_MS = 60_000
 /** Các lần nạp lại — module graph đã ấm. */
@@ -127,7 +164,7 @@ const SCREEN_RELOAD_TIMEOUT_MS = 30_000
 
 test.describe.configure({ mode: 'serial', timeout: 300_000 })
 
-test.describe('診療入力 — レントゲンボタン（画像編集ソフト起動）', () => {
+test.describe('診療入力 — 画像 / レントゲン ボタン（PicLink スロット）', () => {
     let page: Page
     let step: () => Promise<void>
 
@@ -183,6 +220,12 @@ test.describe('診療入力 — レントゲンボタン（画像編集ソフト
 
     /** Nút レントゲン trên thanh công cụ. */
     const roentgenBtn = () => page.getByRole('button', { name: BTN_ROENTGEN })
+
+    /** Nút 画像(&P) — nửa còn lại của cùng một chỗ. */
+    const gazouBtn = () => page.getByRole('button', { name: BTN_GAZOU })
+
+    /** Hộp thoại 画像取込 (frm203024) — `DraggableDialog` nên là role=dialog. */
+    const gazouDialog = () => page.getByRole('dialog').filter({ hasText: GAZOU_DIALOG_MARK })
 
     /** Hộp thoại cảnh báo, nhận diện bằng tiêu đề (overlay cũng là role=alertdialog). */
     const alertWithTitle = (title: string) =>
@@ -284,7 +327,7 @@ test.describe('診療入力 — レントゲンボタン（画像編集ソフト
     test('TC-SHOW-1 — 連携先 12 (NP2_NeoLink): hiện レントゲン, KHÔNG hiện 画像', async () => {
         await openWithPicLink(PIC_LINK.np2NeoLink, BTN_ROENTGEN)
         await expect(
-            page.getByRole('button', { name: BTN_GAZOU }),
+            gazouBtn(),
             'TC-SHOW-1 FAIL: 画像 và レントゲン dùng chung một chỗ, không được hiện cùng lúc',
         ).toHaveCount(0)
         await step()
@@ -299,10 +342,19 @@ test.describe('診療入力 — レントゲンボタン（画像編集ソフト
         await step()
     })
 
-    test('TC-SHOW-3 — 連携先 0 (連携しない): ẩn CẢ HAI nút', async () => {
+    test('TC-SHOW-3 — 連携先 0 (連携しない): ẩn CẢ HAI nút, và Alt+P cũng câm', async () => {
         await openWithPicLink(PIC_LINK.none, null)
         await expect(roentgenBtn()).toHaveCount(0)
-        await expect(page.getByRole('button', { name: BTN_GAZOU })).toHaveCount(0)
+        await expect(gazouBtn()).toHaveCount(0)
+
+        // Gộp vào đây thay vì một testcase riêng: cùng một lần nạp màn, và mệnh đề
+        // "không có nút thì không có access key" chính là hệ quả của hai dòng trên.
+        await page.keyboard.press(ALT_GAZOU)
+        await page.waitForTimeout(KEY_SETTLE_MS)
+        await expect(
+            gazouDialog(),
+            'TC-SHOW-3 FAIL: máy không có agent / 連携しない mà Alt+P vẫn mở được hộp thoại',
+        ).toHaveCount(0)
         await step()
     })
 
@@ -477,6 +529,72 @@ test.describe('診療入力 — レントゲンボタン（画像編集ソフト
         ).toContainText(LAUNCH_ERROR_DETAIL)
 
         await closeDialogs(page)
+        await step()
+    })
+
+    // ═══ Nửa 画像 — nút và mnemonic Alt+P ════════════════════════════════════
+    //
+    // CHỈ giữ lại ở tầng browser những gì jsdom không chứng minh được: tiêu điểm
+    // THẬT, và dây nối cấu hình agent → nút nào chiếm chỗ. Các mệnh đề thuần
+    // listener (P trần không ăn, modal chặn phím, 全画面サブ画面 chặn phím, tập mã
+    // {1,3,4} vs {5,6,12,15}) nằm ở
+    //   apps/web-tenant/src/features/treatments/__tests__/category-tabs-gazou-access-key.test.tsx
+    //   apps/web-tenant/src/features/treatments/lib/__tests__/pic-link-slot.test.ts
+    // — mỗi lần nạp lại màn 診療入力 ở đây tốn tới 30s, không đáng để lặp lại chúng.
+    //
+    // ⚠️ Trước đây fkey-bar-common.spec.ts ghi 「KHÔNG có đường mở」 cho hộp thoại
+    // 画像. Ghi chú đó đã lạc hậu: `CategoryTabs` tự đọc query ['agent','config'],
+    // nên chỉ cần stub GET /v1/config trả linkCode 1 là nút hiện ra thật — đúng
+    // những gì `openWithPicLink()` đang làm sẵn ở file này.
+
+    test('TC-GAZOU-1 — 連携先 1: Alt+P và nút 画像(&P) cùng mở hộp thoại 画像取込', async () => {
+        await openWithPicLink(PIC_LINK.gazou, BTN_GAZOU)
+
+        // Gõ phím TRƯỚC khi click vào bất cứ đâu: ngay sau khi màn nạp xong, tiêu
+        // điểm nằm ở ô <input> của 日計フッター. Access key của WinForm phân giải ở
+        // TẦNG FORM nên vẫn phải ăn dù con trỏ đang trong ô nhập — chính là lý do
+        // category-tabs truyền `allowAccessKeyInTextEntry: true` cho isWindowKeyBlocked,
+        // và là thứ DUY NHẤT ở nhóm này mà unit test không kiểm được.
+        await page.keyboard.press(ALT_GAZOU)
+        await expect(
+            gazouDialog(),
+            'TC-GAZOU-1 FAIL: Alt+P không mở 画像取込. Nhãn nút in 「画像(&P)」 nên access ' +
+                'key PHẢI có (frm203002.Designer.cs:2366) — kiểm `KeyP` trong actionsRef của ' +
+                'category-tabs.tsx, và nhớ bắt theo e.code chứ không phải e.key.',
+        ).toBeVisible({ timeout: 20000 })
+        await closeDialogs(page)
+
+        // Nút và mnemonic là HAI đường code riêng (onClick vs listener keydown trên
+        // window) — kiểm cả hai trên CÙNG một lần nạp màn.
+        await gazouBtn().click()
+        await expect(
+            gazouDialog(),
+            'TC-GAZOU-1 FAIL: nút 画像 không mở hộp thoại — WinForm btnGazou_Click gọi ' +
+                'formControl.showDialog(ID203024) (frm203002.cs:1096-1102)',
+        ).toBeVisible({ timeout: 20000 })
+
+        await closeDialogs(page)
+        await step()
+    })
+
+    test('TC-GAZOU-2 — 連携先 12: Alt+P PHẢI câm (レントゲン đang chiếm chỗ)', async () => {
+        await openWithPicLink(PIC_LINK.np2NeoLink, BTN_ROENTGEN)
+        launchCalls = 0
+
+        await page.keyboard.press(ALT_GAZOU)
+        await page.waitForTimeout(KEY_SETTLE_MS)
+
+        await expect(
+            gazouDialog(),
+            'TC-GAZOU-2 FAIL: Alt+P mở 画像取込 trong khi nút 画像 KHÔNG hiện. WinForm chỉ ' +
+                'phân giải access key trên control đang hiện, và btnGazou_Click còn kiểm lại ' +
+                'btnGazou.Visible (frm203002.cs:1098) — mnemonic phải gắn với showGazou.',
+        ).toHaveCount(0)
+        expect(
+            launchCalls,
+            'TC-GAZOU-2 FAIL: Alt+P chạy nhầm sang đường レントゲン — hai nửa dùng chung chỗ ' +
+                'nhưng KHÔNG dùng chung phím; btnRoentgen vốn không có access key nào.',
+        ).toBe(0)
         await step()
     })
 

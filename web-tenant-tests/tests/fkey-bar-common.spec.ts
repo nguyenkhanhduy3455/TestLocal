@@ -168,8 +168,11 @@ const SKIPPED: ReadonlyArray<{ name: string; file: string; note: string }> = [
         name: '画像',
         file: 'image-dialog.tsx',
         note:
-            'KHÔNG có đường mở: nút 画像 chỉ render khi picLinkMode ∈ {1,3,4} nhưng ' +
-            'treatment-entry-detail.tsx không hề truyền prop picLinkMode cho <CategoryTabs>',
+            'ĐÃ có đường mở (ghi chú cũ 「không có」 nay lạc hậu): CategoryTabs tự đọc query ' +
+            "['agent','config'], nên stub GET /v1/config trả linkCode ∈ {1,3,4} là nút 画像(&P) " +
+            'hiện ra — treatment-xray-launch.spec.ts (TC-GAZOU-*) mở nó cả bằng nút lẫn Alt+P. ' +
+            'Không audit ở file này vì spec này không stub agent; đọc source thì image-dialog.tsx ' +
+            'đã dùng <FKeyBar> (chỉ F10 戻る)',
     },
 ]
 
