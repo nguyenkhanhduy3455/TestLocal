@@ -82,9 +82,24 @@ Chín câu hỏi của probe, và câu trả lời:
 | Dòng 合計 | `合計   36名　（  86件）`, 医療保険点数 89.337, 合計金額 241.820 |
 | `cboEra` | `「」/ 明治 / 大正 / 昭和 / 平成 / 令和` (mục đầu là dòng trống) |
 
+Lượt chạy xanh của `PatientVisitListTests` (11/11 passed):
+
+```
+検索 4.1s · lưới 88 phần tử dòng · CSV 88 dòng (86 dòng khám + 1 dòng 合計)
+TC-RCP-3 : 28 bệnh nhân có nhiều ngày khám, tất cả nhất quán
+TC-BAND-1: 36 dòng mở nhóm có 種別, 50 dòng lặp lại được bỏ trắng đúng
+TC-DB-1  : đối chiếu 86 dòng; bỏ qua 0
+TC-ROW-1 : 86/86 cặp (bệnh nhân × ngày) lên được màn hình
+```
+
 Đối chiếu với payload thật của bản web cùng ngày (`GET /tenant/settlement/visit-list?sinryoYm=200601`):
-**86/86 dòng, cùng thứ tự, 0 lệch** trên cả 10 trường. Một điểm lệch duy nhất là nhãn
-dòng 合計 — xem §6.
+**86/86 dòng, cùng thứ tự, 0 lệch** trên cả 10 trường; con số của TC-BAND-1 (36/50) và
+TC-RCP-3 (28) **trùng khít** hai bên. Một điểm lệch duy nhất trong dữ liệu là nhãn dòng
+合計 — xem §6.
+
+> `TC_DB_1` bên này đối chiếu được **cả 86 dòng**, trong khi TC-DB-1 bên Playwright chỉ
+> đối chiếu được 34 (bỏ 52 vì bệnh nhân có nhiều 枝番). Lý do: WinForm lấy 枝番 từ chính
+> dòng `trntrn` nên tra được đúng bản 保険, còn payload của web không trả 枝番.
 
 ## 6. Bốn điểm LỆCH so với bản web
 
@@ -146,6 +161,15 @@ hình — chờ đủ 60 giây vẫn báo “không có hộp thoại nào đang
 `Tests/GuideSidePanel` đã phải dựng vì lý do tương tự, nay nâng lên `Infrastructure/`.
 Bonus: `Dialogs.Open` quét toàn desktop qua UIA nên gọi trong vòng poll là tự chuốc lấy
 treo (đã trả giá 2026-08-27, hơn 20 phút), còn `EnumWindows` chạy trong vài mili-giây.
+
+Và lỗi thứ ba, ngay sau đó: **hộp thoại `名前を付けて保存` cũng là lớp `#32770`** (Win32
+đọc chữ trong nó ra thành `Namespace Tree Control`). Nên mọi phép đếm kiểu “có hộp thoại
+rồi hết hộp thoại” đều **thoả ngay lúc nó đóng**, tức trước khi app kịp ghi xong file —
+và `ExportCsv` báo “không thấy file CSV” trong khi app vẫn đang ghi bình thường.
+
+Mốc đúng là **một hộp thoại mà ta thật sự bấm được nút `OK`**: hộp của shell có
+`保存`/`キャンセル` chứ không có `OK`, nên `MsgBoxWin32.ClickButton` trả `false` — phân
+biệt được hộp của app với hộp của shell mà không phải đoán tiêu đề hay HWND.
 
 ### 7.3 Ô bị banding đọc ra chuỗi `(null)`, không phải rỗng
 
