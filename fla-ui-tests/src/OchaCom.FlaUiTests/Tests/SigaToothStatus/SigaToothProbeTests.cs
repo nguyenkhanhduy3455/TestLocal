@@ -20,6 +20,8 @@ namespace OchaCom.FlaUiTests.Tests.SigaToothStatus;
 ///   .\run-change-tooth-status.ps1 -Diagnostics -Case Tc1a   # 乳歯 179/0
 ///   .\run-change-tooth-status.ps1 -Diagnostics -Case Tc1b   # ＥＭＲ 122/3 → KON
 ///   .\run-change-tooth-status.ps1 -Diagnostics -Case Tc1c   # 185 歯根嚢胞
+///   .\run-change-tooth-status.ps1 -Diagnostics -Case Tc1d   # DelExtRec lấy 部位 ở đâu
+///   .\run-change-tooth-status.ps1 -Diagnostics -Case Tc1e   # ＥＭＲ trên RĂNG SỮA
 ///   .\run-change-tooth-status.ps1 -Diagnostics -Case Tc2    # Ｐ変更 + dirty gate
 ///   .\run-change-tooth-status.ps1 -Diagnostics -Case Tc3    # F9 登録
 /// </code>
@@ -502,6 +504,156 @@ public sealed class SigaToothProbeTests : UiTestBase
         });
 
         Kq("1c", "HẾT Tc1c.");
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Tc1d — DelExtRec lấy 部位 Ở ĐÂU: dòng bị xoá, hay ModCommon.pbui?
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Đo điểm nghi lệch nặng nhất còn lại với bản web.
+    ///
+    /// <para><b>Hai nhánh cạnh nhau của <c>DelExtRec</c> đọc HAI NGUỒN KHÁC NHAU</b>
+    /// (frm203002.cs:6135-6180):</para>
+    /// <code>
+    ///   永久歯: if (arrBui[i] > 0 &amp;&amp; arrBui[i] &lt; 10)          ← 部位 của DÒNG BỊ XOÁ
+    ///   乳歯  : else if (ModCommon.pbui[i] > 10 &amp;&amp; &lt; 20)      ← 部位 TOÀN CỤC của phiên
+    /// </code>
+    /// <c>pbui</c> chỉ được nạp lại khi NHẬP một 処置 (<c>getGridBuiDisInf</c>, gọi từ
+    /// modMain.cs:286/605), KHÔNG phải khi dời con trỏ. Nên nếu người dùng nhập 抜歯 lên
+    /// răng sữa A, rồi nhập 抜歯 lên răng sữa B, rồi quay lại xoá dòng A thì:
+    /// <list type="bullet">
+    ///   <item>WinForm (theo source) trả <b>răng B</b> về 健全歯 — vì pbui đang giữ B;</item>
+    ///   <item>bản web trả <b>răng A</b> — nó dùng <c>governingBuiOf(dòng bị xoá)</c>
+    ///     (treatment-entry-detail.tsx:3152-3159).</item>
+    /// </list>
+    ///
+    /// <para>Mọi testcase hiện có đều xoá ĐÚNG dòng vừa nhập, nên hai nguồn trùng nhau và
+    /// phép đo không tách được. Probe này cố ý tách chúng ra.</para>
+    /// </summary>
+    [Test]
+    [Description("Probe — DelExtRec: nhánh 乳歯 đọc dòng bị xoá hay ModCommon.pbui?")]
+    public void Tc1d_Probe_DelExtRecBuiSource()
+    {
+        using var trace = TestTrace.Begin();
+        _trace = trace;
+        trace.Shot("00-mo-man");
+
+        // Hai răng sữa KHÁC nhau, cùng vùng 右上 để cả hai đều gõ được bằng A..E.
+        const int slotA = 6; // 右上Ｂ (idx 2) → sn4
+        const int slotB = 5; // 右上Ｃ (idx 3) → sn3
+        var colA = SnCol(slotA);
+        var colB = SnCol(slotB);
+
+        Kq("16", $"   răng A = ô {slotA} ({ToothSelectDialog.DescribeSlot(slotA)}) → sn{colA}");
+        Kq("16", $"   răng B = ô {slotB} ({ToothSelectDialog.DescribeSlot(slotB)}) → sn{colB}");
+
+        var seat = PrepareSeat("16", trace);
+        if (seat is null) { Kq("16", "   ⇒ DỪNG: không dựng được chỗ đứng."); return; }
+
+        Try("16", $"nhập 抜歯 răng sữa A (ô {slotA})", () =>
+        {
+            var set = _flow.SetBuiOnRow(seat, slotA, milk: true, disCd: null, trace: trace);
+            Kq("16", "   đặt 部位 A: " + set);
+            Kq("16", "   nhập 179/0: " + _flow.EnterTreatmentAtCursor(SigaToothFlow.ExtractionTrtCd,
+                                                                     trtSb: 0, trace: trace));
+            Siga("16", $"sau 抜歯 A (chờ sn{colA} = 9)");
+        });
+
+        Try("17", $"nhập 抜歯 răng sữa B (ô {slotB}) — pbui từ giờ giữ B, KHÔNG còn A", () =>
+        {
+            var last = _flow.InputRow();
+            if (last is null) { Kq("17", "   không còn dòng nào để đứng"); return; }
+            var seat2 = _flow.InsertBlankRow(last, trace) ?? last;
+
+            var set = _flow.SetBuiOnRow(seat2, slotB, milk: true, disCd: null, trace: trace);
+            Kq("17", "   đặt 部位 B: " + set);
+            Kq("17", "   nhập 179/0: " + _flow.EnterTreatmentAtCursor(SigaToothFlow.ExtractionTrtCd,
+                                                                     trtSb: 0, trace: trace));
+            Siga("17", $"sau 抜歯 B (chờ sn{colA} = 9 VÀ sn{colB} = 9)");
+        });
+
+        var before = _db?.ReadSiga(PatNo);
+        Try("18", "xoá dòng 抜歯 ĐẦU TIÊN (= răng A) trong khi pbui đang giữ B", () =>
+        {
+            var rowA = _flow.FirstRowMatching("抜歯");
+            Kq("18", "   dòng 抜歯 đầu tiên: " + (rowA?.ToString() ?? "KHÔNG THẤY"));
+            if (rowA is null)
+            {
+                foreach (var l in _flow.DescribeGrid(limit: 30)) Kq("18", "     " + l);
+                return;
+            }
+
+            Kq("18", "   " + _flow.DeleteRow(rowA, trace));
+            var s = Siga("18", "sau khi xoá dòng A", before);
+            if (s is null) return;
+
+            Kq("18", $"   ⇒ sn{colA} (răng A, dòng BỊ XOÁ) = {s.SnCol(colA)}");
+            Kq("18", $"   ⇒ sn{colB} (răng B, pbui đang giữ)  = {s.SnCol(colB)}");
+            Kq("18", "   ĐỌC KẾT QUẢ:");
+            Kq("18", $"     · sn{colB} = 5 và sn{colA} = 9  ⇒ WinForm dùng ModCommon.pbui — LỆCH với web.");
+            Kq("18", $"     · sn{colA} = 5 và sn{colB} = 9  ⇒ WinForm dùng 部位 của dòng bị xoá — KHỚP web.");
+            Kq("18", "     · cả hai = 5                      ⇒ nó ghi cả hai nguồn.");
+        });
+
+        Kq("1d", "HẾT Tc1d.");
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Tc1e — ＥＭＲ(４根) trên RĂNG SỮA: nhánh nhét NKon vào câu update Siga
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// <c>SigaChg</c> case 122 nhánh 乳歯 (frm203016.cs:1153-1161) gọi
+    /// <c>makeSql("NKon", …, ref <b>strSiga</b>)</c> — nhét tên cột của bảng <b>KON</b> vào
+    /// câu <c>update <b>Siga</b></c>. Nhánh 永久歯 ngay trên thì đúng (<c>ref strKon</c>),
+    /// và nhánh save-time (modSave.cs:800/804) cũng đúng.
+    ///
+    /// <para>Bảng <c>SIGA</c> không có cột <c>NKon*</c> ⇒ câu SQL đó phải hỏng. Probe này
+    /// đo xem app THẬT phản ứng thế nào: bung lỗi, im lặng nuốt, hay chết hẳn — và
+    /// <c>KON</c> có được ghi gì không. Đó là thứ quyết định bản web nên làm gì: chép y
+    /// một cái bug SQL thì vô lý, nhưng phải biết chính xác WinForm để lại trạng thái nào.</para>
+    /// </summary>
+    [Test]
+    [Description("Probe — 122/3 trên RĂNG SỮA: nhánh NKon-vào-update-Siga của WinForm")]
+    public void Tc1e_Probe_EmrOnMilkTooth()
+    {
+        using var trace = TestTrace.Begin();
+        _trace = trace;
+        trace.Shot("00-mo-man");
+
+        var seat = PrepareSeat("19", trace);
+        if (seat is null) { Kq("19", "   ⇒ DỪNG: không dựng được chỗ đứng."); return; }
+
+        var beforeSiga = _db?.ReadSiga(PatNo);
+        var beforeKon = _db?.ReadKon(PatNo);
+
+        Try("19", $"ＥＭＲ(４根) 122/3 trên ô {MilkSlot} ({ToothSelectDialog.DescribeSlot(MilkSlot)}) — RĂNG SỮA", () =>
+        {
+            var set = _flow.SetBuiOnRow(seat, MilkSlot, milk: true, disCd: null, trace: trace);
+            Kq("19", "   đặt 部位: " + set);
+
+            var enter = _flow.EnterTreatmentAtCursor(SigaToothFlow.EmrTrtCd,
+                                                     SigaToothFlow.EmrFourRootSb, trace: trace);
+            Kq("19", "   nhập 122/3: " + enter);
+            Kq("19", $"   hộp thoại/lỗi gặp: [{string.Join(" / ", enter.Dialogs)}]");
+            Kq("19", "   hộp thoại đang mở ngay lúc này: " + _flow.DescribeDialogs());
+            trace.Shot("sau-emr-rang-sua");
+
+            Kq("19", $"   màn 診療入力 còn sống? {TreatmentScreenAlive()}");
+
+            Siga("19", "SIGA sau 122/3 trên răng sữa", beforeSiga);
+            var k = Kon("19", "KON sau 122/3 trên răng sữa", beforeKon);
+            var col = SnCol(MilkSlot);
+            Kq("19", k is null
+                ? "   ⇒ không đọc được KON"
+                : $"   ⇒ nkon{col} = {KonSnapshot.S(k.NkonCol(col))} — theo modSave.cs:800 thì save-time " +
+                  "ghi 4; còn nhánh LÚC NHẬP thì đang gửi 「NKon…」 vào câu update Siga.");
+            Kq("19", "   ĐỌC KẾT QUẢ: KON không đổi + SIGA không đổi ⇒ câu SQL hỏng và bị nuốt; " +
+                     "có hộp lỗi ⇒ app phơi lỗi ra người dùng; app chết ⇒ nặng nhất.");
+        });
+
+        Kq("1e", "HẾT Tc1e.");
     }
 
     // ═════════════════════════════════════════════════════════════════════════

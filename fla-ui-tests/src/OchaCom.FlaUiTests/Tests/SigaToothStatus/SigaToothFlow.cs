@@ -338,6 +338,17 @@ public sealed class SigaToothFlow
     public RegiRow? LastRowMatching(params string[] anyOf) => _grid.LastRowMatching(anyOf);
 
     /// <summary>
+    /// Dòng ĐẦU TIÊN có 療法・処置 chứa một trong các chuỗi; null nếu không có.
+    ///
+    /// <para>Cần cho phép đo 「<c>DelExtRec</c> lấy 部位 ở đâu」: phải xoá dòng 抜歯 NHẬP
+    /// TRƯỚC trong khi <c>ModCommon.pbui</c> đang giữ 部位 của dòng nhập SAU. Dùng
+    /// <see cref="LastRowMatching"/> ở đó là xoá đúng dòng mà pbui đang giữ, và hai nguồn
+    /// trùng nhau ⇒ phép đo không phân biệt được gì.</para>
+    /// </summary>
+    public RegiRow? FirstRowMatching(params string[] anyOf) =>
+        _grid.Snapshot().FirstOrDefault(r => anyOf.Any(w => Txt.Has(r.Ryo, w)));
+
+    /// <summary>
     /// 部位病名行 CUỐI CÙNG trên lưới — nhận ra bằng ô 点 mang 「-」.
     ///
     /// <para>Đây là dòng mà <c>frmDis_Let_Data</c> vừa ghi 部位/病名 vào, và 処置 nhập ngay
