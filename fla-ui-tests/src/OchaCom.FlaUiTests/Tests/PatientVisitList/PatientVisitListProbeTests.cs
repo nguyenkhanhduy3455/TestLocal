@@ -252,7 +252,7 @@ public sealed class PatientVisitListProbeTests : UiTestBase
         // Chạy lẻ được: bám vào app đang mở sẵn ở frm204008 (app.attachIfRunning) thay vì
         // 検索 lại — một lượt 検索 tốn hàng phút và wrapper cắt ở 15 phút.
         EnsureMonth();
-        if (!EnsureScreen()) { Log("=== KQ-7 === BỎ QUA: chưa mở được màn hình"); return; }
+        if (!EnsureSearched()) { Log("=== KQ-7 === BỎ QUA: chưa có lưới có dữ liệu"); return; }
 
         IReadOnlyList<string> lines;
         var path = Path.Combine(ArtifactDir(), $"visit-list-{_ym}.csv");
@@ -312,7 +312,7 @@ public sealed class PatientVisitListProbeTests : UiTestBase
     [Test, Order(4)]
     public void Tc0d_BamTieuDeCotCoSortKhong()
     {
-        if (!EnsureScreen()) { Log("=== KQ-9 === BỎ QUA: chưa mở được màn hình"); return; }
+        if (!EnsureSearched()) { Log("=== KQ-9 === BỎ QUA: chưa có lưới có dữ liệu"); return; }
 
         try
         {
@@ -362,6 +362,38 @@ public sealed class PatientVisitListProbeTests : UiTestBase
         catch (Exception e)
         {
             Log("KHÔNG mở/bám được frm204008: " + e.Message);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Bảo đảm lưới ĐANG CÓ dữ liệu.
+    ///
+    /// <para>Cần vì <c>runner-task.ps1</c> giết <c>MENU.exe</c> trước MỖI lượt chạy: chạy
+    /// lẻ <c>-Case Tc0d</c> thì app mở mới tinh và lưới rỗng, nên 「bấm tiêu đề không
+    /// sort」 sẽ đúng một cách vô nghĩa. Lưới đã có sẵn dữ liệu (bám vào app đang mở) thì
+    /// hàm này không làm gì — 検索 lại tốn hàng phút.</para>
+    /// </summary>
+    private bool EnsureSearched()
+    {
+        if (!EnsureScreen()) return false;
+        try
+        {
+            // 1 phần tử = chỉ có dòng tiêu đề; 0 = chưa có cột nào.
+            if (_screen!.AllRows(3).Count > 2) return true;
+
+            EnsureMonth();
+            if (_ym.Length == 0) { Log("chưa chọn được tháng nên không 検索 được"); return false; }
+
+            _screen.SetSinryoYm(_ym);
+            var run = _screen.RunSearch(TimeSpan.FromMinutes(Settings.VisitList.SearchTimeoutMinutes));
+            Log($"lưới đang rỗng nên tự 検索 {_ym}: xong sau {run.Elapsed.TotalSeconds:0.0}s, " +
+                $"{run.Dialogs.Count} hộp thoại");
+            return true;
+        }
+        catch (Exception e)
+        {
+            Log("KHÔNG 検索 được: " + e.Message);
             return false;
         }
     }
