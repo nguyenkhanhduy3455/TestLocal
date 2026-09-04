@@ -553,40 +553,64 @@ public sealed class VisitListScreen
                      .FirstOrDefault(e => Uia.ControlTypeOf(e) == FlaUI.Core.Definitions.ControlType.Edit),
             "ô tên file của 「名前を付けて保存」");
 
+        // HWND của chính hộp thoại lưu — cần để PHÂN BIỆT nó với hộp thoại I00005 ở dưới.
+        var saveHwnd = (IntPtr)save.Properties.NativeWindowHandle;
+
         Uia.SetText(edit, path);
         Waits.Step();
         Uia.SendKey(Vk.Return);
 
-        // ⚠️ CHỜ THEO HỘP THOẠI, KHÔNG THEO FILE.
+        // ⚠️ HAI NHỊP CHỜ, KHÔNG PHẢI MỘT — và cả hai đều KHÔNG chờ theo file.
         //
         // 「CSV出力が完了しました。」 (I00005) bung SAU khi StreamWriter đóng file
-        // (frm204008.cs:317). Mà File.Exists thành true NGAY LÚC StreamWriter TẠO file —
-        // sớm hơn hộp thoại. Chờ theo file rồi dẹp hộp thoại đúng một lần là dẹp HỤT, và
-        // cái hộp còn lại là MODAL: mọi click sau đó rơi vào nó chứ không vào lưới.
+        // (frm204008.cs:317), còn File.Exists thành true NGAY LÚC file được TẠO. Chờ theo
+        // file thì thoát sớm, hộp thoại ở lại và MODAL: mọi thao tác sau đó rơi vào nó.
+        // Đã trả giá 2026-09-04 — Tc0d kết luận 「bấm tiêu đề cột không sort」 cho cả ba cột
+        // trong khi ba cú click đều rơi vào hộp thoại đang che lưới; chỉ ảnh chụp mới lộ ra.
         //
-        // Đã trả giá 2026-09-04: Tc0d kết luận 「bấm tiêu đề cột không sort」 trong khi
-        // thật ra ba cú click đều rơi vào hộp thoại đang che lưới — chỉ ảnh chụp mới lộ ra
-        // (PROBE-GUIDELINE mục 1).
+        // Lần sửa đầu chờ 「có hộp thoại nào đó rồi hết hộp thoại」 — vẫn sai, vì CHÍNH hộp
+        // thoại lưu cũng là #32770 (Win32 đọc ra 「Namespace Tree Control」). Nó đóng lại là
+        // điều kiện thoả ngay, trước khi app kịp ghi xong. Nên phải tách hai nhịp:
+        //   1. hộp thoại LƯU đóng   ⇒ app bắt đầu ghi
+        //   2. hộp thoại I00005 hiện ⇒ app ghi XONG; đọc rồi bấm OK
+        var saveClosed = Waits.TryUntil(
+            () => MsgBoxWin32.All(_app.ProcessId).All(b => b.Hwnd != saveHwnd),
+            TimeSpan.FromSeconds(30));
+
+        if (!saveClosed)
+            throw new TimeoutException(
+                "Hộp thoại 「名前を付けて保存」 không đóng sau khi gõ đường dẫn + Enter. " +
+                DescribeDialogs(_app) +
+                " Kiểm xem ô tên file có nhận được chuỗi không (đường dẫn có ký tự lạ?).");
+
         var seen = new List<string>();
-        var closed = Waits.TryUntil(
+        var done = Waits.TryUntil(
             () =>
             {
-                seen.AddRange(DrainDialogs(_app));
+                foreach (var box in MsgBoxWin32.All(_app.ProcessId))
+                {
+                    if (box.Hwnd == saveHwnd) continue;
+                    seen.Add(box.Text.Length > 0 ? box.Text : box.Title);
+                    MsgBoxWin32.ClickButton(box.Hwnd, "OK", "はい", "Yes");
+                }
                 return seen.Count > 0 && MsgBoxWin32.All(_app.ProcessId).Count == 0;
             },
             TimeSpan.FromSeconds(60));
 
         foreach (var text in seen) trace?.Note("hộp thoại sau CSV: " + OneLine(text));
 
-        if (!closed)
+        if (!done)
             throw new TimeoutException(
-                "Không thấy (hoặc không dẹp được) hộp thoại 「CSV出力が完了しました。」 sau khi bấm 保存. " +
+                "Không thấy (hoặc không dẹp được) hộp thoại 「CSV出力が完了しました。」 sau khi lưu. " +
                 DescribeDialogs(_app) +
                 " Còn hộp thoại nào đang mở thì mọi thao tác sau đó rơi vào nó, không vào màn hình.");
 
         if (!File.Exists(path))
             throw new FileNotFoundException(
-                $"App báo xuất CSV xong mà không thấy file 「{path}」.", path);
+                $"App đóng hộp thoại rồi mà không thấy file 「{path}」. Câu app vừa nói: " +
+                string.Join(" / ", seen.Select(t => $"「{OneLine(t)}」")) +
+                " — nếu đó là E99999 thì outputCsvFile đã ném (hay gặp nhất: lưới chưa 検索 " +
+                "nên DataSource = null).", path);
 
         return File.ReadAllLines(path, Encoding.GetEncoding(932));
     }
