@@ -385,21 +385,26 @@ public sealed class VisitListScreen
         return new SearchRunResult(clock.Elapsed, dialogs, progressSeen, clock.Elapsed >= budget);
     }
 
-    /// <summary>Đọc rồi bấm OK cho mọi MessageBox đang mở; trả nguyên văn từng câu.</summary>
+    /// <summary>
+    /// Đọc rồi bấm OK cho mọi MessageBox đang mở; trả nguyên văn từng câu.
+    ///
+    /// <para><b>Dùng Win32 thuần (<see cref="MsgBoxWin32"/>), KHÔNG dùng
+    /// <c>Dialogs.Open</c>.</b> Đo được 2026-09-04: <c>Dialogs.Open</c> KHÔNG nhìn thấy
+    /// hộp 「CSV出力が完了しました。」 dù ảnh chụp cho thấy nó đang chắn giữa màn hình —
+    /// cả một lượt probe kết luận sai vì chuyện đó. Và nó còn quét toàn desktop qua UIA
+    /// nên gọi trong vòng poll là tự chuốc lấy treo (đã trả giá 2026-08-27, hơn 20 phút).
+    /// <c>EnumWindows</c> thì chạy trong vài mili-giây và không bao giờ chặn.</para>
+    ///
+    /// <para>Nút bấm theo NGÔN NGỮ WINDOWS chứ không theo ngôn ngữ app: máy test hiện
+    /// 「OK」/「Yes」/「No」 chứ không phải 「はい」/「いいえ」 — nên thử cả hai bộ.</para>
+    /// </summary>
     public static IReadOnlyList<string> DrainDialogs(OchaApp app)
     {
         var texts = new List<string>();
-        foreach (var dialog in Dialogs.Open(app.Automation, app.ProcessId))
+        foreach (var box in MsgBoxWin32.All(app.ProcessId))
         {
-            string text;
-            try { text = Dialogs.TextOf(dialog); }
-            catch { continue; }
-            if (text.Length == 0) continue;
-
-            texts.Add(text);
-            // Nút của MessageBox theo NGÔN NGỮ WINDOWS chứ không theo app (đã đo:
-            // máy test hiện OK/Yes/No chứ không phải はい/いいえ) — thử cả hai.
-            try { Dialogs.ClickButton(dialog, "OK", "はい", "Yes"); } catch { /* tự đóng rồi */ }
+            texts.Add(box.Text.Length > 0 ? box.Text : box.Title);
+            MsgBoxWin32.ClickButton(box.Hwnd, "OK", "はい", "Yes");
         }
         return texts;
     }
@@ -416,13 +421,13 @@ public sealed class VisitListScreen
 
     private static string DescribeDialogs(OchaApp app)
     {
-        var texts = Dialogs.Open(app.Automation, app.ProcessId)
-                           .Select(d => OneLine(Dialogs.TextOf(d)))
-                           .Where(t => t.Length > 0)
-                           .ToList();
+        var texts = MsgBoxWin32.All(app.ProcessId)
+                               .Select(d => OneLine(d.ToString()))
+                               .Where(t => t.Length > 0)
+                               .ToList();
         return texts.Count == 0
             ? "Không có hộp thoại nào đang mở."
-            : "Hộp thoại đang mở: " + string.Join(" / ", texts.Select(t => $"「{t}」")) + ".";
+            : "Hộp thoại đang mở: " + string.Join(" / ", texts) + ".";
     }
 
     public static string OneLine(string s) => s.Replace("\r", " ").Replace("\n", " ").Trim();
@@ -567,7 +572,7 @@ public sealed class VisitListScreen
             () =>
             {
                 seen.AddRange(DrainDialogs(_app));
-                return seen.Any(t => Txt.Has(t, "CSV")) && Dialogs.Open(_app.Automation, _app.ProcessId).Count == 0;
+                return seen.Count > 0 && MsgBoxWin32.All(_app.ProcessId).Count == 0;
             },
             TimeSpan.FromSeconds(60));
 

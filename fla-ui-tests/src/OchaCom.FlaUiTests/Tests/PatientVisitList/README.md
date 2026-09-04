@@ -129,7 +129,7 @@ người dùng gõ — `IsDate` thì không. Gõ 年/月 xong bấm 検索 ngay 
 hoàn toàn nên focus vào đó không đổi trạng thái gì — **đừng** đẩy vào 3 checkbox, chạm
 nhầm là đổi luôn điều kiện tìm kiếm).
 
-### 7.2 Hộp thoại 「CSV出力が完了しました。」 dẹp hụt → mọi click sau đó rơi vào nó
+### 7.2 Hộp thoại 「CSV出力が完了しました。」 — hai lỗi chồng lên nhau
 
 I00005 bung **sau** khi `StreamWriter` đóng file (`frm204008.cs:317`), mà `File.Exists`
 thành true **ngay lúc** file được tạo — sớm hơn hộp thoại. Chờ theo file rồi dẹp một lần
@@ -137,8 +137,15 @@ là dẹp hụt, và cái hộp còn lại là **modal**.
 
 Ngày 2026-09-04 chuyện này làm `Tc0d` báo “bấm tiêu đề cột không sort” cho **cả ba** cột
 — kết luận hoàn toàn sai, ba cú click đều rơi vào hộp thoại đang che lưới. **Chỉ ảnh chụp
-mới lộ ra** (PROBE-GUIDELINE mục 1). Giờ `ExportCsv` chờ theo **hộp thoại**, không theo
-file.
+mới lộ ra** (PROBE-GUIDELINE mục 1).
+
+Sửa xong lần một (chờ theo hộp thoại thay vì theo file) thì lộ ra lỗi thứ hai:
+**`Dialogs.Open` KHÔNG nhìn thấy cái hộp đó**, dù ảnh chụp cho thấy nó đang chắn giữa màn
+hình — chờ đủ 60 giây vẫn báo “không có hộp thoại nào đang mở”. Cả luồng này giờ dùng
+`MsgBoxWin32` (Win32 thuần, `EnumWindows` + `PostMessage`) — cùng lớp mà
+`Tests/GuideSidePanel` đã phải dựng vì lý do tương tự, nay nâng lên `Infrastructure/`.
+Bonus: `Dialogs.Open` quét toàn desktop qua UIA nên gọi trong vòng poll là tự chuốc lấy
+treo (đã trả giá 2026-08-27, hơn 20 phút), còn `EnumWindows` chạy trong vài mili-giây.
 
 ### 7.3 Ô bị banding đọc ra chuỗi `(null)`, không phải rỗng
 

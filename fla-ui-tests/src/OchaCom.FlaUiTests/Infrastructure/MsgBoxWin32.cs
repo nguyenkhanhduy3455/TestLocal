@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace OchaCom.FlaUiTests.Tests.GuideSidePanel;
+namespace OchaCom.FlaUiTests.Infrastructure;
 
 /// <summary>
 /// Đọc và bấm MessageBox của app <b>bằng Win32 thuần</b>, KHÔNG qua UIA.
@@ -9,7 +9,7 @@ namespace OchaCom.FlaUiTests.Tests.GuideSidePanel;
 /// ═══════════════════════════════════════════════════════════════════════════
 /// VÌ SAO PHẢI CÓ
 /// ═══════════════════════════════════════════════════════════════════════════
-/// <see cref="Infrastructure.ModalDialogs"/> đi ba đường, và đường cuối
+/// <see cref="ModalDialogs"/> đi ba đường, và đường cuối
 /// (<c>Dialogs.Open</c>) quét TOÀN BỘ desktop rồi đọc thuộc tính của TỪNG cửa sổ. Khi
 /// không có hộp thoại nào thì hai đường đầu trả rỗng ⇒ lần nào cũng rơi xuống đường quét
 /// desktop. Đo được 2026-08-27: một testcase gọi nó vài lần treo <b>hơn 20 phút</b> và
@@ -25,8 +25,14 @@ namespace OchaCom.FlaUiTests.Tests.GuideSidePanel;
 /// <c>SendMessage</c> chờ cửa sổ đích xử lý xong mới trả về — bấm 「OK」 của một hộp thoại
 /// mà handler phía sau lại mở hộp thoại khác thì lời gọi treo luôn. <c>PostMessage</c>
 /// bỏ thư vào hàng đợi rồi trả về ngay.
+///
+/// <para>Ban đầu là lớp riêng của <c>Tests/GuideSidePanel</c>; nâng lên đây ngày
+/// 2026-09-04 khi luồng thứ hai (<c>Tests/PatientVisitList</c>) cần đúng nó — theo quy
+/// ước ở README mục 8b: dùng chung thì nâng lên <c>Infrastructure/</c>, không chép đôi.
+/// Lần đó <c>Dialogs.Open</c> KHÔNG nhìn thấy hộp 「CSV出力が完了しました。」 dù ảnh chụp
+/// cho thấy nó đang chắn giữa màn hình.</para>
 /// </summary>
-internal static class MsgBoxWin32
+public static class MsgBoxWin32
 {
     /// <summary>Lớp cửa sổ của MessageBox / dialog Win32.</summary>
     public const string DialogClass = "#32770";
