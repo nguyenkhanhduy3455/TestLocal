@@ -378,16 +378,35 @@ export interface SeedTrtRow {
      * người dùng bấm いいえ ở modSave.cs:3452.
      */
     freewd?: string
+    /**
+     * 病名コード 10 ô (`dis_cd_1..dis_cd_10`) — mặc định toàn 0 (dòng không có 病名).
+     *
+     * Cần cho mọi testcase đụng 病検 / Ｐ変更: lưới chỉ coi một dòng là 部位病名行 khi
+     * nó có 部位 KHÁC 0, và `aggregatePGTeeth` (byoken-change.ts) còn đòi
+     * `diseases[0].disCd` đúng bằng Ｐ=103 / Ｇ=104 thì nút Ｐ変更 mới gom được gì.
+     * Ô để 0 thì Ｐ変更 chỉ bung 「当月にＰ／Ｇの病名がありません。」.
+     */
+    disCd?: readonly number[]
+    /**
+     * 病名サブコード 10 ô (`dis_sb_1..dis_sb_10`). Dữ liệu thật lưu Ｐ kèm 枝番
+     * (Ｐ₁ = 103/1), và `aggregatePGTeeth` CỐ Ý không lọc theo 枝番 — truyền hay
+     * không đều gom được, đây chỉ để dựng dữ liệu cho giống thật.
+     */
+    disSb?: readonly number[]
+    /**
+     * Chuỗi 病名 hiển thị (`dsp_dis`) — lưới in thẳng cột 病名 từ cột này, và
+     * `decodeDiseases` (treatment-grid-rows.ts:127-143) tách nó theo khoảng trắng
+     * toàn角 để lấy TÊN cho từng `dis_cd`. Không truyền thì 病名 hiện ra rỗng.
+     */
+    dspDis?: string
 }
 
 // trn_trn có nhiều cột NOT NULL không default (bui_1..32, dis_cd_1..10, dis_sb_1..10)
-// nên INSERT phải liệt kê đủ — sinh danh sách + số 0 tự động cho gọn.
-// bui_* TÁCH RIÊNG vì nay nhận giá trị từ tham số (xem SeedTrtRow.bui).
+// nên INSERT phải liệt kê đủ — sinh danh sách tự động cho gọn.
+// bui_* / dis_cd_* / dis_sb_* TÁCH RIÊNG vì nay nhận giá trị từ tham số.
 const BUI_COLS = Array.from({ length: 32 }, (_, i) => `bui_${i + 1}`)
-const ZERO_COLS = [
-    ...Array.from({ length: 10 }, (_, i) => `dis_cd_${i + 1}`),
-    ...Array.from({ length: 10 }, (_, i) => `dis_sb_${i + 1}`),
-]
+const DIS_CD_COLS = Array.from({ length: 10 }, (_, i) => `dis_cd_${i + 1}`)
+const DIS_SB_COLS = Array.from({ length: 10 }, (_, i) => `dis_sb_${i + 1}`)
 
 /**
  * Seed các 処置行 test cho (patNo, trtDt) trong vùng disp_no >= SEED_DISP_BASE.
@@ -399,11 +418,15 @@ export async function seedTreatmentRows(
     trtDt: string,
     rows: SeedTrtRow[],
 ): Promise<void> {
-    const zeroList = ZERO_COLS.join(', ')
-    const zeroVals = ZERO_COLS.map(() => '0').join(', ')
+    const disList = [...DIS_CD_COLS, ...DIS_SB_COLS].join(', ')
     const buiList = BUI_COLS.join(', ')
-    // bui_1..bui_32 chiếm $10..$41 (9 tham số đầu đã dùng cho khoá + cột 処置).
+    // bui_1..bui_32 chiếm $10..$41 (9 tham số đầu đã dùng cho khoá + cột 処置),
+    // rồi dsp_bui $42, freewd $43, dsp_dis $44, và dis_cd_*/dis_sb_* từ $45.
     const buiVals = BUI_COLS.map((_, k) => `$${10 + k}::int`).join(', ')
+    const DIS_PARAM_BASE = 45
+    const disVals = [...DIS_CD_COLS, ...DIS_SB_COLS]
+        .map((_, k) => `$${DIS_PARAM_BASE + k}::int`)
+        .join(', ')
     await withDb(async (c) => {
         await c.query(
             `DELETE FROM trn_trn WHERE pat_no = $1 AND trt_dt = $2 AND disp_no >= ${SEED_DISP_BASE}`,
@@ -412,15 +435,17 @@ export async function seedTreatmentRows(
         for (let i = 0; i < rows.length; i++) {
             const r = rows[i]!
             const bui = Array.from({ length: 32 }, (_, k) => r.bui?.[k] ?? 0)
+            const disCd = Array.from({ length: 10 }, (_, k) => r.disCd?.[k] ?? 0)
+            const disSb = Array.from({ length: 10 }, (_, k) => r.disSb?.[k] ?? 0)
             await c.query(
                 `INSERT INTO trn_trn (
-                     pat_no, pat_br, insu_cd, trt_dt, disp_no, ${zeroList}, ${buiList},
+                     pat_no, pat_br, insu_cd, trt_dt, disp_no, ${disList}, ${buiList},
                      trt_cd, trt_sb, trt_cnt, trt_pt, isl, price, jihi_flg, dr_no, syosin_flg,
-                     dsp_trt, dsp_bui, freewd
+                     dsp_trt, dsp_bui, freewd, dsp_dis
                  )
-                 SELECT pat_no, pat_br, insu_cd, $2::date, $3, ${zeroVals}, ${buiVals},
+                 SELECT pat_no, pat_br, insu_cd, $2::date, $3, ${disVals}, ${buiVals},
                         $4, $5, $6, $7, 0, $7, $8, 1, 3,
-                        $9::text, $42::text, $43::text
+                        $9::text, $42::text, $43::text, $44::text
                  FROM trn_trn
                  WHERE pat_no = $1 AND disp_no < ${SEED_DISP_BASE}
                  ORDER BY trt_dt DESC
@@ -440,6 +465,9 @@ export async function seedTreatmentRows(
                     r.dspBui ?? '',
                     // freewd cũng NOT NULL DEFAULT '' (TrnTrnConfiguration.cs).
                     r.freewd ?? '',
+                    r.dspDis ?? '',
+                    ...disCd,
+                    ...disSb,
                 ],
             )
         }
