@@ -66,6 +66,7 @@ vượt trần `TimeoutMinutes` của wrapper và làm **treo cả máy Windows*
 | `TC_BAND_2` | TC-BAND-2 | dòng 合計 nằm cuối + đúng công thức |
 | `TC_CSV_1` | — | F4 CSV出力: header + dữ liệu **không** bị banding |
 | `TC_ROW_1` | — | mọi dòng đều có gốc `(trt_dt, pat_br)` trong `trntrn` |
+| `TC_SORT_1` | TC-OPEN-2 (một nửa) | bấm tiêu đề: `患者番号` **không** sort, `氏名` và `レセプト種別` **có** |
 | — | TC-WARN-1 | bản web gom lỗi vào `warnings`; WinForm bung **MessageBox từng dòng** (xem §6) |
 
 ## 5. Số đo thật (WIN-1J9ELM7F15M, 2026-09-04, 診療年月 200601)
@@ -95,16 +96,21 @@ dòng 合計 — xem §6.
    * Unit test `GetPatientVisitListHandlerTests.cs:246` đang chốt **đúng chuỗi sai đó**.
    * `TC_BAND_2` khẳng định công thức WinForm, nên nó là chỗ ghi lại điểm lệch này.
 
-2. **Sort theo tiêu đề cột** — `InitViewItem` đặt `SortMode.Automatic` cho **mọi**
-   `TextBox` column (`GradientDataGridView.cs:441`), rồi `frm204008.init` hạ **riêng**
-   `pat_no`/`pat_nm` xuống `Programmatic` (`frm204008.cs:397-401`). Tức là 10 cột còn lại
-   (`rcp_type`, `day`, điểm, tiền…) **sort được** bằng cách bấm tiêu đề, trong khi bản web
-   đặt `enableSorting: false` cho đúng 10 cột đó.
+2. **`レセプト種別` (và 9 cột khác) sort được ở WinForm, KHÔNG sort được ở web** — đã đo:
+   bấm tiêu đề `レセプト種別` **sắp lại lưới**. `InitViewItem` đặt `SortMode.Automatic` cho
+   **mọi** `TextBox` column (`GradientDataGridView.cs:441`), rồi `frm204008.init` hạ
+   **riêng** `pat_no`/`pat_nm` xuống `Programmatic` (`frm204008.cs:397-401`) — nên 10 cột
+   còn lại (`rcp_type`, `day`, điểm, tiền…) sort được. Bản web đặt `enableSorting: false`
+   cho đúng 10 cột đó.
 
-3. **Handler sort 患者番号 của WinForm không bao giờ chạy** — `dgvView_CellMouseClick` dò
-   `dgv.Columns[e.ColumnIndex].Name == "dsp_pat_no"` (`frm204008.cs:241`) trong khi cột
-   được đặt tên `"pat_no"` (`_viewItem`). Bản web thì sort 患者番号 được.
-   → 2 và 3 **chưa đo xong**: lượt đo đầu bị hộp thoại che (xem §7), đang đo lại ở `Tc0d`.
+3. **Bấm tiêu đề `患者番号` ở WinForm KHÔNG làm gì** — đã đo: lưới đứng yên.
+   `dgvView_CellMouseClick` dò `dgv.Columns[e.ColumnIndex].Name == "dsp_pat_no"`
+   (`frm204008.cs:241`) trong khi `_viewItem` đặt tên cột là `"pat_no"` ⇒ nhánh sort đó
+   **không bao giờ chạy**, và `SortMode` cũng đã bị hạ xuống `Programmatic` nên
+   `DataGridView` không tự sort thay. Bản web thì `患者番号` **sort được**.
+   (`氏名` thì cả hai bên đều sort — handler khớp đúng tên cột nên `ComLibrary.kanaSort`
+   chạy bình thường.)
+   → cả 2 và 3 được `TC_SORT_1` chốt lại.
 
 4. **Cách chịu lỗi 一部負担金** — WinForm bung **một MessageBox E00100 cho MỖI dòng hỏng**
    ngay trong luồng nền của thanh tiến trình (`buiPrice.cs:196-203`), và **vẫn thêm dòng

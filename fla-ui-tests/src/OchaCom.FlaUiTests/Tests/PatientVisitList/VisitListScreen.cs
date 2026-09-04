@@ -463,6 +463,29 @@ public sealed class VisitListScreen
         new WinFormsGrid(Grid).Rows(limit).Select(r => new VisitGridRow(r.Cells)).ToList();
 
     /// <summary>
+    /// Các ô của DÒNG TIÊU ĐỀ, để click vào mà thử sort.
+    ///
+    /// <para>Trả về phần tử con của dòng đầu — cùng chỗ mà <see cref="HeaderRow"/> đọc chữ
+    /// ra. Click vào đây đi qua đúng <c>dgvView_CellMouseClick</c> với
+    /// <c>e.RowIndex == -1</c> (frm204008.cs:239-265).</para>
+    /// </summary>
+    public IReadOnlyList<AutomationElement> HeaderCells()
+    {
+        var first = new WinFormsGrid(Grid).RowElements(1).FirstOrDefault();
+        return first is null ? [] : Uia.Children(first).ToList();
+    }
+
+    /// <summary>
+    /// Dấu vân tay 「患者番号/診療日」 của <paramref name="count"/> dòng dữ liệu đầu tiên —
+    /// mốc RẺ để biết lưới có sắp lại hay không.
+    ///
+    /// <para>Đọc cả lưới tốn ~50 giây nên đừng dùng <see cref="AllRows()"/> cho việc này.
+    /// Bỏ phần tử đầu vì đó là dòng tiêu đề.</para>
+    /// </summary>
+    public string Fingerprint(int count = 8) =>
+        string.Join(",", AllRows(count + 1).Skip(1).Select(r => r.PatNo + "/" + r.Day));
+
+    /// <summary>
     /// Nhãn 12 cột, đọc từ PHẦN TỬ ĐẦU của lưới.
     ///
     /// <para><c>WinFormsGrid.Headers()</c> trả RỖNG ở màn này (đo 2026-09-04): cầu

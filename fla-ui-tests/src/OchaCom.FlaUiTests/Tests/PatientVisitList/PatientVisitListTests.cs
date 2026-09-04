@@ -385,6 +385,53 @@ public sealed class PatientVisitListTests : UiTestBase
             "(phần còn lại bị loại vì cả ba loại điểm đều = 0, hoặc bị 3 cờ lọc ra)");
     }
 
+    // ── Sort theo tiêu đề cột ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Chốt hành vi sort THẬT của WinForm — hai điểm lệch so với bản web, cả hai đã đo
+    /// trên máy thật ngày 2026-09-04 (xem README §6).
+    ///
+    /// <para>Chạy CUỐI CÙNG vì nó sắp lại lưới. Các testcase trước dùng <c>_gridRows</c>
+    /// và <c>_csvRows</c> chụp từ <c>OneTimeSetUp</c> nên không bị ảnh hưởng.</para>
+    /// </summary>
+    [Test, Order(11)]
+    public void TC_SORT_1_BamTieuDeCot()
+    {
+        var headers = _screen.HeaderCells();
+        Assert.That(headers, Has.Count.EqualTo(VisitListScreen.HeaderLabels.Length),
+            "không lấy được 12 ô tiêu đề để click");
+
+        // 患者番号 — dgvView_CellMouseClick dò tên cột 「dsp_pat_no」 (frm204008.cs:241)
+        // trong khi _viewItem đặt tên cột là 「pat_no」 ⇒ nhánh đó KHÔNG BAO GIỜ chạy, và
+        // SortMode đã bị hạ xuống Programmatic (:397) nên DataGridView cũng không tự sort.
+        // Bản web thì 患者番号 sort được — đây là điểm LỆCH, và testcase này là chỗ ghi lại.
+        var before = _screen.Fingerprint();
+        Uia.MouseClick(headers[0]);
+        Thread.Sleep(800);
+        Assert.That(_screen.Fingerprint(), Is.EqualTo(before),
+            "bấm tiêu đề 患者番号 đã sắp lại lưới — nghĩa là ai đó vừa sửa tên cột ở " +
+            "frm204008.cs:241 (「dsp_pat_no」 → 「pat_no」). Tin tốt, nhưng bản web và " +
+            "testcase này phải cập nhật cùng lúc.");
+
+        // 氏名 — Programmatic, nhưng handler khớp đúng tên cột nên ComLibrary.kanaSort chạy.
+        before = _screen.Fingerprint();
+        Uia.MouseClick(headers[1]);
+        Thread.Sleep(800);
+        Assert.That(_screen.Fingerprint(), Is.Not.EqualTo(before),
+            "bấm tiêu đề 氏名 KHÔNG sắp lại lưới — ComLibrary.kanaSort (frm204008.cs:261) " +
+            "lẽ ra phải chạy. Kiểm xem có hộp thoại nào đang che lưới không (README §7.2).");
+
+        // レセプト種別 — InitViewItem để SortMode.Automatic cho MỌI cột TextBox
+        // (GradientDataGridView.cs:441) và frm204008.init chỉ hạ riêng pat_no/pat_nm, nên
+        // 10 cột còn lại sort được. Bản web đặt enableSorting: false cho đúng 10 cột đó.
+        before = _screen.Fingerprint();
+        Uia.MouseClick(headers[VisitListScreen.RcpTypeColumn]);
+        Thread.Sleep(800);
+        Assert.That(_screen.Fingerprint(), Is.Not.EqualTo(before),
+            "bấm tiêu đề レセプト種別 KHÔNG sắp lại lưới — trái với SortMode.Automatic mà " +
+            "InitViewItem đặt cho mọi cột TextBox (GradientDataGridView.cs:441).");
+    }
+
     // ── Tiện ích ─────────────────────────────────────────────────────────────
 
     private static string ArtifactDir()

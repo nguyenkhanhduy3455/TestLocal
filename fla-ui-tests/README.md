@@ -166,6 +166,13 @@ src/OchaCom.FlaUiTests/
     │   ├── MenInputDialog.cs             frm203035: nhãn 5 mặt, phím 8/4/5/6/2, F9/F10/ESC
     │   ├── MenInputProbeTests.cs         PROBE [Explicit] — 12 câu hỏi, không assert
     │   └── MenInputTests.cs              TcM0 … TcM9
+    ├── PatientVisitList/              来患一覧 frm204008 — xem mục 8b
+    │   ├── README.md                  bảng tương ứng spec + 4 điểm LỆCH + 5 cái bẫy
+    │   ├── ReceiptTypeOracle.cs       port getReceiptType từ dữ liệu THÔ — đối chứng độc lập
+    │   ├── VisitListDb.cs             CHỈ ĐỌC: trn_status / trntrn / insurance ⟕ medinsinf
+    │   ├── VisitListScreen.cs         frm204008: 診療年月, 検索, đọc lưới, F4 CSV出力
+    │   ├── PatientVisitListProbeTests.cs PROBE [Explicit] — 9 câu hỏi, không assert
+    │   └── PatientVisitListTests.cs   TC-OPEN/RCP/DB/BAND/CSV/ROW
     ├── PerioKensaOrder/               検査順 pInpOpt[36] — xem mục 8b
     │   ├── README.md                  bảng tương ứng spec + 3 điểm KHÁC bản web + 4 cái bẫy
     │   ├── PerioExamDialog.cs         frm203028/29: tên ô, đọc con trỏ, F10 để đóng
@@ -269,6 +276,7 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 | `.\run-input-tooth-surfaces.ps1` | Chốt 枝番 `men=1` ở 処置選択 → `frm203035.fixProc` (面入力) | `Tests/MenInput/` | ✖ đọc cột ẩn 72, không bấm F9 |
 | `.\run-change-tooth-status.ps1` | chốt 処置 → `frm203016.SigaChg` · Delete → `DelExtRec` · Ｐ変更 → `Chk_PModeKesson` · F9 → `SigaChg_Save` (自歯状況変更・根数変更) | `Tests/SigaToothStatus/` | ⚠️ **CÓ** — `SIGA` + `KON`, và ghi **ngay lúc nhập** |
 | `.\run-move-perio-exam-cursor.ps1` | Enter/←/→ trong 歯周基本・精密検査 → `getMoveIndex` / `getMoveIndexArrow`, rẽ theo 検査順 `pInpOpt[36]` | `Tests/PerioKensaOrder/` | ✖ không bấm F9; ⚠️ `-AllowSettingChange` GHI **`Ocha.xml` của MÁY** |
+| `.\run-patient-visit-list.ps1` | 検索 ở 来患一覧 → `setViewData` → `buiPrice.getReceiptType` (レセプト種別) · F4 CSV出力 | `Tests/PatientVisitList/` | ✖ CHỈ ĐỌC — chỉ ghi file CSV vào artifacts |
 | `.\run-unpaid-raiin-cnt.ps1` | F8 会計 → `modAcc.LetAccData2` với 当日来院回数 (`hfgRaiinCnt` → `hFG1[71]` → `UNPAID.TRT_CNT`) | `Tests/UnpaidRaiinCnt/` | ⚠️ **CÓ** — seed `TRNTRN` (disp_no 9101-9103) + `UNPAID` của ngày test |
 | `.\run-edit-treatment-rows.ps1 -Case Probe_Advanced` | PROBE — dò hành vi, KHÔNG assert | `Tests/TreatmentGrid/` | ✖ |
 
