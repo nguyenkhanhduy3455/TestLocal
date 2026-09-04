@@ -122,7 +122,12 @@ public sealed class SigaKonGapsTests : UiTestBase
         Log($"nguyên trạng KON : {_konBefore}");
 
         db.ResetSigaToVital(PatNo);
-        db.ResetKonToNull(PatNo, [PermEkonCol, CtrlSeCol], []);
+        // ⚠️ CHỈ reset ô 根数 ĐEM THỬ. Ô ĐỐI CHỨNG thì KHÔNG — theo đúng nghĩa của nó:
+        // ô không được đụng tới. Bản đầu reset luôn `ekon19` (ô 18 = 右下6) và làm mất giá
+        // trị thật của bệnh nhân test; phải suy lại từ láng giềng (右下8/7 = 3) và đối xứng
+        // (左下6 = 3) mới dựng lại được. Không testcase nào assert cột đó, nên việc reset
+        // chẳng mua được gì mà chỉ có mất.
+        db.ResetKonToNull(PatNo, [PermEkonCol], []);
         Log($"đặt mốc TRƯỚC khi mở app: mọi se* = {SigaKonDb.SeVital}, sn* = {SigaKonDb.SnVital}, " +
             "ekon ô thử = NULL ⇒ pSiga_old lúc mở màn chính là mốc này.");
     }

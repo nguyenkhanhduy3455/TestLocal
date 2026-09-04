@@ -219,7 +219,8 @@ public sealed class SigaToothProbeTests : UiTestBase
     {
         if (_db is null || !_db.CanWrite) return;
         _db.ResetSigaToVital(PatNo);
-        _db.ResetKonToNull(PatNo, [SeCol(PermSlot), SeCol(ControlSlot)], [SnCol(MilkSlot)]);
+        // Chỉ ô đem thử — KHÔNG đụng ô đối chứng (xem chú thích cùng chỗ ở SigaKonGapsTests).
+        _db.ResetKonToNull(PatNo, [SeCol(PermSlot)], [SnCol(MilkSlot)]);
         Kq(tag, "   đã đặt mốc: mọi se* = 0, mọi sn* = 5, ekon/nkon của ô thử = NULL");
     }
 

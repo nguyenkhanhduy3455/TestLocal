@@ -320,6 +320,13 @@ bung ra. WinForm im lặng hoàn toàn. Bản web bung alert 「当月にＰ／�
    và teardown sẽ 「khôi phục」 về mốc chứ không về nguyên trạng. Đã trả giá: bệnh nhân test
    mất ba ô 欠損 có sẵn (`se4/5/6 = 4`) và hai ô 根数 (`ekon11`, `nkon4 = 1`).
 
+10. **Ô ĐỐI CHỨNG thì đừng reset nó.** Bản đầu `ResetKonToNull` xoá luôn `ekon19` (ô 18 =
+    右下6) — ô mà cả luồng chỉ dùng để chứng minh 「không bị đụng tới」. Không testcase nào
+    assert cột đó, nên việc reset chẳng mua được gì; đổi lại nó xoá mất giá trị thật của
+    bệnh nhân test. Giá trị gốc **không đo được** (bị NULL trước khi kịp chụp), phải suy
+    lại từ láng giềng (右下8 = 右下7 = 3) và đối xứng (左下6 = `ekon30` = 3) ⇒ dựng lại `3`.
+    Kiểm ngay được vì mọi cột `ekon` khác đều có giá trị, chỉ mỗi `ekon19` là `NULL`.
+
 ### 🧹 Dọn dữ liệu: hai tầng, và vì sao tầng thứ hai phải có HÀNG RÀO
 
 Nhập một dòng 抜歯 làm app **tự chèn thêm**: hai dòng 麻酔 (`310`, `7321`) và một 部位病名行
