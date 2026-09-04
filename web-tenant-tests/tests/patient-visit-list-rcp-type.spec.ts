@@ -83,6 +83,22 @@ import { emptyState, rows, scroller, skeletons } from './virtual-grid'
  *
  * TC-DB-1 cần TEST_DB=1 (xem tests/db.ts), tự skip khi không bật. Spec này
  * KHÔNG ghi DB — chỉ đọc.
+ *
+ * ── NỬA WINFORM ─────────────────────────────────────────────────────────────
+ * `fla-ui-tests/src/OchaCom.FlaUiTests/Tests/PatientVisitList/` đo CHÍNH frm204008
+ * trên cùng 診療年月 200601 (SQL Server SIM2000 và Postgres của tenant là cùng một
+ * dataset: 36 bệnh nhân / 86 dòng ở cả hai bên). Hàm `expectedReceiptType` dưới đây
+ * và `ReceiptTypeOracle.Expected` bên đó là CÙNG một luật — mỗi bên khớp oracle của
+ * mình thì hai bên khớp nhau.
+ *
+ * Đối chiếu ngày 2026-09-04: 86/86 dòng trùng khít, cùng thứ tự, không lệch trường
+ * nào. Ba điểm KHÁC còn lại nằm ngoài tầm spec này, xem
+ * `fla-ui-tests/.../PatientVisitList/README.md` mục 6:
+ *   · nhãn dòng 合計 (WinForm dùng khoảng trắng 全角 và độn 件数 4 ký tự,
+ *     `GetPatientVisitListHandler.cs:183` dùng 半角 và độn 5);
+ *   · WinForm sort được 10 cột mà bản web khoá `enableSorting: false`;
+ *   · ngược lại, bấm 患者番号 ở WinForm KHÔNG sort (handler dò nhầm tên cột
+ *     「dsp_pat_no」, frm204008.cs:241) trong khi bản web sort được.
  */
 
 const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
