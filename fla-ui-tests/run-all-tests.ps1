@@ -10,6 +10,9 @@
                                       部位選択 → F9 Br例  (3 dialog vua port sang web)
       .\run-edit-treatment-rows.ps1   Insert/Delete tren luoi 処置 → AddRow / DeleteRow
                                       (7 thao tac CO BAN, khong ghi DB)
+      .\run-move-perio-exam-cursor.ps1 Enter/←/→ trong 歯周基本・精密検査 → getMoveIndex,
+                                      re theo 検査順 pInpOpt[36]. Khong ghi DB, nhung
+                                      -AllowSettingChange thi GHI Ocha.xml CUA MAY.
 
 .DESCRIPTION
     PHẢI chạy trên Windows, trong một phiên đăng nhập CÓ MÀN HÌNH THẬT (không RDP thu

@@ -166,6 +166,13 @@ src/OchaCom.FlaUiTests/
     │   ├── MenInputDialog.cs             frm203035: nhãn 5 mặt, phím 8/4/5/6/2, F9/F10/ESC
     │   ├── MenInputProbeTests.cs         PROBE [Explicit] — 12 câu hỏi, không assert
     │   └── MenInputTests.cs              TcM0 … TcM9
+    ├── PerioKensaOrder/               検査順 pInpOpt[36] — xem mục 8b
+    │   ├── README.md                  bảng tương ứng spec + 3 điểm KHÁC bản web + 4 cái bẫy
+    │   ├── PerioExamDialog.cs         frm203028/29: tên ô, đọc con trỏ, F10 để đóng
+    │   ├── PerioKensaOrderFlow.cs     đổi 検査順 · 部位 全顎 · F6 → frm203011 → F1/F2
+    │   ├── PerioKensaTestBase.cs      đo nhánh đang chạy + khôi phục Ocha.xml
+    │   ├── PerioKensaOrderProbeTests.cs PROBE [Explicit] — 9 câu hỏi, không assert
+    │   └── PerioKensaOrderTests.cs    TcREAD, Tc1, Tc2, Tc4, Tc5 … Tc8
     └── InpP1Dialogs/                  ba dialog vừa port sang web — xem mục 8b
         ├── README.md                  bảng tương ứng với spec Playwright
         ├── InpP1MenuFlow.cs           F11 → 「９ オプション」 → mục con
@@ -261,6 +268,7 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 | `.\run-bulk-change-dr.ps1` | Click nhãn 「Ｄｒ」 → `lblDrLabel_Click` (担当医 一括変更) | `Tests/TreatmentHeaderStaff/` | ✖ chỉ sửa lưới trong bộ nhớ |
 | `.\run-input-tooth-surfaces.ps1` | Chốt 枝番 `men=1` ở 処置選択 → `frm203035.fixProc` (面入力) | `Tests/MenInput/` | ✖ đọc cột ẩn 72, không bấm F9 |
 | `.\run-change-tooth-status.ps1` | chốt 処置 → `frm203016.SigaChg` · Delete → `DelExtRec` · Ｐ変更 → `Chk_PModeKesson` · F9 → `SigaChg_Save` (自歯状況変更・根数変更) | `Tests/SigaToothStatus/` | ⚠️ **CÓ** — `SIGA` + `KON`, và ghi **ngay lúc nhập** |
+| `.\run-move-perio-exam-cursor.ps1` | Enter/←/→ trong 歯周基本・精密検査 → `getMoveIndex` / `getMoveIndexArrow`, rẽ theo 検査順 `pInpOpt[36]` | `Tests/PerioKensaOrder/` | ✖ không bấm F9; ⚠️ `-AllowSettingChange` GHI **`Ocha.xml` của MÁY** |
 | `.\run-edit-treatment-rows.ps1 -Case Probe_Advanced` | PROBE — dò hành vi, KHÔNG assert | `Tests/TreatmentGrid/` | ✖ |
 
 > Thêm luồng mới thì giữ đúng quy ước này: `run-<động từ>-<đối tượng>.ps1` mô tả việc
@@ -406,6 +414,36 @@ bẫy của chính bộ test nằm ở README của luồng, mục 5 và mục 7
 > ⚠️ Luồng này nâng `frm902003`「部位選択」 lên `Infrastructure/ToothSelectDialog.cs` —
 > trước đó nó nằm trong `Tests/InpP1Dialogs/BrSampleFlow`. `BrSampleFlow` giữ nguyên
 > chữ ký cũ, thân hàm uỷ nhiệm về lớp chung.
+
+**PerioKensaOrder** đo **đáp án** cho 検査順 (`ModCommon.pInpOpt[36]`) — hướng quét con trỏ
+của 歯周基本検査 (`frm203028`) và 歯周精密検査 (`frm203029`). Nửa WinForm của
+`perio-kensa-order.spec.ts`; bảng tương ứng từng testcase ở
+`Tests/PerioKensaOrder/README.md` mục 1.
+
+Nó không ghi DB (không bao giờ bấm F9 登録, và 部位 dựng bằng `F7 全顎` trong bộ nhớ),
+nhưng có một rủi ro **khác loại** với mọi luồng trên: `-AllowSettingChange` cho phép ghi
+`KensaOrder` vào **`C:\NEW_SIM2000\Ocha.xml`** — cấu hình **của MÁY**, không phải của
+phòng khám. Đường duy nhất đổi được setting trong một phiên là 処置入力設定 → F9 登録, vì
+`btnF9_Click` gọi `ModCommon.pGetInpOpt()` ngay sau khi ghi (`frm203003.cs:113-118`,
+`:270-273`). Fixture chụp nhãn cũ và trả lại ở `OneTimeTearDown`.
+
+Hai thứ đáng biết nhất, cả hai đọc source mới thấy:
+
+- **Combo 「基本･精密検査」 có thể nói dối.** `KensaOrder = 0` (máy chưa cấu hình) làm
+  `dspData` rơi vào `SelectedIndex = 0` ⇒ combo hiện 「左上から」, trong khi `pInpOpt[36] = 0`
+  và cả hai form chỉ kiểm `== 1` nên app **chạy nhánh 右上**. Khi cờ tắt, fixture đo nhánh
+  đang chạy bằng chính chỗ con trỏ rơi vào, chứ không tin combo.
+- **4点法/6点法 không đổi được giữa phiên.** `pGetInpOpt()` chỉ nạp lại XML; `pInpOpt[32]`
+  lấy từ `_inpConfigData` (bảng `INPCONFIG`) vốn chỉ nạp một lần lúc app khởi động
+  (`modCommon.cs:299`). Một lượt chạy vì thế phủ được **một** chế độ — bên Playwright cả
+  hai chạy trong một lượt vì đó chỉ là một field JSON.
+
+Đã chạy thật 2026-09-04 trên bệnh nhân 10 (診療月 2026-08). **歯周基本検査 KHÔNG lệch**:
+`TcREAD`/`Tc1`/`Tc2`/`Tc4` xanh — cả hai nhánh 検査順 khớp đúng source, kể cả trên bộ răng
+khuyết 25/32 (`F7 全顎` bỏ qua 欠損歯). Răng 15 không tồn tại ở bệnh nhân này và WinForm rơi
+đúng xuống răng 14 — thứ mà spec web assert cứng `răng 15` không bắt được. **歯周精密検査
+chưa đo được** (UIA sập giữa chừng + trần 15 phút của wrapper). Bảy cái bẫy đã trả giá và
+hai việc còn phải sửa nằm ở README của luồng, mục 6.
 
 > **Bài học dùng chung, đọc trước khi viết luồng mới:** app này **không nhận
 > InvokePattern ở bất kỳ control nào**. `Uia.Click` lên nhãn / caption / dòng lưới đều

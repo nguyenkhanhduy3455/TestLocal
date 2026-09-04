@@ -108,6 +108,24 @@
     "allowRowCleanup": true
   },
 
+  "perioKensa": {
+    "//": [
+      "Luong Tests/PerioKensaOrder — 検査順 (pInpOpt[36]) chi phoi huong quet cua",
+      "  歯周基本検査 frm203028 / 歯周精密検査 frm203029  (nua WinForm cua perio-kensa-order.spec.ts).",
+      "allowSettingChange = true moi cho doi 検査順 qua 処置入力設定 (F9 cua frm203003).",
+      "Thao tac do KHONG ghi DB — no ghi C:\\NEW_SIM2000\\Ocha.xml, tuc CAU HINH CUA MAY,",
+      "nen co RIENG chu khong dung chung parity.allowSave. Fixture chup gia tri cu va tra lai.",
+      "Tat (mac dinh) => chi chay nhom testcase khop 検査順 may DANG dat, phan con lai tu Ignore.",
+      "",
+      "4点法/6点法 (pInpOpt[32]) KHONG doi duoc trong mot phien: pGetInpOpt chi nap lai XML,",
+      "con _inpConfigData (bang INPCONFIG) nap MOT LAN luc app khoi dong (modCommon.cs:299).",
+      "Doi che do la viec cua man 初期設定 frm506008 roi khoi dong lai app."
+    ],
+    "allowSettingChange": false,
+    "//disCd": "病名 dem chon khi dung 部位病名行. 103 = Ｐ (歯周炎), cung ma spec Playwright seed.",
+    "disCd": 103
+  },
+
   "locators": {
     "//": "AutomationId = Control.Name bên WinForm. Nếu máy Windows soi Inspect thấy khác thì sửa ở đây, KHÔNG phải sửa code.",
     "kobetuTabItem": "個別",

@@ -17,7 +17,20 @@ namespace OchaCom.FlaUiTests.Infrastructure;
 /// </summary>
 public static class Vk
 {
+    /// <summary>F1 — ở <c>frm203011</c>「カルテ記載選択」 là 「基本検査」 (frm203011.cs:95).
+    /// ⚠️ Ở <c>frm203028</c>/<c>frm203029</c> thì F1 là 「ﾃﾞﾌｫﾙﾄ設定」, tức GHI
+    /// <c>kihon_def</c>/<c>seimitu_def</c> — đừng bao giờ gửi nhầm vào hai màn đó.</summary>
+    public const ushort F1 = 0x70;
+
+    /// <summary>F2 — ở <c>frm203011</c> là 「精密検査」 (frm203011.cs:114).</summary>
+    public const ushort F2 = 0x71;
+
     public const ushort F3 = 0x72;
+
+    /// <summary>F6 — ở <c>frm203002</c> là 「コメント」 ⇒ mở <c>frm203011</c>「カルテ記載選択」
+    /// (frm203002.cs:826 → :4717). Chỉ đúng khi <c>ShiftFlg == false</c>.</summary>
+    public const ushort F6 = 0x75;
+
     public const ushort F7 = 0x76;
     public const ushort F9 = 0x78;
     public const ushort F10 = 0x79;

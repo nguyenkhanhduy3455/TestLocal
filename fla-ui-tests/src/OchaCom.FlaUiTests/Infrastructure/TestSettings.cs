@@ -24,6 +24,7 @@ public sealed class TestSettings
     [JsonPropertyName("inpP1")] public InpP1Section InpP1 { get; set; } = new();
     [JsonPropertyName("highNeeds")] public HighNeedsSection HighNeeds { get; set; } = new();
     [JsonPropertyName("sigaTooth")] public SigaToothSection SigaTooth { get; set; } = new();
+    [JsonPropertyName("perioKensa")] public PerioKensaSection PerioKensa { get; set; } = new();
     [JsonPropertyName("locators")] public Dictionary<string, string> Locators { get; set; } = new();
 
     private static TestSettings? _current;
@@ -253,6 +254,38 @@ public sealed class TestSettings
         [JsonPropertyName("allowRowCleanup")] public bool AllowRowCleanup { get; set; } = true;
     }
 
+    /// <summary>
+    /// Luồng <c>Tests/PerioKensaOrder</c> — 検査順 (<c>pInpOpt[36]</c>) chi phối hướng quét
+    /// của 歯周基本検査 (<c>frm203028</c>) và 歯周精密検査 (<c>frm203029</c>).
+    ///
+    /// <para>Nửa WinForm của <c>../web-tenant-tests/tests/perio-kensa-order.spec.ts</c>.</para>
+    /// </summary>
+    public sealed class PerioKensaSection
+    {
+        /// <summary>
+        /// Cho phép ĐỔI 検査順 qua màn 処置入力設定 (F9 登録 của <c>frm203003</c>).
+        ///
+        /// <para>Vì sao phải có cờ riêng, và vì sao KHÔNG dùng chung
+        /// <see cref="ParitySection.AllowSave"/>: thao tác này không ghi DB mà ghi
+        /// <b><c>C:\NEW_SIM2000\Ocha.xml</c></b> — cấu hình CỦA MÁY, ảnh hưởng tới người
+        /// đang dùng app thật trên chính máy đó. Bản Playwright không cần cờ nào vì nó
+        /// đè response HTTP chứ không đụng tới cấu hình
+        /// (xem khối 「VÌ SAO ĐÈ RESPONSE」 của spec).</para>
+        ///
+        /// <para>Fixture chụp giá trị cũ ở <c>OneTimeSetUp</c> và trả lại ở
+        /// <c>OneTimeTearDown</c>, kể cả khi đỏ giữa chừng. Tắt (mặc định) ⇒ chỉ chạy được
+        /// nhóm testcase khớp với 検査順 mà máy ĐANG đặt, phần còn lại tự Ignore.</para>
+        /// </summary>
+        [JsonPropertyName("allowSettingChange")] public bool AllowSettingChange { get; set; }
+
+        /// <summary>
+        /// <c>dis_cd</c> đem chọn ở 病名選択 khi dựng 部位病名行. Mặc định 103 = Ｐ
+        /// (歯周炎) — đúng nhánh <c>case 103</c> của <c>frm203028.initProc</c> và cùng mã
+        /// mà spec Playwright seed.
+        /// </summary>
+        [JsonPropertyName("disCd")] public int DisCd { get; set; } = 103;
+    }
+
     public sealed class RunSection
     {
         [JsonPropertyName("stepMs")] public int StepMs { get; set; }
@@ -371,12 +404,18 @@ public sealed class TestSettings
         Set("OCHA_STEP_MS", v => s.Run.StepMs = int.Parse(v));
         Set("OCHA_SCREENSHOT_DIR", v => s.Run.ScreenshotDir = v);
         Set("OCHA_STOP_ON_FIRST_FAILURE", v => s.Run.StopOnFirstFailure = ToBool(v));
+        // Cần khi chạy CẢ fixture để xem hết kết quả: killOnFail giết app ngay ở TearDown
+        // của testcase đỏ đầu tiên, nên mọi testcase sau đó chạy trên app ĐÃ CHẾT và đỏ
+        // với lý do giả (「khong thay btnF11」). Đo thật 2026-09-04 trên luồng PerioKensaOrder.
+        Set("OCHA_KILL_ON_FAIL", v => s.Run.KillOnFail = ToBool(v));
         Set("OCHA_INP_P1_ALLOW_SAVE", v => s.InpP1.AllowSave = ToBool(v));
         Set("OCHA_HIGH_NEEDS_PATCH", v => s.HighNeeds.AllowDisFlgPatch = ToBool(v));
         Set("OCHA_HIGH_NEEDS_SAVE", v => s.HighNeeds.AllowSave = ToBool(v));
         Set("OCHA_HIGH_NEEDS_PAT_NO", v => s.HighNeeds.BorrowPatNo = v);
         Set("OCHA_SIGA_ALLOW_SAVE", v => s.SigaTooth.AllowSave = ToBool(v));
         Set("OCHA_SIGA_ROW_CLEANUP", v => s.SigaTooth.AllowRowCleanup = ToBool(v));
+        Set("OCHA_PERIO_ALLOW_SETTING_CHANGE", v => s.PerioKensa.AllowSettingChange = ToBool(v));
+        Set("OCHA_PERIO_DIS_CD", v => s.PerioKensa.DisCd = int.Parse(v));
         Set("OCHA_BR_TEETH", v => s.InpP1.BrTeeth = ToIntArray(v));
         Set("OCHA_BR_NO_MATCH_TEETH", v => s.InpP1.BrNoMatchTeeth = ToIntArray(v));
 
