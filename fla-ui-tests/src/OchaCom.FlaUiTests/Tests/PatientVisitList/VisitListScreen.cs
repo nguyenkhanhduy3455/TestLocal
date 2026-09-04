@@ -34,8 +34,8 @@ public sealed record VisitGridRow(IReadOnlyList<string> Cells)
         string.Join(" | ", Enumerable.Range(0, Cells.Count).Select(Cell));
 }
 
-/// <summary>Kết cục của một lượt 集計.</summary>
-public sealed record TotalRunResult(
+/// <summary>Kết cục của một lượt 検索.</summary>
+public sealed record SearchRunResult(
     TimeSpan Elapsed,
     IReadOnlyList<string> Dialogs,
     bool ProgressDialogSeen,
@@ -73,7 +73,8 @@ public sealed record TotalRunResult(
 ///   chkSyosin   初診       mặc định Checked
 ///   chkSaisin   再診       mặc định Checked
 ///   chkHoumon   訪問診療   mặc định Checked
-///   btnTotal    集計       = btnEndEsc_Click, cả hai gọi searchProc()
+///   btnTotal    検索       nhãn là 「検索」 dù id là btnTotal (Designer:123);
+///                          END/ESC cũng vào cùng searchProc() (frm204008.cs:363)
 ///   dgvViewS    lưới 12 cột, mọi cột ReadOnly
 /// </code>
 ///
@@ -84,7 +85,7 @@ public sealed record TotalRunResult(
 /// <item><b><c>SelDate</c> chỉ cập nhật khi <c>CustomDate</c> MẤT FOCUS.</b>
 ///       <c>CustomDate_Leave</c> (CustomDate.cs:693) là chỗ DUY NHẤT gọi
 ///       <c>setSelDate</c> sau khi người dùng gõ — <c>IsDate</c> thì không. Gõ 年/月 xong
-///       bấm 集計 ngay mà chưa rời control thì <c>searchProc</c> chạy với THÁNG CŨ và
+///       bấm 検索 ngay mà chưa rời control thì <c>searchProc</c> chạy với THÁNG CŨ và
 ///       testcase đổ oan cho dữ liệu. <see cref="SetSinryoYm"/> luôn đẩy focus ra ngoài.</item>
 /// <item><b>Lưới chỉ phơi ra dòng ĐANG NHÌN THẤY</b> (PROBE-GUIDELINE 3.1). 86 dòng của
 ///       200601 không đọc hết bằng một lượt. Toàn bộ dữ liệu lấy qua
@@ -94,7 +95,7 @@ public sealed record TotalRunResult(
 /// <item><b>E00100 bung TỪ TRONG luồng nền</b> của thanh tiến trình (buiPrice.cs:201, gọi
 ///       trong <c>ProgressDialog_DoWork</c>). Mỗi dòng hỏng một hộp, và hộp đó CHẶN luồng
 ///       nền — không dẹp thì thanh tiến trình đứng mãi và testcase chỉ báo 「hết giờ」.
-///       <see cref="RunTotal"/> vừa chờ vừa dẹp, và ghi lại nguyên văn từng câu.</item>
+///       <see cref="RunSearch"/> vừa chờ vừa dẹp, và ghi lại nguyên văn từng câu.</item>
 /// </list>
 /// </summary>
 public sealed class VisitListScreen
@@ -116,6 +117,20 @@ public sealed class VisitListScreen
         "患者番号", "氏　　名", "レセプト種別", "診療日", "初/再診",
         "医療保険点数", "医療保険負担金", "介護保険点数", "介護保険負担金",
         "保険外負担金", "保険外消費税", "　 合計金額",
+    ];
+
+    /// <summary>
+    /// Nhãn 12 cột của FILE CSV — <c>editCsvHeader</c> (frm204008.cs:1004-1032).
+    ///
+    /// <para>Giống <see cref="HeaderLabels"/> ở 11 cột đầu, KHÁC ở cột cuối: CSV ghi
+    /// 「合計金額」 còn lưới hiện 「　 合計金額」 (có khoảng trắng độn để căn phải). Hai hằng
+    /// riêng chứ không suy từ nhau — chúng đến từ hai đoạn code khác nhau của app.</para>
+    /// </summary>
+    public static readonly string[] CsvHeaderLabels =
+    [
+        "患者番号", "氏　　名", "レセプト種別", "診療日", "初/再診",
+        "医療保険点数", "医療保険負担金", "介護保険点数", "介護保険負担金",
+        "保険外負担金", "保険外消費税", "合計金額",
     ];
 
     /// <summary>Chỉ số cột レセプト種別 trong <c>_viewItem</c>.</summary>
@@ -177,7 +192,7 @@ public sealed class VisitListScreen
     // ── Control ──────────────────────────────────────────────────────────────
 
     public AutomationElement SinryoYm => Uia.RequireById(_window, "dtSinryo");
-    public AutomationElement TotalButton => Uia.RequireById(_window, "btnTotal");
+    public AutomationElement SearchButton => Uia.RequireById(_window, "btnTotal");
     public AutomationElement Grid => Uia.RequireById(_window, "dgvViewS");
     public AutomationElement? Syosin => Uia.ById(_window, "chkSyosin");
     public AutomationElement? Saisin => Uia.ById(_window, "chkSaisin");
@@ -319,25 +334,25 @@ public sealed class VisitListScreen
         try { return combo.Items; } catch { return []; }
     }
 
-    // ── 集計 ─────────────────────────────────────────────────────────────────
+    // ── 検索 ─────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Bấm 集計 và chờ <c>searchProc</c> xong.
+    /// Bấm 検索 và chờ <c>searchProc</c> xong.
     ///
     /// <para>Vòng chờ phải vừa canh <c>frm902005</c> vừa canh MessageBox — xem bẫy số 3 ở
     /// doc-comment của lớp. Mọi câu đọc được đều được ghi lại nguyên văn.</para>
     ///
-    /// <para>Một lượt 集計 gọi <c>getBuiPrice2</c> cho TỪNG (bệnh nhân × ngày) và mỗi lượt
+    /// <para>Một lượt 検索 gọi <c>getBuiPrice2</c> cho TỪNG (bệnh nhân × ngày) và mỗi lượt
     /// là vài truy vấn. Chọn tháng nhỏ, và cho <paramref name="budget"/> rộng tay.</para>
     /// </summary>
-    public TotalRunResult RunTotal(TimeSpan budget, TestTrace? trace = null)
+    public SearchRunResult RunSearch(TimeSpan budget, TestTrace? trace = null)
     {
         var clock = System.Diagnostics.Stopwatch.StartNew();
         var dialogs = new List<string>();
 
         Uia.ForceForeground(_window.Properties.NativeWindowHandle);
-        Uia.Click(TotalButton);
-        trace?.Note("đã bấm 集計");
+        Uia.Click(SearchButton);
+        trace?.Note("đã bấm 検索");
 
         var progressSeen = false;
         System.Diagnostics.Stopwatch? quietSince = null;
@@ -367,7 +382,7 @@ public sealed class VisitListScreen
         }
 
         clock.Stop();
-        return new TotalRunResult(clock.Elapsed, dialogs, progressSeen, clock.Elapsed >= budget);
+        return new SearchRunResult(clock.Elapsed, dialogs, progressSeen, clock.Elapsed >= budget);
     }
 
     /// <summary>Đọc rồi bấm OK cho mọi MessageBox đang mở; trả nguyên văn từng câu.</summary>
@@ -414,43 +429,51 @@ public sealed class VisitListScreen
 
     // ── Lưới ─────────────────────────────────────────────────────────────────
 
-    /// <summary>Nhãn cột đọc từ dòng tiêu đề của <c>dgvViewS</c>.</summary>
-    public IReadOnlyList<string> Headers() => new WinFormsGrid(Grid).Headers();
+    /// <summary>
+    /// Ô mà một cell của <c>DataGridView</c> trả về khi <c>FormattedValue</c> RỖNG.
+    ///
+    /// <para>Đo được 2026-09-04: <c>DataGridViewCellAccessibleObject.Value</c> của .NET
+    /// Framework trả về chuỗi tài nguyên <c>DataGridView_AccNullValue</c> — trên máy test
+    /// (Windows tiếng Anh) là 「(null)」 — chứ KHÔNG phải chuỗi rỗng. Đây chính là dấu
+    /// hiệu đọc được của banding: <c>dgvView_CellFormatting</c> đặt <c>e.Value = ""</c>
+    /// cho ô lặp lại (frm204008.cs:155-159).</para>
+    ///
+    /// <para>Đừng nhầm với ô SỐ không có giá trị (介護保険点数…): những ô đó qua
+    /// <c>string.Format("{0:#,0} ", DBNull)</c> thành một dấu cách, tức FormattedValue
+    /// KHÔNG rỗng, nên đọc ra chuỗi rỗng sau khi trim. Hai thứ khác nhau.</para>
+    /// </summary>
+    public const string AccNullValue = "(null)";
+
+    /// <summary>Ô đó có đang bị banding bỏ trắng không (xem <see cref="AccNullValue"/>).</summary>
+    public static bool IsBlanked(string cell) =>
+        cell.Length == 0 || cell == AccNullValue;
 
     /// <summary>
-    /// Các dòng ĐANG NHÌN THẤY, theo đúng thứ tự trên màn hình.
+    /// MỌI dòng của <c>dgvViewS</c>, kể cả DÒNG TIÊU ĐỀ (phần tử đầu) và dòng 合計 (cuối).
     ///
-    /// <para>Không phải toàn bộ lưới — cầu MSAA→UIA không dựng phần tử cho dòng ngoài
-    /// khung nhìn. Toàn bộ dữ liệu lấy qua <see cref="ExportCsv"/>.</para>
+    /// <para><b>Đọc được cả lưới, không phải chỉ khung nhìn.</b> Đã đo 2026-09-04: 200601
+    /// có 88 phần tử = 1 tiêu đề + 86 dòng khám + 1 dòng 合計, trong khi lưới chỉ cao
+    /// ~23 dòng. Cầu MSAA→UIA của <c>dgvViewS</c> dựng phần tử cho mọi dòng — KHÁC
+    /// <c>grdRegi</c> của 診療入力 (PROBE-GUIDELINE 3.1), nên ở màn này không phải cuộn.</para>
+    ///
+    /// <para><b>ĐẮT.</b> 88 dòng × 12 ô ≈ 1.000 lượt hỏi UIA, đo được ~50 giây một lượt
+    /// đọc. Gọi MỘT LẦN rồi giữ lại, đừng gọi trong vòng lặp.</para>
     /// </summary>
-    public IReadOnlyList<VisitGridRow> VisibleRows() =>
-        new WinFormsGrid(Grid).Rows().Select(r => new VisitGridRow(r.Cells)).ToList();
+    public IReadOnlyList<VisitGridRow> AllRows(int limit = int.MaxValue) =>
+        new WinFormsGrid(Grid).Rows(limit).Select(r => new VisitGridRow(r.Cells)).ToList();
 
     /// <summary>
-    /// Cuộn lưới bằng PageDown/PageUp cho tới khi tập dòng đọc được KHÔNG đổi nữa.
+    /// Nhãn 12 cột, đọc từ PHẦN TỬ ĐẦU của lưới.
     ///
-    /// <para>Không dùng ScrollPattern (cầu MSAA→UIA không phơi cho DataGridView) và không
-    /// click thanh cuộn (phải đoán toạ độ). Con trỏ đi trong lưới là vô hại: mọi cột đều
-    /// <c>ReadOnly</c> và <c>dgvViewS</c> không có cột CheckBox nào (frm204008.cs:62).</para>
+    /// <para><c>WinFormsGrid.Headers()</c> trả RỖNG ở màn này (đo 2026-09-04): cầu
+    /// MSAA→UIA không đánh dấu dòng tiêu đề bằng <c>HeaderItem</c>, nó về như một dòng
+    /// thường mà các ô mang đúng chữ tiêu đề — đúng cái bẫy PROBE-GUIDELINE 3.2. Nên nhãn
+    /// cột phải lấy từ đây, và mọi chỗ đọc dữ liệu phải BỎ phần tử đầu.</para>
     /// </summary>
-    public IReadOnlyList<VisitGridRow> ScrollAndRead(bool toBottom, int maxPages = 40)
+    public IReadOnlyList<string> HeaderRow()
     {
-        var grid = Grid;
-        try { grid.Focus(); } catch { /* xem LeaveDateControl */ }
-        Uia.ForceForeground(_window.Properties.NativeWindowHandle);
-
-        var last = "";
-        IReadOnlyList<VisitGridRow> rows = VisibleRows();
-        for (var i = 0; i < maxPages; i++)
-        {
-            Uia.SendKey(toBottom ? Vk.Next : Vk.Prior);
-            Thread.Sleep(250);
-            rows = VisibleRows();
-            var fingerprint = string.Join("\u0001", rows.Select(r => r.ToString()));
-            if (fingerprint == last) break;
-            last = fingerprint;
-        }
-        return rows;
+        var first = AllRows(1).FirstOrDefault();
+        return first is null ? [] : Enumerable.Range(0, first.Cells.Count).Select(first.Cell).ToList();
     }
 
     // ── F4 CSV出力 ───────────────────────────────────────────────────────────
@@ -506,17 +529,37 @@ public sealed class VisitListScreen
         Waits.Step();
         Uia.SendKey(Vk.Return);
 
-        // I00005 「CSV出力」 báo ghi xong (frm204008.cs:318). Dẹp nó đi, đồng thời đó là
-        // mốc để biết app đã đóng file.
-        var done = Waits.TryUntil(() => File.Exists(path), TimeSpan.FromSeconds(30));
-        foreach (var text in DrainDialogs(_app)) trace?.Note("hộp thoại sau CSV: " + OneLine(text));
+        // ⚠️ CHỜ THEO HỘP THOẠI, KHÔNG THEO FILE.
+        //
+        // 「CSV出力が完了しました。」 (I00005) bung SAU khi StreamWriter đóng file
+        // (frm204008.cs:317). Mà File.Exists thành true NGAY LÚC StreamWriter TẠO file —
+        // sớm hơn hộp thoại. Chờ theo file rồi dẹp hộp thoại đúng một lần là dẹp HỤT, và
+        // cái hộp còn lại là MODAL: mọi click sau đó rơi vào nó chứ không vào lưới.
+        //
+        // Đã trả giá 2026-09-04: Tc0d kết luận 「bấm tiêu đề cột không sort」 trong khi
+        // thật ra ba cú click đều rơi vào hộp thoại đang che lưới — chỉ ảnh chụp mới lộ ra
+        // (PROBE-GUIDELINE mục 1).
+        var seen = new List<string>();
+        var closed = Waits.TryUntil(
+            () =>
+            {
+                seen.AddRange(DrainDialogs(_app));
+                return seen.Any(t => Txt.Has(t, "CSV")) && Dialogs.Open(_app.Automation, _app.ProcessId).Count == 0;
+            },
+            TimeSpan.FromSeconds(60));
 
-        if (!done)
+        foreach (var text in seen) trace?.Note("hộp thoại sau CSV: " + OneLine(text));
+
+        if (!closed)
             throw new TimeoutException(
-                $"Không thấy file CSV 「{path}」 sau khi bấm 保存. " + DescribeDialogs(_app));
+                "Không thấy (hoặc không dẹp được) hộp thoại 「CSV出力が完了しました。」 sau khi bấm 保存. " +
+                DescribeDialogs(_app) +
+                " Còn hộp thoại nào đang mở thì mọi thao tác sau đó rơi vào nó, không vào màn hình.");
 
-        // File vừa được StreamWriter đóng; đọc sau một nhịp cho chắc.
-        Thread.Sleep(300);
+        if (!File.Exists(path))
+            throw new FileNotFoundException(
+                $"App báo xuất CSV xong mà không thấy file 「{path}」.", path);
+
         return File.ReadAllLines(path, Encoding.GetEncoding(932));
     }
 

@@ -56,7 +56,7 @@ if ($StepMs -ge 0) { $env:OCHA_STEP_MS = "$StepMs" }
 if ($SinryoYm -ne "") { $env:OCHA_SINRYO_YM = $SinryoYm }
 
 # Fixture assert co nhieu testcase noi tiep nhau tren cung mot phien app va cung mot lan
-# 集計 (mot lan 集計 ton hang phut). killOnFail giet app ngay o TearDown cua testcase do
+# 検索 (mot lan 検索 ton hang phut). killOnFail giet app ngay o TearDown cua testcase do
 # dau tien, nen moi testcase sau chay tren app DA CHET va do voi ly do gia. Da vap that
 # 2026-09-04 tren luong PerioKensaOrder.
 $env:OCHA_KILL_ON_FAIL = "0"
@@ -66,9 +66,9 @@ $ns = "OchaCom.FlaUiTests.Tests.PatientVisitList"
 if ($Diagnostics) {
     # Fixture PROBE mang [Explicit] nen luot chay du khong goi toi; loc dich danh thi chay.
     #
-    # Tach duoc tung Tc0x la CO CHU Y: mot lan 集計 ton hang phut, va wrapper
-    # runner-task.ps1 mac dinh cat o 15 phut. Chay Tc0a+Tc0b truoc (mo man hinh + 集計),
-    # roi Tc0c/Tc0d BAM VAO app dang mo (app.attachIfRunning) nen khong phai 集計 lai.
+    # Tach duoc tung Tc0x la CO CHU Y: mot lan 検索 ton hang phut, va wrapper
+    # runner-task.ps1 mac dinh cat o 15 phut. Chay Tc0a+Tc0b truoc (mo man hinh + 検索),
+    # roi Tc0c/Tc0d BAM VAO app dang mo (app.attachIfRunning) nen khong phai 検索 lai.
     $filter = "FullyQualifiedName~PatientVisitListProbeTests"
     if ($Case -ne "") { $filter += "&FullyQualifiedName~$Case" }
 } elseif ($Case -ne "") {
@@ -86,7 +86,7 @@ $testArgs = @(
 )
 
 Write-Host "dotnet $($testArgs -join ' ')" -ForegroundColor Cyan
-Write-Host "CHI DOC: mo 来患一覧, bam 集計, doc luoi, F4 xuat CSV. Khong ghi DB." -ForegroundColor Green
+Write-Host "CHI DOC: mo 来患一覧, bam 検索, doc luoi, F4 xuat CSV. Khong ghi DB." -ForegroundColor Green
 
 & dotnet @testArgs
 $exit = $LASTEXITCODE

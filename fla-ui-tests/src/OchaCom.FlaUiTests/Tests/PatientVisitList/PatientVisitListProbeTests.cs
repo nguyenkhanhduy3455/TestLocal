@@ -24,7 +24,7 @@ namespace OchaCom.FlaUiTests.Tests.PatientVisitList;
 ///  KQ-1  Tháng nào có dữ liệu, tháng test có bao nhiêu dòng, oracle ra 種別 gì?
 ///  KQ-2  Đường vào 窓口精算 → F3 có tới frm204008 không? 3 checkbox mặc định ra sao?
 ///        cboEra có những 元号 nào?
-///  KQ-3  Một lượt 集計 mất bao lâu? Có hộp thoại nào bung ra không (E00100 / E00003)?
+///  KQ-3  Một lượt 検索 mất bao lâu? Có hộp thoại nào bung ra không (E00100 / E00003)?
 ///  KQ-4  Lưới có ĐÚNG 12 cột, ĐÚNG nhãn, ĐÚNG thứ tự _viewItem không?
 ///  KQ-5  Dòng đọc được từ lưới trông ra sao — ô nào bị IsTheSameCellValue bỏ trắng?
 ///        (đây là câu quan trọng nhất: chưa biết UIA trả GIÁ TRỊ GỐC hay giá trị đã
@@ -187,7 +187,7 @@ public sealed class PatientVisitListProbeTests : UiTestBase
 
         if (_ym.Length == 0) { Log("=== KQ-3 === BỎ QUA: KQ-1 chưa chọn được tháng"); return; }
 
-        TotalRunResult? run = null;
+        SearchRunResult? run = null;
         try
         {
             var (y, m) = VisitListDb.ParseYm(_ym);
@@ -195,9 +195,9 @@ public sealed class PatientVisitListProbeTests : UiTestBase
             trace.Step($"đặt 診療年月 = {_ym} ({era.Name}{y - era.StartYear}年{m}月)");
             screen.SetSinryoYm(_ym);
 
-            trace.Step("bấm 集計 và chờ");
-            run = screen.RunTotal(TimeSpan.FromMinutes(Settings.VisitList.SearchTimeoutMinutes), trace);
-            Log($"=== KQ-3 === 集計 xong sau {run.Elapsed.TotalSeconds:0.0}s " +
+            trace.Step("bấm 検索 và chờ");
+            run = screen.RunSearch(TimeSpan.FromMinutes(Settings.VisitList.SearchTimeoutMinutes), trace);
+            Log($"=== KQ-3 === 検索 xong sau {run.Elapsed.TotalSeconds:0.0}s " +
                 $"(thanh tiến trình {(run.ProgressDialogSeen ? "CÓ" : "KHÔNG")} hiện, " +
                 $"{(run.TimedOut ? "HẾT GIỜ" : "kết thúc bình thường")}), {run.Dialogs.Count} hộp thoại");
             foreach (var d in run.Dialogs.Take(10))
@@ -206,12 +206,12 @@ public sealed class PatientVisitListProbeTests : UiTestBase
         }
         catch (Exception e)
         {
-            Log("=== KQ-3 === NGOẠI LỆ khi 集計: " + e.Message);
+            Log("=== KQ-3 === NGOẠI LỆ khi 検索: " + e.Message);
         }
 
         try
         {
-            var headers = screen.Headers();
+            var headers = screen.HeaderRow();
             Log($"=== KQ-4 === {headers.Count} nhãn cột đọc được: " +
                 string.Join(" | ", headers.Select(h => $"「{h}」")));
             Log("=== KQ-4 === _viewItem mong đợi: " +
@@ -221,34 +221,27 @@ public sealed class PatientVisitListProbeTests : UiTestBase
 
         try
         {
-            trace.Step("đọc trang đầu của lưới");
-            var rows = screen.VisibleRows();
-            Log($"=== KQ-5 === {rows.Count} dòng đang nhìn thấy (KHÔNG phải tổng số dòng — " +
-                "cầu MSAA→UIA chỉ dựng dòng trong khung nhìn)");
+            // MỘT lượt đọc cho cả KQ-5 lẫn KQ-6: 88 dòng × 12 ô ≈ 50 giây.
+            trace.Step("đọc lưới");
+            var rows = screen.AllRows();
+            Log($"=== KQ-5 === {rows.Count} phần tử dòng đọc được (kể cả dòng tiêu đề và dòng 合計)");
             foreach (var r in rows.Take(12)) Log("=== KQ-5 ===   " + r);
 
-            var blankPatNo = rows.Count(r => r.PatNo.Length == 0);
-            var blankRcp = rows.Count(r => r.RcpType.Length == 0);
-            Log($"=== KQ-5 === trong trang này: {blankPatNo} dòng trống ô 患者番号, " +
-                $"{blankRcp} dòng trống ô レセプト種別 ⇒ UIA " +
-                (blankPatNo > 0
-                    ? "TRẢ VỀ GIÁ TRỊ ĐÃ QUA CellFormatting (banding đọc được từ UI)"
-                    : "TRẢ VỀ GIÁ TRỊ GỐC (banding KHÔNG đọc được từ UI — TC banding phải đổi mốc)"));
-        }
-        catch (Exception e) { Log("=== KQ-5 === không đọc được lưới: " + e.Message); }
+            var blankPatNo = rows.Count(r => r.PatNo == VisitListScreen.AccNullValue);
+            var blankRcp = rows.Count(r => r.RcpType == VisitListScreen.AccNullValue);
+            Log($"=== KQ-5 === {blankPatNo} dòng có 患者番号 = 「{VisitListScreen.AccNullValue}」, " +
+                $"{blankRcp} dòng có レセプト種別 như vậy ⇒ banding " +
+                (blankPatNo > 0 ? "ĐỌC ĐƯỢC từ UI" : "KHÔNG đọc được từ UI — TC banding phải đổi mốc"));
 
-        try
-        {
-            trace.Step("cuộn xuống đáy lưới");
-            var bottom = screen.ScrollAndRead(toBottom: true);
-            Log($"=== KQ-6 === trang cuối có {bottom.Count} dòng:");
-            foreach (var r in bottom.TakeLast(6)) Log("=== KQ-6 ===   " + r);
-            var total = bottom.LastOrDefault(r => r.IsTotalRow);
+            Log("=== KQ-6 === 6 dòng cuối:");
+            foreach (var r in rows.TakeLast(6)) Log("=== KQ-6 ===   " + r);
+            var total = rows.LastOrDefault(r => r.IsTotalRow);
             Log(total is null
                 ? "=== KQ-6 === KHÔNG thấy dòng 合計 ở đáy"
-                : $"=== KQ-6 === dòng 合計: 氏名=「{total.PatNm}」 合計金額=「{total.PriceTotal}」");
+                : $"=== KQ-6 === dòng 合計: 氏名=「{total.PatNm}」 合計金額=「{total.PriceTotal}」 " +
+                  $"(nằm ở vị trí {rows.ToList().FindLastIndex(r => r.IsTotalRow)}/{rows.Count - 1})");
         }
-        catch (Exception e) { Log("=== KQ-6 === không cuộn/đọc được đáy lưới: " + e.Message); }
+        catch (Exception e) { Log("=== KQ-5/6 === không đọc được lưới: " + e.Message); }
     }
 
     // ── KQ-7, KQ-8 ───────────────────────────────────────────────────────────
@@ -257,7 +250,7 @@ public sealed class PatientVisitListProbeTests : UiTestBase
     public void Tc0c_XuatCsvVaDoiChieuOracle()
     {
         // Chạy lẻ được: bám vào app đang mở sẵn ở frm204008 (app.attachIfRunning) thay vì
-        // 集計 lại — một lượt 集計 tốn hàng phút và wrapper cắt ở 15 phút.
+        // 検索 lại — một lượt 検索 tốn hàng phút và wrapper cắt ở 15 phút.
         EnsureMonth();
         if (!EnsureScreen()) { Log("=== KQ-7 === BỎ QUA: chưa mở được màn hình"); return; }
 
@@ -324,9 +317,12 @@ public sealed class PatientVisitListProbeTests : UiTestBase
         try
         {
             using var trace = TestTrace.Begin("Tc0d_VisitListSort");
-            _screen!.ScrollAndRead(toBottom: false);
+            // Dẹp mọi hộp thoại còn sót TRƯỚC khi click: một MessageBox modal nuốt trọn
+            // click và testcase sẽ kết luận 「bấm tiêu đề không sort」 (đã vấp 2026-09-04).
+            foreach (var t in VisitListScreen.DrainDialogs(App))
+                Log("=== KQ-9 === dẹp hộp thoại còn sót: " + VisitListScreen.OneLine(t));
 
-            var grid = new WinFormsGrid(_screen.Grid);
+            var grid = new WinFormsGrid(_screen!.Grid);
             var headerCells = HeaderCells(grid);
             Log($"=== KQ-9 === {headerCells.Count} ô tiêu đề click được");
 
@@ -334,12 +330,12 @@ public sealed class PatientVisitListProbeTests : UiTestBase
             {
                 if (index >= headerCells.Count) { Log($"=== KQ-9 === không thấy tiêu đề 「{label}」"); continue; }
 
-                var before = string.Join(",", _screen.VisibleRows().Take(6).Select(r => r.PatNo + "/" + r.Day));
+                // Đọc 8 dòng đầu thôi: một lượt đọc CẢ lưới tốn ~50s (88 dòng × 12 ô).
+                var before = Fingerprint(_screen);
                 trace.Step($"click tiêu đề 「{label}」");
                 Uia.MouseClick(headerCells[index]);
-                Thread.Sleep(600);
-                _screen.ScrollAndRead(toBottom: false);
-                var after = string.Join(",", _screen.VisibleRows().Take(6).Select(r => r.PatNo + "/" + r.Day));
+                Thread.Sleep(800);
+                var after = Fingerprint(_screen);
 
                 Log($"=== KQ-9 === 「{label}」: {(before == after ? "KHÔNG ĐỔI" : "ĐÃ SORT")}");
                 Log($"=== KQ-9 ===   trước: {before}");
@@ -385,6 +381,10 @@ public sealed class PatientVisitListProbeTests : UiTestBase
         catch (Exception e) { Log("KHÔNG dựng lại được oracle: " + e.Message); }
     }
 
+
+    /// <summary>8 dòng đầu (bỏ dòng tiêu đề) — đủ để biết lưới có sắp lại hay không.</summary>
+    private static string Fingerprint(VisitListScreen screen) =>
+        string.Join(",", screen.AllRows(9).Skip(1).Select(r => r.PatNo + "/" + r.Day));
 
     private static IReadOnlyList<AutomationElement> HeaderCells(WinFormsGrid grid)
     {
