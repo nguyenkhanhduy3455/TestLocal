@@ -11,7 +11,7 @@ Cột `レセプト種別` bị báo là “luôn null” ở bản web. Soát l
 `patInfoData.ins.combi_kbn` (`COMMON/Lib/buiPrice.cs:1563`).
 
 * **WinForm** gọi `PatInfoList.getPatInfoCopyData` lại cho **TỪNG dòng**
-  (`frm204008.cs:711`) ⇒ ghi đè không lan sang dòng sau.
+  (`frm204008.cs:713`) ⇒ ghi đè không lan sang dòng sau.
 * **Bản web** dùng lại **một** instance `Insurance` xuyên các ngày ⇒ một ngày không có
   公費 kéo mọi ngày sau xuống `単独`.
 
@@ -24,10 +24,10 @@ lệch thì lệch một mình, và log chỉ thẳng ra dòng nào.
 ## 2. Đường vào
 
 ```
-メインメニュー          pnlBtn1  → 日常業務            (MENU/MainMenu.cs:812)
+メインメニュー          pnlBtn1  → 日常業務            (MENU/MainMenu.cs:820)
                         pnlMenu4 → ID204001 窓口精算   (MENU/MainMenu.cs:824)
 frm204001 窓口精算（患者選択）
-                        F3 「来患一覧」 → ID204008     (frm204001.cs:241-250)
+                        F3 「来患一覧」 → ID204008     (frm204001.cs:243-251)
 frm204008 来患一覧
 ```
 
@@ -109,7 +109,7 @@ TC-RCP-3 (28) **trùng khít** hai bên. Một điểm lệch duy nhất trong d
 > không trôi.
 
 1. ✅ **Nhãn dòng 合計 — ĐÃ SỬA** (`b2f1691f4 fix(api): 来患一覧の合計行を frm204008 と同じ書式に戻す`).
-   * WinForm (`frm204008.cs:768`): `"合計" + 人数.PadLeft(5) + "名　（" + 件数.PadLeft(4) + "件）"`
+   * WinForm (`frm204008.cs:807`): `"合計" + 人数.PadLeft(5) + "名　（" + 件数.PadLeft(4) + "件）"`
      → `合計   36名　（  86件）` (khoảng trắng **全角** U+3000 sau 「名」, 件数 độn 4).
    * API trước đây dùng khoảng trắng **半角** + `PadLeft(5)` → `合計   36名 （   86件）`;
      nay `GetPatientVisitListHandler.cs:174` đã dùng `\u3000` + `PadLeft(4)`.
@@ -120,19 +120,19 @@ TC-RCP-3 (28) **trùng khít** hai bên. Một điểm lệch duy nhất trong d
 2. ⬜ **`レセプト種別` (và 9 cột khác) sort được ở WinForm, KHÔNG sort được ở web** — CÒN MỞ, đã đo:
    bấm tiêu đề `レセプト種別` **sắp lại lưới**. `InitViewItem` đặt `SortMode.Automatic` cho
    **mọi** `TextBox` column (`GradientDataGridView.cs:441`), rồi `frm204008.init` hạ
-   **riêng** `pat_no`/`pat_nm` xuống `Programmatic` (`frm204008.cs:397-401`) — nên 10 cột
+   **riêng** `pat_no`/`pat_nm` xuống `Programmatic` (`frm204008.cs:411-414`) — nên 10 cột
    còn lại (`rcp_type`, `day`, điểm, tiền…) sort được. Bản web đặt `enableSorting: false`
    cho đúng 10 cột đó.
 
 3. ⬜ **Bấm tiêu đề `患者番号` ở WinForm KHÔNG làm gì** — CÒN MỞ, đã đo: lưới đứng yên.
    `dgvView_CellMouseClick` dò `dgv.Columns[e.ColumnIndex].Name == "dsp_pat_no"`
-   (`frm204008.cs:241`) trong khi `_viewItem` đặt tên cột là `"pat_no"` ⇒ nhánh sort đó
+   (`frm204008.cs:242`) trong khi `_viewItem` đặt tên cột là `"pat_no"` ⇒ nhánh sort đó
    **không bao giờ chạy**, và `SortMode` cũng đã bị hạ xuống `Programmatic` nên
    `DataGridView` không tự sort thay. Bản web thì `患者番号` **sort được**.
    (`氏名` thì cả hai bên đều sort — handler khớp đúng tên cột nên `ComLibrary.kanaSort`
    chạy bình thường.)
    → cả 2 và 3 được `TC_SORT_1` chốt lại. Chưa bên nào đổi (kiểm lại 2026-09-04:
-   `frm204008.cs:241` vẫn dò `"dsp_pat_no"`, và TC-OPEN-2 bên Playwright vẫn xanh với
+   `frm204008.cs:242` vẫn dò `"dsp_pat_no"`, và TC-OPEN-2 bên Playwright vẫn xanh với
    `aria-sort` chỉ có trên 患者番号/氏名). Đây là chuyện **quyết định sản phẩm**, không
    phải bug thuần: ở điểm 3 thì bản web đang *đúng hơn* WinForm.
 
@@ -165,7 +165,7 @@ nhầm là đổi luôn điều kiện tìm kiếm).
 
 ### 7.2 Hộp thoại 「CSV出力が完了しました。」 — hai lỗi chồng lên nhau
 
-I00005 bung **sau** khi `StreamWriter` đóng file (`frm204008.cs:317`), mà `File.Exists`
+I00005 bung **sau** khi `StreamWriter` đóng file (`frm204008.cs:326`), mà `File.Exists`
 thành true **ngay lúc** file được tạo — sớm hơn hộp thoại. Chờ theo file rồi dẹp một lần
 là dẹp hụt, và cái hộp còn lại là **modal**.
 
@@ -192,7 +192,7 @@ biệt được hộp của app với hộp của shell mà không phải đoán
 
 ### 7.3 Ô bị banding đọc ra chuỗi `(null)`, không phải rỗng
 
-`dgvView_CellFormatting` đặt `e.Value = ""` cho ô lặp lại (`frm204008.cs:155-159`), và
+`dgvView_CellFormatting` đặt `e.Value = ""` cho ô lặp lại (`frm204008.cs:161-167`), và
 `DataGridViewCellAccessibleObject.Value` của .NET Framework trả về chuỗi tài nguyên
 `DataGridView_AccNullValue` khi `FormattedValue` rỗng — trên máy test (Windows tiếng Anh)
 là `(null)`.

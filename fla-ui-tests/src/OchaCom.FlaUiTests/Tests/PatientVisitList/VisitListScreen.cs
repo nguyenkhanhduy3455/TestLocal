@@ -11,15 +11,15 @@ public sealed record VisitGridRow(IReadOnlyList<string> Cells)
 {
     /// <summary>
     /// Ô đã bỏ khoảng trắng mà <c>dgvView_CellFormatting</c> chèn thêm
-    /// (frm204008.cs:139-155: cột canh trái thành 「 {0}」, canh phải thành 「{0} 」).
+    /// (frm204008.cs:141-158: cột canh trái thành 「 {0}」, canh phải thành 「{0} 」).
     ///
     /// <para>KHÔNG chuẩn hoá NFKC ở đây: レセプト種別 dùng 全角 có chủ ý
-    /// (<c>editHanToZen</c> ở buiPrice.cs:1560 biến 「2」 thành 「２」), NFKC sẽ xoá đúng
+    /// (<c>editHanToZen</c> ở buiPrice.cs:1558 biến 「2」 thành 「２」), NFKC sẽ xoá đúng
     /// đặc điểm đang cần đo.</para>
     /// </summary>
     public string Cell(int i) => i < Cells.Count ? Cells[i].Trim(' ', '　') : "";
 
-    // Thứ tự đúng _viewItem của frm204008 (frm204008.cs:62-77).
+    // Thứ tự đúng _viewItem của frm204008 (frm204008.cs:63-78).
     public string PatNo => Cell(0);
     public string PatNm => Cell(1);
     public string RcpType => Cell(2);
@@ -27,7 +27,7 @@ public sealed record VisitGridRow(IReadOnlyList<string> Cells)
     public string SyosinFlg => Cell(4);
     public string PriceTotal => Cell(11);
 
-    /// <summary>Dòng 合計 không có 患者番号 và 氏名 mở đầu bằng 「合計」 (frm204008.cs:768).</summary>
+    /// <summary>Dòng 合計 không có 患者番号 và 氏名 mở đầu bằng 「合計」 (frm204008.cs:807).</summary>
     public bool IsTotalRow => PatNo.Length == 0 && PatNm.StartsWith("合計", StringComparison.Ordinal);
 
     public override string ToString() =>
@@ -54,10 +54,10 @@ public sealed record SearchRunResult(
 /// ĐƯỜNG VÀO (không có đường tắt)
 /// ═══════════════════════════════════════════════════════════════════════════
 /// <code>
-///   メインメニュー          pnlBtn1  → 日常業務          (MainMenu.cs:812)
+///   メインメニュー          pnlBtn1  → 日常業務          (MainMenu.cs:820)
 ///                           pnlMenu4 → ID204001 窓口精算 (MainMenu.cs:824)
 ///   frm204001 窓口精算（患者選択）
-///                           F3 「来患一覧」 → ID204008   (frm204001.cs:241-250)
+///                           F3 「来患一覧」 → ID204008   (frm204001.cs:243-251)
 ///   frm204008 来患一覧
 /// </code>
 /// <para>frm204001 mở ở chế độ 未精算患者一覧 và tìm ngay; không có 未精算 nào thì nó bung
@@ -74,7 +74,7 @@ public sealed record SearchRunResult(
 ///   chkSaisin   再診       mặc định Checked
 ///   chkHoumon   訪問診療   mặc định Checked
 ///   btnTotal    検索       nhãn là 「検索」 dù id là btnTotal (Designer:123);
-///                          END/ESC cũng vào cùng searchProc() (frm204008.cs:363)
+///                          END/ESC cũng vào cùng searchProc() (frm204008.cs:366)
 ///   dgvViewS    lưới 12 cột, mọi cột ReadOnly
 /// </code>
 ///
@@ -111,7 +111,7 @@ public sealed class VisitListScreen
     /// <summary>Thanh tiến trình của <c>searchProc</c> (COMMON.Forms.frm902005).</summary>
     public const string ProgressWindowId = "frm902005";
 
-    /// <summary>Nhãn 12 cột, đúng <c>_viewItem</c> của frm204008 (frm204008.cs:62-77).</summary>
+    /// <summary>Nhãn 12 cột, đúng <c>_viewItem</c> của frm204008 (frm204008.cs:63-78).</summary>
     public static readonly string[] HeaderLabels =
     [
         "患者番号", "氏　　名", "レセプト種別", "診療日", "初/再診",
@@ -120,7 +120,7 @@ public sealed class VisitListScreen
     ];
 
     /// <summary>
-    /// Nhãn 12 cột của FILE CSV — <c>editCsvHeader</c> (frm204008.cs:1004-1032).
+    /// Nhãn 12 cột của FILE CSV — <c>editCsvHeader</c> (frm204008.cs:1005-1039).
     ///
     /// <para>Giống <see cref="HeaderLabels"/> ở 11 cột đầu, KHÁC ở cột cuối: CSV ghi
     /// 「合計金額」 còn lưới hiện 「　 合計金額」 (có khoảng trắng độn để căn phải). Hai hằng
@@ -214,7 +214,7 @@ public sealed class VisitListScreen
     /// Đặt 診療年月 = <paramref name="sinryoYm"/> (yyyyMM) rồi ĐẨY FOCUS RA NGOÀI.
     ///
     /// <para>Ô 年 nhận năm HOÀNG LỊCH: 2006/01 → 平成18 → gõ 「18」. Ô 日 đã bị
-    /// <c>delDay(false)</c> giấu đi (frm204008.cs:427) nên chỉ có 2 ô cần gõ — khác
+    /// <c>delDay(false)</c> giấu đi (frm204008.cs:425) nên chỉ có 2 ô cần gõ — khác
     /// <c>AppNavigator.SetTreatmentDate</c> vốn gõ cả 3.</para>
     ///
     /// <para>Bước rời focus (click sang checkbox 初診) KHÔNG phải cho đẹp — xem bẫy số 1
@@ -243,7 +243,7 @@ public sealed class VisitListScreen
     ///
     /// <para>Đặt focus vào LƯỚI chứ không phải một checkbox: lưới ReadOnly hoàn toàn nên
     /// focus vào đó không đổi trạng thái gì, còn chạm nhầm 初診/再診/訪問診療 là đổi luôn
-    /// điều kiện tìm kiếm (mask ở frm204008.cs:668-674) và cả testcase mất nghĩa.</para>
+    /// điều kiện tìm kiếm (mask ở frm204008.cs:677-682) và cả testcase mất nghĩa.</para>
     /// </summary>
     private void LeaveDateControl()
     {
@@ -297,7 +297,7 @@ public sealed class VisitListScreen
             throw new InvalidOperationException(
                 $"cboEra không có 元号 「{eraName}」. Đang có: " +
                 string.Join(" / ", items.Select(i => $"「{Txt.N(Uia.NameOf(i))}」")) +
-                ". Danh sách 元号 đọc từ <EraInfo> trong C:\\NEW_SIM2000\\Ocha.xml (CustomDate.cs:296).");
+                ". Danh sách 元号 đọc từ <EraInfo> trong C:\\NEW_SIM2000\\Ocha.xml (CustomDate.cs:297).");
         }
 
         try { hit.AsListBoxItem().Select(); }
@@ -441,7 +441,7 @@ public sealed class VisitListScreen
     /// Framework trả về chuỗi tài nguyên <c>DataGridView_AccNullValue</c> — trên máy test
     /// (Windows tiếng Anh) là 「(null)」 — chứ KHÔNG phải chuỗi rỗng. Đây chính là dấu
     /// hiệu đọc được của banding: <c>dgvView_CellFormatting</c> đặt <c>e.Value = ""</c>
-    /// cho ô lặp lại (frm204008.cs:155-159).</para>
+    /// cho ô lặp lại (frm204008.cs:161-167).</para>
     ///
     /// <para>Đừng nhầm với ô SỐ không có giá trị (介護保険点数…): những ô đó qua
     /// <c>string.Format("{0:#,0} ", DBNull)</c> thành một dấu cách, tức FormattedValue
@@ -472,7 +472,7 @@ public sealed class VisitListScreen
     ///
     /// <para>Trả về phần tử con của dòng đầu — cùng chỗ mà <see cref="HeaderRow"/> đọc chữ
     /// ra. Click vào đây đi qua đúng <c>dgvView_CellMouseClick</c> với
-    /// <c>e.RowIndex == -1</c> (frm204008.cs:239-265).</para>
+    /// <c>e.RowIndex == -1</c> (frm204008.cs:228-266).</para>
     /// </summary>
     public IReadOnlyList<AutomationElement> HeaderCells()
     {
@@ -510,12 +510,12 @@ public sealed class VisitListScreen
     /// Xuất toàn bộ lưới ra CSV bằng <b>F4 CSV出力</b> rồi đọc lại file.
     ///
     /// <para>Đây là đường DUY NHẤT lấy được cả 86 dòng: <c>outputCsvFile</c> ghi thẳng
-    /// <c>dgvViewS.DataSource</c> (frm204008.cs:979-1000) nên không qua
+    /// <c>dgvViewS.DataSource</c> (frm204008.cs:980-1003) nên không qua
     /// <c>CellFormatting</c> — không có khoảng trắng độn, không có ô bị banding bỏ trắng,
     /// và có cả dòng 合計. Đúng nghĩa 「đáp án thô của WinForm」 để đối chiếu với payload
     /// <c>/tenant/settlement/visit-list</c> của bản web.</para>
     ///
-    /// <para>File ghi bằng <b>Shift_JIS</b> (ExcelIO.cs:388) — .NET 8 không có sẵn
+    /// <para>File ghi bằng <b>Shift_JIS</b> (ExcelIO.cs:389) — .NET 8 không có sẵn
     /// code-page đó, xem <see cref="RegisterShiftJis"/>.</para>
     ///
     /// <para>Không bấm nút 「保存」 theo tên: hộp thoại này là hộp thoại của SHELL nên chữ
@@ -560,7 +560,7 @@ public sealed class VisitListScreen
         // ⚠️ CHỜ ĐÚNG HỘP THOẠI I00005, KHÔNG PHẢI 「có hộp thoại nào đó」, KHÔNG PHẢI FILE.
         //
         // 「CSV出力が完了しました。」 (I00005) bung SAU khi StreamWriter đóng file
-        // (frm204008.cs:317), còn File.Exists thành true NGAY LÚC file được TẠO. Chờ theo
+        // (frm204008.cs:326), còn File.Exists thành true NGAY LÚC file được TẠO. Chờ theo
         // file thì thoát sớm, hộp thoại ở lại và MODAL: mọi thao tác sau đó rơi vào nó.
         // Đã trả giá 2026-09-04 — Tc0d kết luận 「bấm tiêu đề cột không sort」 cho cả ba cột
         // trong khi ba cú click đều rơi vào hộp thoại đang che lưới; chỉ ảnh chụp mới lộ ra.

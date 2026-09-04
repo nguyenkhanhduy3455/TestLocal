@@ -16,7 +16,7 @@ namespace OchaCom.FlaUiTests.Tests.PatientVisitList;
 /// Nửa WinForm của <c>web-tenant-tests/tests/patient-visit-list-rcp-type.spec.ts</c>.
 /// Bản web bị báo 「レセプト種別 luôn null」, và khi soát lại lộ ra bug khác ở đúng cột đó:
 /// <c>buiPrice.getReceiptType</c> ghi <c>単独</c> NGƯỢC vào <c>patInfoData.ins.combi_kbn</c>
-/// (buiPrice.cs:1563). WinForm lấy lại <c>patInfo</c> cho TỪNG dòng (frm204008.cs:711) nên
+/// (buiPrice.cs:1563). WinForm lấy lại <c>patInfo</c> cho TỪNG dòng (frm204008.cs:713) nên
 /// ghi đè không lan; bản web dùng lại một instance <c>Insurance</c> xuyên các ngày.
 /// Luồng này đo <b>đáp án WinForm</b> để bản web có mốc mà khớp.
 ///
@@ -35,7 +35,7 @@ namespace OchaCom.FlaUiTests.Tests.PatientVisitList;
 ///  KQ-9  Bấm tiêu đề cột có sort không? (nghi LỆCH: web khoá sort mọi cột trừ
 ///        患者番号/氏名, còn WinForm để SortMode.Automatic cho 10 cột kia — và ngược lại
 ///        handler sort 患者番号 của WinForm dò tên cột 「dsp_pat_no」 trong khi cột tên
-///        「pat_no」, tức là NÓ KHÔNG BAO GIỜ CHẠY, frm204008.cs:241)
+///        「pat_no」, tức là NÓ KHÔNG BAO GIỜ CHẠY, frm204008.cs:242)
 /// </code>
 ///
 /// <para><b>CHỈ ĐỌC.</b> Luồng này không seed, không bấm F9, không đụng DB. Thứ duy nhất
@@ -431,7 +431,7 @@ public sealed class PatientVisitListProbeTests : UiTestBase
         return [];
     }
 
-    /// <summary>Một dòng của CSV do F4 ghi ra (thứ tự cột = editCsvHeader, frm204008.cs:1004).</summary>
+    /// <summary>Một dòng của CSV do F4 ghi ra (thứ tự cột = editCsvHeader, frm204008.cs:1005).</summary>
     private sealed record CsvRow(int PatNo, string PatNm, string RcpType, int Day);
 
     private static IReadOnlyList<CsvRow> ParseCsv(IReadOnlyList<string> lines)
@@ -441,7 +441,7 @@ public sealed class PatientVisitListProbeTests : UiTestBase
         {
             var f = line.Split(',');
             if (f.Length < 4) continue;
-            // Dòng 合計 có pat_no rỗng (frm204008.cs:765 chỉ đặt pat_nm).
+            // Dòng 合計 có pat_no rỗng (frm204008.cs:807 chỉ đặt pat_nm).
             if (!int.TryParse(f[0].Trim(), out var patNo)) continue;
             if (!int.TryParse(f[3].Trim(), out var day)) continue;
             rows.Add(new CsvRow(patNo, f[1].Trim(), f[2].Trim(), day));

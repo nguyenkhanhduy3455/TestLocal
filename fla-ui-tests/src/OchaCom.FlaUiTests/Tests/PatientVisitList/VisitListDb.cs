@@ -13,7 +13,7 @@ public sealed record VisitInsurance(
     int? OldFlg,
     int? BurRate,
     DateTime? Birthdate,
-    /// <summary><c>medinsinf.fm_type</c> — nhánh 本外/家外 cuối cùng (buiPrice.cs:1596).</summary>
+    /// <summary><c>medinsinf.fm_type</c> — nhánh 本外/家外 cuối cùng (buiPrice.cs:1599).</summary>
     int? FmType,
     string PatNm);
 
@@ -49,7 +49,7 @@ public sealed record ExpectedVisit(int PatNo, DateTime TrtDt, int PatBr)
 /// của một 診療年月 và đối chiếu, nên chạy được trên DB dùng chung.</para>
 ///
 /// <para><b>Số dòng ≤ số <see cref="ExpectedVisits"/>.</b> frm204008 chỉ thêm dòng khi
-/// <c>insScore != 0 || careScore != 0 || jihiPrice != 0</c> (frm204008.cs:723) và còn lọc
+/// <c>insScore != 0 || careScore != 0 || jihiPrice != 0</c> (frm204008.cs:733) và còn lọc
 /// theo 3 checkbox 初診/再診/訪問診療 (:715). Cả hai điều kiện đó nằm trong
 /// <c>getBuiPrice2</c> nên lớp này KHÔNG đoán — nó chỉ nói 「tối đa từng này dòng」.</para>
 /// </summary>
@@ -163,7 +163,7 @@ public sealed class VisitListDb
     /// <c>PatInfoList.getPatInfoCopyData</c> dùng.
     ///
     /// <para>Khoá là CẶP (pat_no, pat_br) chứ không phải riêng pat_no: WinForm lấy 枝番 từ
-    /// chính dòng <c>trntrn</c> của ngày đó (frm204008.cs:709-711), nên một bệnh nhân
+    /// chính dòng <c>trntrn</c> của ngày đó (frm204008.cs:709-713), nên một bệnh nhân
     /// nhiều 枝番 vẫn tra được chính xác. Bản web KHÔNG trả 枝番 nên spec Playwright phải
     /// bỏ qua các bệnh nhân đó — nửa WinForm thì không cần.</para>
     /// </summary>
@@ -200,7 +200,7 @@ public sealed class VisitListDb
         static int? Int(SqlDataReader r, int i) => r.IsDBNull(i) ? null : Convert.ToInt32(r.GetValue(i));
     }
 
-    /// <summary>Ngày đầu / ngày cuối của 診療年月, đúng khoảng mà frm204008.cs:707 dựng.</summary>
+    /// <summary>Ngày đầu / ngày cuối của 診療年月, đúng khoảng mà frm204008.cs:709 dựng.</summary>
     public static (DateTime First, DateTime Last) MonthRange(string sinryoYm)
     {
         var (y, m) = ParseYm(sinryoYm);

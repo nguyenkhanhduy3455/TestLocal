@@ -16,7 +16,7 @@ namespace OchaCom.FlaUiTests.Tests.PatientVisitList;
 /// ═══════════════════════════════════════════════════════════════════════════
 /// Bản web bị báo 「レセプト種別 luôn null」. Soát lại thì lộ ra bug KHÁC ở đúng cột đó:
 /// <c>buiPrice.getReceiptType</c> ghi <c>単独</c> NGƯỢC vào <c>patInfoData.ins.combi_kbn</c>
-/// (buiPrice.cs:1563) — WinForm lấy lại <c>patInfo</c> cho TỪNG dòng (frm204008.cs:711)
+/// (buiPrice.cs:1563) — WinForm lấy lại <c>patInfo</c> cho TỪNG dòng (frm204008.cs:713)
 /// nên ghi đè không lan, còn bản web dùng lại một instance <c>Insurance</c> xuyên các ngày.
 ///
 /// Fixture này KHÔNG so bản web với WinForm trực tiếp (hai bên chạy hai máy, hai DB
@@ -54,7 +54,7 @@ public sealed class PatientVisitListTests : UiTestBase
     /// <c>&lt;保険種別&gt;・&lt;単独 | N併&gt;・&lt;六外 | 本外 | 家外 | 高外７ | 高外－&gt;</c>,
     /// cộng hai nhánh trả về SỚM chỉ có nhãn: 労災 / 自費.
     ///
-    /// <para>Con số của vế 併 là 全角 vì <c>editHanToZen</c> (buiPrice.cs:1560) — nên đừng
+    /// <para>Con số của vế 併 là 全角 vì <c>editHanToZen</c> (buiPrice.cs:1558) — nên đừng
     /// NFKC chuỗi trước khi khớp, NFKC biến 「２併」 thành 「2併」 và phá luôn nhánh đó.</para>
     /// </summary>
     private static readonly Regex RcpTypeShape =
@@ -189,7 +189,7 @@ public sealed class PatientVisitListTests : UiTestBase
         var headers = _screen.HeaderRow();
 
         Assert.That(headers, Has.Count.EqualTo(VisitListScreen.HeaderLabels.Length),
-            "số cột khác _viewItem của frm204008 (frm204008.cs:62-77). Đọc được: " +
+            "số cột khác _viewItem của frm204008 (frm204008.cs:63-78). Đọc được: " +
             string.Join(" | ", headers.Select(h => $"「{h}」")));
 
         // NFKC hai vế: 「氏　　名」 dùng khoảng trắng 全角 còn 「　 合計金額」 có cả 全角 lẫn
@@ -266,7 +266,7 @@ public sealed class PatientVisitListTests : UiTestBase
         foreach (var row in _csvRows)
         {
             // Khoá theo (患者番号, NGÀY): cột 診療日 của lưới là row2["day"] = trtStDt.Day
-            // (frm204008.cs:744), không phải ngày đầy đủ.
+            // (frm204008.cs:761), không phải ngày đầy đủ.
             var visit = _expected.FirstOrDefault(v => v.PatNo == row.PatNo && v.Day == row.Day);
             var ins = visit is null
                 ? null
@@ -320,7 +320,7 @@ public sealed class PatientVisitListTests : UiTestBase
             else
             {
                 // 患者番号 trắng ⇒ lặp lại bệnh nhân dòng trên. IsTheSameCellValue so từ
-                // cột 0 tới cột đang xét (frm204008.cs:209-220) nên レセプト種別 chỉ HIỆN
+                // cột 0 tới cột đang xét (frm204008.cs:209-221) nên レセプト種別 chỉ HIỆN
                 // LẠI khi nó thật sự đổi — mà nó không được đổi (TC-RCP-3).
                 if (!VisitListScreen.IsBlanked(row.RcpType))
                     problems.Add(
@@ -340,14 +340,14 @@ public sealed class PatientVisitListTests : UiTestBase
     public void TC_BAND_2_DongTongNamCuoiVaDungCongThuc()
     {
         Assert.That(_csvTotal, Is.Not.Null,
-            "có dòng khám mà CSV thiếu dòng 合計 (frm204008.cs:761 chỉ thêm khi Rows.Count > 0)");
+            "có dòng khám mà CSV thiếu dòng 合計 (frm204008.cs:799 chỉ thêm khi Rows.Count > 0)");
 
-        // frm204008.cs:768 — CHÍNH XÁC tới từng khoảng trắng, kể cả 全角 sau 「名」.
+        // frm204008.cs:807 — CHÍNH XÁC tới từng khoảng trắng, kể cả 全角 sau 「名」.
         var patients = _csvRows.Select(r => r.PatNo).Distinct().Count();
         var expected = "合計" + patients.ToString().PadLeft(5, ' ') +
                        "名　（" + _csvRows.Count.ToString().PadLeft(4, ' ') + "件）";
         Assert.That(_csvTotal!.PatNm, Is.EqualTo(expected),
-            "nhãn dòng 合計 khác công thức của frm204008.cs:768 " +
+            "nhãn dòng 合計 khác công thức của frm204008.cs:807 " +
             "(\"合計\" + 人数.PadLeft(5) + \"名　（\" + 件数.PadLeft(4) + \"件）\")");
 
         // Dòng 合計 phải là dòng CUỐI của cả CSV lẫn lưới.
@@ -357,7 +357,7 @@ public sealed class PatientVisitListTests : UiTestBase
             "dòng cuối lưới không phải dòng 合計");
 
         Assert.That(_csvTotal.PriceTotal, Is.EqualTo(_csvRows.Sum(r => r.PriceTotal)),
-            "合計金額 của dòng 合計 không bằng tổng các dòng khám (frm204008.cs:769-777)");
+            "合計金額 của dòng 合計 không bằng tổng các dòng khám (frm204008.cs:808-816)");
     }
 
     // ── CSV + số dòng ────────────────────────────────────────────────────────
@@ -367,7 +367,7 @@ public sealed class PatientVisitListTests : UiTestBase
     {
         Assert.That(_csvLines, Is.Not.Empty, "CSV rỗng");
         Assert.That(_csvLines[0], Is.EqualTo(string.Join(",", VisitListScreen.CsvHeaderLabels)),
-            "header CSV khác editCsvHeader (frm204008.cs:1004-1032). Lưu ý cột cuối: CSV ghi " +
+            "header CSV khác editCsvHeader (frm204008.cs:1005-1039). Lưu ý cột cuối: CSV ghi " +
             "「合計金額」 còn lưới hiện 「　 合計金額」 — hai chuỗi đến từ hai đoạn code khác nhau.");
 
         // CSV ghi thẳng DataTable nên KHÔNG bị banding — cùng một bệnh nhân, mọi dòng đều
@@ -393,7 +393,7 @@ public sealed class PatientVisitListTests : UiTestBase
 
         Assert.That(orphan.Take(5), Is.Empty,
             $"{orphan.Count} dòng trên màn hình không có (trt_dt, pat_br) tương ứng trong trntrn — " +
-            "khác hẳn vòng lặp của setViewData (frm204008.cs:707-711)");
+            "khác hẳn vòng lặp của setViewData (frm204008.cs:709-713)");
 
         // Ngược lại KHÔNG được assert bằng nhau: frm204008 chỉ thêm dòng khi
         // insScore/careScore/jihiPrice != 0 và còn lọc theo 3 cờ 初診/再診/訪問診療.
@@ -421,7 +421,7 @@ public sealed class PatientVisitListTests : UiTestBase
         Assert.That(headers, Has.Count.EqualTo(VisitListScreen.HeaderLabels.Length),
             "không lấy được 12 ô tiêu đề để click");
 
-        // 患者番号 — dgvView_CellMouseClick dò tên cột 「dsp_pat_no」 (frm204008.cs:241)
+        // 患者番号 — dgvView_CellMouseClick dò tên cột 「dsp_pat_no」 (frm204008.cs:242)
         // trong khi _viewItem đặt tên cột là 「pat_no」 ⇒ nhánh đó KHÔNG BAO GIỜ chạy, và
         // SortMode đã bị hạ xuống Programmatic (:397) nên DataGridView cũng không tự sort.
         // Bản web thì 患者番号 sort được — đây là điểm LỆCH, và testcase này là chỗ ghi lại.
@@ -430,7 +430,7 @@ public sealed class PatientVisitListTests : UiTestBase
         Thread.Sleep(800);
         Assert.That(_screen.Fingerprint(), Is.EqualTo(before),
             "bấm tiêu đề 患者番号 đã sắp lại lưới — nghĩa là ai đó vừa sửa tên cột ở " +
-            "frm204008.cs:241 (「dsp_pat_no」 → 「pat_no」). Tin tốt, nhưng bản web và " +
+            "frm204008.cs:242 (「dsp_pat_no」 → 「pat_no」). Tin tốt, nhưng bản web và " +
             "testcase này phải cập nhật cùng lúc.");
 
         // 氏名 — Programmatic, nhưng handler khớp đúng tên cột nên ComLibrary.kanaSort chạy.
@@ -438,7 +438,7 @@ public sealed class PatientVisitListTests : UiTestBase
         Uia.MouseClick(headers[1]);
         Thread.Sleep(800);
         Assert.That(_screen.Fingerprint(), Is.Not.EqualTo(before),
-            "bấm tiêu đề 氏名 KHÔNG sắp lại lưới — ComLibrary.kanaSort (frm204008.cs:261) " +
+            "bấm tiêu đề 氏名 KHÔNG sắp lại lưới — ComLibrary.kanaSort (frm204008.cs:265) " +
             "lẽ ra phải chạy. Kiểm xem có hộp thoại nào đang che lưới không (README §7.2).");
 
         // レセプト種別 — InitViewItem để SortMode.Automatic cho MỌI cột TextBox
@@ -464,7 +464,7 @@ public sealed class PatientVisitListTests : UiTestBase
 }
 
 /// <summary>
-/// Một dòng của CSV do F4 ghi ra. Thứ tự cột đúng <c>editCsvData</c> (frm204008.cs:1038).
+/// Một dòng của CSV do F4 ghi ra. Thứ tự cột đúng <c>editCsvData</c> (frm204008.cs:1042).
 ///
 /// <para>Không dùng thư viện CSV: <c>editCsvData</c> nối chuỗi bằng dấu phẩy và KHÔNG
 /// bọc nháy, nên tách theo dấu phẩy là đúng cách app ghi. (Hệ quả: 氏名 có dấu phẩy sẽ
@@ -485,7 +485,7 @@ public sealed record CsvRow(
 
             var priceTotal = int.TryParse(f[11].Trim(), out var p) ? p : 0;
 
-            // Dòng 合計 bỏ trống 患者番号 và 診療日 (frm204008.cs:764-777).
+            // Dòng 合計 bỏ trống 患者番号 và 診療日 (frm204008.cs:799-818).
             if (!int.TryParse(f[0].Trim(), out var patNo))
             {
                 if (f[1].StartsWith("合計", StringComparison.Ordinal))
