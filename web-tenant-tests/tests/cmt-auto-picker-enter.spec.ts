@@ -10,6 +10,13 @@
  *   key==='Enter' → querySelector('[role="alertdialog"]') → document.activeElement
  *   là INPUT/TEXTAREA thì return. KHÔNG check defaultPrevented.
  *
+ * ⚠️ CẬP NHẬT — `defData` đã được sửa đúng frm203012.cs:614-624: mỗi lần chèn là
+ * `cmtNm + '\n'` tại caret (trước đây là `'\n' + cmtNm` nối vào cuối). Ô text vì
+ * vậy LUÔN kết thúc bằng '\n' → TC-5 so chuỗi đầy đủ phải có '\n' ở cuối.
+ * `lineCount` đếm dòng có chữ nên KHÔNG bị ảnh hưởng. Các hành vi mới khác
+ * (F1 部位 / getAsta / Enter trong ô text / End・ESC = 確定) nằm ở
+ * cmt-auto-picker-parity.spec.ts.
+ *
  * Dialog TỰ BẬT khi mở 診療入力 của bệnh nhân có 処置 cần chọn カルテ記載.
  * Gộp 1 test = 1 login (app giới hạn 10 login / khung thời gian).
  *
@@ -188,5 +195,5 @@ test('カルテ記載選択 — Enter window-level (TC-1/2/3/4)', async ({ page 
   expect(
     await textarea(page).inputValue(),
     'TC-5 FAIL: con trỏ không tiến sau Enter → hai lần Enter chèn cùng một dòng',
-  ).toBe(`${displayed[0]}\n${displayed[1]}`)
+  ).toBe(`${displayed[0]}\n${displayed[1]}\n`)
 })
