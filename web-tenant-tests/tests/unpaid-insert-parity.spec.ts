@@ -12,6 +12,15 @@ import { ADMIN_USER, JA } from './test-data'
  *   · `sflg`   (初診フラグ) — phải theo bảng mã **1=初診 / 2=再診 / 3=再初診**.
  *   · `att_dr` (担当医)     — phải là Dr đang chọn trên header 診療入力.
  *
+ * Từ 2026-09-04 spec canh thêm một cột nữa của CÙNG câu INSERT:
+ *
+ *   · `trt_cnt` (診療回) — phải là 当日来院回数 của DÒNG CON TRỎ
+ *     (`intSelectRaiin = CInt(hFG1[71, hFG1.CurrentCellAddress.Y])`, modAcc.cs:415),
+ *     dòng 介護保険 lấy `+100` (modAcc.cs:673). Bản port từng để `1` cứng.
+ *     Kịch bản NGÀY 2 LƯỢT KHÁM — nơi con số này thực sự phân biệt đúng/sai —
+ *     nằm ở spec riêng `unpaid-raiin-cnt-parity.spec.ts` (nó tự dựng dữ liệu).
+ *     Ở đây chỉ neo `unpaid.trt_cnt` vào `trn_trn.raiin_cnt` trên DỮ LIỆU THẬT.
+ *
  * Bug tester báo (2026-08-26):
  *   · `SFLG`   — hệ cũ ghi 3 cho ngày có 歯科初診料 và 2 cho ngày 歯科再診料;
  *                web ghi 2 cho cả hai ngày.
@@ -156,6 +165,9 @@ const COL_DAY = 0
 /** rowKey dòng tháng cũ (`isHistoryRowKey`); dòng tháng hiện hành mang uuid. */
 const HISTORY_KEY_RE = /^\d+-\d+$/
 
+/** 介護保険行 lấy `trt_cnt = 来院回数 + 100` (modAcc.cs:673). */
+const CARE_TRT_CNT_OFFSET = 100
+
 /** Ba giá trị hợp lệ của `unpaid.sflg` — buiPrice's 4 KHÔNG nằm trong đây. */
 const SFLG = { firstVisit: 1, revisit: 2, repeatFirstVisit: 3 } as const
 
@@ -170,6 +182,7 @@ interface DaySummary {
 interface UnpaidRow {
     trtCnt: number
     kmCd: number
+    lflg: number
     sflg: number
     attDr: number
 }
@@ -273,11 +286,38 @@ async function readHasPastFirstVisit(): Promise<boolean> {
     })
 }
 
+/**
+ * 来院回数 của dòng ĐẦU TIÊN trong ngày (theo thứ tự hiển thị `disp_no`, `seq`).
+ *
+ * Đó chính là dòng mà `runF8On` đặt con trỏ vào, nên nó là kỳ vọng của
+ * `unpaid.trt_cnt`. `null` khi ngày không có dòng 処置 nào.
+ */
+async function readFirstRowRaiinCnt(trtDt: string): Promise<number | null> {
+    return withDb(async (c) => {
+        const r = await c.query<{ raiin_cnt: number }>(
+            `SELECT raiin_cnt
+               FROM view_trn_trn_active
+              WHERE pat_no = $1 AND trt_dt = $2
+              ORDER BY disp_no, seq
+              LIMIT 1`,
+            [PAT_NO, trtDt],
+        )
+        const v = r.rows[0]?.raiin_cnt
+        return v === undefined ? null : Number(v)
+    })
+}
+
 /** Mọi dòng 未精算 còn sống của một ngày. */
 async function readUnpaidRows(trtDt: string): Promise<UnpaidRow[]> {
     return withDb(async (c) => {
-        const r = await c.query<{ trt_cnt: number; km_cd: number; sflg: number; att_dr: number }>(
-            `SELECT trt_cnt, km_cd, sflg, att_dr
+        const r = await c.query<{
+            trt_cnt: number
+            km_cd: number
+            lflg: number
+            sflg: number
+            att_dr: number
+        }>(
+            `SELECT trt_cnt, km_cd, lflg, sflg, att_dr
                FROM view_unpaid_active
               WHERE pat_no = $1 AND trt_dt = $2
               ORDER BY trt_cnt, km_cd`,
@@ -286,6 +326,7 @@ async function readUnpaidRows(trtDt: string): Promise<UnpaidRow[]> {
         return r.rows.map((row) => ({
             trtCnt: Number(row.trt_cnt),
             kmCd: Number(row.km_cd),
+            lflg: Number(row.lflg),
             sflg: Number(row.sflg),
             attDr: Number(row.att_dr),
         }))
@@ -700,6 +741,46 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
                 ).toBe(drNo)
             }
             console.log(`${day}: att_dr = ${rows.map((r) => r.attDr).join(', ')} (header Dr ${drNo})`)
+        }
+    })
+
+    test('TC-RAIIN-1 — trt_cnt = 当日来院回数 của dòng con trỏ, KHÔNG phải 1 cứng', async () => {
+        const targets = [syosinDay, saisinDay].filter((d): d is string => d !== null)
+        skipWithReason(targets.length === 0, 'không có ngày nào chạy được ở TC-SFLG-1/2')
+        if (targets.length === 0) return
+
+        // Không bấm F8 thêm lần nào — đọc lại chính những dòng hai testcase trên
+        // vừa tạo. `runF8On` đặt con trỏ vào dòng ĐẦU của ngày, nên kỳ vọng là
+        // `raiin_cnt` của chính dòng đó (WinForm đọc hFG1[71] tại dòng con trỏ).
+        for (const day of targets) {
+            const expected = await readFirstRowRaiinCnt(day)
+            expect(expected, `ngày ${day} không có dòng 処置 nào trong trn_trn`).not.toBeNull()
+
+            const rows = await readUnpaidRows(day)
+            expect(rows, `không còn dòng 未精算 nào của ngày ${day}`).not.toHaveLength(0)
+
+            for (const row of rows) {
+                // `deleteTrtDtUnPaid` khoá theo `trt_cnt % 100` (UnPaid.cs:357) —
+                // dùng đúng phép đó để 医療保険 (n) và 介護保険 (n+100) cùng khớp.
+                expect(
+                    row.trtCnt % CARE_TRT_CNT_OFFSET,
+                    `ngày ${day}: unpaid.trt_cnt = ${row.trtCnt} (km_cd=${row.kmCd}) nhưng ` +
+                        `trn_trn.raiin_cnt của dòng con trỏ = ${String(expected)}. Bản port từng ` +
+                        'để trtCnt = 1 cứng (InsertUnpaidHandler, TODO Phase 2).',
+                ).toBe(expected)
+
+                // 介護保険行 (lflg = 1) là dòng DUY NHẤT được cộng 100.
+                const isCare = row.lflg === 1
+                expect(
+                    row.trtCnt >= CARE_TRT_CNT_OFFSET,
+                    `ngày ${day}: dòng lflg=${row.lflg} có trt_cnt = ${row.trtCnt}. ` +
+                        'Chỉ dòng 介護保険 mới mang +100 (modAcc.cs:673).',
+                ).toBe(isCare)
+            }
+            console.log(
+                `${day}: trt_cnt = ${rows.map((r) => r.trtCnt).join(', ')} ` +
+                    `(raiin_cnt dòng con trỏ = ${String(expected)})`,
+            )
         }
     })
 
