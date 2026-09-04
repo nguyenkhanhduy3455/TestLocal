@@ -256,7 +256,10 @@ public sealed class PatientVisitListProbeTests : UiTestBase
     [Test, Order(3)]
     public void Tc0c_XuatCsvVaDoiChieuOracle()
     {
-        if (_screen is null) { Log("=== KQ-7 === BỎ QUA: chưa mở được màn hình"); return; }
+        // Chạy lẻ được: bám vào app đang mở sẵn ở frm204008 (app.attachIfRunning) thay vì
+        // 集計 lại — một lượt 集計 tốn hàng phút và wrapper cắt ở 15 phút.
+        EnsureMonth();
+        if (!EnsureScreen()) { Log("=== KQ-7 === BỎ QUA: chưa mở được màn hình"); return; }
 
         IReadOnlyList<string> lines;
         var path = Path.Combine(ArtifactDir(), $"visit-list-{_ym}.csv");
@@ -264,7 +267,7 @@ public sealed class PatientVisitListProbeTests : UiTestBase
         {
             using var trace = TestTrace.Begin("Tc0c_VisitListCsv");
             trace.Step("F4 CSV出力");
-            lines = _screen.ExportCsv(path, trace);
+            lines = _screen!.ExportCsv(path, trace);
             Log($"=== KQ-7 === CSV ghi ra 「{path}」: {lines.Count} dòng (1 header + dữ liệu + 合計)");
             foreach (var l in lines.Take(8)) Log("=== KQ-7 ===   " + l);
             if (lines.Count > 0) Log("=== KQ-7 === dòng cuối: " + lines[^1]);
@@ -316,12 +319,12 @@ public sealed class PatientVisitListProbeTests : UiTestBase
     [Test, Order(4)]
     public void Tc0d_BamTieuDeCotCoSortKhong()
     {
-        if (_screen is null) { Log("=== KQ-9 === BỎ QUA: chưa mở được màn hình"); return; }
+        if (!EnsureScreen()) { Log("=== KQ-9 === BỎ QUA: chưa mở được màn hình"); return; }
 
         try
         {
             using var trace = TestTrace.Begin("Tc0d_VisitListSort");
-            _screen.ScrollAndRead(toBottom: false);
+            _screen!.ScrollAndRead(toBottom: false);
 
             var grid = new WinFormsGrid(_screen.Grid);
             var headerCells = HeaderCells(grid);
@@ -347,6 +350,41 @@ public sealed class PatientVisitListProbeTests : UiTestBase
     }
 
     // ── Tiện ích ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Bám vào (hoặc mở) màn 来患一覧. Trả false + ghi lý do thay vì ném — probe không
+    /// bao giờ được phép chết giữa chừng.
+    /// </summary>
+    private bool EnsureScreen()
+    {
+        if (_screen is not null) return true;
+        try
+        {
+            _screen = VisitListScreen.Open(App, Settings);
+            return true;
+        }
+        catch (Exception e)
+        {
+            Log("KHÔNG mở/bám được frm204008: " + e.Message);
+            return false;
+        }
+    }
+
+    /// <summary>Dựng lại tháng test + oracle khi testcase chạy lẻ (Tc0a không chạy cùng).</summary>
+    private void EnsureMonth()
+    {
+        if (_ym.Length > 0 || _db is null) return;
+        try
+        {
+            _ym = Settings.VisitList.SinryoYm.Trim();
+            if (_ym.Length == 0) _ym = _db.MonthsWithData(Settings.VisitList.MaxPatients).FirstOrDefault().Ym ?? "";
+            if (_ym.Length == 0) return;
+            _expected = _db.ExpectedVisits(_ym);
+            _insurance = _db.InsuranceFor(_ym);
+        }
+        catch (Exception e) { Log("KHÔNG dựng lại được oracle: " + e.Message); }
+    }
+
 
     private static IReadOnlyList<AutomationElement> HeaderCells(WinFormsGrid grid)
     {

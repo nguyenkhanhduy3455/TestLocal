@@ -65,7 +65,12 @@ $ns = "OchaCom.FlaUiTests.Tests.PatientVisitList"
 
 if ($Diagnostics) {
     # Fixture PROBE mang [Explicit] nen luot chay du khong goi toi; loc dich danh thi chay.
+    #
+    # Tach duoc tung Tc0x la CO CHU Y: mot lan 集計 ton hang phut, va wrapper
+    # runner-task.ps1 mac dinh cat o 15 phut. Chay Tc0a+Tc0b truoc (mo man hinh + 集計),
+    # roi Tc0c/Tc0d BAM VAO app dang mo (app.attachIfRunning) nen khong phai 集計 lai.
     $filter = "FullyQualifiedName~PatientVisitListProbeTests"
+    if ($Case -ne "") { $filter += "&FullyQualifiedName~$Case" }
 } elseif ($Case -ne "") {
     $filter = "FullyQualifiedName~$ns&FullyQualifiedName~$Case"
 } else {
