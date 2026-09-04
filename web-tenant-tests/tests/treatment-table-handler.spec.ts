@@ -1,6 +1,12 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 
-import { dbEnabled, deleteTreatmentRows, seedTreatmentRows } from './db'
+import {
+    dbEnabled,
+    deleteTreatmentRows,
+    deleteTreatmentRowsByTrtCd,
+    findTreatmentRows,
+    seedTreatmentRows,
+} from './db'
 import { makeStep } from './step'
 import { ADMIN_USER, JA } from './test-data'
 import { closeDialogs } from './virtual-grid'
@@ -88,8 +94,12 @@ import { closeDialogs } from './virtual-grid'
  *  3. Dòng 【介護保険一部負担金】 có `emptyMetrics` ⇒ ô 点/回 rỗng và không sửa được,
  *     nhưng ô 療法・処置 VẪN có `data-grid-cell` nên click đặt được focusedCell —
  *     đó là điều kiện cần để 行削除 tác động lên nó.
- *  4. Spec này TUYỆT ĐỐI KHÔNG bấm F9 登録 ⇒ không ghi DB. Dữ liệu duy nhất chạm
- *     DB là 2 dòng seed, dọn ở `afterAll`. Vì vậy không cần `TEST_ALLOW_SAVE`.
+ *  4. Mặc định spec này KHÔNG bấm F9 登録 ⇒ không ghi DB. Dữ liệu duy nhất chạm DB
+ *     là 2 dòng seed, dọn ở `afterAll`. NGOẠI LỆ DUY NHẤT là **TC-12**, khoá sau
+ *     `TEST_ALLOW_SAVE=1` và tự dọn trong `finally` — không đặt cờ thì nó skip và
+ *     tính chất "không ghi DB" của cả file vẫn nguyên (TC-6 vẫn là mốc chứng minh).
+ *     TC-12 phải tự dọn vì bulk-save GHI LẠI CẢ THÁNG với `disp_no` đánh số lại từ
+ *     1 ⇒ vùng `disp_no >= 9000` mà `afterAll` nhắm tới không còn bắt được dòng seed.
  *  5. `SanteiConfirmDialog` 「〜を算定しますか？」 bung ra lúc lưới nạp xong, đè lên
  *     mọi click → `addLocatorHandler` bấm No (GUIDELINE Rule 14/14.1; bấm Yes lại
  *     kéo theo カルテ記載選択).
@@ -150,6 +160,12 @@ const KAIGO_NM = '歯科医師居宅療養管理指導Ⅰ'
 const INS_TRT_CD = 1
 const INS_PT = 272
 const INS_NM = '歯科初診料'
+
+/**
+ * Rule 18.1 — TC-12 bấm F9 登録 nên GHI DB thật (bulk-save ghi lại CẢ THÁNG của
+ * bệnh nhân test). Không đặt cờ thì TC đó skip, phần còn lại của file vẫn chạy.
+ */
+const ALLOW_SAVE = process.env.TEST_ALLOW_SAVE === '1'
 
 /** `TRNTRN.JIHI_FLG`: 3 ⇒ 介護, 0 ⇒ 保険. */
 const JIHI_FLG_KAIGO = 3
@@ -710,4 +726,92 @@ test.describe('診療入力 — thao tác trên lưới 処置 (行追加 / 行�
             textBefore,
         )
     })
+
+    /**
+     * ─── TC-12: xoá dòng rồi F9 登録 — dữ liệu thật sự mất khỏi trn_trn ─────────
+     *
+     * Vế NGƯỢC của TC-6. TC-6 chứng minh 行削除 chưa lưu thì nạp lại là dòng quay
+     * về (đọc lại từ DB); TC-12 chứng minh khi CÓ lưu thì nó mất hẳn — tức
+     * `modSave.SaveData` (DelData + ghi lại cả tháng, modSave.cs:237/580) đã port
+     * đúng ở đường 行削除, không phải chỉ xoá trên màn hình.
+     *
+     * Đây là phần DUY NHẤT của `treatment-table-delete-rows.spec.ts` (bản ghi
+     * codegen, xoá 2026-09-04) chưa có spec nào phủ. File đó không chạy nổi: nó bấm
+     * Yes cho 「〜を算定しますか？」 rồi chỉ đóng MỘT 「カルテ記載選択」 trong khi
+     * AutoSantei bung cả hàng đợi, và lọc dòng bằng `div` chứa text `^<ngày>$` nên
+     * bắt trúng cả dòng trong dialog.
+     *
+     * GHI DB THẬT ⇒ khoá sau TEST_ALLOW_SAVE=1 (BẪY 4).
+     */
+    test('TC-12 — 行削除 + F9 登録: dòng đã xoá KHÔNG quay lại sau khi nạp lại (ghi DB)', async () => {
+        test.skip(
+            !ALLOW_SAVE,
+            'cần TEST_ALLOW_SAVE=1 — TC này bấm F9 登録, bulk-save ghi lại CẢ THÁNG của ' +
+                `bệnh nhân ${PAT_NO} ngày ${TRT_DT}`,
+        )
+
+        // Xuất phát từ đúng dữ liệu ĐÃ LƯU: TC-4/5/7 mới xoá trong bộ nhớ.
+        await openTreatmentScreen()
+        expect(
+            await rowCount(INS_NM),
+            `mốc hỏng: dòng seed 「${INS_NM}」 phải có mặt trước khi xoá`,
+        ).toBe(1)
+
+        try {
+            const row = await mustFindRow(INS_NM)
+            await openRowMenuOn(row)
+            await rowMenu().getByRole('button', { name: '行削除' }).click()
+            await expect
+                .poll(() => rowCount(INS_NM), { timeout: 10_000 })
+                .toBe(0)
+
+            // F9 登録 → hộp thoại chốt lưu → はい. Chờ ĐÚNG response bulk-save làm mốc
+            // (Rule 7), đừng đoán bằng sleep.
+            const saved = page.waitForResponse(
+                (r) =>
+                    r.url().includes('/tenant/treatment/bulk-save') &&
+                    r.request().method() === 'POST',
+                { timeout: 60_000 },
+            )
+            await page.keyboard.press('F9')
+            await step()
+            await page
+                .getByRole('button', { name: /^(はい|Yes|OK)$/ })
+                .first()
+                .click()
+            const resp = await saved
+            if (resp.status() >= 300) {
+                console.log(`bulk-save ${resp.status()}: ${await resp.text().catch(() => '?')}`)
+            }
+            expect(resp.status(), 'POST bulk-save không trả 2xx').toBeLessThan(300)
+            await step()
+
+            // Nạp lại = đọc lại trn_trn. Đây mới là phép đo thật.
+            await openTreatmentScreen()
+            expect(
+                await rowCount(INS_NM),
+                `xoá 「${INS_NM}」 rồi F9 登録 mà nạp lại vẫn thấy ⇒ 行削除 chỉ đổi trên màn ` +
+                    'hình, payload gửi đi vẫn mang dòng đó (modSave.SaveData ghi lại cả tháng).',
+            ).toBe(0)
+            expect(
+                await rowCount(KAIGO_KEY),
+                'F9 sau khi xoá 1 dòng mà dòng 599 hàng xóm cũng mất ⇒ payload thiếu dòng, ' +
+                    'bulk-save đã xoá cả tháng rồi ghi lại nên mất luôn',
+            ).toBe(1)
+
+            // Chốt ở tầng DB, không tin mỗi cái lưới.
+            const left = await findTreatmentRows(Number(PAT_NO), TRT_DT, INS_TRT_CD)
+            expect(
+                left.map((r) => txt(r.dspTrt ?? '')).filter((t) => t.includes(txt(INS_NM))),
+                `trn_trn vẫn còn dòng 「${INS_NM}」 của ngày test sau khi đã xoá + F9 登録`,
+            ).toEqual([])
+        } finally {
+            // bulk-save đánh số lại disp_no từ 1 ⇒ `deleteTreatmentRows` (vùng 9000+)
+            // của afterAll không còn bắt được dòng seed. Dọn theo 処置コード của đúng
+            // ngày test.
+            await deleteTreatmentRowsByTrtCd(Number(PAT_NO), TRT_DT, INS_TRT_CD).catch(() => 0)
+            await deleteTreatmentRowsByTrtCd(Number(PAT_NO), TRT_DT, KAIGO_TRT_CD).catch(() => 0)
+        }
+    })
+
 })
