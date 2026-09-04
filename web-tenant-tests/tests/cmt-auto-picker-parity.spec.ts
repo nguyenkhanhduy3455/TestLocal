@@ -34,6 +34,14 @@
  *  - components/tooth-selection-dialog.tsx (部位選択, frm902003 PatMsg)
  *      · F7 全顎 / F10 反転 / F11 全消去 / F12 戻る / End = 確定. Đóng nó KHÔNG
  *        được dùng ESC (ESC → End → 確定 thật).
+ *      · MỌI preset F1–F7 đều bị `selectRange` lọc theo SIGA (răng 欠損 thì bỏ
+ *        qua, :420-441) ⇒ với bệnh nhân mất hết răng, 全顎 chọn ĐƯỢC 0 ô, End
+ *        trả bui rỗng, `handleBuiConfirm` thấy dsp === '' nên không chèn gì —
+ *        test sẽ đỏ oan. Đo thật trên BN 10 đúng như vậy.
+ *        ⇒ Chọn răng bằng PHÍM SỐ: `cycleTooth` (:346-361) KHÔNG qua SIGA;
+ *        selectedQuad mặc định 'RU' nên phím '1' bật ô đầu góc phần tư đó.
+ *      · Ô răng đang bật có `title="Type: N"` (:265) — dùng làm bằng chứng đã
+ *        chọn được, thay cho việc bám class Tailwind (Rule 3).
  *
  * ─── VÌ SAO GỘP MỌI ASSERT VÀO MỘT `test()` ─────────────────────────────────
  * Dialog này KHÔNG có nút nào mở tay: nó chỉ bung ra khi AutoSantei chạy, mà
@@ -81,6 +89,8 @@ const rows = (page: Page) => picker(page).locator('[data-testid^="row-"]')
 const textBox = (page: Page) => picker(page).getByRole('textbox')
 /** Nút trong picker — bó vào dialog vì màn nền cũng có 戻る (Rule 10.3). */
 const pickerBtn = (page: Page, name: RegExp) => picker(page).getByRole('button', { name })
+/** Ô răng đang bật trong 部位選択 — `title="Type: N"` (tooth-selection-dialog:265). */
+const activeTeeth = (page: Page) => buiDialog(page).locator('button[title^="Type:"]')
 /** Cột 療法・処置 của lưới 診療入力 — RegiCol.ryo = 2. */
 const ryoCell = (page: Page) => page.locator('[data-grid-cell$="|2"]')
 
@@ -100,6 +110,18 @@ test('カルテ記載選択 自動表示 — F1 部位 / getAsta / btnDummy / En
 
   // Rule 11 — nhịp quan sát: --headed/--ui → chậm lại, chạy nền → 0s.
   const step = makeStep(page)
+
+  // 省略表示 do BE dựng (GET /tenant/bui/omit-disp). Log lại để khi TC-3 đỏ thì
+  // phân biệt ngay "app không gọi API" / "API trả rỗng" / "app không chèn".
+  page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
+  page.on('response', (res) => {
+    if (res.url().includes('/tenant/bui/omit-disp')) {
+      void res
+        .text()
+        .then((b) => console.log(`omit-disp ${res.status()}: ${b.slice(0, 200)}`))
+        .catch(() => {})
+    }
+  })
 
   await page.goto('/login', { waitUntil: 'domcontentloaded' })
   await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
@@ -159,10 +181,14 @@ test('カルテ記載選択 自動表示 — F1 部位 / getAsta / btnDummy / En
     const name = names[astaIdx] ?? ''
     const start = name.indexOf('*')
     const len = (name.slice(start).match(/^\*+/)?.[0] ?? '').length
-    expect(
-      await readSel(page),
-      `cụm "*" trong "${name}" phải được bôi đen sẵn để gõ đè (getAsta)`,
-    ).toEqual({ start, end: start + len })
+    // `stage()` của usePendingSelection chỉ áp selection ở effect SAU khi React
+    // commit giá trị mới ⇒ đọc một phát là bắt trúng selection cũ (Rule 10.8).
+    await expect
+      .poll(() => readSel(page), {
+        message: `cụm "*" trong "${name}" phải được bôi đen sẵn để gõ đè (getAsta)`,
+        timeout: 10000,
+      })
+      .toEqual({ start, end: start + len })
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -179,23 +205,46 @@ test('カルテ記載選択 自動表示 — F1 部位 / getAsta / btnDummy / En
   ).toBeVisible({ timeout: 15000 })
   await step()
 
-  // F7 全顎 chọn toàn hàm rồi End = 確定. KHÔNG dùng ESC ở đây: ESC map vào End
-  // nên cũng là 確定, còn F10 là 反転 chứ không phải 戻る (tooth-selection-dialog).
-  await buiDialog(page).getByRole('button', { name: /全顎/ }).click()
+  // Chọn răng bằng phím số (KHÔNG dùng preset 全顎 — nó lọc theo SIGA, xem FACT).
+  await page.keyboard.press('1')
+  await expect(
+    activeTeeth(page),
+    'phím "1" phải bật một ô răng (cycleTooth, không qua SIGA) — chưa chọn được gì ' +
+      'thì End sẽ trả bui rỗng và không có gì để chèn',
+  ).not.toHaveCount(0, { timeout: 10000 })
   await step()
+
+  // End = 確定. KHÔNG dùng ESC ở đây: ESC map vào End nên cũng là 確定, còn F10
+  // là 反転 chứ không phải 戻る (tooth-selection-dialog).
   await page.keyboard.press('End')
   await expect(buiDialog(page), 'End trong 部位選択 phải 確定 và đóng nó').toHaveCount(0, {
     timeout: 15000,
   })
   await step()
 
+  // ⚠️ `handleBuiConfirm` đóng 部位選択 TRƯỚC rồi mới `await` GET
+  // /tenant/bui/omit-disp (~40-60ms) mới chèn ⇒ lúc dialog vừa biến mất ô text
+  // VẪN CHƯA đổi. Đọc `inputValue()` ngay tại đây là đo trúng trạng thái chưa
+  // chèn (đã fail thật 2 lần vì lý do này — Rule 10.8). Phải chờ bằng expect
+  // auto-retry chứ không phải waitForTimeout (Rule 7).
+  await expect(
+    textBox(page),
+    'F1 部位 không chèn gì vào ô text sau khi 部位選択 確定 — kiểm log "omit-disp" ' +
+      'ở trên: 200 mà dsp rỗng là do SIGA lọc hết răng, không có log là app không gọi BE',
+  ).not.toHaveValue('あい', { timeout: 15000 })
+
   const afterBui = await textBox(page).inputValue()
-  expect(afterBui, 'btnF1_Click phải chèn 部位 vào GIỮA caret (sau "あ", trước "い")').toMatch(
-    /^あ.+い$/,
-  )
+  // 省略表示 là ký tự EUDC (Private Use Area U+E000..U+F8FF) — in thẳng ra terminal
+  // là VÔ HÌNH, nên phải escape thì thông báo lỗi mới đọc được.
+  const esc = afterBui.replace(/[\uE000-\uF8FF]/g, (c) => `\\u${c.charCodeAt(0).toString(16)}`)
+  expect(afterBui.length, `F1 部位 không chèn gì vào ô text (đang là "${esc}")`).toBeGreaterThan(2)
+  expect(
+    afterBui,
+    `btnF1_Click phải chèn 部位 vào GIỮA caret: "あ" + 部位 + "い". Đang là "${esc}"`,
+  ).toMatch(/^あ[\uE000-\uF8FF]+い$/)
   expect(
     afterBui.includes('\n'),
-    'btnF1_Click chèn `strBui1` trần, KHÔNG kèm xuống dòng như defData',
+    `btnF1_Click chèn \`strBui1\` trần, KHÔNG kèm xuống dòng như defData. Đang là "${esc}"`,
   ).toBe(false)
 
   // ───────────────────────────────────────────────────────────────────────
