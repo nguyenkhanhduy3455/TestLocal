@@ -117,22 +117,42 @@ public sealed class PatientVisitListTests : UiTestBase
             $"診療年月 {_ym}: DB có {_expected.Count} dòng (bệnh nhân × ngày × 枝番), " +
             $"{_expected.Select(v => v.PatNo).Distinct().Count()} bệnh nhân");
 
-        _screen = VisitListScreen.Open(App, Settings);
-        _screen.SetSinryoYm(_ym);
-        _run = _screen.RunSearch(TimeSpan.FromMinutes(Settings.VisitList.SearchTimeoutMinutes));
-        TestContext.Out.WriteLine(
-            $"検索 xong sau {_run.Elapsed.TotalSeconds:0.0}s, {_run.Dialogs.Count} hộp thoại");
+        // TestTrace ở đây KHÔNG thừa: khi OneTimeSetUp đỏ, NUnit bỏ luôn TearDown của mọi
+        // testcase nên nền chung KHÔNG chụp được tấm ảnh nào — đúng lúc cần nhìn nhất thì
+        // không có gì để nhìn (đã trả giá 2026-09-04). Trace tự chụp từng bước.
+        using var trace = TestTrace.Begin("OpenAndSearch");
 
-        // Đọc lưới và xuất CSV MỘT lần cho cả fixture — xem khối 「MỘT LẦN 検索」.
+        trace.Step("mở 来患一覧 qua 窓口精算 + F3");
+        _screen = VisitListScreen.Open(App, Settings);
+
+        trace.Step($"đặt 診療年月 = {_ym}");
+        _screen.SetSinryoYm(_ym);
+
+        trace.Step("bấm 検索");
+        _run = _screen.RunSearch(TimeSpan.FromMinutes(Settings.VisitList.SearchTimeoutMinutes), trace);
+        trace.Note($"検索 xong sau {_run.Elapsed.TotalSeconds:0.0}s, {_run.Dialogs.Count} hộp thoại");
+
+        // Chốt CỔNG ngay tại đây. Lưới rỗng mà đi tiếp thì F4 gọi outputCsvFile với
+        // DataSource = null ⇒ app ném NullReference ⇒ E99999, và thông điệp lỗi cuối cùng
+        // sẽ là 「không thấy file CSV」 — chỉ đúng chỗ đau, sai hẳn nguyên nhân.
+        trace.Step("đọc lưới");
         _gridRows = _screen.AllRows();
+        if (_gridRows.Count <= 1)
+            throw new InvalidOperationException(
+                $"検索 {_ym} xong (sau {_run.Elapsed.TotalSeconds:0.0}s) mà lưới chỉ có " +
+                $"{_gridRows.Count} phần tử dòng — tức là KHÔNG có dữ liệu. " +
+                $"Hộp thoại quan sát được: {(_run.Dialogs.Count == 0 ? "không có" : string.Join(" / ", _run.Dialogs.Select(VisitListScreen.OneLine)))}. " +
+                $"DB nói tháng này có {_expected.Count} dòng. Xem ảnh từng bước ở artifacts/screenshots/OpenAndSearch/.");
+
+        trace.Step("F4 CSV出力");
         var path = Path.Combine(ArtifactDir(), $"visit-list-{_ym}.csv");
-        _csvLines = _screen.ExportCsv(path);
+        _csvLines = _screen.ExportCsv(path, trace);
         var parsed = CsvRow.Parse(_csvLines);
         _csvRows = parsed.Visits;
         _csvTotal = parsed.Total;
-        TestContext.Out.WriteLine(
+        trace.Note(
             $"lưới {_gridRows.Count} phần tử dòng; CSV {_csvLines.Count} dòng " +
-            $"({_csvRows.Count} dòng khám + {(_csvTotal is null ? 0 : 1)} dòng 合計) — 「{path}」");
+            $"({_csvRows.Count} dòng khám + {(_csvTotal is null ? 0 : 1)} dòng 合計)");
     }
 
     // ── Mở màn + điều kiện tìm kiếm ──────────────────────────────────────────
