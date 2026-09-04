@@ -1649,3 +1649,72 @@ export async function findPatientWithTrnThisMonth(): Promise<PatientWithTrnThisM
         }
     })
 }
+
+// ── レセプト識別 (来患一覧 frm204008) ────────────────────────────────────────
+
+/**
+ * Các input mà `buiPrice.getReceiptType` (buiPrice.cs:1502-1602) đọc để dựng
+ * レセプト識別. Đủ để spec tự tính lại giá trị KỲ VỌNG theo luật WinForm rồi
+ * đối chiếu với cái API trả về — tức là kiểm parity, không phải chép lại port.
+ */
+export interface ReceiptTypeInputs {
+    patNo: number
+    patBr: number
+    insKbn: number | null
+    combiKbn: number | null
+    oldFlg: number | null
+    burRate: number | null
+    /** yyyy-mm-dd. Cột NOT NULL trên dataset demo, nhưng vẫn để null-able cho chắc. */
+    birthdate: string | null
+    /** `med_ins_inf.fm_type` — nhánh 本外/家外 cuối cùng (buiPrice.cs:1596). */
+    fmType: number | null
+    /** Số 枝番 đang hoạt động của bệnh nhân. > 1 ⇒ không biết API dùng 枝番 nào. */
+    branchCount: number
+}
+
+/**
+ * Đọc input レセプト識別 của từng bệnh nhân trong danh sách.
+ *
+ * `branchCount` có mặt vì response của `/tenant/settlement/visit-list` KHÔNG trả
+ * 枝番 (frm204008 `_viewItem` cũng không có cột đó) — bệnh nhân nhiều 枝番 thì
+ * không suy ra được API đã dùng bản bảo hiểm nào, spec sẽ tự bỏ qua bệnh nhân đó.
+ */
+export async function receiptTypeInputsFor(
+    patNos: readonly number[],
+): Promise<Map<number, ReceiptTypeInputs>> {
+    if (patNos.length === 0) return new Map()
+    return withDb(async (c) => {
+        const r = await c.query<Record<string, unknown>>(
+            `SELECT i.pat_no, i.pat_br, i.ins_kbn, i.combi_kbn, i.old_flg, i.bur_rate,
+                    i.birthdate, m.fm_type,
+                    COUNT(*) OVER (PARTITION BY i.pat_no) AS branch_count
+               FROM insurance i
+               LEFT JOIN med_ins_inf m
+                      ON m.pat_no = i.pat_no
+                     AND m.medinsinf_no = i.medinsinf_no
+                     AND m.deleted_at IS NULL
+              WHERE i.pat_no = ANY($1::int[])
+                AND i.deleted_at IS NULL`,
+            [[...patNos]],
+        )
+        const out = new Map<number, ReceiptTypeInputs>()
+        for (const row of r.rows) {
+            const patNo = Number(row.pat_no)
+            // Nhiều 枝番 → giữ bản đầu tiên; branchCount đã báo cho spec biết là
+            // không dùng được, nên bản nào cũng vậy.
+            if (out.has(patNo)) continue
+            out.set(patNo, {
+                patNo,
+                patBr: Number(row.pat_br),
+                insKbn: row.ins_kbn === null ? null : Number(row.ins_kbn),
+                combiKbn: row.combi_kbn === null ? null : Number(row.combi_kbn),
+                oldFlg: row.old_flg === null ? null : Number(row.old_flg),
+                burRate: row.bur_rate === null ? null : Number(row.bur_rate),
+                birthdate: row.birthdate == null ? null : isoDay(row.birthdate),
+                fmType: row.fm_type === null ? null : Number(row.fm_type),
+                branchCount: Number(row.branch_count),
+            })
+        }
+        return out
+    })
+}
