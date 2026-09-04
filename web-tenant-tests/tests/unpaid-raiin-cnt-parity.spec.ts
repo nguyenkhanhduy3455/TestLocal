@@ -4,7 +4,7 @@ import {
     countRealTreatmentRowsInMonth,
     dbEnabled,
     deleteTreatmentRows,
-    deleteTreatmentRowsByTrtCd,
+    deleteTreatmentRowsByDspTrt,
     seedTreatmentRows,
     withDb,
 } from './db'
@@ -28,13 +28,17 @@ import { closeDialogs } from './virtual-grid'
  * unPaidData.trt_cnt = intSelectRaiin + 100;                  // dòng 介護 (modAcc.cs:673)
  * ```
  *
- * Bug (2026-09-04, ISSUE-14 trong `userapp/inp-p0-open-issues.md`): bản port bỏ qua
+ * Bug ban đầu (ISSUE-14 trong `userapp/inp-p0-open-issues.md`): bản port bỏ qua
  * `intSelectRaiin` ở **cả 5 chỗ** — `InsertUnpaidHandler` để `trtCnt = 1` cứng
  * (TODO Phase 2), `BuiPriceCalcInput.VisitsNo = 0`, `AccUnitCalculator` không có
  * tham số 来院回数, và `UnpaidDayRows.ForDay` lọc cứng `trt_cnt ∈ {1, 101}`.
  *
  * ⇒ bệnh nhân đến 2 lần/ngày: lượt 2 **xoá mềm rồi ghi đè** dòng của lượt 1 (cùng
  *   `trt_cnt = 1`), và **mỗi** lượt mang điểm/tiền của **cả ngày** → 窓口精算 thu sai.
+ *
+ * **ĐÃ VÁ** (`fix/inp-acc-raiin-cnt-winform-parity`, đo lại 2026-09-04): cả 4/4 TC
+ * xanh, và nửa WinForm `fla-ui-tests/Tests/UnpaidRaiinCnt/` ra CÙNG hành vi. Spec
+ * này từ đây là lưới chống tái phát, không còn là spec đi chứng minh bug.
  *
  * ─── Nguồn WinForm (src/OCHACOM) ────────────────────────────────────────────
  *  - `modAcc.hfgRaiinCnt` (modAcc.cs:1188-1222) — quét lưới THEO THỨ TỰ HIỂN THỊ:
@@ -68,7 +72,7 @@ import { closeDialogs } from './virtual-grid'
  *    `precheck`, `daily-summary`, `insert-unpaid`, `correct`, `recompute-copayment`.
  *  - `InsertUnpaidHandler.Command.RaiinCnt` → `unpaid.trt_cnt` (介護 `+100`),
  *    `BuiPriceCalcInput.VisitsNo`, `AccUnitCalculator.ComputeAsync(…, raiinCnt, …)`.
- *  - `UnpaidDayRows.ForDay(…, raiinCnt)` → `trt_cnt % 100 = raiinCnt`.
+ *  - `UnpaidDayRows.ForVisit(…, raiinCnt)` → `trt_cnt % 100 = raiinCnt`.
  *  - `trn_trn.raiin_cnt` do `RaiinCntCalculator` ghi lúc F9 登録 — spec dựa vào
  *    đó nên TC-0 kiểm nó TRƯỚC, giống `p0-save-side-effects.spec.ts` TC-3.
  *
@@ -85,7 +89,8 @@ import { closeDialogs } from './virtual-grid'
  *     Chọn TEST_PAT_NO / TEST_TRT_DT vào tháng ÍT dữ liệu thật; beforeAll in ra
  *     số dòng thật để không ai phải đoán.
  *   · F8 会計 — `clear-unpaid` xoá mềm 未精算 của ngày rồi `insert-unpaid` chèn lại.
- *  Dọn dẹp: `trn_trn` của ngày test bị xoá hẳn; `unpaid` được snapshot ở beforeAll,
+ *  Dọn dẹp: dòng 処置 do spec dựng bị xoá hẳn — nhận theo `(trt_cd, dsp_trt)` chứ
+ *  KHÔNG theo mã (xem `TEST_ROW_SIGNATURES`); `unpaid` được snapshot ở beforeAll,
  *  afterAll xoá cứng dòng do lượt chạy sinh ra và bỏ xoá mềm dòng vốn đang sống.
  *
  * ─── BẪY ───────────────────────────────────────────────────────────────────
@@ -153,11 +158,53 @@ const PLAIN_SB = 0
 /** 点数 của từng dòng — chọn khác nhau để tổng của hai lượt không thể trùng nhau. */
 const PT = { syosin: 264, plainA: 40, saisin: 56, plainB: 30 } as const
 
-/** 点数 mà mỗi lượt phải mang: `AccUnitCalculator` cộng `trt_pt × trt_cnt`. */
-const SCORE_VISIT_1 = PT.syosin + PT.plainA // 304
-const SCORE_VISIT_2 = PT.saisin + PT.plainB // 86
-/** Con số của CẢ NGÀY — chính là giá trị mà bản hỏng ghi cho từng lượt. */
-const SCORE_WHOLE_DAY = SCORE_VISIT_1 + SCORE_VISIT_2 // 390
+/**
+ * 点数 kỳ vọng của từng lượt — **ĐO LẠI TỪ DB**, không cộng từ `PT`.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * VÌ SAO KHÔNG VIẾT CỨNG `PT.syosin + PT.plainA`
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Công thức đó chỉ đúng khi ngày test **không còn dòng nào khác**. Ngày test là
+ * ngày THẬT của bệnh nhân THẬT, nên nó thường đã có sẵn 処置; những dòng đó cũng
+ * được `hfgRaiinCnt` gán 来院回数 và cũng vào tổng điểm của lượt tương ứng.
+ *
+ * Đã đỏ oan thật 2026-09-04: ngày test còn 3 dòng 加算 thật (2 điểm mỗi dòng) nằm
+ * TRƯỚC dòng 初診 ⇒ thuộc lượt 1 ⇒ điểm lượt 1 thật là 264 + 40 + **6** = 310, còn
+ * assert thì đòi 304. App tính ĐÚNG mà testcase báo sai — và thông điệp lỗi lại chỉ
+ * thẳng vào `AccUnitCalculator`, tức đổ oan đúng chỗ khó cãi nhất.
+ *
+ * ⇒ kỳ vọng được tính lại từ `trn_trn` SAU khi F9 đã đánh số `raiin_cnt`, theo đúng
+ * ba đoạn source mà chuỗi 会計 dùng:
+ * ```
+ *   buiPrice.cs:288      score = trt_pt × trt_cnt          (điểm lấy từ Ô LƯỚI, không tra master)
+ *   modAcc.cs:238        chỉ cộng payData.visits_no == intSelectRaiin
+ *   modAcc.cs:542/636    insScore → unPaidData.score
+ * ```
+ * ⇒ **`unpaid.score` của lượt N = Σ (trt_pt × trt_cnt) trên các dòng của ngày mang
+ * `raiin_cnt = N`.** Dòng 自費 (`jihi_flg != 0`) không vào tổng này: điểm 自費 đi vào
+ * `jihiPrice`, và dòng 未精算 自費 luôn `score = 0` (modAcc.cs:706).
+ *
+ * `PT` bên dưới vẫn giữ nguyên vai trò: nó quyết định SEED gì, và các giá trị được
+ * chọn lệch nhau để hai lượt không thể ra cùng một tổng.
+ */
+interface ExpectedScores {
+    visit1: number
+    visit2: number
+    /** Con số của CẢ NGÀY — chính là giá trị mà bản bỏ qua 来院回数 ghi cho TỪNG lượt. */
+    wholeDay: number
+}
+
+/** Điền ở TC-0 sau khi F9 đánh số xong; TC-1/TC-2 đọc ra. */
+let expectedScores: ExpectedScores | null = null
+
+/** `expectedScores` đã đo xong chưa — TC sau TC-0 gọi để có lỗi nói đúng nguyên nhân. */
+function requireExpectedScores(): ExpectedScores {
+    expect(
+        expectedScores,
+        'chưa đo được điểm kỳ vọng — TC-0 phải chạy trước (bộ này chạy serial, đừng -g một TC lẻ)',
+    ).not.toBeNull()
+    return expectedScores!
+}
 
 /** 来院回数 kỳ vọng. `hfgRaiinCnt` không bao giờ trả 0. */
 const VISIT_1 = 1
@@ -177,7 +224,29 @@ const NM = {
     plainB: '処置B-来院回数テスト',
 } as const
 
-const ALL_TEST_TRT_CDS = [SYOSIN_TRT_CD, SAISIN_TRT_CD, PLAIN_TRT_CD] as const
+/**
+ * Chữ ký `(trt_cd, dsp_trt[])` của MỌI dòng spec này dựng — dùng để dọn.
+ *
+ * Dọn theo TÊN chứ không theo mã: `deleteTreatmentRowsByTrtCd` xoá HẲN mọi dòng
+ * cùng mã trong ngày, kể cả dòng THẬT. Ngày test hiếm khi trống — bệnh nhân có 再診
+ * (110) thật trong ngày là mất luôn, không dựng lại được (xoá cứng, không phải xoá
+ * mềm, và `afterAll` cũng chỉ gọi lại chính hàm dọn này).
+ *
+ * Đã mất thật 2026-09-04: chạy thử trên một ngày có 3 dòng 110 thật, cả ba biến mất.
+ * Mã 100/110 lại là mã ai cũng có, nên lưới xoá theo mã ở đây gần như chắc chắn
+ * cuốn theo dữ liệu thật.
+ *
+ * Vẫn phải dọn ngoài vùng `disp_no >= SEED_DISP_BASE`: F9 一回 là `bulk-save` xoá
+ * mềm dòng seed rồi chèn lại với `disp_no` đánh số từ 1
+ * (`SaveTreatmentsHandler.cs:175-196`) ⇒ bản mới rơi ra ngoài vùng test. `dsp_trt`
+ * thì sống sót qua F9 (lưới gửi lên đúng chữ đang hiện), nên nó là chữ ký hẹp vừa
+ * đủ: chỉ trúng dòng của spec, không bao giờ trúng dòng thật.
+ */
+const TEST_ROW_SIGNATURES = [
+    { trtCd: SYOSIN_TRT_CD, names: [NM.syosin] },
+    { trtCd: SAISIN_TRT_CD, names: [NM.saisin] },
+    { trtCd: PLAIN_TRT_CD, names: [NM.plainA, NM.plainB] },
+] as const
 
 /** Chỉ số cột 日 — `RegiCol.day` = cột 0 (frm203002.cs:158). */
 const COL_DAY = 0
@@ -223,11 +292,21 @@ async function readUnpaidRows(): Promise<UnpaidRow[]> {
     })
 }
 
-/** `trt_cd → raiin_cnt` của ngày test, theo thứ tự hiển thị. */
-async function readRaiinCnts(): Promise<{ trtCd: number; dspTrt: string; raiinCnt: number }[]> {
+interface DayRow {
+    trtCd: number
+    dspTrt: string
+    raiinCnt: number
+    trtPt: number
+    trtCnt: number
+    jihiFlg: number
+}
+
+/** MỌI dòng 処置 còn sống của ngày test, theo thứ tự hiển thị. */
+async function readDayRows(): Promise<DayRow[]> {
     return withDb(async (c) => {
         const r = await c.query<Record<string, unknown>>(
-            `SELECT trt_cd, COALESCE(dsp_trt, '') AS dsp_trt, raiin_cnt
+            `SELECT trt_cd, COALESCE(dsp_trt, '') AS dsp_trt, raiin_cnt,
+                    trt_pt, trt_cnt, COALESCE(jihi_flg, 0) AS jihi_flg
                FROM trn_trn
               WHERE pat_no = $1 AND trt_dt = $2 AND deleted_at IS NULL
               ORDER BY disp_no, seq`,
@@ -237,8 +316,41 @@ async function readRaiinCnts(): Promise<{ trtCd: number; dspTrt: string; raiinCn
             trtCd: Number(x['trt_cd'] ?? 0),
             dspTrt: String(x['dsp_trt'] ?? ''),
             raiinCnt: Number(x['raiin_cnt'] ?? 0),
+            trtPt: Number(x['trt_pt'] ?? 0),
+            trtCnt: Number(x['trt_cnt'] ?? 0),
+            jihiFlg: Number(x['jihi_flg'] ?? 0),
         }))
     })
+}
+
+/**
+ * Tập 処置 MỞ một lượt khám mới — `modAcc.hfgRaiinCnt` (modAcc.cs:1208).
+ *
+ * KHÁC tập quyết định `sflg` (`Check.IsFirstVisitTreatCode`) và KHÁC tập đếm 初診
+ * quá khứ (`getKaikeiPastSyosinCnt`). Ba tập, ba việc — lẫn là sai.
+ */
+const VISIT_OPENING_TRT_CDS = new Set([100, 107, 110, 111, 333])
+
+/** Số dòng MỞ lượt trong một bộ dòng — `trt_cnt > 0` mới được tính (modAcc.cs:1210). */
+function countVisitOpeners(rows: readonly DayRow[]): number {
+    return rows.filter((r) => VISIT_OPENING_TRT_CDS.has(r.trtCd) && r.trtCnt > 0).length
+}
+
+/**
+ * Σ (trt_pt × trt_cnt) theo từng 来院回数 — kỳ vọng cho `unpaid.score`.
+ *
+ * Gom theo `raiin_cnt` mà F9 vừa đóng dấu (TC-0 khoá giá trị đó trước), nên nó
+ * phản ánh ĐÚNG ngày test thật sự có gì, kể cả 処置 sẵn có của bệnh nhân.
+ * `trt_cd = 50` (自費 số lượng) đếm như một lần, giống `buiPrice.cs:288`.
+ */
+function scoreByVisit(rows: readonly DayRow[]): Map<number, number> {
+    const byVisit = new Map<number, number>()
+    for (const row of rows) {
+        if (row.jihiFlg !== 0) continue
+        const cnt = row.trtCd === 50 ? 1 : row.trtCnt
+        byVisit.set(row.raiinCnt, (byVisit.get(row.raiinCnt) ?? 0) + row.trtPt * cnt)
+    }
+    return byVisit
 }
 
 /** Ngày test đã có 会計 済み chưa (BẪY 7). */
@@ -289,6 +401,19 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
 
     /** Ngày test đã quyết toán ⇒ mọi TC skip (BẪY 7). */
     let daySettled = false
+
+    /**
+     * Ngày test ĐÃ có sẵn bao nhiêu 処置 mở lượt khám TRƯỚC khi spec seed.
+     *
+     * Phải bằng 0 thì phép đo mới có nghĩa: spec tự mang theo 初診 + 再診 của mình để
+     * dựng đúng HAI lượt, nên ngày nào đã có 再診/初診 thật thì dòng seed bị đẩy thành
+     * lượt 3, 4… và mọi kỳ vọng 1/2 sai theo.
+     *
+     * Đã đỏ oan thật 2026-09-04: ngày test có 3 dòng 再診 thật ⇒ 初診 seed thành lượt 4,
+     * TC-0 báo 「初診 phải mở lượt 1」 — thông điệp đúng chữ nhưng chỉ sai địa chỉ, người
+     * đọc đi soi `RaiinCntCalculator` trong khi lỗi nằm ở CHỌN NGÀY.
+     */
+    let dayVisitOpeners = 0
 
     /** `id` → `deleted_at` của mọi dòng unpaid ngày test, chụp TRƯỚC khi chạy. */
     const unpaidSnapshot = new Map<string, string | null>()
@@ -345,11 +470,19 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
         throw lastErr
     }
 
-    /** Xoá HẲN mọi dòng 処置 do spec này tạo, ở cả hai vùng disp_no. */
+    /**
+     * Xoá HẲN mọi dòng 処置 do spec này tạo — theo vùng `disp_no` VÀ theo `dsp_trt`.
+     *
+     * Hai lượt là cần: vùng `disp_no >= SEED_DISP_BASE` tóm bản vừa seed, còn
+     * `dsp_trt` tóm bản mà F9 đã chèn lại với `disp_no` thật. KHÔNG dọn theo 処置コード
+     * — xem chú thích ở `TEST_ROW_SIGNATURES`.
+     */
     async function purgeTestRows(): Promise<number> {
         let n = await deleteTreatmentRows(PAT_NO, TRT_DT).catch(() => 0)
-        for (const trtCd of ALL_TEST_TRT_CDS) {
-            n += await deleteTreatmentRowsByTrtCd(PAT_NO, TRT_DT, trtCd).catch(() => 0)
+        for (const sig of TEST_ROW_SIGNATURES) {
+            n += await deleteTreatmentRowsByDspTrt(PAT_NO, TRT_DT, sig.trtCd, sig.names).catch(
+                () => 0,
+            )
         }
         return n
     }
@@ -502,9 +635,11 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
 
     test.beforeAll(async ({ browser }) => {
         daySettled = await isDaySettled()
+        dayVisitOpeners = countVisitOpeners(await readDayRows())
         const realRows = await countRealTreatmentRowsInMonth(PAT_NO, TRT_DT)
         console.log(
             `bệnh nhân ${PAT_NO}, ngày ${TRT_DT}: 会計済 = ${daySettled}, ` +
+                `処置 mở lượt CÓ SẴN trong ngày = ${dayVisitOpeners}, ` +
                 `処置行 THẬT trong tháng = ${realRows}`,
         )
         if (realRows > 0) {
@@ -583,18 +718,36 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
         }).catch((e: unknown) => console.log(`afterAll: dọn không xong — ${String(e)}`))
     })
 
-    // ─────────────────────────────────────────────────────────────────────────
-    test('TC-0 (mốc) — F9 đánh số raiin_cnt 1,1,2,2 cho ngày 2 lượt khám', async () => {
+    /**
+     * Hai tiền đề của ngày test, kiểm bằng DB TRƯỚC khi ghi gì.
+     *
+     * Trả `true` = bỏ qua. Gọi ở ĐẦU mọi TC: bộ này chạy serial nên TC sau không thể
+     * có nghĩa nếu TC-0 không dựng được dữ liệu.
+     */
+    function skipUnlessDayUsable(): boolean {
         skipWithReason(
             daySettled,
             `ngày ${TRT_DT} của bệnh nhân ${PAT_NO} ĐÃ quyết toán (view_acc_dat_active có dòng) — ` +
                 'F8 sẽ rẽ sang nhánh 既存会計/会計データ修正, khác nhánh đang đo. Đổi TEST_TRT_DT.',
         )
-        if (daySettled) return
+        skipWithReason(
+            !daySettled && dayVisitOpeners > 0,
+            `ngày ${TRT_DT} của bệnh nhân ${PAT_NO} ĐÃ có ${dayVisitOpeners} 処置 mở lượt khám ` +
+                `(${[...VISIT_OPENING_TRT_CDS].join('/')}) — spec tự mang 初診 + 再診 của mình nên ` +
+                'dòng seed sẽ thành lượt 3, 4… chứ không phải 1 và 2, và mọi kỳ vọng sai theo. ' +
+                'Trỏ TEST_TRT_DT vào một ngày CHƯA có 初診/再診 (ngày trống là tốt nhất — F9 ghi ' +
+                'lại cả tháng nên tháng trống còn tránh đụng dữ liệu thật).',
+        )
+        return daySettled || dayVisitOpeners > 0
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    test('TC-0 (mốc) — F9 đánh số raiin_cnt 1,1,2,2 cho ngày 2 lượt khám', async () => {
+        if (skipUnlessDayUsable()) return
 
         await buildTwoVisitDay()
 
-        const rows = await readRaiinCnts()
+        const rows = await readDayRows()
         const mine = rows.filter((r) => Object.values(NM).some((nm) => r.dspTrt.includes(nm)))
         expect(
             mine.length,
@@ -615,12 +768,52 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
             byName(NM.plainB)?.raiinCnt,
             `${NM.plainB} nằm SAU 再診 ⇒ thuộc lượt 2 (209 không tự mở lượt)`,
         ).toBe(VISIT_2)
+
+        // ── Đo điểm kỳ vọng của TỪNG lượt, từ chính bộ dòng vừa đánh số ──────
+        // Tính ở đây chứ không cộng từ PT: ngày test còn 処置 SẴN CÓ của bệnh nhân
+        // thì chúng cũng mang 来院回数 và cũng vào tổng của lượt tương ứng
+        // (xem khối chú thích ở `ExpectedScores`).
+        const byVisit = scoreByVisit(rows)
+        const visit1 = byVisit.get(VISIT_1) ?? 0
+        const visit2 = byVisit.get(VISIT_2) ?? 0
+        const others = [...byVisit.entries()].filter(([v]) => v !== VISIT_1 && v !== VISIT_2)
+
+        expect(
+            others,
+            `ngày test có thêm lượt khám ngoài 1 và 2 (${others.map(([v, s]) => `来院${v}=${s}点`).join(', ')}) ` +
+                '⇒ phép đo không còn là "2 lượt". Chọn TEST_TRT_DT khác.',
+        ).toHaveLength(0)
+
+        const seeded = mine.reduce((sum, r) => sum + r.trtPt * r.trtCnt, 0)
+        const dayTotal = visit1 + visit2
+        if (dayTotal !== seeded) {
+            console.log(
+                `⚠️ ngày ${TRT_DT} có sẵn ${dayTotal - seeded} điểm từ 処置 THẬT ngoài 4 dòng seed — ` +
+                    'kỳ vọng đã cộng cả chúng vào đúng lượt của mình.',
+            )
+        }
+
+        // Hai lượt phải ra hai con số KHÁC NHAU, nếu không TC-1/TC-2 không phân biệt
+        // được "điểm của lượt" với "điểm của cả ngày" — xanh mà vô nghĩa.
+        expect(visit1, 'lượt 1 không có điểm nào').toBeGreaterThan(0)
+        expect(visit2, 'lượt 2 không có điểm nào').toBeGreaterThan(0)
+        expect(
+            visit1,
+            `hai lượt cùng ra ${visit1} điểm ⇒ phép đo mất khả năng phân biệt. ` +
+                'Đổi PT sang bộ số khác, hoặc chọn ngày test khác.',
+        ).not.toBe(visit2)
+
+        expectedScores = { visit1, visit2, wholeDay: dayTotal }
+        console.log(
+            `điểm kỳ vọng (đo từ trn_trn): 来院1 = ${visit1}, 来院2 = ${visit2}, CẢ NGÀY = ${dayTotal}`,
+        )
     })
 
     // ─────────────────────────────────────────────────────────────────────────
     test('TC-1 — F8 từ dòng lượt 1: unpaid.trt_cnt = 1 và score CHỈ của lượt 1', async () => {
-        skipWithReason(daySettled, `ngày ${TRT_DT} đã quyết toán — xem lý do ở TC-0`)
-        if (daySettled) return
+        if (skipUnlessDayUsable()) return
+
+        const want = requireExpectedScores()
 
         expect(
             await runF8OnRow(NM.syosin),
@@ -649,15 +842,17 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
         expect(insRow, 'không có dòng 未精算 nào mang 点数 (lflg = 0, score > 0)').toBeTruthy()
         expect(
             insRow!.score,
-            `unpaid.score = ${insRow!.score}. Ra ${SCORE_WHOLE_DAY} nghĩa là vẫn tính CẢ NGÀY ` +
+            `unpaid.score = ${insRow!.score}, cần ${want.visit1} (điểm RIÊNG lượt 1). ` +
+                `Ra ${want.wholeDay} nghĩa là vẫn tính CẢ NGÀY ` +
                 `(AccUnitCalculator / BuiPriceService chưa lọc theo 来院回数).`,
-        ).toBe(SCORE_VISIT_1)
+        ).toBe(want.visit1)
     })
 
     // ─────────────────────────────────────────────────────────────────────────
     test('TC-2 — F8 từ dòng lượt 2: sinh dòng trt_cnt = 2 và KHÔNG xoá dòng lượt 1', async () => {
-        skipWithReason(daySettled, `ngày ${TRT_DT} đã quyết toán — xem lý do ở TC-0`)
-        if (daySettled) return
+        if (skipUnlessDayUsable()) return
+
+        const want = requireExpectedScores()
 
         expect(
             await runF8OnRow(NM.saisin),
@@ -690,28 +885,28 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
         expect(insVisit2, 'lượt 2 không có dòng 未精算 nào mang 点数').toBeTruthy()
         expect(
             insVisit2!.score,
-            `lượt 2: unpaid.score = ${insVisit2!.score}, cần ${SCORE_VISIT_2}. ` +
-                `Ra ${SCORE_WHOLE_DAY} nghĩa là mỗi lượt vẫn mang điểm của CẢ NGÀY.`,
-        ).toBe(SCORE_VISIT_2)
+            `lượt 2: unpaid.score = ${insVisit2!.score}, cần ${want.visit2}. ` +
+                `Ra ${want.wholeDay} nghĩa là mỗi lượt vẫn mang điểm của CẢ NGÀY.`,
+        ).toBe(want.visit2)
 
         const insVisit1 = visit1.find((r) => r.lflg === 0 && r.score > 0)
         expect(insVisit1, 'lượt 1 không còn dòng 未精算 nào mang 点数').toBeTruthy()
         expect(
             insVisit1!.score,
-            'kế toán lượt 2 KHÔNG được sửa số của lượt 1',
-        ).toBe(SCORE_VISIT_1)
+            `kế toán lượt 2 KHÔNG được sửa số của lượt 1 (phải vẫn là ${want.visit1})`,
+        ).toBe(want.visit1)
 
         // Tổng hai lượt = con số footer 日計 của ngày (modAcc.DispDayPoint cộng cả ngày).
         expect(
             insVisit1!.score + insVisit2!.score,
-            'tổng điểm hai lượt phải bằng 日計 của ngày — thiếu nghĩa là có dòng bị bỏ sót',
-        ).toBe(SCORE_WHOLE_DAY)
+            `tổng điểm hai lượt phải bằng 日計 ${want.wholeDay} của ngày — thiếu nghĩa là ` +
+                'có dòng bị bỏ sót khỏi cả hai lượt',
+        ).toBe(want.wholeDay)
     })
 
     // ─────────────────────────────────────────────────────────────────────────
     test('TC-3 — sflg giống nhau ở cả hai lượt: 初診判定 quét theo NGÀY, không theo lượt', async () => {
-        skipWithReason(daySettled, `ngày ${TRT_DT} đã quyết toán — xem lý do ở TC-0`)
-        if (daySettled) return
+        if (skipUnlessDayUsable()) return
 
         // Không bấm F8 thêm lần nào — đọc lại chính những dòng TC-1/TC-2 vừa tạo.
         const rows = await readUnpaidRows()
