@@ -553,14 +553,11 @@ public sealed class VisitListScreen
                      .FirstOrDefault(e => Uia.ControlTypeOf(e) == FlaUI.Core.Definitions.ControlType.Edit),
             "ô tên file của 「名前を付けて保存」");
 
-        // HWND của chính hộp thoại lưu — cần để PHÂN BIỆT nó với hộp thoại I00005 ở dưới.
-        var saveHwnd = (IntPtr)save.Properties.NativeWindowHandle;
-
         Uia.SetText(edit, path);
         Waits.Step();
         Uia.SendKey(Vk.Return);
 
-        // ⚠️ HAI NHỊP CHỜ, KHÔNG PHẢI MỘT — và cả hai đều KHÔNG chờ theo file.
+        // ⚠️ CHỜ ĐÚNG HỘP THOẠI I00005, KHÔNG PHẢI 「có hộp thoại nào đó」, KHÔNG PHẢI FILE.
         //
         // 「CSV出力が完了しました。」 (I00005) bung SAU khi StreamWriter đóng file
         // (frm204008.cs:317), còn File.Exists thành true NGAY LÚC file được TẠO. Chờ theo
@@ -568,34 +565,27 @@ public sealed class VisitListScreen
         // Đã trả giá 2026-09-04 — Tc0d kết luận 「bấm tiêu đề cột không sort」 cho cả ba cột
         // trong khi ba cú click đều rơi vào hộp thoại đang che lưới; chỉ ảnh chụp mới lộ ra.
         //
-        // Lần sửa đầu chờ 「có hộp thoại nào đó rồi hết hộp thoại」 — vẫn sai, vì CHÍNH hộp
-        // thoại lưu cũng là #32770 (Win32 đọc ra 「Namespace Tree Control」). Nó đóng lại là
-        // điều kiện thoả ngay, trước khi app kịp ghi xong. Nên phải tách hai nhịp:
-        //   1. hộp thoại LƯU đóng   ⇒ app bắt đầu ghi
-        //   2. hộp thoại I00005 hiện ⇒ app ghi XONG; đọc rồi bấm OK
-        var saveClosed = Waits.TryUntil(
-            () => MsgBoxWin32.All(_app.ProcessId).All(b => b.Hwnd != saveHwnd),
-            TimeSpan.FromSeconds(30));
-
-        if (!saveClosed)
-            throw new TimeoutException(
-                "Hộp thoại 「名前を付けて保存」 không đóng sau khi gõ đường dẫn + Enter. " +
-                DescribeDialogs(_app) +
-                " Kiểm xem ô tên file có nhận được chuỗi không (đường dẫn có ký tự lạ?).");
-
+        // Rồi trả giá lần hai: chờ 「có hộp thoại rồi hết hộp thoại」 cũng sai, vì CHÍNH hộp
+        // thoại 名前を付けて保存 cũng là lớp #32770 (Win32 đọc ra 「Namespace Tree Control」).
+        // Nó đóng lại là điều kiện thoả NGAY, trước khi app kịp ghi xong file.
+        //
+        // Mốc đúng: một hộp thoại mà ta THẬT SỰ BẤM ĐƯỢC nút 「OK」. Hộp thoại của shell
+        // không có nút nào tên OK (nó có 保存/Save + キャンセル/Cancel) nên ClickButton trả
+        // false — phân biệt được mà không phải đoán tiêu đề hay HWND.
         var seen = new List<string>();
+        var answered = false;
         var done = Waits.TryUntil(
             () =>
             {
                 foreach (var box in MsgBoxWin32.All(_app.ProcessId))
                 {
-                    if (box.Hwnd == saveHwnd) continue;
+                    if (!MsgBoxWin32.ClickButton(box.Hwnd, "OK", "はい", "Yes")) continue;
                     seen.Add(box.Text.Length > 0 ? box.Text : box.Title);
-                    MsgBoxWin32.ClickButton(box.Hwnd, "OK", "はい", "Yes");
+                    answered = true;
                 }
-                return seen.Count > 0 && MsgBoxWin32.All(_app.ProcessId).Count == 0;
+                return answered && MsgBoxWin32.All(_app.ProcessId).Count == 0;
             },
-            TimeSpan.FromSeconds(60));
+            TimeSpan.FromSeconds(90));
 
         foreach (var text in seen) trace?.Note("hộp thoại sau CSV: " + OneLine(text));
 
