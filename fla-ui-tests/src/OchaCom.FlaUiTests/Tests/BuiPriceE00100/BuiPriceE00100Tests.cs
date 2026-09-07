@@ -470,3 +470,280 @@ public sealed class BuiPriceE00100SeedTests : UiTestBase
         Waits.Step();
     }
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// <summary>
+/// <b>Nhánh NGOẠI LỆ — đúng hộp E00100 mà spec Playwright mô phỏng.</b>
+///
+/// <para>Khác hẳn <see cref="BuiPriceE00100SeedTests"/>: nhánh 福祉医療設定 không ném nên
+/// số trên màn hình không đổi. Nhánh này ném thật, ở buiPrice.cs:334 — TRƯỚC
+/// <c>_rtnData.insPayDatas = payDatas</c> (:649) — nên <c>buiPriceData2</c> trả về giữ
+/// nguyên giá trị khởi tạo <b>toàn 0</b>. Đó mới là cảnh 「màn hình sống với số 0」.</para>
+///
+/// <para>Đường tới nó là một <b>lỗi thật của WinForm</b>: buiPrice.cs:997-998 kiểm
+/// <c>PublicExpenseNumber.Length == 8</c> rồi gọi <c>BeneficiaryNumber.Substring(0, 2)</c>
+/// — hai field khác nhau. Stack trace đọc được lúc chạy chốt đúng dòng đó.</para>
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+/// ĐIỂM LỆCH LỚN NHẤT CỦA CẢ LUỒNG: F8 会計 KHÔNG SANG 窓口精算
+/// ═══════════════════════════════════════════════════════════════════════════
+/// <c>LetAccData2</c> bọc cả thân trong một <c>try/catch</c> và nhánh catch chỉ hiện
+/// <b>E99999 「システムエラーです。」</b> (modAcc.cs:789-791). Ngoại lệ xảy ra TRƯỚC
+/// <c>functionReturnValue = true</c> (:783) nên hàm trả <b>false</b>, và
+/// <c>IDM_Acc_Click</c> có <c>if (AccRet == false) { }</c> — <b>khối RỖNG</b>
+/// (frm203002.cs:7727-7729). Màn hình đứng im.
+///
+/// <para>Đo được 2026-09-07, ba lượt chạy tách bạch:</para>
+/// <code>
+///                        E00100  日計          F8 hộp [3]      F8 hộp [4]        窓口精算
+/// dữ liệu sạch             0     339/70/272   既に…作成       …計上しますか      ✓
+/// ĐỐI CHỨNG ins_kbn 2/4    0     339/70/272   既に…作成       …計上しますか      ✓
+/// nhánh NGOẠI LỆ           1     0/0/0        E00100          システムエラーです  ✗
+/// </code>
+/// Lượt ĐỐI CHỨNG đổi ĐÚNG hai cột 保険 mà seed này buộc phải đổi nhưng KHÔNG chèn 公費,
+/// nên nó loại trừ giả thuyết 「system error là do <c>INS_KBN</c>」.
+///
+/// <para><b>Bản web đang làm ngược:</b> <c>announceBuiPriceWarnings(...)</c> rồi
+/// <c>return true</c> ⇒ VẪN sang 窓口精算. Chú thích của
+/// <c>bui-price-e00100-parity.spec.ts</c> (TC-E00100-5) viết 「WinForm thì đi tiếp」 —
+/// đo thật thì KHÔNG.</para>
+///
+/// <para>⚠️ GHI DB, ba chỗ, đều khôi phục theo ảnh chụp: <c>INSURANCE</c>
+/// (PUBEXPINF_NO + INS_KBN + OLD_FLG), một dòng <c>PUBEXPINF</c>, và <c>UNPAID</c> của
+/// ngày test. Chạy: <c>.\run-calc-bui-price.ps1 -Exception</c></para>
+/// </summary>
+[TestFixture]
+[Category("bui-price-e00100")]
+public sealed class BuiPriceE00100ExceptionTests : UiTestBase
+{
+    private BuiPriceE00100Db? _db;
+    private BuiPriceE00100Db.Snapshot? _snapshot;
+    private BuiPriceE00100Db.Seed? _seed;
+    private string _prefix = "";
+
+    protected override string[] NuisanceDialogPatterns => [];
+    protected override bool NavigatesToTreatmentEntry => false;
+
+    protected override string? FixturePreflightSkipReason()
+    {
+        if (!Settings.BuiPrice.AllowSeed)
+            return "chưa bật buiPrice.allowSeed. Nhóm này SỬA ĐĂNG KÝ BỆNH NHÂN " +
+                   "(INSURANCE.PUBEXPINF_NO + INS_KBN + OLD_FLG, và một dòng PUBEXPINF). " +
+                   "Chạy: .\\run-calc-bui-price.ps1 -Exception";
+
+        if (!Settings.Db.Enabled || string.IsNullOrWhiteSpace(Settings.Db.ConnectionString))
+            return "cần db.connectionString";
+
+        return null;
+    }
+
+    protected override void PrepareDataBeforeApp()
+    {
+        _db = BuiPriceE00100Db.CreateOrNull(Settings);
+        if (_db is null) return;
+
+        _snapshot = _db.TakeSnapshot(PatNo, TrtDate);
+        _seed = _db.SeedBrokenPubexp(BuiPriceE00100Db.SeedMode.CalcException, PatNo,
+                                     Settings.BuiPrice.MissingLflg,
+                                     Settings.BuiPrice.SeedPubexpinfNo, TrtDate);
+        TestContext.Out.WriteLine(_seed.Blocker is null
+            ? $"ĐÃ SEED (CalcException): 枝番 {_seed.PatBr}, ins_kbn→2, old_flg→4, 受給者番号 RỖNG"
+            : $"KHÔNG SEED ĐƯỢC: {_seed.Blocker}");
+    }
+
+    [OneTimeSetUp]
+    public void ExceptionSetUp()
+    {
+        if (_seed?.Blocker is null && _seed is not null)
+            _prefix = BuiPriceE00100Db.CalcFailedPrefix(PatNo, _seed.PatBr, TrtDate)
+                                      .Replace("\r\n", "\n");
+    }
+
+    [OneTimeTearDown]
+    public void RestoreEverything()
+    {
+        if (_db is null || _snapshot is null) return;
+
+        try { TestContext.Out.WriteLine("ĐÃ TRẢ LẠI — " + _db.Restore(_snapshot)); }
+        catch (Exception e)
+        {
+            TestContext.Error.WriteLine($"!! KHÔNG TRẢ LẠI ĐƯỢC INSURANCE/PUBEXPINF: {e.Message}");
+            foreach (var i in _snapshot.Insurance)
+                TestContext.Error.WriteLine(
+                    $"   UPDATE INSURANCE SET PUBEXPINF_NO = {i.PubexpinfNo}, INS_KBN = {i.InsKbn}, " +
+                    $"OLD_FLG = {i.OldFlg} WHERE PAT_NO = {PatNo} AND PAT_BR = {i.PatBr};");
+        }
+
+        try { TestContext.Out.WriteLine("ĐÃ TRẢ LẠI — " + _db.RestoreUnpaidForDay(PatNo, TrtDate, _snapshot.Unpaid)); }
+        catch (Exception e) { TestContext.Error.WriteLine($"!! KHÔNG TRẢ LẠI ĐƯỢC UNPAID: {e.Message}"); }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Test, Order(1)]
+    [Description("TC-E00100-4 — 当日来患: E00100 kèm 内容[]/場所[], dòng Ở LẠI với 保険点数 = 0")]
+    public void TcE001004_TodayViewKeepsRowWithZeroScore()
+    {
+        RequireSeed();
+        using var trace = TestTrace.Begin();
+
+        var flow = new BuiPriceE00100Flow(App);
+        var patSelect = AppNavigator.OpenPatientSelect(App, Settings);
+        AppNavigator.SetTreatmentDate(patSelect, TrtDate);
+
+        var expectedRows = _db!.TodayViewKeys(TrtDate);
+        if (expectedRows.Count == 0) IgnoreWithReason($"ngày {TrtDate:yyyy-MM-dd} không có 当日来患");
+
+        flow.PressF4(patSelect, trace);
+        var boxes = flow.Drain(TimeSpan.FromSeconds(60), rounds: 12, trace);
+
+        Assert.That(boxes, Has.Count.EqualTo(expectedRows.Count),
+            $"「1 件 1 ダイアログ」: {expectedRows.Count} dòng 当日来患 phải ra {expectedRows.Count} hộp, " +
+            $"đang ra {boxes.Count}");
+
+        var first = boxes[0];
+        // So RAW chứ không phải Txt.N — xem chú thích của Box.Raw.
+        Assert.That(first.Raw, Does.StartWith(_prefix),
+            "hai dòng đầu của E00100 lệch so với buiPrice.cs:197-201. Dấu cách đầu dòng 2 " +
+            "là 全角 U+3000, và 診療年月 dùng khuôn 「gggy年M月」 nên KHÔNG đệm 0.");
+
+        // ĐIỂM LỆCH ĐÃ CHỐT với bản web: WinForm in CẢ ex.Message lẫn ex.StackTrace ra
+        // hộp thoại. Bản web giữ 内容[] sau cờ ApiErrorOptions.VerboseMessages nhưng CỐ Ý
+        // bỏ hẳn 場所[] — stack trace không được gửi ra trình duyệt (parity-notes mục
+        // 「意図的に WinForm と変えた点」 §1). Testcase này khoá phía WinForm để điểm lệch
+        // đó luôn là một quyết định, không phải một chỗ port sót.
+        Assert.That(first.Raw, Does.Contain("内容["),
+            "WinForm PHẢI in 内容[ex.Message] (buiPrice.cs:200)");
+        Assert.That(first.Raw, Does.Contain("場所["),
+            "WinForm PHẢI in 場所[ex.StackTrace] (buiPrice.cs:200) — đây là điểm mà bản web " +
+            "CỐ Ý bỏ. Không còn nghĩa là ai đó đã 'dọn dẹp' WinForm, và khi đó điểm lệch " +
+            "không còn là quyết định nữa.");
+
+        var rows = flow.TodayRows(patSelect);
+        trace.Shot("tc-e00100-4-luoi-当日来患");
+        Assert.That(rows, Has.Count.EqualTo(expectedRows.Count),
+            "dòng bị LOẠI khỏi 当日来患 sau E00100. frm203001.cs:921-932 GÁN price2.insScore " +
+            "vào chính dòng đó rồi cộng vào 合計 ⇒ dòng Ở LẠI. frm204008 来患一覧 mới là chỗ " +
+            "loại dòng — đừng port chung một xử lý cho hai màn.");
+
+        // Cột 5 (0-based 4) của _patInfoViewItem là ins_score (frm203001.cs:939).
+        // Ngoại lệ ném TRƯỚC :649 nên insPayDatas rỗng ⇒ insScore = 0.
+        Assert.That(rows[0].Cells.Count, Is.GreaterThan(4),
+            $"dòng 当日来患 chỉ đọc được {rows[0].Cells.Count} ô: {rows[0]}");
+        Assert.That(Txt.Int(rows[0].Cells[4]), Is.EqualTo(0),
+            $"保険点数 của dòng hỏng phải là 0 (getBuiPrice2 trả buiPriceData2 khởi tạo, " +
+            $"buiPrice.cs:161-165), đang là 「{rows[0].Cells[4]}」. Đọc được cả dòng: {rows[0]}");
+    }
+
+    [Test, Order(2)]
+    [Description("TC-E00100-1 — 診療入力 VẪN SỐNG sau E00100, và 日計 về 0")]
+    public void TcE001001_TreatmentEntrySurvivesWithZeroTotals()
+    {
+        RequireSeed();
+        using var trace = TestTrace.Begin();
+
+        var flow = new BuiPriceE00100Flow(App);
+        var patSelect = App.Windows().First(w => Txt.Same(Uia.AutomationIdOf(w), "frm203001"));
+
+        var combo = Waits.For(() => Uia.ById(patSelect, TestSettings.Current.Locator("patSelPatNo")),
+                              "ô 患者番号 「cboPatNo」");
+        Uia.SetText(Uia.EditInside(combo), Settings.Patient.PatNo);
+        Waits.Step();
+        trace.Step($"bam F8 閲覧/変更 cho benh nhan {Settings.Patient.PatNo}");
+        Keyboard.Press(VirtualKeyShort.F8);
+
+        var boxes = flow.Drain(TimeSpan.FromSeconds(60), rounds: 12, trace);
+        Assert.That(boxes, Is.Not.Empty, "mở 診療入力 với dữ liệu hỏng mà không có E00100 nào");
+        Assert.That(boxes[0].Raw, Does.StartWith(_prefix), "E00100 ở 診療入力 phải cùng thân với ở 当日来患");
+        Assert.That(boxes[0].Buttons, Is.EqualTo(new[] { "OK" }),
+            "MsgDialog.ShowErrorMsg dùng MessageBoxButtons.OK (MsgDialog.cs:35)");
+
+        var window = Waits.TryFor(() => App.Window("frm203002"), TimeSpan.FromSeconds(60));
+        Assert.That(window, Is.Not.Null,
+            "E00100 xong mà 診療入力 KHÔNG mở. getBuiPrice2 chỉ hiện hộp thoại rồi trả quyền " +
+            "điều khiển cho nơi gọi (buiPrice.cs:196-203) — KHÔNG nơi nào bỏ dở màn hình.");
+
+        var screen = new TreatmentEntryScreen(window!, App.Automation);
+        screen.WaitUntilReady();
+        var grid = new TreatmentGridOps(screen);
+        trace.Shot("tc-e00100-1-luoi-sau-hop-thoai");
+
+        Assert.That(grid.RowCount(), Is.GreaterThan(0), "lưới 処置 rỗng — màn hình mở nhưng không dựng được dữ liệu");
+
+        // ĐÂY là vế mà nhánh 福祉医療設定 KHÔNG đo được: ngoại lệ ném ở buiPrice.cs:334,
+        // TRƯỚC _rtnData.insPayDatas = payDatas (:649), nên DispDayPoint không tìm thấy
+        // payData nào và vẽ 「[負担金 0円]  [日計 0点]」 cho MỌI ngày (modAcc.cs:190-198).
+        var totals = new AccountingDayFlow(App, screen).DailyTotals();
+        Assert.That(totals, Is.Not.Empty, "lưới không có dòng 【日計】 nào");
+        Assert.That(totals.Select(t => t.Point), Is.All.EqualTo(0),
+            "日計 phải về 0 ở MỌI ngày sau ngoại lệ — đọc được: " + string.Join(" · ", totals) +
+            ". Còn số thật nghĩa là ngoại lệ không xảy ra (seed không tới được app) hoặc " +
+            "nó ném ở chỗ khác, SAU khi insPayDatas đã được gán (buiPrice.cs:649).");
+        Assert.That(Txt.Int(grid.Days()), Is.EqualTo(0),
+            $"実日数 phải là 0 (Calc_MDPoint cộng insDays của _buiPriceData2s, modAcc.cs:106-118); " +
+            $"đọc được 「{grid.Days()}」");
+    }
+
+    [Test, Order(3)]
+    [Description("TC-E00100-5 — LỆCH: F8 chết ở E99999 và KHÔNG sang 窓口精算 (bản web thì sang)")]
+    public void TcE001005_AccountingDiesWithSystemErrorAndStaysPut()
+    {
+        RequireSeed();
+        if (!Settings.Parity.AllowSave)
+            IgnoreWithReason(
+                "cần parity.allowSave: chuỗi F8 đi qua UnPaid.deleteTrtDtUnPaid (modAcc.cs:427), " +
+                "chạy TRƯỚC mọi cổng hộp thoại nên dòng 未精算 của ngày test bay bất kể sau đó " +
+                "trả lời gì. Fixture chụp ảnh UNPAID và đặt lại, nhưng đó là đường lui chứ " +
+                "không phải giấy phép.");
+
+        using var trace = TestTrace.Begin();
+        var window = App.Window("frm203002");
+        if (window is null) Assert.Fail("chưa ở màn 診療入力 — TC-E00100-1 phải chạy trước (Order)");
+
+        var screen = new TreatmentEntryScreen(window!, App.Automation);
+        var day = new AccountingDayFlow(App, screen);
+
+        // F8 会計 chạy theo ngày của DÒNG CON TRỎ (modAcc.cs:415), không theo ngày mở màn
+        // hình — bẫy đã ghi ở README chung mục 8b.
+        var row = day.RowForDay(TrtDate.Day);
+        if (row is null)
+            IgnoreWithReason($"lưới không có dòng 日 = {TrtDate.Day}; đọc được: " +
+                             string.Join(", ", day.DaysOnGrid()));
+        day.FocusRow(row!, trace);
+
+        var walk = new BuiPriceE00100Flow(App).PressF8AndWalk(App, screen.Window, rounds: 10, trace);
+        TestContext.Out.WriteLine($"=== KQ-F8 === chuỗi ({walk.Trail.Count} hộp thoại), " +
+                                  $"E00100 = {walk.E00100Count}, 窓口精算 = {walk.ReachedCounterPayment}");
+        foreach (var a in walk.Trail) TestContext.Out.WriteLine("        " + a);
+
+        Assert.That(walk.E00100Count, Is.GreaterThan(0),
+            "chuỗi F8 không hiện E00100 nào. LetAccData2 gọi Calc_BuiPriceData2s ở " +
+            "modAcc.cs:403 nên nó PHẢI bật lại. Chuỗi đọc được ở trên.");
+
+        Assert.That(walk.Trail.Any(a => Txt.Has(a.Text, "システムエラー")), Is.True,
+            "chuỗi F8 không kết thúc bằng 「システムエラーです。」. Đo được 2026-09-07: sau E00100, " +
+            "một ngoại lệ nữa rơi vào catch-all của LetAccData2 (modAcc.cs:789-791) — nhánh đó " +
+            "chỉ hiện E99999 và KHÔNG đặt functionReturnValue = true (:783). Chuỗi đọc được ở trên.");
+
+        // ĐIỂM LỆCH với bản web. IDM_Acc_Click: `if (AccRet == false) { }` — khối RỖNG
+        // (frm203002.cs:7727-7729) ⇒ màn hình đứng im. Bản web thì
+        // announceBuiPriceWarnings(...) rồi return true ⇒ VẪN sang 窓口精算.
+        Assert.That(walk.ReachedCounterPayment, Is.False,
+            "F8 SANG ĐƯỢC 窓口精算 sau khi 一部負担金 ném — trái với đo thật 2026-09-07. " +
+            "Nếu đây là hành vi mới thì điểm lệch đã ghi ở README mục 2 không còn đúng, " +
+            "và phải sửa README + báo lại cho bên port trước khi sửa testcase.");
+        Assert.That(App.Window("frm203002"), Is.Not.Null,
+            "診療入力 phải VẪN MỞ: LetAccData2 trả false và nhánh false của IDM_Acc_Click là " +
+            "khối rỗng (frm203002.cs:7727-7729)");
+        trace.Shot("tc-e00100-5-sau-chuoi-f8");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private void RequireSeed()
+    {
+        if (_db is null) IgnoreWithReason($"không đọc được DB — {DbUnavailableReason}");
+        if (_seed?.Blocker is not null) IgnoreWithReason("không seed được: " + _seed.Blocker);
+    }
+}
