@@ -105,6 +105,22 @@ public static class AppNavigator
     ///
     /// Ngày mặc định đã là HÔM NAY nên trường hợp thường gặp không phải gõ gì. Khi cần
     /// ngày khác: ô 年 nhận NĂM HOÀNG LỊCH (令和), không phải năm dương — 2026 → 08.
+    ///
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// GÕ XONG PHẢI DỜI FOCUS — NẾU KHÔNG, <c>SelDate</c> VẪN LÀ NGÀY CŨ
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// <c>CustomDate</c> chỉ dựng lại <c>SelDate</c> từ ba ô 年/月/日 trong
+    /// <c>CustomDate_Leave</c> (CustomDate.cs:692-710). Ba ô trên màn hình hiện đúng
+    /// ngày mới ngay sau khi gõ, nhưng <b>mọi hàm đọc <c>_dtTrtDt.SelDate</c> vẫn nhận
+    /// HÔM NAY</b> cho tới khi control mất focus.
+    ///
+    /// <para>Trước 2026-09-07 hàm này không dời focus mà vẫn "chạy được", vì
+    /// <see cref="OpenTreatmentEntry"/> gọi <c>EnterPatient</c> ngay sau đó và cú
+    /// <c>Focus()</c> vào <c>cboPatNo</c> tình cờ phát <c>Leave</c> hộ. Luồng nào đọc
+    /// ngày TRƯỚC khi chạm control khác thì hỏng IM LẶNG: probe E00100 bấm F4 当日来患
+    /// ngay sau khi đặt ngày, và <c>getTodayViewData</c> đi truy vấn ngày HÔM NAY —
+    /// lưới rỗng, 合計 0人, KHÔNG có lỗi nào, trong khi ba ô 診療日 trên ảnh chụp hiện
+    /// rành rành 令和08年08月03日.</para>
     /// </summary>
     public static void SetTreatmentDate(Window patSelect, DateTime date)
     {
@@ -122,6 +138,8 @@ public static class AppNavigator
         Set("txtYear", era.ToString("00"));
         Set("txtMonth", date.Month.ToString("00"));
         Set("txtDay", date.Day.ToString("00"));
+
+        CommitTreatmentDate(patSelect);
         Waits.Step();
 
         void Set(string id, string value)
@@ -129,6 +147,24 @@ public static class AppNavigator
             var box = Waits.For(() => Uia.ById(dateControl, id), $"ô 「{id}」 của 診療日");
             Uia.SetText(box, value);
         }
+    }
+
+    /// <summary>
+    /// Bắt <c>dtTrtDt</c> phát <c>Leave</c> để <c>SelDate</c> nhận ngày vừa gõ — xem khối
+    /// chú thích của <see cref="SetTreatmentDate"/>.
+    ///
+    /// <para>Dời focus sang <c>cboPatNo</c>: nó luôn có mặt trên frm203001 (khai ở lớp
+    /// cha frm901001.Designer.cs:217), và đó cũng là ô mà người dùng đi tới tiếp theo nên
+    /// không làm lệch trạng thái màn hình. Không dùng TAB — thứ tự tab của form có thể
+    /// dừng lại ở một ô khác của chính <c>CustomDate</c>, và khi đó <c>Leave</c> không
+    /// phát.</para>
+    /// </summary>
+    private static void CommitTreatmentDate(Window patSelect)
+    {
+        var combo = Uia.ById(patSelect, "cboPatNo");
+        if (combo is null) return;
+        try { Uia.EditInside(combo).Focus(); }
+        catch { try { combo.Focus(); } catch { /* không dời được thì để lộ ra ở bước sau */ } }
     }
 
     private static void EnterPatient(OchaApp app, Window patSelect, TestSettings settings)

@@ -187,11 +187,13 @@ public sealed class BuiPriceE00100Flow
             // 「Top Row」 là dòng TIÊU ĐỀ và cũng lọt vào danh sách con (PROBE-GUIDELINE 3.2).
             if (Txt.Has(Uia.NameOf(row), "Top Row")) continue;
 
+            // GIÁ TRỊ ô nằm ở LegacyIAccessible.VALUE. LegacyIAccessible.Name của ô lưới
+            // WinForms là chuỗi MÔ TẢ kèm tên cột (「患者番号 Row 0」) — lượt probe đầu
+            // đọc nhầm sang đó và in ra một hàng toàn tên cột (README mục 7).
             var cells = Uia.Children(row)
-                           .Select(c => Txt.N(Uia.LegacyNameOf(c)))
-                           .Where(t => t.Length > 0)
+                           .Select(c => Txt.N(Uia.ValueOf(c)))
                            .ToList();
-            if (cells.Count == 0) continue;
+            if (cells.All(t => t.Length == 0)) continue;
             rows.Add(new TodayRow(index++, cells));
         }
         return rows;
@@ -214,10 +216,9 @@ public sealed class BuiPriceE00100Flow
         {
             if (Txt.Has(Uia.NameOf(row), "Top Row")) continue;
             var cells = Uia.Children(row)
-                           .Select(c => Txt.N(Uia.LegacyNameOf(c)))
-                           .Where(t => t.Length > 0)
+                           .Select(c => Txt.N(Uia.ValueOf(c)))
                            .ToList();
-            if (cells.Count > 0) return cells;
+            if (cells.Any(t => t.Length > 0)) return cells;
         }
         return [];
     }
