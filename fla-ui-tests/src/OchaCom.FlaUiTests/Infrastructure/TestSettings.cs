@@ -27,6 +27,7 @@ public sealed class TestSettings
     [JsonPropertyName("perioKensa")] public PerioKensaSection PerioKensa { get; set; } = new();
     [JsonPropertyName("visitList")] public VisitListSection VisitList { get; set; } = new();
     [JsonPropertyName("buiPrice")] public BuiPriceSection BuiPrice { get; set; } = new();
+    [JsonPropertyName("karteCmt")] public KarteCmtSection KarteCmt { get; set; } = new();
     [JsonPropertyName("locators")] public Dictionary<string, string> Locators { get; set; } = new();
 
     private static TestSettings? _current;
@@ -360,6 +361,49 @@ public sealed class TestSettings
         [JsonPropertyName("seedPubexpinfNo")] public int SeedPubexpinfNo { get; set; } = 9001;
     }
 
+    /// <summary>
+    /// Luồng <c>Tests/KarteCmtBuiCaret</c> — <c>frm203012.btnF1_Click</c> (chèn 省略表示
+    /// 部位 vào ô テキスト của カルテ記載選択).
+    ///
+    /// <para>Nửa WinForm của
+    /// <c>../web-tenant-tests/tests/dialogs-selection/bui-caret-newline-branch.spec.ts</c>.
+    /// Spec bên kia dựng CẢ HAI kỳ vọng bằng công thức đọc từ C# và chưa đo lần nào trên
+    /// app thật; luồng này đo, để quyết định có port cái lệch đó sang web hay không.</para>
+    /// </summary>
+    public sealed class KarteCmtSection
+    {
+        /// <summary>
+        /// Nút group thứ mấy trên <c>frm203011</c> sẽ mở (<c>btn01</c>…<c>btn30</c>,
+        /// frm203011.cs:193-197). Group nào cũng được — luồng này KHÔNG chọn dòng comment
+        /// nào, nó chỉ cần ô テキスト của <c>frm203012</c>.
+        /// </summary>
+        [JsonPropertyName("groupNo")] public int GroupNo { get; set; } = 1;
+
+        /// <summary>
+        /// Cho phép bấm Enter TRONG ô テキスト để đo xem phím đó làm gì.
+        ///
+        /// <para>⚠️ GHI DB, và đây là chỗ dễ mất cảnh giác nhất của cả luồng:
+        /// <c>txtValue_KeyDown</c> gặp Enter mà chuỗi KHÔNG còn dấu <c>*</c> nào thì gọi
+        /// thẳng <c>fixProc</c> (frm203012.cs:339-342) — tức 確定, và <c>fixProc</c> gọi
+        /// <c>fixCmt2()</c> cập nhật <c>use_cnt</c> của <c>mst_cmt2</c> (:1370) rồi đóng
+        /// form. Mặt khác <c>AcceptButton = btnDummy</c> (:399) lại CHÈN XUỐNG DÒNG. Cái
+        /// nào thắng thì phụ thuộc <c>AcceptsReturn</c> và thứ tự xử lý dialog-key của
+        /// WinForms — <b>đọc source không kết luận được</b>, nên nó là một câu hỏi probe
+        /// riêng chứ không phải một bước chuẩn bị.</para>
+        ///
+        /// <para>Mặc định false ⇒ mọi testcase dựng trạng thái bằng ValuePattern +
+        /// Ctrl+Home/→, KHÔNG bao giờ gửi Enter, và câu hỏi Enter tự Ignore.</para>
+        /// </summary>
+        [JsonPropertyName("allowConfirm")] public bool AllowConfirm { get; set; }
+
+        /// <summary>
+        /// Phần chữ mồi trước dấu xuống dòng. Caret sẽ được đặt ở đúng
+        /// <c>probeText.Length</c>, tức NGAY TRƯỚC <c>\r\n</c> cuối — điều kiện
+        /// <c>idx == Text.Length - 2</c> của nhánh đang đo (frm203012.cs:201).
+        /// </summary>
+        [JsonPropertyName("probeText")] public string ProbeText { get; set; } = "ABC";
+    }
+
     public sealed class RunSection
     {
         [JsonPropertyName("stepMs")] public int StepMs { get; set; }
@@ -496,6 +540,9 @@ public sealed class TestSettings
         Set("OCHA_BR_NO_MATCH_TEETH", v => s.InpP1.BrNoMatchTeeth = ToIntArray(v));
         Set("OCHA_BUI_PRICE_ALLOW_SEED", v => s.BuiPrice.AllowSeed = ToBool(v));
         Set("OCHA_BUI_PRICE_MISSING_LFLG", v => s.BuiPrice.MissingLflg = v);
+        Set("OCHA_KARTE_CMT_GROUP_NO", v => s.KarteCmt.GroupNo = int.Parse(v));
+        Set("OCHA_KARTE_CMT_ALLOW_CONFIRM", v => s.KarteCmt.AllowConfirm = ToBool(v));
+        Set("OCHA_KARTE_CMT_PROBE_TEXT", v => s.KarteCmt.ProbeText = v);
 
         static void Set(string name, Action<string> apply)
         {

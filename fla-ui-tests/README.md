@@ -287,6 +287,8 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 | `.\run-calc-bui-price.ps1` | mở 診療入力 / F4 当日来患 → `buiPrice.getBuiPrice2` (一部負担金計算) → E00100 | `Tests/BuiPriceE00100/` | ✖ nhóm CLEAN chỉ đọc |
 | `.\run-calc-bui-price.ps1 -Seed` | như trên, nhưng dựng sẵn một ca 公費 hỏng để E00100 nổ (nhánh 福祉医療設定) | `Tests/BuiPriceE00100/` | ⚠️ **CÓ** — `INSURANCE.PUBEXPINF_NO` + 1 dòng `PUBEXPINF` |
 | `.\run-calc-bui-price.ps1 -Exception` | nhánh NGOẠI LỆ (患者登録データ) + F8 会計 → `modAcc.LetAccData2` | `Tests/BuiPriceE00100/` | ⚠️ **CÓ** — thêm `INS_KBN`/`OLD_FLG` và `UNPAID` của ngày test |
+| `.\run-insert-bui-into-karte-cmt.ps1` | F6 コメント → nút group → F1 部位 → `frm203012.btnF1_Click` (chèn 省略表示 部位 vào ô テキスト) | `Tests/KarteCmtBuiCaret/` | ✖ — nhưng CHỈ VÌ nó tránh **bốn** phím: F9 / End / Escape / Enter đều là `fixProc` → `fixCmt2` ghi `mst_cmt2.use_cnt` |
+| `.\run-insert-bui-into-karte-cmt.ps1 -AllowConfirm` | như trên + đo xem Enter trong ô テキスト là 確定 hay chỉ xuống dòng | `Tests/KarteCmtBuiCaret/` | ⚠️ **CÓ THỂ** — `mst_cmt2.use_cnt`, đúng cái đang đo |
 | `.\run-edit-treatment-rows.ps1 -Case Probe_Advanced` | PROBE — dò hành vi, KHÔNG assert | `Tests/TreatmentGrid/` | ✖ |
 
 > Thêm luồng mới thì giữ đúng quy ước này: `run-<động từ>-<đối tượng>.ps1` mô tả việc

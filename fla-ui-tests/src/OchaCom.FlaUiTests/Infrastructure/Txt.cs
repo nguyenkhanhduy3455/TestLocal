@@ -32,6 +32,29 @@ public static class Txt
 
     public static bool Same(string? a, string? b) => N(a) == N(b);
 
+    /// <summary>
+    /// Chuỗi ở dạng ĐỌC ĐƯỢC TRÊN LOG: mọi ký tự ngoài ASCII in được thành <c>\uXXXX</c>.
+    ///
+    /// <para><b>Bắt buộc dùng khi in 省略表示 部位.</b> Chuỗi đó là ký tự EUDC (vùng
+    /// private-use U+E000…U+F8FF): in thẳng ra console/`.trx` thì KHÔNG thấy gì, và hai
+    /// chuỗi khác nhau trông y hệt nhau. Bản đầu của spec Playwright tương ứng
+    /// (<c>bui-caret-newline-branch.spec.ts</c>) in ra <c>"ABC\nX"</c> cho cả hai kỳ vọng
+    /// — vô dụng đúng ở chỗ cần dùng nhất. Escape theo MÃ thì đối chiếu được.</para>
+    ///
+    /// <para>⚠️ KHÔNG đi qua <see cref="N"/>: hàm đó NFKC + biến <c>\r\n</c> thành dấu
+    /// cách, tức xoá sạch đúng bằng chứng cần đo ở nhánh 「nhảy qua newline」.</para>
+    /// </summary>
+    public static string Vis(string? s) =>
+        s is null
+            ? "(null)"
+            : "\"" + string.Concat(s.Select(c => c switch
+              {
+                  '"' => "\\\"",
+                  '\\' => "\\\\",
+                  >= ' ' and <= '~' => c.ToString(),
+                  _ => $"\\u{(int)c:x4}",
+              })) + "\"";
+
     public static bool Has(string? haystack, string? needle) =>
         needle is { Length: > 0 } && N(haystack).Contains(N(needle), StringComparison.Ordinal);
 }

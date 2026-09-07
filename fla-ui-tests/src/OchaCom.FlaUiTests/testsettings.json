@@ -163,6 +163,25 @@
     "seedPubexpinfNo": 9001
   },
 
+  "karteCmt": {
+    "//": [
+      "Luong Tests/KarteCmtBuiCaret — frm203012.btnF1_Click (chen 省略表示 部位 vao o テキスト",
+      "cua カルテ記載選択). Nua WinForm cua",
+      "web-tenant-tests/tests/dialogs-selection/bui-caret-newline-branch.spec.ts (bao cao #3b).",
+      "",
+      "KHONG GHI DB — nhung chi vi no TRANH DUNG bon phim. F9 / End / Escape / Enter deu dan",
+      "toi fixProc -> fixCmt2() cap nhat mst_cmt2.use_cnt roi dong form (frm203012.cs:164-172,",
+      ":339-342, :1348-1387). Fixture dung trang thai bang ValuePattern.SetValue, doi caret bang",
+      "Ctrl+Home + mui ten, va dong man bang F10 戻る."
+    ],
+    "//groupNo": "Nut group thu may tren frm203011 (btn01..btn30). Nut vuot qua so dong mst_cmt2_grp bi Visible=false nen KHONG co trong cay UIA.",
+    "groupNo": 1,
+    "//allowConfirm": "Cho phep bam Enter TRONG o テキスト de do xem phim do lam gi. ⚠️ CO THE GHI mst_cmt2.use_cnt: txtValue_KeyDown goi fixProc khi chuoi het dau *, con AcceptButton=btnDummy thi chi chen xuong dong — doc source khong phan xu duoc. Mac dinh false.",
+    "allowConfirm": false,
+    "//probeText": "Chu moi truoc dau xuong dong. Caret duoc dat o dung probeText.Length, tuc ngay TRUOC \\r\\n cuoi.",
+    "probeText": "ABC"
+  },
+
   "locators": {
     "//": "AutomationId = Control.Name bên WinForm. Nếu máy Windows soi Inspect thấy khác thì sửa ở đây, KHÔNG phải sửa code.",
     "kobetuTabItem": "個別",
