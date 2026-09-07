@@ -302,6 +302,76 @@ public sealed class BuiPriceE00100Db
                $"INSURANCE.PUBEXPINF_NO: đặt lại {snap.Insurance.Count} 枝番";
     }
 
+    // ── ORACLE: 日計 tính lại từ TRNTRN ──────────────────────────────────────
+
+    /// <summary>
+    /// 日計点数 của từng ngày trong tháng, tính lại từ <c>TRNTRN</c> — <b>mốc ĐỘC LẬP</b>
+    /// với con số app đang vẽ.
+    ///
+    /// <code>
+    /// buiPrice.cs:286-291  (getInsInfo2, nhánh jihi_flg = 0 「医療保険」)
+    ///     int trt_cnt = trtData.trt_cd == 50 ? 1 : trtData.trt_cnt;
+    ///     payDataCur.score += trtData.trt_pt * trt_cnt;      // gom theo (trt_dt, raiin_cnt)
+    /// modAcc.cs:190-192     (DispDayPoint)
+    ///     insScore += payData.score;                          // cộng mọi 枝番 của NGÀY đó
+    ///     hFG1[2, targetRow] = "[負担金 …円]  [日計 " + insScore + "点]"
+    /// </code>
+    ///
+    /// <para>Đo rồi chép con số vào assert thì testcase chỉ còn so app với chính nó —
+    /// đổi bệnh nhân hay đổi tháng là kỳ vọng phải tự đổi theo.</para>
+    /// </summary>
+    public IReadOnlyDictionary<int, int> DayPointOracle(int patNo, DateTime month)
+    {
+        var first = new DateTime(month.Year, month.Month, 1);
+        var last = first.AddMonths(1).AddDays(-1);
+
+        using var con = Open();
+        using var cmd = Cmd(con,
+            "SELECT DAY(trt_dt) AS d, " +
+            "       SUM(trt_pt * CASE WHEN trt_cd = 50 THEN 1 ELSE trt_cnt END) AS pt " +
+            "FROM TRNTRN " +
+            "WHERE pat_no = @pat AND del_flg = '0' AND jihi_flg = 0 " +
+            "  AND trt_dt BETWEEN @a AND @b " +
+            "GROUP BY DAY(trt_dt)");
+        cmd.Parameters.Add("@pat", SqlDbType.Int).Value = patNo;
+        cmd.Parameters.Add("@a", SqlDbType.Date).Value = first;
+        cmd.Parameters.Add("@b", SqlDbType.Date).Value = last;
+
+        var map = new Dictionary<int, int>();
+        using var r = cmd.ExecuteReader();
+        while (r.Read()) map[I(r["d"])] = I(r["pt"]);
+        return map;
+    }
+
+    /// <summary>
+    /// Số lần <c>getBuiPrice2</c> chạy khi mở 当日来患 của một ngày = số cặp
+    /// (患者番号, 枝番) mà <c>Trntrn.getInpTrntrnData(con, dteTrtDt)</c> trả về
+    /// (Trntrn.cs:2132-2140), tức là số hộp E00100 tối đa có thể bung ra.
+    ///
+    /// <para>Chép lại ĐÚNG mệnh đề lọc của app — kể cả <c>TRN_STATUS.miraiin_kbn = 0</c>
+    /// và nhánh <c>UNION</c> từ <c>ACCDAT</c>. Bỏ sót một vế là kỳ vọng lệch mà log
+    /// trông y hệt 「WinForm bật thừa/thiếu hộp thoại」.</para>
+    /// </summary>
+    public IReadOnlyList<(int PatNo, int PatBr)> TodayViewKeys(DateTime day)
+    {
+        using var con = Open();
+        using var cmd = Cmd(con,
+            "SELECT DISTINCT trn.PAT_NO, trn.PAT_BR FROM TRNTRN AS trn " +
+            "INNER JOIN TRN_STATUS AS trn_s ON trn_s.PAT_NO = trn.PAT_NO " +
+            "  AND trn_s.SINRYO_YM = @ym AND trn_s.miraiin_kbn = 0 " +
+            "WHERE trn.TRT_DT = @d AND trn.JIHI_FLG = 0 " +
+            "UNION " +
+            "SELECT DISTINCT PAT_NO, PAT_BR FROM ACCDAT " +
+            "WHERE TRT_DT = @d AND SCORE <> 0 AND LFLG = 0 AND DEL_FLG = 0");
+        cmd.Parameters.Add("@d", SqlDbType.VarChar, 10).Value = day.ToString("yyyy/MM/dd");
+        cmd.Parameters.Add("@ym", SqlDbType.VarChar, 6).Value = day.ToString("yyyyMM");
+
+        var rows = new List<(int, int)>();
+        using var r = cmd.ExecuteReader();
+        while (r.Read()) rows.Add((I(r["PAT_NO"]), I(r["PAT_BR"])));
+        return rows;
+    }
+
     // ── ORACLE: dựng lại NGUYÊN VĂN câu mà WinForm sẽ in ─────────────────────
 
     /// <summary>

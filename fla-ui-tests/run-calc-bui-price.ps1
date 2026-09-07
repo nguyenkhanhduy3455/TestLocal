@@ -94,8 +94,10 @@ if ($Diagnostics) {
               else       { "FullyQualifiedName~BuiPriceE00100CleanProbeTests" }
 } elseif ($Case -ne "") {
     $filter = "FullyQualifiedName~$ns&FullyQualifiedName~$Case"
+} elseif ($Seed) {
+    $filter = "FullyQualifiedName~BuiPriceE00100SeedTests"
 } else {
-    $filter = "FullyQualifiedName~BuiPriceE00100Tests"
+    $filter = "FullyQualifiedName~BuiPriceE00100CleanTests"
 }
 
 $testArgs = @(
