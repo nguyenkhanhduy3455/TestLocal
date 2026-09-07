@@ -52,6 +52,15 @@
 
     Bat luon buiPrice.allowSeed, giong -Seed.
 
+.PARAMETER Control
+    Dung VOI -Exception. Chay seed DOI CHUNG: doi DUNG hai cot ma nhanh (A) buoc
+    phai doi (INS_KBN -> 2, OLD_FLG -> 4) va KHONG chen dong 公費 nao => guard
+    pubexpInfs.Count > 0 (buiPrice.cs:997) chan ngay, KHONG co E00100 nao.
+
+    De tra loi: luot -Exception ket thuc bang 「システムエラーです。」 va khong sang
+    窓口精算 — do E00100, hay chi vi benh nhan test bi doi thanh 国保 前期高齢者?
+    So chuoi F8 hai luot: giong nhau => thu pham la INS_KBN, khac nhau => la E00100.
+
 .PARAMETER Diagnostics
     Chay fixture PROBE ([Explicit]): do, KHONG assert, khong bao gio nem.
     Dap an nam o cac dong "=== KQ-n ===", runner loc san ra calc-bui-price-KQ.txt.
@@ -69,6 +78,7 @@
     .\run-calc-bui-price.ps1 -Diagnostics
     .\run-calc-bui-price.ps1 -Diagnostics -Seed
     .\run-calc-bui-price.ps1 -Diagnostics -Exception
+    .\run-calc-bui-price.ps1 -Diagnostics -Exception -Control
     .\run-calc-bui-price.ps1 -TrtDate 2026-08-03
 #>
 [CmdletBinding()]
@@ -78,6 +88,7 @@ param(
     [string]$TrtDate = "",
     [switch]$Seed,
     [switch]$Exception,
+    [switch]$Control,
     [switch]$Diagnostics,
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug"
@@ -99,6 +110,7 @@ $env:OCHA_KILL_ON_FAIL = "0"
 # nhom testcase trong CUNG mot namespace, va de co bat sot tu lan chay truoc thi nhom
 # "sach" se chay tren du lieu DA HONG — no do E00100 that va bao "du lieu that hong".
 $env:OCHA_BUI_PRICE_ALLOW_SEED = if ($Seed -or $Exception) { "1" } else { "0" }
+$env:OCHA_BUI_PRICE_CONTROL     = if ($Control) { "1" } else { "0" }
 
 $ns = "OchaCom.FlaUiTests.Tests.BuiPriceE00100"
 

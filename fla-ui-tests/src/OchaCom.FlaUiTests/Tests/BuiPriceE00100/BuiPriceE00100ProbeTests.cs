@@ -543,12 +543,21 @@ public sealed class BuiPriceE00100ExceptionProbeTests : UiTestBase
         foreach (var i in _snapshot.Insurance) TestContext.Out.WriteLine("        " + i);
         foreach (var u in _snapshot.Unpaid) TestContext.Out.WriteLine("        UNPAID " + u);
 
-        _seed = _db.SeedBrokenPubexp(BuiPriceE00100Db.SeedMode.CalcException, PatNo,
-                                     Settings.BuiPrice.MissingLflg,
+        // OCHA_BUI_PRICE_CONTROL = 1 ⇒ chạy seed ĐỐI CHỨNG: đổi ĐÚNG hai cột 保険 mà
+        // CalcException buộc phải đổi, KHÔNG chèn 公費 ⇒ không có E00100 nào. Xem
+        // BuiPriceE00100Db.SeedMode.InsKbnControl để biết nó trả lời câu hỏi gì.
+        var control = Environment.GetEnvironmentVariable("OCHA_BUI_PRICE_CONTROL") is "1" or "true";
+        var mode = control ? BuiPriceE00100Db.SeedMode.InsKbnControl
+                           : BuiPriceE00100Db.SeedMode.CalcException;
+
+        _seed = _db.SeedBrokenPubexp(mode, PatNo, Settings.BuiPrice.MissingLflg,
                                      Settings.BuiPrice.SeedPubexpinfNo, TrtDate);
         TestContext.Out.WriteLine(_seed.Blocker is null
-            ? $"ĐÃ SEED (CalcException): 枝番 {_seed.PatBr}, ins_kbn→2, old_flg→4, " +
-              $"負担者番号 8 ký tự + 受給者番号 RỖNG"
+            ? (control
+                ? $"ĐÃ SEED (ĐỐI CHỨNG InsKbnControl): 枝番 {_seed.PatBr}, ins_kbn→2, old_flg→4, " +
+                  "KHÔNG có dòng 公費 ⇒ KHÔNG được có E00100 nào"
+                : $"ĐÃ SEED (CalcException): 枝番 {_seed.PatBr}, ins_kbn→2, old_flg→4, " +
+                  "負担者番号 8 ký tự + 受給者番号 RỖNG")
             : $"KHÔNG SEED ĐƯỢC: {_seed.Blocker}");
     }
 

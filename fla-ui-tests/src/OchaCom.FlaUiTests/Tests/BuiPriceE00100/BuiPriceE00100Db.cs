@@ -211,6 +211,22 @@ public sealed class BuiPriceE00100Db
         /// đúng cảnh mà spec web dựng.</para>
         /// </summary>
         CalcException,
+
+        /// <summary>
+        /// <b>ĐỐI CHỨNG.</b> Đổi ĐÚNG hai cột mà <see cref="CalcException"/> phải đổi
+        /// (<c>INS_KBN</c> → 2, <c>OLD_FLG</c> → 4) và <b>KHÔNG</b> chèn dòng 公費 nào.
+        ///
+        /// <para>Không có 公費 ⇒ <c>pubexpInfs</c> rỗng ⇒ guard
+        /// <c>pubexpInfs.Count &gt; 0</c> ở buiPrice.cs:997 chặn ngay, cú
+        /// <c>Substring</c> không bao giờ chạy ⇒ <b>KHÔNG có E00100 nào</b>.</para>
+        ///
+        /// <para>Dùng để trả lời một câu hỏi mà không có nó thì mọi kết luận đều lung
+        /// lay: lượt <see cref="CalcException"/> kết thúc bằng 「システムエラーです。」 và
+        /// KHÔNG sang 窓口精算 — đó là do E00100, hay chỉ vì bệnh nhân test bị đổi thành
+        /// 国保 前期高齢者 mà 保険者番号 của họ không hợp lệ với 国保? Chạy mode này rồi so
+        /// chuỗi F8: giống nhau ⇒ thủ phạm là <c>INS_KBN</c>, khác nhau ⇒ là E00100.</para>
+        /// </summary>
+        InsKbnControl,
     }
 
     /// <summary>Một dòng <c>UNPAID</c> — chỉ để chụp ảnh và trả lại.</summary>
@@ -295,6 +311,21 @@ public sealed class BuiPriceE00100Db
         // ngược lại — phải để RỖNG, vì lflg khác rỗng sẽ bật hộp (B) TRƯỚC và probe không
         // còn phân biệt được hai nhánh nữa.
         var seedLflg = mode == SeedMode.LocalFlgMissing ? lflg : "";
+
+        if (mode == SeedMode.InsKbnControl)
+        {
+            // ĐỐI CHỨNG: KHÔNG đụng PUBEXPINF, KHÔNG đụng PUBEXPINF_NO — chỉ hai cột
+            // 保険 mà mode CalcException buộc phải đổi.
+            var brc = insurance.Min(i => i.PatBr);
+            using var conC = Open();
+            using var txC = conC.BeginTransaction();
+            Exec(conC, txC,
+                 "UPDATE INSURANCE SET INS_KBN = 2, OLD_FLG = 4 WHERE PAT_NO = @pat AND PAT_BR = @br",
+                 ("@pat", patNo), ("@br", brc));
+            txC.Commit();
+            return new Seed(mode, patNo, brc, pubexpinfNo, "", default, default, null);
+        }
+
         if (mode == SeedMode.LocalFlgMissing && CountLocalFlg(lflg) != 0)
             return Blocked($"福祉医療番号 「{lflg}」 CÓ THẬT trong LOCALFLG ⇒ getLocalFlg không trả " +
                            "null và E00100 không bật. Đổi buiPrice.missingLflg sang mã khác.");
