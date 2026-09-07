@@ -38,7 +38,12 @@ Luồng này đo, và trả lời dưới dạng **「khớp công thức nào�
 ## 1b. ĐÃ ĐO — kết quả (2026-09-07, `ochacom-win`, BN 10 / 2026-08-03)
 
 **Cả hai phép đo then chốt đều KHỚP CÔNG THỨC WINFORM. Báo cáo #3b đúng, và đúng cả ở chi
-tiết. Đề xuất A có căn cứ.**
+tiết. Đề xuất A có căn cứ.** Fixture assert: **6/6 xanh**.
+
+```
+=== KQ-VERDICT === TC-4 gõ 「X」 sau khi chèn 部位: WINFORM
+=== KQ-VERDICT === TC-5 F1 部位 lần thứ hai:        WINFORM
+```
 
 省略表示 đo được trên WinForm — **trùng khít từng codepoint** với con số bản web in ra
 (spec #3b: 「3≁3」 6 ký tự, 「全顎」 15 ký tự), nên hai bên **so được với nhau**; đây là rủi

@@ -65,6 +65,26 @@
  *       WEB     "ABC\n\ue0a9\ue0af\ue0b2\ue0af\ue0a9\ue0a3X"   ← X ở cuối
  *       WinForm "ABC\n\ue0a9\ue0af\ue0b2\ue0afX\ue0a9\ue0a3"   ← X sau ký tự thứ 4
  *
+ * ═══ ĐÃ XÁC MINH TRÊN WINFORM (2026-09-07) ═════════════════════════════════
+ * Cột 「WinForm」 của file này KHÔNG còn là suy luận. Luồng FlaUI
+ * `fla-ui-tests/src/OchaCom.FlaUiTests/Tests/KarteCmtBuiCaret/` đã đo trên app thật
+ * (BN 10 / 2026-08-03) — 6/6 testcase xanh, và cả hai phép đo then chốt đều
+ * **KHỚP CÔNG THỨC WINFORM**:
+ *
+ *   gõ X       ABC\r\n \ue0a9\ue0af\ue0b2\ue0af X \ue0a9\ue0a3     ← trùng đúng
+ *              chuỗi mà TC-3 dưới đây DỰ ĐOÁN, khác mỗi \r\n ↔ \n
+ *   F1 lần 2   chuỗi 2 chen vào GIỮA chuỗi 1, đẩy 2 ký tự cuối ra sau
+ *   đối chứng  caret ở dòng trống ⇒ hai phía GIỐNG NHAU ⇒ lệch là do NHÁNH
+ *
+ * 省略表示 đo trên WinForm trùng khít từng codepoint với số đo ở đây (6 và 15 ký tự)
+ * ⇒ hai bên so được với nhau. ⇒ **Khác biệt là THẬT và là khác biệt OUTPUT; đề xuất A
+ * (port nguyên bug) có căn cứ.** `EXPECT_MODE` vẫn để 'web' — đổi sang 'winform' là
+ * hành động PORT, thuộc quyền quyết định của người chốt, không phải của file test.
+ *
+ * ⚠️ MỘT ĐIỂM WINFORM KHÁC WEB, ngoài dự đoán: mở lại 部位選択 lần hai trên WinForm
+ * thấy **0 răng** còn đánh dấu — form dựng lại sạch mỗi lần, trong khi bẫy 3 dưới đây
+ * ghi (đúng, cho web) là CÓ nhớ. Nếu port thì đừng bê giả định đó sang.
+ *
  * ═══ BẪY ĐÃ LƯỜNG TRƯỚC ══════════════════════════════════════════════════════
  *  1. Dialog cha (frm203011 lưới group) và con (frm203012) TRÙNG TITLE
  *     「カ ル テ 記 載 選 択」. Không phân biệt bằng title — cha nhận diện bằng nút
