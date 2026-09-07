@@ -543,9 +543,11 @@ public sealed class BuiPriceE00100ExceptionProbeTests : UiTestBase
             {
                 BuiPriceE00100CleanProbeTests.Kq(21, "        " + b);
                 BuiPriceE00100CleanProbeTests.Kq(21,
-                    "        bắt đầu đúng ORACLE? " + (b.Text.StartsWith(prefix, StringComparison.Ordinal) ? "CÓ" : "KHÔNG") +
-                    " · có 内容[? " + (b.Text.Contains("内容[", StringComparison.Ordinal) ? "CÓ" : "KHÔNG") +
-                    " · có 場所[? " + (b.Text.Contains("場所[", StringComparison.Ordinal) ? "CÓ" : "KHÔNG"));
+                    "        RAW bắt đầu đúng ORACLE? " + (b.Raw.StartsWith(prefix, StringComparison.Ordinal) ? "CÓ" : "KHÔNG") +
+                    " · có 内容[? " + (b.Raw.Contains("内容[", StringComparison.Ordinal) ? "CÓ" : "KHÔNG") +
+                    " · có 場所[? " + (b.Raw.Contains("場所[", StringComparison.Ordinal) ? "CÓ" : "KHÔNG") +
+                    " · dòng 2 mở đầu bằng 全角 U+3000? " +
+                    (b.Raw.Contains("\n\u3000患者番号[", StringComparison.Ordinal) ? "CÓ" : "KHÔNG"));
             }
 
             var rows = flow.TodayRows(patSelect!);

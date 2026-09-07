@@ -48,11 +48,21 @@ public sealed class BuiPriceE00100Flow
     public BuiPriceE00100Flow(OchaApp app) => _app = app;
 
     /// <summary>Một lần hộp E00100 hiện ra.</summary>
-    /// <param name="Text">Nguyên văn thân hộp thoại, đã chuẩn hoá xuống dòng về <c>\n</c>.</param>
+    /// <param name="Raw">
+    /// Thân hộp thoại <b>Y NGUYÊN</b> như Win32 trả về, chỉ đổi <c>\r\n</c> → <c>\n</c>.
+    ///
+    /// <para>Đây là thứ DUY NHẤT dùng được để so nguyên văn. <see cref="Txt.N"/> chạy NFKC
+    /// nên biến 全角スペース U+3000 thành space thường, và nó còn đổi xuống dòng thành
+    /// space — so bằng <see cref="Text"/> là mất luôn hai chi tiết mà cả hai bản đều phải
+    /// giữ. Bản đầu của bộ test này so bằng <c>Text</c> và XANH, nhưng nó chỉ chứng minh
+    /// 「các chữ đúng thứ tự」 chứ không chứng minh gì về khoảng trắng.</para>
+    /// </param>
+    /// <param name="Text">Bản đã chuẩn hoá — dùng để LOG và để <c>Txt.Has</c> tìm mẫu.</param>
     /// <param name="Title">Tiêu đề — <c>Application.ProductName</c> (MsgDialog.cs:35).</param>
     /// <param name="Buttons">Nhãn mọi nút; E00100 phải ra ĐÚNG một nút OK.</param>
     /// <param name="DefaultButton">Nút giữ con trỏ lúc hộp VỪA mở, đọc TRƯỚC khi bấm.</param>
-    public sealed record Box(string Text, string Title, IReadOnlyList<string> Buttons, string DefaultButton)
+    public sealed record Box(string Raw, string Text, string Title,
+                             IReadOnlyList<string> Buttons, string DefaultButton)
     {
         public override string ToString() =>
             $"「{Text.Replace("\n", " ⏎ ")}」 tiêu đề「{Title}」 " +
@@ -91,7 +101,8 @@ public sealed class BuiPriceE00100Flow
             // ĐỌC TRƯỚC KHI BẤM: cú bấm dời con trỏ sang nút vừa bấm, hỏi sau là đo lại
             // chính lựa chọn của mình chứ không phải mặc định của WinForm
             // (bài học của AccountingFlow).
-            var box = new Box(Txt.N(found.Text).Replace("\r\n", "\n"),
+            var box = new Box((found.Text ?? "").Replace("\r\n", "\n"),
+                              Txt.N(found.Text),
                               Txt.N(found.Title),
                               MsgBoxWin32.ButtonCaptions(found.Hwnd),
                               AccountingFocusedButton());
@@ -110,8 +121,7 @@ public sealed class BuiPriceE00100Flow
                 () =>
                 {
                     var now = FirstE00100();
-                    return now is null || Txt.N(now.Text).Replace("\r\n", "\n") != box.Text
-                                       || now.Hwnd != found.Hwnd;
+                    return now is null || now.Hwnd != found.Hwnd;
                 },
                 TimeSpan.FromSeconds(15));
             if (!closed) trace?.Note("hop E00100 khong dong sau khi bam OK — dung vet");
@@ -229,6 +239,20 @@ public sealed class BuiPriceE00100Flow
                     $"(đọc được [{string.Join(", ", buttons)}]).");
             }
             trail.Add(new Answered(text, names[0], why));
+
+            // CHỜ CHÍNH HWND NÀY BIẾN MẤT trước khi đi tìm hộp kế tiếp.
+            //
+            // MsgBoxWin32.ClickButton dùng PostMessage — nó bỏ thư vào hàng đợi rồi trả
+            // về NGAY. Bản đầu đi thẳng sang vòng sau và tóm lại ĐÚNG hộp vừa bấm, rồi
+            // ClickButton lần hai chạy khi cửa sổ đang đóng dở nên không tìm thấy nút
+            // nào. Log 2026-09-07 đọc rất giống lỗi app: hộp 「本日でありません」 hiện HAI
+            // lần liền, lần sau báo 「không có nút nào trong [OK, はい, Yes]」 trong khi
+            // nút đọc được lại là [OK, Cancel] — mâu thuẫn, vì OK có trong cả hai.
+            var gone = Waits.TryUntil(
+                () => MsgBoxWin32.All(app.ProcessId).All(d => d.Hwnd != found.Hwnd),
+                TimeSpan.FromSeconds(15));
+            if (!gone)
+                trace?.Note($"hop thoai [{trail.Count}] khong dong sau khi bam 「{names[0]}」");
             Waits.Step();
         }
 

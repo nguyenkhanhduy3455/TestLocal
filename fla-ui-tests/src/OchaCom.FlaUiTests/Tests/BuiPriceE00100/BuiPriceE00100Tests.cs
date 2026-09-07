@@ -331,10 +331,13 @@ public sealed class BuiPriceE00100SeedTests : UiTestBase
             "Đọc được: " + string.Join(" ⏎ ", boxes.Select(b => b.ToString())));
 
         var first = boxes[0];
-        Assert.That(Txt.N(first.Text), Is.EqualTo(Txt.N(_expectedBody).Replace("\r\n", "\n")),
+        // So bằng RAW, KHÔNG phải Txt.N: Txt.N chạy NFKC (biến 全角スペース U+3000 thành
+        // space thường) và đổi xuống dòng thành space, nên nó chỉ chứng minh 「các chữ
+        // đúng thứ tự」. Hai chi tiết dễ mất nhất khi port lại đúng là hai thứ nó xoá.
+        Assert.That(first.Raw, Is.EqualTo(_expectedBody.Replace("\r\n", "\n")),
             "thân E00100 lệch so với buiPrice.cs:1734-1737 ghép qua MsgDialog.getMsg " +
-            "(MsgDialog.cs:184-213). Hai chi tiết dễ mất: dấu cách đầu dòng 2 là 全角 U+3000, " +
-            "và 診療年月 dùng khuôn 「gggy年M月」 nên KHÔNG đệm 0.");
+            "(MsgDialog.cs:184-213). Hai chi tiết dễ mất: dấu cách đầu dòng 2 là 全角 U+3000 " +
+            "(không phải space thường), và 診療年月 dùng khuôn 「gggy年M月」 nên KHÔNG đệm 0.");
 
         // MessageBoxButtons.OK (MsgDialog.cs:35) — đúng MỘT nút, và nó giữ con trỏ.
         Assert.That(first.Buttons, Has.Count.EqualTo(1),
@@ -409,7 +412,7 @@ public sealed class BuiPriceE00100SeedTests : UiTestBase
             $"thấy {boxes.Count} hộp E00100 nhưng bệnh nhân chỉ có {branches} 枝番 — " +
             "Calc_BuiPriceData2s chạy MỘT lượt getBuiPrice2 cho mỗi 枝番 (modAcc.cs:77-95). " +
             "Nhiều hơn nghĩa là màn hình gọi lại nhiều lần.");
-        Assert.That(Txt.N(boxes[0].Text), Is.EqualTo(Txt.N(_expectedBody).Replace("\r\n", "\n")),
+        Assert.That(boxes[0].Raw, Is.EqualTo(_expectedBody.Replace("\r\n", "\n")),
             "thân E00100 ở màn 診療入力 phải giống hệt ở 当日来患 — cùng một chỗ sinh ra " +
             "(buiPrice.cs:1734)");
 
