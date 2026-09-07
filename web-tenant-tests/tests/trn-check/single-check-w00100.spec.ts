@@ -86,7 +86,7 @@ import { makeStep } from '../_shared/step'
  * File CÓ làm bẩn lưới đang mở (thêm dòng 処置) nhưng TUYỆT ĐỐI KHÔNG bấm F9 登録
  * nên KHÔNG ghi DB — tải lại trang là sạch.
  *
- *   npx playwright test tests/single-check-w00100.spec.ts
+ *   npx playwright test tests/trn-check/single-check-w00100.spec.ts
  */
 
 const PAT_NO = patNo('12138')

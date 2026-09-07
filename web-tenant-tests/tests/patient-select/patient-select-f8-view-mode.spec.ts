@@ -48,7 +48,7 @@ import { rows } from '../_shared/virtual-grid'
  * CHẠY TUẦN TỰ (`describe.serial`), dùng CHUNG một page: app giới hạn số lần
  * login (GUIDELINE Rule 10.1). Testcase NỐI TIẾP TRẠNG THÁI (ô 患者番号, view
  * đang đứng, URL hiện tại) — chạy lẻ bằng `-g` sẽ hỏng. Luôn chạy cả file:
- *   npx playwright test tests/patient-select-f8-view-mode.spec.ts
+ *   npx playwright test tests/patient-select/patient-select-f8-view-mode.spec.ts
  *
  * KHÔNG GHI DB: spec chỉ mở màn và đọc lưới; các dòng AutoSantei sinh ra ở TC-F9-1
  * chỉ nằm trong state chưa lưu (không bấm F9 登録), rời màn là mất.

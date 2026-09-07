@@ -1,6 +1,6 @@
 # MenInput — 面入力 (`frm203035`)
 
-Nửa **WinForm** của `../../../../../web-tenant-tests/tests/men-input-dialog.spec.ts`.
+Nửa **WinForm** của `../../../../../web-tenant-tests/tests/dialogs-management/men-input-dialog.spec.ts`.
 Bên kia đo bản web vừa port; bên này đo **chính WinForm** — tức là đo cái "đáp án" mà
 bản web phải khớp.
 

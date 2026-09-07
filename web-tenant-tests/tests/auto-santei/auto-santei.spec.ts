@@ -33,7 +33,7 @@
  *    frm203012 「カルテ記載選択」. Cửa tự áp là frm203012.cs:536
  *    (`dt.Rows.Count == 1 || flgNoChk`) ⇔ `cmtAutoNeedsPick` (cmt-auto-api.ts:164).
  *    TC-9 kiểm nguyên chuỗi đó trên DỮ LIỆU THẬT; bảng chân trị đầy đủ + F9/F10 +
- *    hàng đợi nhiều pick nằm ở nhóm E của `auto-santei-cases.spec.ts` (data giả).
+ *    hàng đợi nhiều pick nằm ở nhóm E của `auto-santei/auto-santei-cases.spec.ts` (data giả).
  *
  *  - frm203002.cs:5345-5353 — ngay sau AutoSantei, WinForm gọi
  *    `ModSave.AutoSantei2`: mọi 処置 院所 đăng ký trong TRTAUTO (mst_trt_auto) mà
@@ -61,17 +61,17 @@
  *
  * ─── ĐIỀU KIỆN DỮ LIỆU ───────────────────────────────────────────────────────
  * Prompt chỉ bung khi (bệnh nhân, THÁNG) chưa có 処置 nào được lưu. `TEST_PAT_NO`
- * mặc định 11 — cùng bệnh nhân mà client-sort.spec.ts dùng cho mục đích này
+ * mặc định 11 — cùng bệnh nhân mà cross-cutting/client-sort.spec.ts dùng cho mục đích này
  * ("カルテ記載選択 chỉ tự bật khi (bệnh nhân, ngày) CHƯA có 処置 nào được lưu").
  * Nếu tenant đổi dữ liệu và prompt không bung, TC-1 fail kèm thông báo chỉ rõ
  * phải đổi TEST_PAT_NO / TEST_TRT_DT chứ không phải app sai.
  *
  * ─── NGOÀI PHẠM VI ───────────────────────────────────────────────────────────
  *  - GATE 更新区分 (変更/閲覧 không tự tính): phải đi qua F8 ở màn chọn bệnh nhân,
- *    đã có spec riêng `patient-select-f8-view-mode.spec.ts`.
+ *    đã có spec riêng `patient-select/patient-select-f8-view-mode.spec.ts`.
  *  - 身障者 特別対応加算 (dis_flg ≥ 1, modSave.cs:3097-3110): bệnh nhân demo mặc
  *    định của file này (TEST_PAT_NO) có dis_flg = 0 nên nhánh đó không bung ở đây.
- *    Nó được khoá riêng ở `auto-santei-insurance-branch.spec.ts`, cùng với câu hỏi
+ *    Nó được khoá riêng ở `auto-santei/auto-santei-insurance-branch.spec.ts`, cùng với câu hỏi
  *    「枝番 nào cấp dis_flg khi nhập lùi ngày」 (modPat.GetValidSubCode2).
  */
 import { expect, test, type Page } from "@playwright/test";
@@ -224,7 +224,7 @@ test.describe("自動算定 — 初診/再診 (modSave.AutoSantei)", () => {
    * lần nạp là một lần xuất phát sạch: DB vẫn chưa có 処置 của ngày này.
    *
    * Vite dev server thỉnh thoảng nhả hụt module làm app không mount (bẫy đã ghi
-   * ở client-sort.spec.ts) → thử lại tối đa 3 lần rồi mới báo lỗi.
+   * ở cross-cutting/client-sort.spec.ts) → thử lại tối đa 3 lần rồi mới báo lỗi.
    */
   const openFresh = async (patNo: string = PAT_NO) => {
     for (let attempt = 1; attempt <= 3; attempt++) {

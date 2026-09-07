@@ -27,7 +27,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *  - Dòng 歯垢 GỐC (không chia) do NGƯỜI GỌI viết (:270-286), nên nó còn kể cả
  *    khi chọn 「しない」 — chỉ các dòng chia mới bị gate.
  *
- * ── Vì sao là file riêng, không nhét vào inp-p1-ported-dialogs.spec.ts ───────
+ * ── Vì sao là file riêng, không nhét vào dialogs-management/inp-p1-ported-dialogs.spec.ts ───────
  * Đã thử: nhóm này từng là mục C của file đó và FLAKY — sau 13 testcase serial
  * phía trước, `page.goto` đầu tiên của nhóm chết với
  * 「Target page, context or browser has been closed」 rồi pass khi Playwright

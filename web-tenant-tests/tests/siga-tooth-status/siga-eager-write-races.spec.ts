@@ -128,8 +128,8 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * ═════════════════════════════════════════════════════════════════════════════
  * CÁCH CHẠY (Rule 19) — LUÔN chạy CẢ FILE, không bao giờ `-g` một testcase lẻ
  * ═════════════════════════════════════════════════════════════════════════════
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-eager-write-races.spec.ts
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-eager-write-races.spec.ts --headed
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-tooth-status/siga-eager-write-races.spec.ts
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-tooth-status/siga-eager-write-races.spec.ts --headed
  */
 
 /** Bệnh nhân test — spec GHI bảng `siga` của họ, đừng trỏ vào dữ liệu thật. */
@@ -264,9 +264,9 @@ if (!dbEnabled || !ALLOW_SAVE) {
         !ALLOW_SAVE ? 'TEST_ALLOW_SAVE=1 (SigaChg và Chk_PModeKesson GHI thẳng bảng siga)' : null,
     ].filter(Boolean)
     console.log(
-        `\n⚠️  siga-eager-write-races.spec.ts BỎ QUA TOÀN BỘ testcase — thiếu: ${missing.join(' + ')}\n` +
+        `\n⚠️  siga-tooth-status/siga-eager-write-races.spec.ts BỎ QUA TOÀN BỘ testcase — thiếu: ${missing.join(' + ')}\n` +
             '   Chạy bằng:\n' +
-            '     TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-eager-write-races.spec.ts\n' +
+            '     TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-tooth-status/siga-eager-write-races.spec.ts\n' +
             '   (spec KHÔNG bấm F9 nên không đụng trn_trn, nhưng CÓ ghi bảng siga)\n',
     )
 }

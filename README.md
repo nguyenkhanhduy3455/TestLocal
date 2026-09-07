@@ -109,7 +109,7 @@ TestLocal/
 cd /Users/thinhnn/Documents/GitHub/TestLocalApp/TestLocal/web-tenant-tests
 
 npm test                                        # chạy toàn bộ (4 worker)
-npx playwright test tests/kasan-buttons.spec.ts # một spec
+npx playwright test tests/treatment-grid/kasan-buttons.spec.ts # một spec
 npx playwright test -g "TC-3"                   # lọc theo tên testcase
 npm run test:headed                             # xem bằng mắt (có nhịp step)
 npm run test:ui                                 # Test Explorer, tick từng test

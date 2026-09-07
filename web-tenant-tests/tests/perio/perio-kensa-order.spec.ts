@@ -60,7 +60,7 @@ import { makeStep } from '../_shared/step'
  *     thật là đổi cho mọi máy, và nếu spec bị kill giữa chừng thì nó nằm lại.
  *  2. Vẫn kiểm đúng đường dây cần kiểm: FE phải ĐỌC `clinic.kensaOrder` từ CHÍNH
  *     endpoint đó thì việc đè mới có tác dụng. Phần BE ghi/đọc setting đã có
- *     `treatment-entry-setting-dialog.spec.ts` phủ.
+ *     `dialogs-management/treatment-entry-setting-dialog.spec.ts` phủ.
  *  3. Chạy được CẢ HAI nhánh trong một lượt, không cần khôi phục gì.
  * `staleTime: 0` (shared/queries/tenant-settings.ts:62) nên mỗi lần `page.goto`
  * lại màn 診療入力 là fetch lại → đổi biến `kensaOrder` rồi nạp lại là đủ.
@@ -93,7 +93,7 @@ import { makeStep } from '../_shared/step'
  *     `expectMode` khẳng định việc đè ĐÃ tới được dialog trước khi TC assert gì khác —
  *     nếu route hỏng, TC đỏ ngay thay vì âm thầm kiểm nhầm nhánh.
  *  3. AutoSantei bung 「〜を算定しますか？」 vào lúc không đoán được và nuốt mọi phím.
- *     `installSanteiNo` + `clearOverlays` chép nguyên từ `karte-selection-dialog.spec.ts`
+ *     `installSanteiNo` + `clearOverlays` chép nguyên từ `dialogs-selection/karte-selection-dialog.spec.ts`
  *     (đã chạy được) — bấm **No**, vì Yes kéo theo `CmtAutoPickerDialog` cùng tên.
  *  4. Focus init chạy trong `useEffect` sau khi query lắng. Luôn `expect(...).toBeFocused()`
  *     (auto-retry) chứ đừng đọc `document.activeElement` một phát.
@@ -104,8 +104,8 @@ import { makeStep } from '../_shared/step'
  * ═════════════════════════════════════════════════════════════════════════════
  * CÁCH CHẠY (Rule 19) — LUÔN chạy CẢ FILE
  * ═════════════════════════════════════════════════════════════════════════════
- *   TEST_DB=1 npx playwright test tests/perio-kensa-order.spec.ts
- *   TEST_DB=1 npx playwright test tests/perio-kensa-order.spec.ts --headed
+ *   TEST_DB=1 npx playwright test tests/perio/perio-kensa-order.spec.ts
+ *   TEST_DB=1 npx playwright test tests/perio/perio-kensa-order.spec.ts --headed
  */
 
 const PAT_NO = patNo('11')
@@ -148,7 +148,7 @@ const cell = (dialog: Locator, kind: string, index: number) =>
 
 const SANTEI_CONFIRM = /を算定しますか？/
 
-/** Trả lời **No** cho 「〜を算定しますか？」 (Rule 14) — chép từ karte-selection-dialog.spec.ts. */
+/** Trả lời **No** cho 「〜を算定しますか？」 (Rule 14) — chép từ dialogs-selection/karte-selection-dialog.spec.ts. */
 const installSanteiNo = async (page: Page) => {
 }
 
@@ -184,10 +184,10 @@ const clearOverlays = async (page: Page) => {
 
 if (!dbEnabled) {
     console.log(
-        '\n⚠️  perio-kensa-order.spec.ts BỎ QUA TOÀN BỘ testcase — thiếu TEST_DB=1\n' +
+        '\n⚠️  perio/perio-kensa-order.spec.ts BỎ QUA TOÀN BỘ testcase — thiếu TEST_DB=1\n' +
             '   (cần seed một 部位病名行 đủ 32 răng, nếu không mọi ô bị khoá ／ và\n' +
             '    điều hướng bàn phím không đi đâu cả ⇒ spec xanh giả)\n' +
-            '   Chạy bằng:  TEST_DB=1 npx playwright test tests/perio-kensa-order.spec.ts\n',
+            '   Chạy bằng:  TEST_DB=1 npx playwright test tests/perio/perio-kensa-order.spec.ts\n',
     )
 }
 test.skip(!dbEnabled, 'Cần TEST_DB=1 để seed 部位病名行 mang đủ 32 răng')
@@ -280,8 +280,8 @@ test.describe('歯周検査 — 検査順 (pInpOpt[36] / KensaOrder)', () => {
     /**
      * Nạp màn 診療入力, thử lại nếu lưới không lên (BẪY 5).
      *
-     * Chép nguyên cách làm của `tooth-extraction-siga-restore.spec.ts` /
-     * `p-mode-kesson-siga.spec.ts`: một `goto` đơn lẻ thỉnh thoảng về mà lưới không
+     * Chép nguyên cách làm của `siga-tooth-status/tooth-extraction-siga-restore.spec.ts` /
+     * `siga-tooth-status/p-mode-kesson-siga.spec.ts`: một `goto` đơn lẻ thỉnh thoảng về mà lưới không
      * bao giờ mount (chuỗi AutoSantei + nhiều query nặng chạy song song lúc mở màn),
      * và 60s chờ cũng không cứu được — chỉ nạp lại mới xong. Lần chạy đầu của spec
      * này đúng là dính: TC-5 flaky và TC-8 đỏ, cả hai đều tại đây chứ không phải tại
@@ -374,7 +374,7 @@ test.describe('歯周検査 — 検査順 (pInpOpt[36] / KensaOrder)', () => {
     // ═════════════════════════════════════════════════════════════════════════
 
     test('TC-READ — BE vẫn trả `clinic.kensaOrder` thật (spec tự vá nên phải chốt riêng)', async () => {
-        // Theo mẫu guide-mode-f4-swap.spec.ts TC-READ-1. Spec tự bơm key vào response,
+        // Theo mẫu side-panel/guide-mode-f4-swap.spec.ts TC-READ-1. Spec tự bơm key vào response,
         // nên nếu BE bỏ field khỏi nhánh `clinic` thì mọi TC khác vẫn xanh mà tính năng
         // đã chết. `realClinicKeys` là key ĐỌC ĐƯỢC trước khi vá.
         await openKarteGrid(KENSA_ORDER.UpperRightFirst)

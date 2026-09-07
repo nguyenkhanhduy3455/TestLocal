@@ -77,13 +77,13 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *    `BuiPriceCalcInput.VisitsNo`, `AccUnitCalculator.ComputeAsync(…, raiinCnt, …)`.
  *  - `UnpaidDayRows.ForVisit(…, raiinCnt)` → `trt_cnt % 100 = raiinCnt`.
  *  - `trn_trn.raiin_cnt` do `RaiinCntCalculator` ghi lúc F9 登録 — spec dựa vào
- *    đó nên TC-0 kiểm nó TRƯỚC, giống `p0-save-side-effects.spec.ts` TC-3.
+ *    đó nên TC-0 kiểm nó TRƯỚC, giống `save-f9/p0-save-side-effects.spec.ts` TC-3.
  *
  * ─── Vì sao spec này phải TỰ DỰNG dữ liệu ──────────────────────────────────
  *  Ngày có 2 lượt khám gần như không tồn tại sẵn trong DB của tester, mà đó lại
  *  chính là kịch bản duy nhất phân biệt bản đúng với bản hỏng. Nên spec seed
  *  thẳng `trn_trn` (vùng `disp_no >= SEED_DISP_BASE`, giống
- *  `p0-save-side-effects.spec.ts`) rồi bấm F9 THẬT để `RaiinCntCalculator` đánh số.
+ *  `save-f9/p0-save-side-effects.spec.ts`) rồi bấm F9 THẬT để `RaiinCntCalculator` đánh số.
  *  Không seed `raiin_cnt` bằng tay: làm vậy là tự viết ra kỳ vọng của chính mình.
  *
  * ─── GHI DB — đọc kỹ trước khi chạy ────────────────────────────────────────
@@ -99,7 +99,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * ─── BẪY ───────────────────────────────────────────────────────────────────
  *  1. F9 gửi lên NHỮNG GÌ ĐANG CÓ TRONG LƯỚI. Seed xong PHẢI mở lại màn hình,
  *     nếu không F9 ghi đè bằng bộ dòng cũ (chú thích của `resetMonthTo` ở
- *     `p0-save-side-effects.spec.ts`).
+ *     `save-f9/p0-save-side-effects.spec.ts`).
  *  2. F8 xong màn hình NHẢY sang 窓口精算 (`goToCounterPayment`) ⇒ trước mỗi lượt
  *     F8 phải mở lại 診療入力.
  *  3. Ô 日 bấm HAI lần sẽ mở 日付変更 ⇒ chỉ bấm một lần.
@@ -121,7 +121,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *  lưới → F8 → `unpaid.trt_cnt` / `unpaid.score` trong Postgres.
  *
  * ─── Cách chạy ─────────────────────────────────────────────────────────────
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/unpaid-raiin-cnt-parity.spec.ts --retries=0
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/accounting-unpaid/unpaid-raiin-cnt-parity.spec.ts --retries=0
  *
  * ENV:
  *   TEST_PAT_NO        bệnh nhân test (mặc định 12138)
@@ -532,7 +532,7 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
     /**
      * Trả lời các cổng của chuỗi F8 cho tới khi hết.
      *
-     * Bản sao rút gọn của helper trong `unpaid-insert-parity.spec.ts` — cố ý giữ
+     * Bản sao rút gọn của helper trong `accounting-unpaid/unpaid-insert-parity.spec.ts` — cố ý giữ
      * riêng để mỗi spec chạy độc lập. `insert-unpaid` KHÔNG bị chặn: đó đúng là
      * thứ cần đo.
      *   · 会計前チェック → OK      · 処置データ変更 → いいえ (BẪY 6)

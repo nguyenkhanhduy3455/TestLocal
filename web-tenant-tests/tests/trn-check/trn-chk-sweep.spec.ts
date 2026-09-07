@@ -11,7 +11,7 @@ import { makeStep } from '../_shared/step'
  * 診療入力 — 一括 診療チェック (F3/F8 → `Check.getCheckAnswer`) đọc KẾT QUẢ THẬT từ BE.
  *
  * ─── Vì sao có file này ───────────────────────────────────────────────────────
- * `treatment-table-handler.spec.ts` TC-8..TC-11 CHẶN `POST /tenant/treatment/check`
+ * `treatment-grid/treatment-table-handler.spec.ts` TC-8..TC-11 CHẶN `POST /tenant/treatment/check`
  * bằng `page.route` và trả 12 lỗi giả — cố ý, vì nó chỉ đo chuyện cuộn panel. Hệ quả
  * là toàn bộ `CheckRulesService.RunAsync` (~690 dòng + 12 luật) trước nay KHÔNG có
  * một dòng assert nghiệp vụ nào ở tầng e2e. File này lấp đúng chỗ đó: KHÔNG mock,
@@ -139,8 +139,8 @@ const GRID_LOAD_ATTEMPTS = 3
 // GUIDELINE Rule 18 — skip cấp file phải NÓI LÝ DO ra stdout.
 if (!dbEnabled) {
     console.log(
-        'SKIP tests/trn-chk-sweep.spec.ts — thiếu TEST_DB=1 (spec seed 処置行 để dựng tình ' +
-            'huống 月次チェック).\n  TEST_DB=1 npx playwright test tests/trn-chk-sweep.spec.ts',
+        'SKIP tests/trn-check/trn-chk-sweep.spec.ts — thiếu TEST_DB=1 (spec seed 処置行 để dựng tình ' +
+            'huống 月次チェック).\n  TEST_DB=1 npx playwright test tests/trn-check/trn-chk-sweep.spec.ts',
     )
 }
 test.skip(!dbEnabled, 'Cần TEST_DB=1 để seed 処置行 cho 一括 診療チェック')

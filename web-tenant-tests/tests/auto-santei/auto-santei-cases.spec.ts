@@ -1,7 +1,7 @@
 /**
  * 自動算定 — bảng nhánh quyết định, kiểm bằng DATA GIẢ (`page.route`).
  *
- * File anh em `auto-santei.spec.ts` chạy trên DỮ LIỆU THẬT nên chỉ tới được một
+ * File anh em `auto-santei/auto-santei.spec.ts` chạy trên DỮ LIỆU THẬT nên chỉ tới được một
  * nhánh: bệnh nhân demo đang đủ điều kiện 初診. Các nhánh còn lại (không đủ điều
  * kiện, bộ pick rỗng, 身障者加算, API lỗi…) phụ thuộc dữ liệu master + lịch sử
  * khám mà tenant demo không có, nên ở đây ta CHẶN `/tenant/treatment/autosantei`
@@ -115,7 +115,7 @@ const cmtPickerBtn = (page: Page, label: "確定" | "戻る") =>
 
 /**
  * Tên 処置 giả — tiền tố hiếm gặp để không đụng 履歴 thật của bệnh nhân
- * (lưới hiển thị cả các tháng trước, xem auto-santei.spec.ts).
+ * (lưới hiển thị cả các tháng trước, xem auto-santei/auto-santei.spec.ts).
  */
 const TAG = "ZZTEST";
 const pick = (trtCd: number, trtSb: number, label: string, trtPt = 0) => ({

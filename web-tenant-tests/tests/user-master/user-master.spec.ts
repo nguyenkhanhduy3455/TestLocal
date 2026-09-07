@@ -87,7 +87,7 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  * login (Rule 10.1) nên login làm đúng một lần ở beforeAll. Testcase nối tiếp
  * trạng thái, thứ tự CÓ Ý NGHĨA — chạy lẻ một testcase ở giữa bằng `-g` sẽ hỏng.
  * Luôn chạy cả file:
- *   npx playwright test tests/user-master.spec.ts
+ *   npx playwright test tests/user-master/user-master.spec.ts
  *
  * MÔI TRƯỜNG (đã gặp thật): chạy suite nhiều lượt liên tiếp thì thỉnh thoảng một
  * testcase đỏ ở `gotoList` với lý do "không vào được 一覧". Đó là dev server
@@ -102,7 +102,7 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  * lượt 2 của TC-INVITE-1 gặp dòng đã 有効化 nên nút không còn là ログイン有効化, lượt
  * 2 của TC-WRITE-2 thì không còn dòng để xoá. Muốn kiểm ổn định thì chạy TRỌN FILE
  * nhiều lượt (đã chạy 3 lượt liên tiếp, 20/20 pass mỗi lượt):
- *   for i in 1 2 3; do npx playwright test tests/user-master.spec.ts; done
+ *   for i in 1 2 3; do npx playwright test tests/user-master/user-master.spec.ts; done
  *
  * DỮ LIỆU (Rule 18): dataset demo import từ IINMST2 có sẵn ~20 người, NO 1..112,
  * kbn 0 (ドクター) và 1 (衛生士), KHÔNG ai có email. Spec đọc dòng thật chứ không

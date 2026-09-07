@@ -1,7 +1,7 @@
 /**
  * 自動算定 — 枝番 nào cấp `dis_flg` / `old_flg` khi NHẬP LÙI NGÀY.
  *
- * `auto-santei.spec.ts` ghi 身障者 特別対応加算 là NGOÀI PHẠM VI vì "phụ thuộc dữ
+ * `auto-santei/auto-santei.spec.ts` ghi 身障者 特別対応加算 là NGOÀI PHẠM VI vì "phụ thuộc dữ
  * liệu". File này lấp đúng chỗ đó: tenant demo CÓ bệnh nhân đổi thẻ bảo hiểm giữa
  * chừng, nên chỉ cần chọn 診療日 nằm TRƯỚC ngày lấy tư cách của thẻ mới là bộ pick
  * bắt buộc phải đổi. Không seed gì cả — dữ liệu thật đã đủ để phân biệt.

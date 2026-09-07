@@ -71,7 +71,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * CÁCH CHẠY
  * ═════════════════════════════════════════════════════════════════════════════
  *   cd /Users/thinhnn/Documents/GitHub/TestLocalApp/TestLocal/web-tenant-tests
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/p0-oral-chart-let-bnow.spec.ts
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/save-f9/p0-oral-chart-let-bnow.spec.ts
  *
  * ENV: TEST_PAT_NO (mặc định 12138) · TEST_TRT_DT (mặc định hôm nay) ·
  *      TEST_ALLOW_SAVE=1 và TEST_DB=1 đều BẮT BUỘC.

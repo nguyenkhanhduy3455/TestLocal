@@ -53,14 +53,14 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *     WinForm đo. KHÔNG dùng ô 点 của dòng footer 日計 và KHÔNG dùng `fill()`:
  *     `fill()` gán thẳng giá trị, không sinh sự kiện phím, nên bộ lọc ký tự
  *     (grdRegi_TextBox_KeyPress) không bao giờ chạy — đó là một đường KHÁC, và
- *     `point-code-mode-code-enter-value.spec.ts` đã phủ đường đó rồi.
+ *     `treatment-grid/point-code-mode-code-enter-value.spec.ts` đã phủ đường đó rồi.
  *  3. Mọi testcase ĐÓNG picker bằng 戻る (không F9 確定) nên không dòng nào vào lưới.
  *     Không bấm F9 登録 ⇒ KHÔNG ghi DB.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * CÁCH CHẠY
  * ═══════════════════════════════════════════════════════════════════════════
- *   npx playwright test tests/treatment-grid-special-codes.spec.ts
+ *   npx playwright test tests/treatment-grid/treatment-grid-special-codes.spec.ts
  */
 
 /** PHẢI khớp `patient.patNo` bên testsettings.local.json (FlaUI). */

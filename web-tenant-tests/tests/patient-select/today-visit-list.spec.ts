@@ -58,7 +58,7 @@ import { emptyState, rows, scroller, skeletons } from '../_shared/virtual-grid'
  * login (GUIDELINE Rule 10.1) nên login + vào /treatments làm đúng một lần ở
  * beforeAll. Testcase nối tiếp trạng thái, thứ tự CÓ Ý NGHĨA — chạy lẻ một
  * testcase ở giữa bằng `-g` sẽ hỏng. Luôn chạy cả file:
- *   npx playwright test tests/today-visit-list.spec.ts
+ *   npx playwright test tests/patient-select/today-visit-list.spec.ts
  *
  * DỮ LIỆU (Rule 18): mặc định KHÔNG dùng hôm nay — hôm nay gần như luôn rỗng và
  * một lần chạy toàn skip trông y hệt một lần pass thật. Spec chạy trên HAI ngày

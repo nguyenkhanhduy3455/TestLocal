@@ -21,7 +21,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *     (`intSelectRaiin = CInt(hFG1[71, hFG1.CurrentCellAddress.Y])`, modAcc.cs:415),
  *     dòng 介護保険 lấy `+100` (modAcc.cs:673). Bản port từng để `1` cứng.
  *     Kịch bản NGÀY 2 LƯỢT KHÁM — nơi con số này thực sự phân biệt đúng/sai —
- *     nằm ở spec riêng `unpaid-raiin-cnt-parity.spec.ts` (nó tự dựng dữ liệu).
+ *     nằm ở spec riêng `accounting-unpaid/unpaid-raiin-cnt-parity.spec.ts` (nó tự dựng dữ liệu).
  *     Ở đây chỉ neo `unpaid.trt_cnt` vào `trn_trn.raiin_cnt` trên DỮ LIỆU THẬT.
  *
  * Bug tester báo (2026-08-26):
@@ -95,7 +95,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *
  * ─── BẪY ─────────────────────────────────────────────────────────────────────
  *  1. Cột 日 chỉ hiện số ở dòng ĐẦU của mỗi ngày ⇒ đọc DOM phải cộng dồn ngày
- *     gần nhất (giống `accounting-target-date.spec.ts`).
+ *     gần nhất (giống `accounting-unpaid/accounting-target-date.spec.ts`).
  *  2. Dòng tháng cũ mang rowKey `${recordIndex}-${itemIndex}` — `guardCurrentMonth`
  *     chặn F8 ở đó bằng 「当月以外の操作はできません」. Chỉ chọn dòng tháng hiện hành.
  *  3. Ô 日 bấm HAI lần sẽ mở 日付変更 ⇒ chỉ bấm một lần.
@@ -120,7 +120,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *  Ở đây chỉ chứng minh đường dây thật: F8 → BE → cột `sflg` / `att_dr` trong DB.
  *
  * ─── Cách chạy ───────────────────────────────────────────────────────────────
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/unpaid-insert-parity.spec.ts --retries=0
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/accounting-unpaid/unpaid-insert-parity.spec.ts --retries=0
  *
  * ENV:
  *   TEST_PAT_NO        bệnh nhân test (mặc định 12138)
@@ -458,7 +458,7 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
     /**
      * Trả lời các cổng của chuỗi F8 cho tới khi hết.
      *
-     * Bản sao rút gọn của helper trong `accounting-target-date.spec.ts` — cố ý
+     * Bản sao rút gọn của helper trong `accounting-unpaid/accounting-target-date.spec.ts` — cố ý
      * giữ riêng để mỗi spec chạy độc lập. KHÁC một chỗ: ở đây `insert-unpaid`
      * KHÔNG bị chặn, vì đúng thứ cần đo là dòng nó ghi xuống.
      *   · 会計前チェック → OK      · 処置データ変更 → No (Yes ghi cả tháng — cấm)

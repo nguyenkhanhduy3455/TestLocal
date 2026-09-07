@@ -109,7 +109,7 @@ import { cells, emptyState, rows as gridRows } from '../_shared/virtual-grid'
  * ═══════════════════════════════════════════════════════════════════════════
  * Cách chạy
  * ═══════════════════════════════════════════════════════════════════════════
- *   npx playwright test tests/procedure-auto-input-dialog.spec.ts --retries=0
+ *   npx playwright test tests/dialogs-management/procedure-auto-input-dialog.spec.ts --retries=0
  *
  * `--retries=0` vì retry chạy lại CẢ khối serial ⇒ thêm một lần login. Chạy CẢ
  * FILE, đừng `-g` một testcase lẻ: khối serial dùng chung một page và thứ tự CÓ

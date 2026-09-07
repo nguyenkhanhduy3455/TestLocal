@@ -96,7 +96,7 @@ const OTHER_INFO_MARKER = 'E2Eテスト・その他情報マーカー'
 // ── Luồng in RPT203003 (F9 印刷) ──────────────────────────────────────────────
 /**
  * Có print agent để in THẬT hay không — cùng cách suy như
- * `dental-disease-management-dialog.spec.ts`.
+ * `dialogs-management/dental-disease-management-dialog.spec.ts`.
  *
  * Agent là net48 + Crystal Reports → CHỈ chạy trên Windows. Máy khác thì stub
  * toàn bộ endpoint agent: vẫn soi được DATASOURCE (thứ web-tenant chịu trách
@@ -212,7 +212,7 @@ interface ShishuRow {
  *
  * ⚠️ その他情報 phải ≤ 50 byte Shift_JIS (= 25 全角): `prt_shishu.txt4‥txt9` là
  * varchar(50) và FE có pre-flight chặn trước khi POST (xem
- * report-text-length-guard.spec.ts). Chuỗi dưới đây cố tình ngắn.
+ * cross-cutting/report-text-length-guard.spec.ts). Chuỗi dưới đây cố tình ngắn.
  */
 const PRINT_FIXTURE = {
     attach1: 'E2Eチャクダツ上顎',
@@ -779,7 +779,7 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         await test.info().attach('pdf-text.txt', { body: pdf.text, contentType: 'text/plain' })
 
         // 説明書 là 帳票 1 trang. >1 trang = nội dung tràn (đúng lớp bug mà
-        // report-text-length-guard.spec.ts canh ở tầng nhập liệu).
+        // cross-cutting/report-text-length-guard.spec.ts canh ở tầng nhập liệu).
         expect(pdf.pageCount, 'RPT203003 là 帳票 1 trang — >1 nghĩa là nội dung bị tràn').toBe(1)
 
         // So với chính `sentRow` → khép kín vòng form → datasource → giấy.

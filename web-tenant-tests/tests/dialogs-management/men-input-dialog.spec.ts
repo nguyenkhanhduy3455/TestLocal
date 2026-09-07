@@ -85,8 +85,8 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * ═══════════════════════════════════════════════════════════════════════════
  * CÁCH CHẠY
  * ═══════════════════════════════════════════════════════════════════════════
- *   TEST_DB=1 npx playwright test tests/men-input-dialog.spec.ts
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/men-input-dialog.spec.ts   # kèm TC-M8
+ *   TEST_DB=1 npx playwright test tests/dialogs-management/men-input-dialog.spec.ts
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/dialogs-management/men-input-dialog.spec.ts   # kèm TC-M8
  */
 
 /** Bệnh nhân + ngày để seed. Đổi được khi tháng đó đang có dữ liệu thật không muốn đụng. */
@@ -137,9 +137,9 @@ const txt = (s: string) => s.normalize('NFKC').trim()
 // GUIDELINE Rule 18 — skip phải in lý do, "không chạy" khác hẳn "chạy và pass".
 if (!dbEnabled) {
     console.log(
-        '\n⚠️  men-input-dialog.spec.ts BỎ QUA TOÀN BỘ — thiếu TEST_DB=1 ' +
+        '\n⚠️  dialogs-management/men-input-dialog.spec.ts BỎ QUA TOÀN BỘ — thiếu TEST_DB=1 ' +
             '(spec seed một 処置行 mang 部位 để 面入力 có cái để mở).\n' +
-            '   Chạy bằng: TEST_DB=1 npx playwright test tests/men-input-dialog.spec.ts\n',
+            '   Chạy bằng: TEST_DB=1 npx playwright test tests/dialogs-management/men-input-dialog.spec.ts\n',
     )
 }
 test.skip(!dbEnabled, 'Cần TEST_DB=1 để seed 処置行 mang 部位 (面入力 đóng ngay khi không có 部位)')
@@ -202,7 +202,7 @@ test.describe('診療入力 — 面入力 (frm203035)', () => {
      * Gõ `TRT_CD` vào ô 点 CỦA DÒNG seed rồi Enter → mở 処置選択, chọn `trtSb`, F9 確定.
      *
      * Gõ bằng BÀN PHÍM (không `fill()`) để đi đúng đường có bộ lọc ký tự
-     * `grdRegi_TextBox_KeyPress`, giống `treatment-grid-special-codes.spec.ts`.
+     * `grdRegi_TextBox_KeyPress`, giống `treatment-grid/treatment-grid-special-codes.spec.ts`.
      */
     async function pickVariant(trtSb: number) {
         await closeDialogs(page)

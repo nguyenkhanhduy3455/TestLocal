@@ -60,7 +60,7 @@ import { makeStep } from '../_shared/step'
  * Muốn chạy hẳn nhánh ghi thật: TEST_ALLOW_SAVE=1 npx playwright test <spec>
  *
  * IN THẬT HAY KHÔNG — suy từ NỀN TẢNG, không phải cờ opt-in (đồng bộ với
- * `dental-disease-management-dialog.spec.ts`):
+ * `dialogs-management/dental-disease-management-dialog.spec.ts`):
  *   Có agent (Windows, hoặc TEST_AGENT=1)  ← MẶC ĐỊNH trên máy tester
  *     F9 đi THẲNG tới agent thật. Route chỉ làm 2 việc: (a) chụp body /v1/render
  *     rồi chèn `forcePreview: true` để agent luôn trả PDF xem trước bất kể

@@ -57,7 +57,7 @@ import { rows } from '../_shared/virtual-grid'
  * login (GUIDELINE Rule 10.1). Testcase NỐI TIẾP TRẠNG THÁI (ô 患者番号, 診療日,
  * view đang đứng, URL hiện tại) — thứ tự CÓ Ý NGHĨA, chạy lẻ bằng `-g` sẽ hỏng.
  * Luôn chạy cả file:
- *   npx playwright test tests/patient-select-f7-f2-end.spec.ts
+ *   npx playwright test tests/patient-select/patient-select-f7-f2-end.spec.ts
  *
  * GHI DB (GUIDELINE Rule 18.1): F7 xoá-rồi-ghi lại acc_dat của cả kỳ. Mặc định
  * spec chỉ đi tới hộp confirm rồi bấm `No` — KHÔNG đụng DB. Nhánh bấm `Yes`

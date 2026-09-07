@@ -3,7 +3,7 @@
 Đo **đáp án WinForm** cho ba control mà `frm203002` đặt chồng nhau ở cùng một chỗ,
 mỗi cái trả lời một câu khác nhau — và rất dễ bị gộp thành một khi port.
 
-Nửa còn lại của cặp parity: `../web-tenant-tests/tests/treatment-header-staff.spec.ts`
+Nửa còn lại của cặp parity: `../web-tenant-tests/tests/treatment-grid/treatment-header-staff.spec.ts`
 (chạy bằng `.\run-bulk-change-dr.ps1`).
 
 ---
@@ -31,7 +31,7 @@ kể cả 部位病名行 (`:8121-8127`).
 
 ## 2. Bảng tương ứng testcase
 
-| TC | WinForm (file này) | Web (`treatment-header-staff.spec.ts`) |
+| TC | WinForm (file này) | Web (`treatment-grid/treatment-header-staff.spec.ts`) |
 |---|---|---|
 | **TC-MST-1** | `Tc1_ComboSourceHasNoSentinelDoctor` | dropdown không chứa `user_no = 0` |
 | **TC-LBL-1** | `Tc2_LabelFollowsRowNotCombo` | nhãn hiện 担当医 của DÒNG |

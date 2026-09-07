@@ -750,7 +750,7 @@ test.describe('診療入力 — chuỗi nhập 処置 (GHI DỮ LIỆU THẬT)',
       // KHÔNG click lại ô 回 trước khi Enter. Sau khi 処置選択 đóng, con trỏ ĐÃ
       // nằm trong ô 回 ở chế độ sửa (value 1), và cascade 摘要コメント選択 CHỈ chạy ở
       // lần commit ĐẦU của dòng vừa thêm — click lại đúng ô đó rồi Enter cũng
-      // KHÔNG bao giờ mở lại được (đo trong summary-comment-selection-enter.spec.ts:288).
+      // KHÔNG bao giờ mở lại được (đo trong dialogs-selection/summary-comment-selection-enter.spec.ts:288).
       // Cũng KHÔNG dọn alert trước Enter: mỗi thao tác chen vào là mất nhịp.
       //
       // Thử tối đa 2 lần — cú Enter phải rơi đúng lúc ô 回 còn đang sửa, mà alert

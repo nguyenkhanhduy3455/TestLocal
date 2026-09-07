@@ -18,11 +18,11 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * hành trình. Cả file chạy `serial` trên MỘT page tạo ở `beforeAll`.
  *
  * ⚠️ Ｓｔｅｐ編集 (frm203050) TỪNG là nhóm A của file này; đã tách sang
- * `step-edit-dialog.spec.ts` (2026-08-14) vì nó có thêm cả một nhóm testcase
+ * `dialogs-management/step-edit-dialog.spec.ts` (2026-08-14) vì nó có thêm cả một nhóm testcase
  * liên thông với tab ガイド (trt_state → Shift+F4 / 前回 / リセット) và cần seed
  * ガイド master mới chạy được. Đừng thêm testcase STEP vào đây nữa.
  *
- * File này KHÁC `treatment-f11-menu-ported-actions.spec.ts`: file kia lo menu có
+ * File này KHÁC `fkey-menu/treatment-f11-menu-ported-actions.spec.ts`: file kia lo menu có
  * đúng 8 mục và bấm vào thì điều hướng tới đâu; file này lo NỘI DUNG bên trong
  * dialog. Đừng nhét testcase menu vào đây.
  *
@@ -77,7 +77,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *        render trong `whitespace-pre` — thay cho đường kẻ ngang mà WinForm vẽ
  *        tay bằng `DrawGridCrossLine`.
  *
- *  Đường tới 部位選択 (chép từ virtual-list-grids.spec.ts:797 — đã chạy được):
+ *  Đường tới 部位選択 (chép từ cross-cutting/virtual-list-grids.spec.ts:797 — đã chạy được):
  *      panel 病検 → nút 変更 → click 1 dòng 病検 → 部位選択 mở.
  *      Ở đó `variant` mặc định là 'inp' nên F9 「Br例」 CÓ hiện (patMsg thì không).
  *
@@ -117,8 +117,8 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * ═══════════════════════════════════════════════════════════════════════════
  * Cách chạy
  * ═══════════════════════════════════════════════════════════════════════════
- *   npx playwright test tests/inp-p1-ported-dialogs.spec.ts --retries=0
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/inp-p1-ported-dialogs.spec.ts --retries=0
+ *   npx playwright test tests/dialogs-management/inp-p1-ported-dialogs.spec.ts --retries=0
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/dialogs-management/inp-p1-ported-dialogs.spec.ts --retries=0
  *
  * `--retries=0` vì retry chạy lại CẢ khối serial ⇒ thêm một lần login, tốn quota
  * (Rule 10.1). Chạy CẢ FILE, không `-g` một testcase lẻ (Rule 19): khối serial
@@ -131,7 +131,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * hẳn và đỏ. Triệu chứng trông hệt như flaky của app nhưng không phải. Muốn kiểm
  * độ ổn định thì lặp CẢ FILE:
  *
- *   for i in 1 2 3; do npx playwright test tests/inp-p1-ported-dialogs.spec.ts --retries=0; done
+ *   for i in 1 2 3; do npx playwright test tests/dialogs-management/inp-p1-ported-dialogs.spec.ts --retries=0; done
  */
 
 const PAT_NO = patNo('12138')
@@ -421,7 +421,7 @@ test.describe('診療入力 — 2 dialog vừa port (チェック項目設定 / 
      * Mở 部位選択 qua panel 病検 → 変更 → click dòng đầu.
      *
      * Không có đường trực tiếp nào ngắn hơn; route này đã chạy được ở
-     * virtual-list-grids.spec.ts:797. Trả về `false` khi panel 病検 rỗng — hồ sơ
+     * cross-cutting/virtual-list-grids.spec.ts:797. Trả về `false` khi panel 病検 rỗng — hồ sơ
      * test không có 病名 nào thì cả nhóm C tự skip kèm lý do (Rule 18).
      */
     async function openToothDialog(): Promise<boolean> {

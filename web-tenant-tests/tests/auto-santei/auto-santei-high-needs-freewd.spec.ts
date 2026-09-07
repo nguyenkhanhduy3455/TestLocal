@@ -5,7 +5,7 @@
  * getTensu と同じ結果にする`. Commit đó có hai đầu:
  *
  *   ĐẦU ĐỌC  — getTensu nhìn `freewd` của dòng 歯科診療特別対応加算 cùng ngày để
- *              tách 困難者加算1 với 加算2. `treatment-score-gettensu-parity.spec.ts`
+ *              tách 困難者加算1 với 加算2. `treatment-grid/treatment-score-gettensu-parity.spec.ts`
  *              TC-5 đã phủ, nhưng nó SEED THẲNG `freewd` vào DB.
  *   ĐẦU GHI  — chỗ DUY NHẤT sinh ra `freewd` 「1」: câu hỏi mà 自動算定 bật lên cho
  *              bệnh nhân `dis_flg == 3`. ⇒ CHƯA CÓ SPEC NÀO CHẠM TỚI.
@@ -87,14 +87,14 @@
  *    Q00200 của 185 (cũng nằm trong IregCodChk) từ trước.
  *
  * ─── RANH GIỚI: mock cái gì, KHÔNG mock cái gì ───────────────────────────────
- * Giống `auto-santei-cases.spec.ts`: mock ĐÚNG đường biên BE→FE. Cái đang kiểm là
+ * Giống `auto-santei/auto-santei-cases.spec.ts`: mock ĐÚNG đường biên BE→FE. Cái đang kiểm là
  * cây quyết định của `runAutoSantei` + đường đi của `freewd` trong FE.
  * `dis_flg == 3` là việc của BE (`GetAutoSanteiHandler`) — hơn nữa dữ liệu tenant
  * demo hiện KHÔNG có bệnh nhân nào `dis_flg = 3` (chỉ 0/1/2, xem
- * `treatment-score-gettensu-parity.spec.ts` phần TEST_ALLOW_DIS_FLG_PATCH), nên
+ * `treatment-grid/treatment-score-gettensu-parity.spec.ts` phần TEST_ALLOW_DIS_FLG_PATCH), nên
  * chạy thật thì nhánh này KHÔNG BAO GIỜ tới được. Ở đây ta dựng sẵn cờ rồi kiểm FE.
  * Việc getTensu ĐỔI ĐIỂM ra sao khi thấy freewd 「1」 thì KHÔNG mock — đó là
- * `treatment-score-gettensu-parity.spec.ts` TC-5 (chạy BE thật, DB thật).
+ * `treatment-grid/treatment-score-gettensu-parity.spec.ts` TC-5 (chạy BE thật, DB thật).
  *
  * ─── LỆCH ĐÃ BIẾT, CỐ Ý KHÔNG DỰNG TESTCASE ─────────────────────────────────
  * WinForm đặt câu hỏi trong nhánh `else if` của `if (kv.index == 0)`, nghĩa là
@@ -103,7 +103,7 @@
  *   · Với MỌI bộ pick thật, index 0 luôn là 初診料/再診料 (100/110) — 105 là 加算
  *     nên không thể đứng đầu ⇒ hai bản cho cùng kết quả.
  *   · Chính chỗ này web đã dịch `kv.index == 0` thành `INITIAL_VISIT_FEE_CODES`
- *     cho luật tô chữ đỏ, và `auto-santei-cases.spec.ts` D-5 đã chốt cách dịch đó.
+ *     cho luật tô chữ đỏ, và `auto-santei/auto-santei-cases.spec.ts` D-5 đã chốt cách dịch đó.
  * Dựng testcase cho nhánh không thể xảy ra chỉ đẻ ra một test đỏ vĩnh viễn.
  *
  * ─── KHÔNG GHI DB ────────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ const TRT_CD_SAISHIN = 110;
 /** Giá trị freewd của 「はい」 (modSave.cs:3455 → hFG1[72] = "1"). */
 const FREEWD_DIFFICULT = "1";
 
-/** Bộ 初診 / 再診 mặc định (giống auto-santei-cases.spec.ts). */
+/** Bộ 初診 / 再診 mặc định (giống auto-santei/auto-santei-cases.spec.ts). */
 const INITIAL_SET = [
   pick(TRT_CD_SHOSHIN, 0, "初診料"),
   pick(108, 7, "外安全1初"),
@@ -1042,8 +1042,8 @@ test.describe("自動算定 — 歯科診療困難者加算 と freewd (data gi�
     });
 
     // Mở tab 個別, lọc theo ｺｰﾄﾞ rồi bấm dòng — cùng thao tác
-    // `kobetu-sidepanel-score.spec.ts` dùng.
-    // SidePanel — cùng locator `kobetu-sidepanel-score.spec.ts:560` dùng (Rule 12.3:
+    // `side-panel/kobetu-sidepanel-score.spec.ts` dùng.
+    // SidePanel — cùng locator `side-panel/kobetu-sidepanel-score.spec.ts:560` dùng (Rule 12.3:
     // không đoán locator).
     const sidePanel = page.locator('div[class*="w-[450px]"]').first();
     await sidePanel.getByRole("button", { name: "個別", exact: true }).click();

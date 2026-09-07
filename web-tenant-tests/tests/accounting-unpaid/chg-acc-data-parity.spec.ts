@@ -87,7 +87,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *  3. Nút "mặc định" của `DialogShell` là nút ĐANG ĐƯỢC FOCUS (`buttonRefs[selected]
  *     .focus()`), không phải nút có class primary ⇒ assert bằng `toBeFocused()`.
  *  4. Con trỏ đặt ở dòng của NGÀY HÔM NAY để hộp 日付チェック không chen vào — spec
- *     này không đo cổng đó (đã có `accounting-target-date.spec.ts`).
+ *     này không đo cổng đó (đã có `accounting-unpaid/accounting-target-date.spec.ts`).
  *  5. `SanteiConfirmDialog` 「〜を算定しますか？」 đè lên mọi click; `addLocatorHandler`
  *     chỉ chạy khi có ACTION nên trước `keyboard.press` phải tự vét.
  *  6. Ô 日 bấm HAI lần sẽ mở 日付変更 ⇒ chỉ bấm một lần.
@@ -101,8 +101,8 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *  · Cách BE tính các cờ của `precheck` — ở đây chúng bị giả lập.
  *
  * ─── Cách chạy ───────────────────────────────────────────────────────────────
- *   npx playwright test tests/chg-acc-data-parity.spec.ts --retries=0
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/chg-acc-data-parity.spec.ts --retries=0
+ *   npx playwright test tests/accounting-unpaid/chg-acc-data-parity.spec.ts --retries=0
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/accounting-unpaid/chg-acc-data-parity.spec.ts --retries=0
  *
  * ENV:
  *   TEST_PAT_NO        bệnh nhân test (mặc định 12138)
@@ -113,8 +113,8 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * page và một lần login.
  *
  * ⚠️ CHẠY RIÊNG TỪNG FILE. `playwright.config.ts` để `fullyParallel: true` +
- * `workers: 4`, nên đưa spec này cùng lệnh với `accounting-target-date.spec.ts`
- * hay `unpaid-insert-parity.spec.ts` là ba file chạy SONG SONG trên CÙNG một
+ * `workers: 4`, nên đưa spec này cùng lệnh với `accounting-unpaid/accounting-target-date.spec.ts`
+ * hay `accounting-unpaid/unpaid-insert-parity.spec.ts` là ba file chạy SONG SONG trên CÙNG một
  * `TEST_PAT_NO` và CÙNG vùng seed `disp_no >= 9000` của hôm nay —
  * `seedTreatmentRows` xoá vùng đó trước khi chèn, `afterAll` của file này lại xoá
  * đúng vùng file kia đang dùng ⇒ dòng biến mất giữa chừng, đỏ ngẫu nhiên.
@@ -470,7 +470,7 @@ test.describe('診療入力 F8 → 会計データ修正 (modAcc.ChgAccData) par
                 // `warnings` là field BẮT BUỘC của InsertUnpaidResponse kể từ bản
                 // fail-soft E00100 (BuiPriceFailureResponse). Rỗng = lượt này tính sạch;
                 // FE chỉ bật E00100 khi mảng có phần tử. Xem
-                // `bui-price-e00100-parity.spec.ts` cho nhánh có warning.
+                // `accounting-unpaid/bui-price-e00100-parity.spec.ts` cho nhánh có warning.
                 body: JSON.stringify({
                     success: true,
                     data: { deletedCount: 0, insertedCount: 0, warnings: [] },

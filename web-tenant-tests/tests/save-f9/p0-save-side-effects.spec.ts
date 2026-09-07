@@ -225,11 +225,11 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * CÁCH CHẠY
  * ═════════════════════════════════════════════════════════════════════════════
  *   cd /Users/thinhnn/Documents/GitHub/TestLocalApp/TestLocal/web-tenant-tests
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/p0-save-side-effects.spec.ts
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/p0-save-side-effects.spec.ts --headed
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/save-f9/p0-save-side-effects.spec.ts
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/save-f9/p0-save-side-effects.spec.ts --headed
  *
  * Chạy riêng một nhóm khi bị rate-limit login:
- *   ... npx playwright test tests/p0-save-side-effects.spec.ts --grep "TC-1|TC-2"
+ *   ... npx playwright test tests/save-f9/p0-save-side-effects.spec.ts --grep "TC-1|TC-2"
  *
  * ENV:
  *   TEST_PAT_NO        bệnh nhân test (mặc định 12138 — ĐỪNG trỏ dữ liệu thật)

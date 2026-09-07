@@ -18,8 +18,8 @@ import { cells, emptyState, rows as gridRows, scroller } from '../_shared/virtua
  * file là hai lần login cho cùng một hành trình (Rule 10.1). Cả file chạy
  * `serial` trên MỘT page tạo ở `beforeAll` (Rule 19).
  *
- * File này KHÁC `inp-p1-ported-dialogs.spec.ts` (チェック項目設定 / Brサンプル) và
- * `step-edit-dialog.spec.ts` (Ｓｔｅｐ編集). Ở đây chỉ có hai popup tra master và
+ * File này KHÁC `dialogs-management/inp-p1-ported-dialogs.spec.ts` (チェック項目設定 / Brサンプル) và
+ * `dialogs-management/step-edit-dialog.spec.ts` (Ｓｔｅｐ編集). Ở đây chỉ có hai popup tra master và
  * chỗ chúng ĐỔ DỮ LIỆU RA.
  *
  * ═══════════════════════════════════════════════════════════════════════════
@@ -117,7 +117,7 @@ import { cells, emptyState, rows as gridRows, scroller } from '../_shared/virtua
  * ═══════════════════════════════════════════════════════════════════════════
  * Cách chạy
  * ═══════════════════════════════════════════════════════════════════════════
- *   npx playwright test tests/master-search-dialogs.spec.ts --retries=0
+ *   npx playwright test tests/dialogs-management/master-search-dialogs.spec.ts --retries=0
  *
  * `--retries=0` vì retry chạy lại CẢ khối serial ⇒ thêm một lần login (Rule 10.1).
  * Chạy CẢ FILE, không `-g` một testcase lẻ: khối serial dùng chung một page và
@@ -125,7 +125,7 @@ import { cells, emptyState, rows as gridRows, scroller } from '../_shared/virtua
  * Muốn kiểm độ ổn định thì lặp CẢ FILE, đừng dùng `--repeat-each` (nó lặp từng
  * testcase, phá đúng cái mà `serial` xây):
  *
- *   for i in 1 2 3; do npx playwright test tests/master-search-dialogs.spec.ts --retries=0; done
+ *   for i in 1 2 3; do npx playwright test tests/dialogs-management/master-search-dialogs.spec.ts --retries=0; done
  *
  * Đã chạy 3 lượt như trên (2026-08-12): 16/16 xanh cả ba, ~14s mỗi lượt.
  *

@@ -93,11 +93,11 @@ import { cells, rows, scroller } from '../_shared/virtual-grid'
  *
  * Bảng `rx_sharing_view_history` RỖNG ở dev (chỉ có dữ liệu khi đã gọi OQS thật)
  * nên nhóm TC-B tự seed qua Postgres và tự dọn:
- *     TEST_DB=1 npx playwright test tests/karte-info-share-dialog.spec.ts
+ *     TEST_DB=1 npx playwright test tests/dialogs-management/karte-info-share-dialog.spec.ts
  * Không đặt TEST_DB → nhóm TC-B tự skip, nhóm TC-A vẫn chạy đủ.
  *
  * TC-B9 GHI THẬT (F8 削除 bấm Yes) — thêm cờ:
- *     TEST_DB=1 TEST_ALLOW_DELETE=1 npx playwright test tests/karte-info-share-dialog.spec.ts
+ *     TEST_DB=1 TEST_ALLOW_DELETE=1 npx playwright test tests/dialogs-management/karte-info-share-dialog.spec.ts
  */
 
 const PAT_NO = patNo('12138')

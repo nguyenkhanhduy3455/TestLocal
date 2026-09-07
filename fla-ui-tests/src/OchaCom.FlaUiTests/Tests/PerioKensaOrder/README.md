@@ -1,6 +1,6 @@
 # PerioKensaOrder — 検査順 (`ModCommon.pInpOpt[36]`)
 
-Nửa WinForm của [`../../../../../web-tenant-tests/tests/perio-kensa-order.spec.ts`](../../../../../web-tenant-tests/tests/perio-kensa-order.spec.ts).
+Nửa WinForm của [`../../../../../web-tenant-tests/tests/perio/perio-kensa-order.spec.ts`](../../../../../web-tenant-tests/tests/perio/perio-kensa-order.spec.ts).
 
 Đo **hướng quét con trỏ** của hai màn 歯周基本検査 (`frm203028`) và 歯周精密検査
 (`frm203029`) khi 検査順 đặt 左上から / 右上から.

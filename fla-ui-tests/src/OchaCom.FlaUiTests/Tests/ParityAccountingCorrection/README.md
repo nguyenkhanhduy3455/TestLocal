@@ -130,12 +130,12 @@ chênh. Sai tổ hợp thì đi nhánh ngoài (vốn cộng dồn đúng) và ch
 
 ---
 
-## 5b. `ChgAccDataParityTests` — nửa WinForm của `chg-acc-data-parity.spec.ts`
+## 5b. `ChgAccDataParityTests` — nửa WinForm của `accounting-unpaid/chg-acc-data-parity.spec.ts`
 
 Chạy: **`.\run-fix-accounting-data.ps1 -Fixture ChgAccDataParityTests`**
 
 Fixture `ChgAccDataTests` ở trên đo **phép ghi** (ACCDAT + PERSON_EXP, ISSUE-1). Fixture
-này đo ba thứ mà `../web-tenant-tests/tests/chg-acc-data-parity.spec.ts` đo và bên đây
+này đo ba thứ mà `../web-tenant-tests/tests/accounting-unpaid/chg-acc-data-parity.spec.ts` đo và bên đây
 chưa ai đo — cả ba nằm ở tầng màn hình:
 
 | | Nội dung | Playwright | Kết quả 2026-09-03 |

@@ -5,9 +5,9 @@ Nửa **WinForm** của ba spec Playwright. Cùng một yêu cầu nghiệp vụ
 
 | Spec Playwright | Fixture ở đây | Hàm WinForm đang đo |
 |---|---|---|
-| `tooth-extraction-siga-restore.spec.ts` | `DelExtRecTests` | `frm203002.DelExtRec` (frm203002.cs:6120-6191) |
-| `siga-kon-remaining-gaps.spec.ts` | `SigaKonGapsTests` | `frm203016.SigaChg` + `modSave.SigaChg_Save` + `Restore_SK` |
-| `p-mode-kesson-siga.spec.ts` | `PModeKessonTests` | `frm203002.Chk_PModeKesson` (frm203002.cs:7446-7495) |
+| `siga-tooth-status/tooth-extraction-siga-restore.spec.ts` | `DelExtRecTests` | `frm203002.DelExtRec` (frm203002.cs:6120-6191) |
+| `siga-tooth-status/siga-kon-remaining-gaps.spec.ts` | `SigaKonGapsTests` | `frm203016.SigaChg` + `modSave.SigaChg_Save` + `Restore_SK` |
+| `siga-tooth-status/p-mode-kesson-siga.spec.ts` | `PModeKessonTests` | `frm203002.Chk_PModeKesson` (frm203002.cs:7446-7495) |
 | — (không có bên web) | `SigaToothProbeTests` | PROBE `[Explicit]`, 14 câu hỏi, KHÔNG assert |
 
 > ✅ **Chạy thật 2026-09-03 trên bệnh nhân 10, 診療月 2026-08: 21/21 XANH.**

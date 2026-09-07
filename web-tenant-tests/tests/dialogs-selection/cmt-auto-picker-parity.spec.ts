@@ -1,9 +1,9 @@
 /**
  * カルテ記載選択 (自動表示) — CmtAutoPickerDialog, WinForm frm203012 gType.Auto.
  *
- * Spec anh em của `cmt-auto-picker-enter.spec.ts` (chỉ lo phím Enter ở window).
+ * Spec anh em của `dialogs-selection/cmt-auto-picker-enter.spec.ts` (chỉ lo phím Enter ở window).
  * File này chốt BỐN hành vi frm203012 mà bản 自動表示 vừa được port bổ sung —
- * trước đó chỉ có bản `gType.Cult` (karte-selection-dialog.spec.ts) là có.
+ * trước đó chỉ có bản `gType.Cult` (dialogs-selection/karte-selection-dialog.spec.ts) là có.
  *
  * ─── FACT lấy từ source (Rule 21) ────────────────────────────────────────────
  *  - INP/Forms/frm203012.cs
@@ -81,7 +81,7 @@ const TRT_DT = process.env.TEST_TRT_DT ?? new Date().toISOString().slice(0, 10)
 /**
  * CSS chứ không `getByRole('dialog')`: Radix AlertDialog gọi `hideOthers` khi
  * mount → gắn `aria-hidden` lên portal của dialog khác, làm locator theo role
- * "tắt" dù dialog vẫn hiện (bẫy đã ghi ở summary-comment-selection-enter.spec.ts).
+ * "tắt" dù dialog vẫn hiện (bẫy đã ghi ở dialogs-selection/summary-comment-selection-enter.spec.ts).
  */
 const anyDialog = (page: Page) => page.locator('[role="dialog"]')
 /** frm203012 gType.Auto — nhận diện bằng tab, KHÔNG bằng title (Rule 13.1). */
@@ -151,7 +151,7 @@ test('カルテ記載選択 自動表示 — F1 部位 / getAsta / btnDummy / En
 
   // Phải bấm Yes cho 「歯科初診料を算定しますか？」 thì AutoSantei mới chạy → mới
   // sinh hàng đợi 自動表示 → mới có カルテ記載選択. (Ngược hẳn với
-  // karte-selection-dialog.spec.ts: ở đó phải bấm No để KHỎI bung dialog này.)
+  // dialogs-selection/karte-selection-dialog.spec.ts: ở đó phải bấm No để KHỎI bung dialog này.)
   const shoshinConfirm = page.getByRole('button', { name: 'Yes' })
   await shoshinConfirm.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {})
   if (await shoshinConfirm.count()) await shoshinConfirm.click()

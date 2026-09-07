@@ -1,7 +1,7 @@
 /**
  * fkey-audit — soi hình dạng nút F-key của MỘT dialog đang mở.
  *
- * Dùng chung cho `fkey-bar-common.spec.ts`. Tách ra file riêng để spec chỉ còn
+ * Dùng chung cho `fkey-menu/fkey-bar-common.spec.ts`. Tách ra file riêng để spec chỉ còn
  * phần điều hướng (mở dialog nào, bằng thao tác gì).
  *
  * ─── Chuẩn ĐÚNG là gì ────────────────────────────────────────────────────────

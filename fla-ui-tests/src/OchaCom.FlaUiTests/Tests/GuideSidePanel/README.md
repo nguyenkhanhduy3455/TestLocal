@@ -1,7 +1,7 @@
 # GuideSidePanel — tab 「ガイド」 của 診療入力 (frm203002) + 「ガイド処置選択」 (frm203017)
 
 Nửa **WinForm** của spec Playwright
-[`../../../../../web-tenant-tests/tests/guide-sidepanel-handler.spec.ts`](../../../../../web-tenant-tests/tests/guide-sidepanel-handler.spec.ts).
+[`../../../../../web-tenant-tests/tests/side-panel/guide-sidepanel-handler.spec.ts`](../../../../../web-tenant-tests/tests/side-panel/guide-sidepanel-handler.spec.ts).
 
 Bên kia đo **bản web**; ở đây đo **chính WinForm** — tức là đo cái "đáp án" mà bản web
 phải khớp. Chỗ nào hai bên lệch thì lệch đó là **thật**, và bảng ở mục 3 nói rõ lệch ở
@@ -52,7 +52,7 @@ Hai control **KHÔNG** có trong bản web và ngược lại — xem mục 3.
 ## 3. Bảng tương ứng với spec Playwright
 
 `GuideSidePanelTests` (fixture assert) — cột bên phải là testcase tương ứng trong
-`guide-sidepanel-handler.spec.ts`.
+`side-panel/guide-sidepanel-handler.spec.ts`.
 
 | WinForm | Đo cái gì | Playwright |
 |---|---|---|

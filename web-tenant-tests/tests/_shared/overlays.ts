@@ -32,7 +32,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * Đếm thật trong repo trước khi gom: 38 spec chỉ cắm #1, 6 spec cắm #1+#2, đúng
  * 1 spec cắm cả ba, và 18 spec KHÔNG cắm cái nào. Khác biệt đó CÓ LÝ DO —
- * `karte-selection-dialog.spec.ts` cố tình bỏ #2 vì nó ĐANG ĐO chính カルテ記載選択;
+ * `dialogs-selection/karte-selection-dialog.spec.ts` cố tình bỏ #2 vì nó ĐANG ĐO chính カルテ記載選択;
  * bật #2 ở đó là tự tay đóng mất thứ cần đo. Vì vậy hàm này KHÔNG có bộ mặc định
  * "bật hết": mỗi spec khai đúng cái nó cần.
  *

@@ -56,12 +56,12 @@ import { emptyState, rows, scroller, skeletons } from '../_shared/virtual-grid'
  * login (GUIDELINE Rule 10.1) nên login + vào /treatments làm đúng một lần ở
  * beforeAll. Testcase nối tiếp trạng thái, thứ tự CÓ Ý NGHĨA — chạy lẻ một
  * testcase ở giữa bằng `-g` sẽ hỏng. Luôn chạy cả file:
- *   npx playwright test tests/monthly-visit-summary-dialog.spec.ts
+ *   npx playwright test tests/patient-select/monthly-visit-summary-dialog.spec.ts
  *
  * DỮ LIỆU (Rule 18): mặc định lấy tháng HIỆN HÀNH của 診療日 (hôm nay). Tháng đó
  * có thể toàn 0 — các assert cấu trúc / số học vẫn đúng nhưng nhạt. Trỏ vào
  * tháng CÓ dữ liệu để test có sức nặng:
- *   TEST_TRT_DT=2009-03-01 npx playwright test tests/monthly-visit-summary-dialog.spec.ts
+ *   TEST_TRT_DT=2009-03-01 npx playwright test tests/patient-select/monthly-visit-summary-dialog.spec.ts
  * Khi đặt biến này, spec sẽ gõ lại EraDateField 診療日 trước khi bấm F3.
  *
  * Nhóm TC-DB-* và TC-KAIGO-2 cần TEST_DB=1 (xem tests/db.ts), tự skip khi không bật.
@@ -71,7 +71,7 @@ import { emptyState, rows, scroller, skeletons } from '../_shared/virtual-grid'
  * ca 介護 hợp lệ nào nên nhánh đó vĩnh viễn bằng 0). Vì nó sửa một CON SỐ TOÀN
  * CỤC (来患集計 gộp mọi bệnh nhân), hai lần chạy song song sẽ giẫm lên nhau —
  * chạy lặp phải kèm `--workers=1`:
- *   npx playwright test tests/monthly-visit-summary-dialog.spec.ts --repeat-each=3 --workers=1
+ *   npx playwright test tests/patient-select/monthly-visit-summary-dialog.spec.ts --repeat-each=3 --workers=1
  * Chạy một lần (mặc định) thì không sao: cả file là một job serial duy nhất.
  */
 
@@ -110,7 +110,7 @@ const MST_IIN1_URL = /\/tenant\/mst-iin1(\?|$)/
  * số liệu, nên cả file mất nghĩa — lúc đó spec tự skip kèm log thay vì đỏ hàng
  * loạt (GUIDELINE Rule 18).
  *
- *   TEST_CLINIC_PASSWORD=xxxxx npx playwright test tests/monthly-visit-summary-dialog.spec.ts
+ *   TEST_CLINIC_PASSWORD=xxxxx npx playwright test tests/patient-select/monthly-visit-summary-dialog.spec.ts
  */
 const CLINIC_PASSWORD = process.env.TEST_CLINIC_PASSWORD ?? ''
 
@@ -486,7 +486,7 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
      * Thử lại tối đa 3 lần: `accessToken` chỉ nằm trong RAM (GUIDELINE Rule 10.2)
      * nên mỗi lần tải lại là một vòng refresh từ cookie `rt`, và lặp nhiều lần
      * trong cùng phiên đã từng cho ra trang trắng. Cùng cách
-     * `kasan-buttons.spec.ts:openTreatmentScreen` xử lý.
+     * `treatment-grid/kasan-buttons.spec.ts:openTreatmentScreen` xử lý.
      */
     async function backToListAndReload() {
         let lastErr: unknown

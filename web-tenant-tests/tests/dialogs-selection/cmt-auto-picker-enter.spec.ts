@@ -15,7 +15,7 @@
  * vậy LUÔN kết thúc bằng '\n' → TC-5 so chuỗi đầy đủ phải có '\n' ở cuối.
  * `lineCount` đếm dòng có chữ nên KHÔNG bị ảnh hưởng. Các hành vi mới khác
  * (F1 部位 / getAsta / Enter trong ô text / End・ESC = 確定) nằm ở
- * cmt-auto-picker-parity.spec.ts.
+ * dialogs-selection/cmt-auto-picker-parity.spec.ts.
  *
  * Dialog TỰ BẬT khi mở 診療入力 của bệnh nhân có 処置 cần chọn カルテ記載.
  * Gộp 1 test = 1 login (app giới hạn 10 login / khung thời gian).

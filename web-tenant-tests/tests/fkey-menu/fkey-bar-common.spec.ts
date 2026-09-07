@@ -92,7 +92,7 @@
  * Chạy CẢ FILE (đừng `-g` chạy lẻ: các testcase nối tiếp trạng thái màn hình, và
  * 「TỔNG KẾT」 cần `results` do những testcase trước điền vào):
  *   cd /Users/thinhnn/Documents/GitHub/TestLocalApp/TestLocal/web-tenant-tests
- *   npx playwright test tests/fkey-bar-common.spec.ts --reporter=list
+ *   npx playwright test tests/fkey-menu/fkey-bar-common.spec.ts --reporter=list
  *   open fkey-shots/index.html
  */
 import { type Locator, type Page } from '@playwright/test'
@@ -172,7 +172,7 @@ const SKIPPED: ReadonlyArray<{ name: string; file: string; note: string }> = [
         note:
             'ĐÃ có đường mở (ghi chú cũ 「không có」 nay lạc hậu): CategoryTabs tự đọc query ' +
             "['agent','config'], nên stub GET /v1/config trả linkCode ∈ {1,3,4} là nút 画像(&P) " +
-            'hiện ra — treatment-xray-launch.spec.ts (TC-GAZOU-*) mở nó cả bằng nút lẫn Alt+P. ' +
+            'hiện ra — fkey-menu/treatment-xray-launch.spec.ts (TC-GAZOU-*) mở nó cả bằng nút lẫn Alt+P. ' +
             'Không audit ở file này vì spec này không stub agent; đọc source thì image-dialog.tsx ' +
             'đã dùng <FKeyBar> (chỉ F10 戻る)',
     },
@@ -352,7 +352,7 @@ test.describe('F-key bar — dialog INP phải dùng <FKeyBar> chung', () => {
         await audit('診療入力設定 (F11 設定)', 'treatment-entry-setting-dialog.tsx', async () => {
             await page.keyboard.press('F11')
             // Không dọn AgentOfflineDialog ở đây nữa: màn này đã bỏ hẳn lời mời khởi
-            // động agent (treatment-entry-setting-dialog.spec.ts TC-AGENT-1). Cú dọn
+            // động agent (dialogs-management/treatment-entry-setting-dialog.spec.ts TC-AGENT-1). Cú dọn
             // chung trong `audit()` vẫn chạy trước đó, lo phần sót từ màn khác.
             //
             // Bó theo text trong BODY chứ không `.last()`: 「表示設定」 là tiêu đề nhóm

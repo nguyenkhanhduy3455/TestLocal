@@ -10,7 +10,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * 診療入力 — 点数 phải là kết quả `getTensu`, KHÔNG phải `mst_trt.score1` thô, trên
  * MỌI đường nhập, và getTensu phải nhìn thấy các dòng CÙNG NGÀY.
  *
- * Spec này phủ đúng phần mà `kobetu-sidepanel-score.spec.ts` ghi trong header là
+ * Spec này phủ đúng phần mà `side-panel/kobetu-sidepanel-score.spec.ts` ghi trong header là
  * NGOÀI phạm vi của nó: 「全身麻酔 / 歯科診療特別対応加算 cùng ngày chưa được gửi lên
  * (null/false) … và đường chọn qua 処置選択 vẫn là score1」. Ba câu đó nay đã lỗi
  * thời — commit `feat(api,web-tenant): 診療入力の点数を実機の getTensu と同じ結果に
@@ -43,7 +43,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *    tiền, và dòng commit thẳng (1 kết quả) cũng lấy số đó.
  *
  *  ・INP/Lib/modKobetu.cs:255-265 — 個別 pick cũng qua getTensu (đã có
- *    `kobetu-sidepanel-score.spec.ts` TC-2 phủ, KHÔNG lặp lại ở đây).
+ *    `side-panel/kobetu-sidepanel-score.spec.ts` TC-2 phủ, KHÔNG lặp lại ở đây).
  *
  *  ・INP/Lib/modSave.cs:3388-3424 — 自動算定 KHÔNG dùng getTensu. Nhánh riêng:
  *        乳幼児 (modPat.NyuYoujiChk) HOẶC dis_flg == 1  → score2   (:3389)
@@ -88,9 +88,9 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *      `apps/api/tests/Ochacom.Application.UnitTests/Treatments/Handlers/
  *       GetAutoSanteiScoreBranchTests.cs` (6 ca, gồm cả thứ tự nhánh 乳幼児 > 27老人
  *       và việc dis_flg 3 KHÔNG lấy score2 vì :3389 so BẰNG với 1).
- *    Cùng lý do `auto-santei-cases.spec.ts:20-24` đã tuyên bố 乳幼児 là phần của
+ *    Cùng lý do `auto-santei/auto-santei-cases.spec.ts:20-24` đã tuyên bố 乳幼児 là phần của
  *    unit test BE chứ không phải e2e.
- *  ・Đường 個別 tab → getTensu: đã có `kobetu-sidepanel-score.spec.ts` TC-2.
+ *  ・Đường 個別 tab → getTensu: đã có `side-panel/kobetu-sidepanel-score.spec.ts` TC-2.
  *
  * ─── Điều kiện chạy ───────────────────────────────────────────────────────────
  *  - `TEST_DB=1` (bắt buộc): spec đọc master + seed 処置行 vùng `disp_no >= 9000`.

@@ -23,7 +23,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * ═════════════════════════════════════════════════════════════════════════════
  * VÌ SAO CÓ FILE NÀY (2026-09-04)
  * ═════════════════════════════════════════════════════════════════════════════
- * `p-mode-kesson-siga.spec.ts` đo phần SAU của Ｐ変更 (Q00100 → はい → 欠損). Nó luôn
+ * `siga-tooth-status/p-mode-kesson-siga.spec.ts` đo phần SAU của Ｐ変更 (Q00100 → はい → 欠損). Nó luôn
  * seed `disSb: [0]` và luôn có sẵn một dòng Ｐ, nên KHÔNG bao giờ chạm tới cái CỔNG
  * quyết định 「MonthP có gom được dòng nào không」. Hai testcase dưới đây khoá đúng
  * cái cổng đó.
@@ -77,8 +77,8 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * ═════════════════════════════════════════════════════════════════════════════
  * CÁCH CHẠY (Rule 19) — LUÔN chạy CẢ FILE
  * ═════════════════════════════════════════════════════════════════════════════
- *   TEST_DB=1 npx playwright test tests/byoken-p-change-parity.spec.ts
- *   TEST_DB=1 npx playwright test tests/byoken-p-change-parity.spec.ts --headed
+ *   TEST_DB=1 npx playwright test tests/siga-tooth-status/byoken-p-change-parity.spec.ts
+ *   TEST_DB=1 npx playwright test tests/siga-tooth-status/byoken-p-change-parity.spec.ts --headed
  *
  * KHÔNG bấm F9 nên KHÔNG cần TEST_ALLOW_SAVE: cả hai TC chỉ mở/không mở một hộp thoại.
  */
@@ -117,8 +117,8 @@ const ryoCells = (page: Page) => page.locator('[data-grid-cell$="|2"]')
 
 if (!dbEnabled) {
     console.log(
-        '\n⚠️  byoken-p-change-parity.spec.ts BỎ QUA — thiếu TEST_DB=1 (cần seed 部位病名行).\n' +
-            '   Chạy bằng: TEST_DB=1 npx playwright test tests/byoken-p-change-parity.spec.ts\n',
+        '\n⚠️  siga-tooth-status/byoken-p-change-parity.spec.ts BỎ QUA — thiếu TEST_DB=1 (cần seed 部位病名行).\n' +
+            '   Chạy bằng: TEST_DB=1 npx playwright test tests/siga-tooth-status/byoken-p-change-parity.spec.ts\n',
     )
 }
 test.skip(!dbEnabled, 'Cần TEST_DB=1 để seed 部位病名行 mang 病名 Ｐ')

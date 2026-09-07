@@ -12,7 +12,7 @@ import { makeStep } from '../_shared/step'
  * đưa vào lưới đăng ký khi chọn một dòng. Màn `/treatments/{patNo}`.
  *
  * Đây là spec ĐẦU TIÊN của phần "điểm" ở tab 個別. Tab này đã có test ở
- * `guide-sidepanel-handler.spec.ts` (describe 「選択№ + Enter parity 4 tab」) nhưng
+ * `side-panel/guide-sidepanel-handler.spec.ts` (describe 「選択№ + Enter parity 4 tab」) nhưng
  * chỉ về ô 選択№ + Enter, không đụng tới cột điểm — nên phần dưới đây tách file
  * riêng, không nhét vào file kia.
  *
@@ -54,7 +54,7 @@ import { makeStep } from '../_shared/step'
  *    全身麻酔 / 歯科診療特別対応加算 cùng ngày chưa gửi lên (null/false), và đường chọn
  *    qua 処置選択 vẫn là score1 — nay ĐÃ LÀM (commit `feat(api,web-tenant): 診療入力の
  *    点数を実機の getTensu と同じ結果にする`). Testcase cho chúng nằm ở
- *    `treatment-score-gettensu-parity.spec.ts`, ĐỪNG viết đè ở file này.
+ *    `treatment-grid/treatment-score-gettensu-parity.spec.ts`, ĐỪNG viết đè ở file này.
  *    Còn lại chưa làm: 算定回数 vẫn cố định 1.
  *
  * ─── Khối 検索 (TC-4..TC-8) ───────────────────────────────────────────────────
@@ -123,7 +123,7 @@ import { makeStep } from '../_shared/step'
  *     comment nói tách 「101-2」 thành TRT_CD+TRT_SB, nhưng check chạy trước nên
  *     nhánh đó không bao giờ tới ⇒ chưa bao giờ dùng được. Web trước đây có tách,
  *     đã bỏ để khớp WinForm — giống hệt việc コードモード bỏ cú pháp "コード-枝番"
- *     hồi 2026-07-23 (xem point-code-mode-code-enter-value.spec.ts).
+ *     hồi 2026-07-23 (xem treatment-grid/point-code-mode-code-enter-value.spec.ts).
  *     ⇒ Ở đây tìm theo MỖI 処置コード, rồi lọc 枝番 bằng cách đọc ô trên dòng.
  *  3. Enter trong 3 ô tìm kiếm KHÔNG search — chỉ chuyển focus
  *     ｺｰﾄﾞ → 名称 → 点数 → nút 検索 (txtKobeSearch*_KeyDown, :2564/2576/2588).
@@ -137,7 +137,7 @@ import { makeStep } from '../_shared/step'
  *     đè lên mọi click → `addLocatorHandler` bấm No (GUIDELINE Rule 14/14.1).
  *
  * ─── Cách chạy ───────────────────────────────────────────────────────────────
- *   TEST_DB=1 npx playwright test tests/kobetu-sidepanel-score.spec.ts --retries=0
+ *   TEST_DB=1 npx playwright test tests/side-panel/kobetu-sidepanel-score.spec.ts --retries=0
  *
  * `--retries=0` vì `playwright.config.ts` để `retries: 1` ở local: một lần retry
  * là chạy lại CẢ khối serial ⇒ thêm một lần login + seed, tốn quota login
@@ -360,9 +360,9 @@ async function patientScoreContext(): Promise<{ age: number; disFlg: number } | 
 
 if (!dbEnabled) {
     console.log(
-        'SKIP tests/kobetu-sidepanel-score.spec.ts — thiếu TEST_DB=1 (cần đọc mst_trt ' +
+        'SKIP tests/side-panel/kobetu-sidepanel-score.spec.ts — thiếu TEST_DB=1 (cần đọc mst_trt ' +
             'của bản đang áp dụng + seed dòng 訪問診療 cho ngày test).\n' +
-            '  TEST_DB=1 npx playwright test tests/kobetu-sidepanel-score.spec.ts',
+            '  TEST_DB=1 npx playwright test tests/side-panel/kobetu-sidepanel-score.spec.ts',
     )
 }
 test.skip(!dbEnabled, 'Cần TEST_DB=1 để đọc mst_trt và seed dòng 訪問診療')

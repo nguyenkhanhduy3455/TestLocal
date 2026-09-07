@@ -17,11 +17,11 @@ import { makeStep, skipWithReason } from '../_shared/step'
 /**
  * 診療入力 — Ｓｔｅｐ編集 (frm203050), mở bằng F11 → 「9 オプション」 → 「Step」.
  *
- * Tách khỏi `inp-p1-ported-dialogs.spec.ts` (2026-08-14): file kia gom ba dialog
+ * Tách khỏi `dialogs-management/inp-p1-ported-dialogs.spec.ts` (2026-08-14): file kia gom ba dialog
  * vừa port cho đỡ tốn lượt login, nhưng riêng Ｓｔｅｐ編集 còn cả một nhóm
  * testcase LIÊN THÔNG với tab ガイド (nhóm B bên dưới) nên để chung thì file kia
  * phình ra và mỗi lần sửa STEP lại phải chạy lại cả チェック項目設定 + Ｂｒサンプル.
- * `treatment-entry-setting-dialog.spec.ts` cũng đã tách theo kiểu này.
+ * `dialogs-management/treatment-entry-setting-dialog.spec.ts` cũng đã tách theo kiểu này.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * Dialog này để làm gì
@@ -37,7 +37,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *   「前回」 (Prv)     lọc `pac_nam.guid_cd      = intTrtS[0]` (modGuid1.cs:105-108)
  *   「リセット」        ghi 0 vào đúng các ô 部位 của 部位病名行 đang focus
  * Nhóm B bên dưới là phần khoá mắt xích đó; trước 2026-08-14 KHÔNG spec nào phủ
- * (「Shift+F4」 của `guide-sidepanel-handler.spec.ts` chỉ assert guid_cd rơi trong
+ * (「Shift+F4」 của `side-panel/guide-sidepanel-handler.spec.ts` chỉ assert guid_cd rơi trong
  * dải 1000-1999, không đụng tới giá trị trt_state).
  *
  * ═══════════════════════════════════════════════════════════════════════════
@@ -119,10 +119,10 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *  khác biệt hành vi nào.
  *
  *  ⚠️ `seedStepGuides` sửa MASTER (dùng chung cả tenant). Với TEST_ALLOW_SAVE=1
- *  thì đừng chạy song song file này với `guide-sidepanel-handler.spec.ts` —
+ *  thì đừng chạy song song file này với `side-panel/guide-sidepanel-handler.spec.ts` —
  *  config để `fullyParallel: true, workers: 4`, hai ガイド seed sẽ lọt vào danh
  *  sách STEP mà file kia đang đếm. Chạy riêng:
- *      TEST_ALLOW_SAVE=1 npx playwright test tests/step-edit-dialog.spec.ts --workers=1
+ *      TEST_ALLOW_SAVE=1 npx playwright test tests/dialogs-management/step-edit-dialog.spec.ts --workers=1
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * BẪY
@@ -161,8 +161,8 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * ═══════════════════════════════════════════════════════════════════════════
  * Cách chạy
  * ═══════════════════════════════════════════════════════════════════════════
- *   npx playwright test tests/step-edit-dialog.spec.ts --retries=0
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/step-edit-dialog.spec.ts --retries=0 --workers=1
+ *   npx playwright test tests/dialogs-management/step-edit-dialog.spec.ts --retries=0
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/dialogs-management/step-edit-dialog.spec.ts --retries=0 --workers=1
  *
  * `--retries=0` vì retry chạy lại CẢ khối serial ⇒ thêm một lần login, tốn quota
  * (Rule 10.1). Chạy CẢ FILE, không `-g` một testcase lẻ (Rule 19): khối serial
@@ -174,7 +174,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * về giá trị HỢP LỆ, nên lượt 2 của chính nó chạy với ô sạch, F9 gửi PUT thật và
  * `expect(putSeen).toBe(false)` đỏ. Muốn kiểm độ ổn định thì lặp CẢ FILE:
  *
- *   for i in 1 2 3; do npx playwright test tests/step-edit-dialog.spec.ts --retries=0; done
+ *   for i in 1 2 3; do npx playwright test tests/dialogs-management/step-edit-dialog.spec.ts --retries=0; done
  */
 
 const PAT_NO = patNo('12138')
@@ -1016,7 +1016,7 @@ test.describe('診療入力 — Ｓｔｅｐ編集 (frm203050)', () => {
     // B. Mắt xích trt_state → tab ガイド
     //
     // Trước nhóm này KHÔNG spec nào chứng minh được số gõ trong Ｓｔｅｐ編集 có
-    // tác dụng gì: `guide-sidepanel-handler.spec.ts` chỉ assert guid_cd rơi
+    // tác dụng gì: `side-panel/guide-sidepanel-handler.spec.ts` chỉ assert guid_cd rơi
     // trong dải 1000-1999, còn nhóm A ở trên dừng ở PUT/DB.
     //
     // Cả nhóm chạy trên MỘT bối cảnh do TC-STEP-LINK-0 dựng: một 部位病名行 có

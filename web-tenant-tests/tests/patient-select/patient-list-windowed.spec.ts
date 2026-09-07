@@ -9,7 +9,7 @@
  * được nuốt đường server-window này. Test là bằng chứng đường đó còn sống:
  *   - onRangeChange vẫn được gọi khi cuộn (window mới được fetch)
  *   - skeleton row VẪN xuất hiện trong lúc fetch — ở đây skeleton là ĐÚNG,
- *     ngược hẳn với virtual-list-grids.spec.ts nơi skeleton là LỖI.
+ *     ngược hẳn với cross-cutting/virtual-list-grids.spec.ts nơi skeleton là LỖI.
  *
  * Lưu ý khi đọc kết quả: skeleton chỉ kịp hiện khi cửa sổ chưa fetch xong. Mạng
  * local nhanh có thể resolve trước khi Playwright chụp được → test KHÔNG fail

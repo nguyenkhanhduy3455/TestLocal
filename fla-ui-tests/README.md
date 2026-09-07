@@ -8,7 +8,7 @@ cầu nghiệp vụ, khác chỗ đo: bên kia đo **bản web**, bên này đo 
 đo cái "đáp án" mà bản web phải khớp.
 
 Ba testcase đầu tiên là bản chuyển của ba testcase đầu trong
-`../web-tenant-tests/tests/kobetu-sidepanel-score.spec.ts`.
+`../web-tenant-tests/tests/side-panel/kobetu-sidepanel-score.spec.ts`.
 
 ---
 
@@ -242,7 +242,7 @@ trên in ra cả hai để so.
 
 ## 8. Ba testcase hiện có
 
-Nguồn: `../web-tenant-tests/tests/kobetu-sidepanel-score.spec.ts` (TC-1…TC-3).
+Nguồn: `../web-tenant-tests/tests/side-panel/kobetu-sidepanel-score.spec.ts` (TC-1…TC-3).
 
 | | Nội dung | Cần DB |
 |---|---|---|
@@ -296,7 +296,7 @@ dựng được (ngày đã 窓口精算, `tre_acc_link = 1`).
 
 Thư mục này có **hai** fixture, chọn bằng `-Fixture`. `ChgAccDataTests` (mặc định) đo
 phép GHI — nó là cái sửa sổ tiền. `ChgAccDataParityTests` là nửa WinForm của
-`../web-tenant-tests/tests/chg-acc-data-parity.spec.ts`, đo **tầng màn hình** và
+`../web-tenant-tests/tests/accounting-unpaid/chg-acc-data-parity.spec.ts`, đo **tầng màn hình** và
 **không** ghi sổ tiền: nó trả lời いいえ cho hộp 会計データ修正, mà `ChgAccData` chỉ ghi ở
 nhánh はい (modAcc.cs:956). Đã chạy thật 2026-09-03: 4/4 khẳng định xanh, `TcCHG4`
 `Ignore` vì dữ liệu (bệnh nhân test là 公費単独 nên hộp 差額 không mở được).
@@ -318,12 +318,12 @@ web trước đây để はい cả ba ⇒ bấm Enter theo phản xạ là **t
 vào ô 点, Insert 行追加, Delete 行削除. Nó KHÔNG bấm F9 nên **không ghi DB** và không
 cần cờ gì — nhưng vẫn có runner riêng vì bảy testcase NỐI TIẾP nhau (TC-2 chèn dòng
 mà TC-3…TC-6 đứng lên, TC-7 xoá dòng đó) và vì nó là nửa còn lại của một cặp parity:
-bên kia là `../web-tenant-tests/tests/treatment-grid-basic.spec.ts`, cùng số hiệu
+bên kia là `../web-tenant-tests/tests/treatment-grid/treatment-grid-basic.spec.ts`, cùng số hiệu
 TC-1…TC-7. Bảng tương ứng nằm ở `Tests/TreatmentGrid/README.md` mục 4.
 
 **InpP1Dialogs** đo **đáp án** cho spec Playwright của bản web
-(`../web-tenant-tests/tests/step-edit-dialog.spec.ts` cho TC-STEP-*,
-`../web-tenant-tests/tests/inp-p1-ported-dialogs.spec.ts` cho TC-CHK-* / TC-BR-*):
+(`../web-tenant-tests/tests/dialogs-management/step-edit-dialog.spec.ts` cho TC-STEP-*,
+`../web-tenant-tests/tests/dialogs-management/inp-p1-ported-dialogs.spec.ts` cho TC-CHK-* / TC-BR-*):
 ba dialog vừa được port —
 `frm203050`「Ｓｔｅｐ編集」, `frm203044`「チェック項目設定」, `frm203049`「Ｂｒサンプル」.
 Mỗi testcase ghi rõ nó ứng với TC nào bên kia. Hai dialog đầu vào bằng **mục menu**
@@ -360,7 +360,7 @@ giá trị. Chi tiết ở `Tests/PatientSelectAssign/README.md` mục 4.
 
 **GuideSidePanel** đo **đáp án** cho tab 「ガイド」 của `frm203002` và dialog
 `frm203017`「ガイド処置選択」 — nửa WinForm của
-`../web-tenant-tests/tests/guide-sidepanel-handler.spec.ts`. Không bấm F9 nên **không ghi
+`../web-tenant-tests/tests/side-panel/guide-sidepanel-handler.spec.ts`. Không bấm F9 nên **không ghi
 DB**; nút 「リセット」 *có* ghi (`StepReset` → `UPDATE TRTSTATE`) nên mọi chỗ bấm nó đều
 trả lời **Cancel**.
 
@@ -376,13 +376,13 @@ không gửi phím nào mà cũng không báo lỗi) nằm ở `Tests/GuideSideP
 WinForm để **ba** control chồng nhau và mỗi cái trả lời một câu khác nhau: `lblDrLabel`
 (click = 一括変更 cả ngày), `lbDr` (担当医 của DÒNG con trỏ), `cboDr` (担当医 cho dòng
 THÊM MỚI, `Visible = false`). Chúng rất dễ bị gộp thành một khi port — bản web có riêng
-`treatment-header-staff.spec.ts` khoá cả ba, và đây là nửa WinForm của nó.
+`treatment-grid/treatment-header-staff.spec.ts` khoá cả ba, và đây là nửa WinForm của nó.
 
 Đã chạy thật 2026-08-26: 4/5 xanh, `TC-LBL-1` `Ignore` vì dataset máy đó không tách
 được nhãn khỏi combo. Chi tiết + văn bản 一括変更 nguyên văn ở README của luồng.
 
 **MenInput** đo **đáp án** cho `frm203035`「面入力」 — nửa WinForm của
-`../web-tenant-tests/tests/men-input-dialog.spec.ts` (TC-M1…TC-M8). Hộp thoại này mở
+`../web-tenant-tests/tests/dialogs-management/men-input-dialog.spec.ts` (TC-M1…TC-M8). Hộp thoại này mở
 **sau** khi 処置 đã đáp xuống lưới, khi `mst_trt.men = 1` **và**
 `INPCONFIG.MENINPUT_FLG = 1`; mỗi lần F9 確定 nối một token `<歯 + 面文字>` vào **cả**
 cột 2 (療法・処置) **lẫn** cột 72 (`FREEWD`).
@@ -426,7 +426,7 @@ bẫy của chính bộ test nằm ở README của luồng, mục 5 và mục 7
 
 **PerioKensaOrder** đo **đáp án** cho 検査順 (`ModCommon.pInpOpt[36]`) — hướng quét con trỏ
 của 歯周基本検査 (`frm203028`) và 歯周精密検査 (`frm203029`). Nửa WinForm của
-`perio-kensa-order.spec.ts`; bảng tương ứng từng testcase ở
+`perio/perio-kensa-order.spec.ts`; bảng tương ứng từng testcase ở
 `Tests/PerioKensaOrder/README.md` mục 1.
 
 Nó không ghi DB (không bao giờ bấm F9 登録, và 部位 dựng bằng `F7 全顎` trong bộ nhớ),

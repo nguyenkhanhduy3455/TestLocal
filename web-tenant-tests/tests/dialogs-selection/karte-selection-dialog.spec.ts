@@ -97,7 +97,7 @@ const tenCell = (page: Page) => page.locator('[data-grid-cell$="|3"]')
 /**
  * CSS selector, KHÔNG `getByRole('dialog')`: Radix AlertDialog gọi `hideOthers`
  * khi mount → gắn `aria-hidden` lên portal của dialog khác, làm locator theo role
- * "tắt" dù dialog vẫn hiện (bẫy đã ghi ở summary-comment-selection-enter.spec.ts).
+ * "tắt" dù dialog vẫn hiện (bẫy đã ghi ở dialogs-selection/summary-comment-selection-enter.spec.ts).
  */
 const anyDialog = (page: Page) => page.locator('[role="dialog"]')
 const realAlert = (page: Page) => page.locator('[role="alertdialog"]')

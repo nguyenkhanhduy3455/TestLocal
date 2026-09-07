@@ -4,7 +4,7 @@
 và cho chuỗi mà câu trả lời kéo theo: hộp thoại → `grdRegi[72]` → `TRNTRN.FREEWD` →
 lượt `getTensu` sau.
 
-Bên kia của cặp parity: [`../../../../../web-tenant-tests/tests/auto-santei-high-needs-freewd.spec.ts`](../../../../../web-tenant-tests/tests/auto-santei-high-needs-freewd.spec.ts).
+Bên kia của cặp parity: [`../../../../../web-tenant-tests/tests/auto-santei/auto-santei-high-needs-freewd.spec.ts`](../../../../../web-tenant-tests/tests/auto-santei/auto-santei-high-needs-freewd.spec.ts).
 
 ```powershell
 .\run-high-needs-freewd.ps1 -Diagnostics          # PROBE — chạy cái này trước

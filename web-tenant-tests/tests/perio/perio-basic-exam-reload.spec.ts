@@ -89,15 +89,15 @@ import { makeStep } from '../_shared/step'
  *  3. TC-5 KHÔNG được `page.goto` giữa chừng: nó kiểm dòng CHƯA LƯU do F9 確定 chèn
  *     vào lưới, nạp lại trang là mất sạch.
  *  4. AutoSantei bung 「〜を算定しますか？」 lúc mở màn và nuốt phím —
- *     `installSanteiNo` + `clearOverlays` chép từ `perio-kensa-order.spec.ts`.
+ *     `installSanteiNo` + `clearOverlays` chép từ `perio/perio-kensa-order.spec.ts`.
  *  5. Một `page.goto` đơn lẻ thỉnh thoảng về mà lưới không mount — `openTreatmentScreen`
  *     thử tối đa 3 lần, giống các spec siga.
  *
  * ═════════════════════════════════════════════════════════════════════════════
  * CÁCH CHẠY (Rule 19) — LUÔN chạy CẢ FILE, testcase nối tiếp trạng thái
  * ═════════════════════════════════════════════════════════════════════════════
- *   TEST_DB=1 npx playwright test tests/perio-basic-exam-reload.spec.ts
- *   TEST_DB=1 npx playwright test tests/perio-basic-exam-reload.spec.ts --headed
+ *   TEST_DB=1 npx playwright test tests/perio/perio-basic-exam-reload.spec.ts
+ *   TEST_DB=1 npx playwright test tests/perio/perio-basic-exam-reload.spec.ts --headed
  */
 
 const PAT_NO = patNo('11')
@@ -160,7 +160,7 @@ const cell = (dialog: Locator, kind: 'epp' | 'douyou', index: number) =>
 
 const SANTEI_CONFIRM = /を算定しますか？/
 
-/** Trả lời **No** cho 「〜を算定しますか？」 (Rule 14) — chép từ perio-kensa-order.spec.ts. */
+/** Trả lời **No** cho 「〜を算定しますか？」 (Rule 14) — chép từ perio/perio-kensa-order.spec.ts. */
 const installSanteiNo = async (page: Page) => {
 }
 
@@ -290,10 +290,10 @@ const BUI_ROWS: SeedTrtRow[] = [
 
 if (!dbEnabled) {
     console.log(
-        '\n⚠️  perio-basic-exam-reload.spec.ts BỎ QUA TOÀN BỘ testcase — thiếu TEST_DB=1\n' +
+        '\n⚠️  perio/perio-basic-exam-reload.spec.ts BỎ QUA TOÀN BỘ testcase — thiếu TEST_DB=1\n' +
             '   (cần seed 部位病名行 + bản ghi 基本検査表 7999/9; không seed thì lưới\n' +
             '    luôn rơi về preset và mọi assert vô nghĩa)\n' +
-            '   Chạy bằng:  TEST_DB=1 npx playwright test tests/perio-basic-exam-reload.spec.ts\n',
+            '   Chạy bằng:  TEST_DB=1 npx playwright test tests/perio/perio-basic-exam-reload.spec.ts\n',
     )
 }
 test.skip(!dbEnabled, 'Cần TEST_DB=1 để seed 部位病名行 và bản ghi 基本検査表')

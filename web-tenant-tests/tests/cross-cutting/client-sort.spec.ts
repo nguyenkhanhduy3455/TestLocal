@@ -60,7 +60,7 @@
  *        ⇒ phải bóc `[^\d.-]` trước khi so số.
  *
  * ═══ CÁCH CHẠY ═══════════════════════════════════════════════════════════════
- *   cd .../web-tenant-tests && npx playwright test tests/client-sort.spec.ts
+ *   cd .../web-tenant-tests && npx playwright test tests/cross-cutting/client-sort.spec.ts
  *
  * Serial + DÙNG CHUNG 1 page ⇒ chỉ 1 lần login cho cả file (Rule 10.1 / 19).
  * Đổi lại: thứ tự test có ý nghĩa, một test ĐỎ thì các test sau bị SKIP, và

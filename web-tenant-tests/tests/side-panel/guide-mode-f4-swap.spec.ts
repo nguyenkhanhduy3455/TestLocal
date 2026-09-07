@@ -14,7 +14,7 @@ import { makeStep } from '../_shared/step'
  * một chiều (F4 = 通常, Shift+F4 = STEP) và KHÔNG hề đọc setting, nên phòng khám
  * đặt ガイドモード=2 thì hai phím chạy ngược so với WinForm.
  *
- * Khác với guide-sidepanel-handler.spec.ts (soi NỘI DUNG list ガイド ở chế độ mặc
+ * Khác với side-panel/guide-sidepanel-handler.spec.ts (soi NỘI DUNG list ガイド ở chế độ mặc
  * định), spec này chỉ soi ĐÚNG MỘT thứ: cú bấm nào rơi vào nhánh nào, theo từng
  * giá trị ガイドモード.
  *
@@ -67,7 +67,7 @@ import { makeStep } from '../_shared/step'
  * CHẠY TUẦN TỰ (`describe.serial`), dùng chung MỘT page vì app giới hạn số lần
  * login (Rule 10.1). Mỗi testcase tự dựng trạng thái bằng gotoTreatments() nên
  * thứ tự không quan trọng, nhưng vẫn phải chạy CẢ FILE:
- *   npx playwright test tests/guide-mode-f4-swap.spec.ts
+ *   npx playwright test tests/side-panel/guide-mode-f4-swap.spec.ts
  */
 
 const PAT_NO = patNo('12138')

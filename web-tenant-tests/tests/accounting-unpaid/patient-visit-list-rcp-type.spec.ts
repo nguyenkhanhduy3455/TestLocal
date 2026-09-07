@@ -76,7 +76,7 @@ import { emptyState, rows, scroller, skeletons } from '../_shared/virtual-grid'
  * CHẠY TUẦN TỰ (`describe.serial`), dùng CHUNG một page: app giới hạn số lần
  * login (Rule 10.1). Testcase nối tiếp trạng thái ⇒ chạy lẻ bằng `-g` sẽ hỏng.
  * Luôn chạy cả file:
- *   npx playwright test tests/patient-visit-list-rcp-type.spec.ts
+ *   npx playwright test tests/accounting-unpaid/patient-visit-list-rcp-type.spec.ts
  *
  * DỮ LIỆU (Rule 18): mặc định 200601 — 36 bệnh nhân / 86 dòng (bệnh nhân × ngày)
  * trên dataset demo, đủ nhỏ để chạy nhanh mà vẫn đa dạng 保険種別 (ins_kbn

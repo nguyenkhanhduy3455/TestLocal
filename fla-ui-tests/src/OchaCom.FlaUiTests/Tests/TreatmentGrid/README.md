@@ -59,7 +59,7 @@ bản sao `mode: 'serial'` của bộ Playwright.
 
 ## 4. Bảng tương ứng với spec Playwright
 
-Bên kia: `../../../../../web-tenant-tests/tests/treatment-grid-basic.spec.ts`.
+Bên kia: `../../../../../web-tenant-tests/tests/treatment-grid/treatment-grid-basic.spec.ts`.
 Cùng số hiệu, cùng thứ tự, cùng nguồn WinForm — chạy hai bên rồi so từng cặp.
 
 | TC | Nội dung | Nguồn WinForm | Đo gì bên web |
@@ -115,4 +115,4 @@ kéo theo chuỗi dialog + tiền đề riêng — xếp vào đợt "nâng cao"
 Còn 行追加 / 行削除 qua **menu chuột phải** (`IDM_TrtInsert` / `IDM_TrtDelete`,
 `Designer.cs:2932-2937`) thì đi cùng một đường với phím Insert/Delete mà TC-6 và
 TC-7 đã đo — bản web đã có spec riêng cho menu
-(`web-tenant-tests/tests/treatment-table-handler.spec.ts`), nên ở đây không đo lại.
+(`web-tenant-tests/tests/treatment-grid/treatment-table-handler.spec.ts`), nên ở đây không đo lại.

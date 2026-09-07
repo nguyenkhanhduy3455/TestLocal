@@ -72,7 +72,7 @@ import { rows, cells } from '../_shared/virtual-grid'
  * CHẠY TUẦN TỰ và dùng CHUNG một page (Rule 10.1 / Rule 19). Testcase nối tiếp
  * trạng thái (ô 患者番号, combo Dr., view đang đứng) nên chạy lẻ bằng `-g` sẽ
  * hỏng. Luôn chạy cả file:
- *   npx playwright test tests/patient-select-dr-staff-required.spec.ts
+ *   npx playwright test tests/patient-select/patient-select-dr-staff-required.spec.ts
  */
 
 /** `inp_config.eiseiji_flg` — 0 = ẩn hàng 衛生士 (EiseijiFlg.Hidden). */

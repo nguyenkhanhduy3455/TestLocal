@@ -489,7 +489,7 @@ test.describe('診療入力 — ô 点/回 với 点数モード / コードモ�
         // Assert dưới đây chỉ đúng vì bệnh nhân test là NGƯỜI LỚN, dis_flg 0, ngày
         // không phải 訪問診療 ⇒ getTensu trả về đúng score1. Đổi TEST_PAT_NO sang một
         // bệnh nhân 乳幼児/障害 là nó đỏ mà KHÔNG phải lỗi app — lúc đó xem
-        // `treatment-score-gettensu-parity.spec.ts` TC-4.
+        // `treatment-grid/treatment-score-gettensu-parity.spec.ts` TC-4.
         const scores = await picker.getByTestId('cell-score1').allTextContents()
         expect(scores.length, 'picker phải có ≥2 dòng').toBeGreaterThanOrEqual(2)
         for (const s of scores) {

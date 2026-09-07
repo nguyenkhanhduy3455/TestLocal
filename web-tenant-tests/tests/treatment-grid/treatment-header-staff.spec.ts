@@ -37,7 +37,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * CHẠY TUẦN TỰ, dùng chung một page (Rule 10.1 / Rule 19), testcase nối tiếp
  * trạng thái (đang đứng ở màn chi tiết, con trỏ ở dòng nào, combo đang mở hay
  * đóng) nên chạy lẻ bằng `-g` sẽ hỏng:
- *   npx playwright test tests/treatment-header-staff.spec.ts
+ *   npx playwright test tests/treatment-grid/treatment-header-staff.spec.ts
  */
 
 const MST_IIN_URL = /\/tenant\/mst-iin-2(\?|$)/

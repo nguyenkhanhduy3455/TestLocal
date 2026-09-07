@@ -8,8 +8,8 @@ Nửa còn lại của cặp parity nằm ở:
 
 | | |
 |---|---|
-| `../web-tenant-tests/tests/patient-select-dr-staff-required.spec.ts` | spec gốc của bản web |
-| `../web-tenant-tests/tests/patient-select-assign-parity.spec.ts` | spec **đối chiếu**, cùng số hiệu TC với file này |
+| `../web-tenant-tests/tests/patient-select/patient-select-dr-staff-required.spec.ts` | spec gốc của bản web |
+| `../web-tenant-tests/tests/patient-select/patient-select-assign-parity.spec.ts` | spec **đối chiếu**, cùng số hiệu TC với file này |
 
 > ✅ **Đã chạy PROBE trên máy Windows thật (2026-08-26).** Kết quả đo nằm ở mục 4b.
 > Vẫn chạy `.\run-confirm-patient.ps1 -Diagnostics` trước khi chạy fixture assert trên
@@ -197,7 +197,7 @@ KQ-6c === TRNTRN tháng 2026-08 của 患者1: KHÔNG CÓ DÒNG NÀO
 > Lưu ý phạm vi: 患者1 KHÔNG có dòng TRNTRN nào trong tháng, nên đây là ca 「ngày sạch」.
 > Ca 「ngày đã có 処置」 (nơi `Chg_DrName` đọc cột 69 của dòng) vẫn chưa đo — nhưng đó
 > đúng là hành vi mà bản web đã CỐ Ý port (`TC-LBL-1` của
-> `treatment-header-staff.spec.ts`), nên hai bên cùng thiết kế.
+> `treatment-grid/treatment-header-staff.spec.ts`), nên hai bên cùng thiết kế.
 
 ### NHÁNH 受付患者一覧 — ĐÃ ĐO (2026-08-27), hai điểm lệch được XÁC NHẬN
 
@@ -236,7 +236,7 @@ tình huống**: cùng con số, hai nghĩa. `KQ-W2` chỉ chứng minh 「WinFo
 
 Việc web đặt owner vào `user_no = 0` là **cải tiến có chủ ý** (gộp `IINMST2` với tài
 khoản đăng nhập), và hệ quả của nó đã được xử lý ở chỗ khác: `TC-MST-1` của
-`treatment-header-staff.spec.ts` đòi dropdown 担当医 KHÔNG chứa `user_no = 0`, tức owner
+`treatment-grid/treatment-header-staff.spec.ts` đòi dropdown 担当医 KHÔNG chứa `user_no = 0`, tức owner
 cố ý không được làm 担当医. Nhưng nó tạo ra một va chạm cần biết: **mọi đoạn code còn
 mang ngữ nghĩa `> 0` thừa kế từ WinForm sẽ âm thầm loại owner** — ví dụ
 `resolveStaffAssignment` trả `{ ok: false }` khi `drNo = 0`.
@@ -257,7 +257,7 @@ là cố ý thêm, thay vì gỡ đi cho 「giống WinForm」.
 ⇒ WinForm trả con trỏ về ô vừa bị từ chối, người dùng gõ lại được ngay; bên web phải
 click vào ô trước. Nhiều khả năng do dialog của Radix restore focus **sau** lệnh
 `.focus()` trong `openDetail` (`onCloseAutoFocus`). `TC-FOCUS-1` của
-`patient-select-assign-parity.spec.ts` khoá điểm này.
+`patient-select/patient-select-assign-parity.spec.ts` khoá điểm này.
 
 ### THÊM BA CÁI BẪY UIA đã trả giá (2026-08-27)
 

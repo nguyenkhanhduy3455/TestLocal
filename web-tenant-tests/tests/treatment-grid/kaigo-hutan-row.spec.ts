@@ -140,7 +140,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * Lưới bị làm bẩn ở bước cuối (nhập tay 599-0) nhưng TUYỆT ĐỐI KHÔNG bấm F9 登録
  * ⇒ không ghi DB; dữ liệu duy nhất chạm DB là 2 dòng seed, đã dọn ở afterAll.
  *
- *   npx playwright test tests/kaigo-hutan-row.spec.ts
+ *   npx playwright test tests/treatment-grid/kaigo-hutan-row.spec.ts
  */
 
 /** Bệnh nhân test — 12138 không có bản 介護保険 nào ⇒ rate đi nhánh fallback. */

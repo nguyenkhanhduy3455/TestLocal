@@ -1,6 +1,6 @@
-# 来患一覧 (`frm204008`) — nửa WinForm của `patient-visit-list-rcp-type.spec.ts`
+# 来患一覧 (`frm204008`) — nửa WinForm của `accounting-unpaid/patient-visit-list-rcp-type.spec.ts`
 
-Anh em song sinh của `web-tenant-tests/tests/patient-visit-list-rcp-type.spec.ts`.
+Anh em song sinh của `web-tenant-tests/tests/accounting-unpaid/patient-visit-list-rcp-type.spec.ts`.
 Bên kia đo **bản web**, bên này đo **chính WinForm** — tức là đo cái “đáp án” mà bản
 web phải khớp.
 
@@ -54,7 +54,7 @@ vượt trần `TimeoutMinutes` của wrapper và làm **treo cả máy Windows*
 
 ## 4. Bảng tương ứng với spec Playwright
 
-| WinForm (`PatientVisitListTests`) | Playwright (`patient-visit-list-rcp-type.spec.ts`) | Đo gì |
+| WinForm (`PatientVisitListTests`) | Playwright (`accounting-unpaid/patient-visit-list-rcp-type.spec.ts`) | Đo gì |
 |---|---|---|
 | `TC_OPEN_1` | TC-OPEN-1 | 3 cờ 初診/再診/訪問診療 mặc định bật; 検索 chạy xong, không E00100 |
 | `TC_OPEN_2` | TC-OPEN-2 | 12 cột đúng nhãn + đúng thứ tự `_viewItem` |

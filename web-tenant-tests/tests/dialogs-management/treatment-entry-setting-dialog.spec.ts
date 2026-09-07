@@ -8,7 +8,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
 /**
  * 診療入力設定 (frm203003) — TreatmentEntrySettingDialog, mở bằng phím F11 「設定」
  * trên màn DANH SÁCH `/treatments` (KHÔNG phải màn detail `/treatments/{patNo}` —
- * ở đó F11 là menu 「選択」, xem treatment-f11-fkey-button-show-modal.spec.ts).
+ * ở đó F11 là menu 「選択」, xem fkey-menu/treatment-f11-fkey-button-show-modal.spec.ts).
  *
  * Các fact bám theo source (apps/web-tenant/src/features/treatments):
  *  - components/treatment-entry-page.tsx: `F11: { label: '設定', onPress: () =>
@@ -73,7 +73,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * login nên login + vào /treatments làm đúng một lần ở beforeAll. Các testcase
  * nối tiếp trên cùng một dialog, thứ tự CÓ Ý NGHĨA — chạy lẻ một testcase ở giữa
  * bằng `-g` sẽ hỏng vì dialog chưa được mở. Luôn chạy cả file:
- *   npx playwright test tests/treatment-entry-setting-dialog.spec.ts
+ *   npx playwright test tests/dialogs-management/treatment-entry-setting-dialog.spec.ts
  *
  * TIỀN ĐỀ: nhóm TC-AGENT-2/3 và TC-LINK-* cần AGENT ĐANG CHẠY. Hộp thoại mời khởi
  * động 「エージェントが起動していません」 (起動 / セットアップ / キャンセル) đã bị BỎ khỏi

@@ -1,6 +1,6 @@
 /**
  * Bóc nội dung một file PDF để assert — dùng cho các test in báo cáo THẬT qua
- * print agent (xem oral-hygiene-instruction-dialog.spec.ts, cờ TEST_ALLOW_PRINT).
+ * print agent (xem dialogs-management/oral-hygiene-instruction-dialog.spec.ts, cờ TEST_ALLOW_PRINT).
  *
  * Vì sao phải có module này: đám test datasource chỉ chứng minh FE gửi ĐÚNG dữ
  * liệu cho máy in. Từ datasource tới tờ giấy còn một chặng nữa nằm ngoài

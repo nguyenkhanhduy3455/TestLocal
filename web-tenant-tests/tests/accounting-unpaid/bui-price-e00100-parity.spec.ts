@@ -20,7 +20,7 @@ import { emptyState, rows } from '../_shared/virtual-grid'
  * đó sang fail-soft: BE đẩy lỗi ra field `warnings` của response, FE dựng lại
  * đúng hộp E00100. Spec này canh NỬA FE + hợp đồng của field `warnings`.
  *
- * 来患一覧 (frm204008) đã có spec riêng: `patient-visit-list-rcp-type.spec.ts`
+ * 来患一覧 (frm204008) đã có spec riêng: `accounting-unpaid/patient-visit-list-rcp-type.spec.ts`
  * (TC-WARN-1). Ở ĐÂY chỉ đo những màn còn lại.
  *
  * ── FACT bám theo source (Rule 21) ──────────────────────────────────────────
@@ -63,7 +63,7 @@ import { emptyState, rows } from '../_shared/virtual-grid'
  *
  * ── VÌ SAO PHẢI GIẢ LẬP RESPONSE ────────────────────────────────────────────
  * Dataset demo KHÔNG có bệnh nhân nào làm 一部負担金 ném exception (đã dò khi viết
- * `patient-visit-list-rcp-type.spec.ts`: 0 dòng warning trên 86 dòng). Dựng một ca
+ * `accounting-unpaid/patient-visit-list-rcp-type.spec.ts`: 0 dòng warning trên 86 dòng). Dựng một ca
  * hỏng thật phải phá dữ liệu đăng ký bệnh nhân — không làm trên spec chạy hằng
  * ngày. Nên: TC-CLEAN-* đo dữ liệu THẬT (không được có warning giả), TC-E00100-*
  * chèn `warnings` vào response bằng `page.route` để đo NỬA FE.
@@ -78,12 +78,12 @@ import { emptyState, rows } from '../_shared/virtual-grid'
  *
  * CHẠY TUẦN TỰ (`describe.serial`), CHUNG một page: app giới hạn số lần login
  * (Rule 10.1). Chạy CẢ FILE, đừng `-g` lẻ (Rule 19):
- *   npx playwright test tests/bui-price-e00100-parity.spec.ts --retries=0
+ *   npx playwright test tests/accounting-unpaid/bui-price-e00100-parity.spec.ts --retries=0
  *
  * DỮ LIỆU (Rule 18): `TEST_PAT_NO` mặc định 12138 và 診療日 = HÔM NAY, giống
  * `accounting-target-date.spec`. Hôm nay thường KHÔNG có 当日来患 nào ⇒ TC-E00100-4
  * tự skip. Muốn chạy nó thì trỏ vào một ngày CÓ 来患 (spec tự gõ lại ô 診療日):
- *   TEST_TRT_DT=2026-09-03 npx playwright test tests/bui-price-e00100-parity.spec.ts --retries=0
+ *   TEST_TRT_DT=2026-09-03 npx playwright test tests/accounting-unpaid/bui-price-e00100-parity.spec.ts --retries=0
  * Lúc đó chuỗi F8 của TC-E00100-5 sẽ gặp thêm cổng 日付チェック — `settleAccountingDialogs`
  * đã trả lời OK cho nó nên không cần chỉnh gì.
  */

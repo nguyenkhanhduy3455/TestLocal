@@ -15,7 +15,7 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  * 5 điểm lệch parity 1..5 ĐÃ ĐƯỢC SỬA ở web (commit d9f7dfce
  * 「ガイドタブが WinForm と乖離する5点を修正」) và cả 5 hiện XANH. Giữ lại làm
  * regression guard. Mỗi testcase parity TỰ DỰNG trạng thái nên chạy lẻ được:
- *   npx playwright test tests/guide-sidepanel-handler.spec.ts -g "WinForm parity 4"
+ *   npx playwright test tests/side-panel/guide-sidepanel-handler.spec.ts -g "WinForm parity 4"
  * Chạy nguyên file thì testcase đỏ ĐẦU TIÊN sẽ SKIP mọi testcase sau nó (serial).
  *
  * BẪY ĐÃ VẤP, đừng lặp lại: sau khi sửa điểm 5, ガイド không có 処置 làm dialog TỰ
@@ -97,7 +97,7 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  *
  * Các testcase GHI dữ liệu (リセット thật → UPDATE trt_state; F9 確定 → đẩy 処置 vào
  * lưới) mặc định bị bỏ qua. Muốn chạy:
- *   TEST_ALLOW_COMMIT=1 npx playwright test tests/guide-sidepanel-handler.spec.ts
+ *   TEST_ALLOW_COMMIT=1 npx playwright test tests/side-panel/guide-sidepanel-handler.spec.ts
  */
 
 const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
@@ -324,7 +324,7 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
      *
      * Mỗi testcase parity gọi hàm này ở đầu để TỰ DỰNG trạng thái của mình. Nhờ vậy
      * chạy lẻ được sau khi sửa bug:
-     *   npx playwright test tests/guide-sidepanel-handler.spec.ts -g "Enter với ô No. RỖNG"
+     *   npx playwright test tests/side-panel/guide-sidepanel-handler.spec.ts -g "Enter với ô No. RỖNG"
      * (file chạy `mode: 'serial'` nên một testcase đỏ sẽ SKIP mọi testcase sau nó —
      * sửa xong điểm nào thì grep chạy riêng điểm đó, hoặc chạy lại cả file.)
      */
@@ -831,7 +831,7 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
     //
     // Mỗi testcase TỰ DỰNG trạng thái (enterGuideRegular) → sửa xong điểm nào thì
     // chạy riêng điểm đó, không cần chạy lại cả file:
-    //   npx playwright test tests/guide-sidepanel-handler.spec.ts -g "<tên testcase>"
+    //   npx playwright test tests/side-panel/guide-sidepanel-handler.spec.ts -g "<tên testcase>"
     // Lưu ý file chạy `mode: 'serial'`: chạy nguyên file thì testcase đỏ đầu tiên
     // sẽ SKIP mọi testcase sau nó, nên mỗi lần chạy full chỉ thấy điểm lệch đầu.
     // ─────────────────────────────────────────────────────────────────────────
@@ -1162,7 +1162,7 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
 // File chạy `mode: 'serial'` (khai ở đầu file): testcase ĐỎ ĐẦU TIÊN sẽ SKIP mọi
 // testcase sau nó. Mỗi testcase dưới đây TỰ DỰNG trạng thái bằng openTab() nên
 // chạy lẻ được — sửa xong điểm nào thì grep chạy riêng điểm đó:
-//   npx playwright test tests/guide-sidepanel-handler.spec.ts -g "パック: № ngoài phạm vi"
+//   npx playwright test tests/side-panel/guide-sidepanel-handler.spec.ts -g "パック: № ngoài phạm vi"
 //
 // Khối này LOGIN RIÊNG (beforeAll của nó) → cả file tốn 2 lượt login, vẫn dưới
 // ngưỡng 10 của GUIDELINE 10.1.

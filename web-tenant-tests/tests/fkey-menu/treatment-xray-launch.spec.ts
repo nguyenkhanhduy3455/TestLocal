@@ -536,7 +536,7 @@ test.describe('診療入力 — 画像 / レントゲン ボタン（PicLink ス
     //   apps/web-tenant/src/features/treatments/lib/__tests__/pic-link-slot.test.ts
     // — mỗi lần nạp lại màn 診療入力 ở đây tốn tới 30s, không đáng để lặp lại chúng.
     //
-    // ⚠️ Trước đây fkey-bar-common.spec.ts ghi 「KHÔNG có đường mở」 cho hộp thoại
+    // ⚠️ Trước đây fkey-menu/fkey-bar-common.spec.ts ghi 「KHÔNG có đường mở」 cho hộp thoại
     // 画像. Ghi chú đó đã lạc hậu: `CategoryTabs` tự đọc query ['agent','config'],
     // nên chỉ cần stub GET /v1/config trả linkCode 1 là nút hiện ra thật — đúng
     // những gì `openWithPicLink()` đang làm sẵn ở file này.

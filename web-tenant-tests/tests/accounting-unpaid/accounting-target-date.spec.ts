@@ -120,14 +120,14 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *  Cần `TEST_DB=1` trong `.env`. KHÔNG bật thì spec vẫn chạy được nhưng phụ thuộc
  *  dữ liệu sẵn có: tháng rỗng ⇒ TC-DATE-1/2/4 tự skip. Khi đó muốn đo ba testcase
  *  ấy thì trỏ màn hình về một tháng CÓ dữ liệu (lúc đó TC-DATE-3 tự skip):
- *      TEST_TRT_DT=2026-07-10 npx playwright test tests/accounting-target-date.spec.ts --retries=0
+ *      TEST_TRT_DT=2026-07-10 npx playwright test tests/accounting-unpaid/accounting-target-date.spec.ts --retries=0
  *
  *  Seed ngày HÔM NAY còn có tác dụng phụ đáng giá: 処置月 có sẵn dòng của ngày đó
  *  ⇒ AutoSantei on-load tự bỏ qua (`dayHasRows`) ⇒ không bung 「カルテ記載選択」 lẫn
  *  「〜を算定しますか？」, chuỗi F8 chạy sạch (xem BẪY 9).
  *
  * ─── Cách chạy ───────────────────────────────────────────────────────────────
- *   npx playwright test tests/accounting-target-date.spec.ts --retries=0
+ *   npx playwright test tests/accounting-unpaid/accounting-target-date.spec.ts --retries=0
  *
  * Chạy CẢ FILE, KHÔNG `-g` một testcase lẻ (Rule 19): khối serial dùng chung một
  * page, và các testcase sau đều dựa vào `backToEntry()` của testcase trước.
@@ -492,7 +492,7 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
                 // `warnings` là field BẮT BUỘC của InsertUnpaidResponse kể từ bản
                 // fail-soft E00100 (BuiPriceFailureResponse). Rỗng = lượt này tính sạch;
                 // FE chỉ bật E00100 khi mảng có phần tử. Xem
-                // `bui-price-e00100-parity.spec.ts` cho nhánh có warning.
+                // `accounting-unpaid/bui-price-e00100-parity.spec.ts` cho nhánh có warning.
                 body: JSON.stringify({
                     success: true,
                     data: { deletedCount: 0, insertedCount: 0, warnings: [] },

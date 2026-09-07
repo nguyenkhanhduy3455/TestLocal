@@ -54,7 +54,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * Nhưng WinForm KHÔNG lùi cả ba — và đó mới là điều phải khoá:
  *   · `SigaChg`         BẬT `pSiga_chg` ⇒ 「いいえ」 LÙI            → TC-5b
  *   · `DelExtRec`       KHÔNG bật cờ    ⇒ 「いいえ」 KHÔNG lùi      → TC-5
- *   · `Chk_PModeKesson` KHÔNG bật cờ    ⇒ 「いいえ」 KHÔNG lùi      → p-mode-kesson-siga.spec.ts
+ *   · `Chk_PModeKesson` KHÔNG bật cờ    ⇒ 「いいえ」 KHÔNG lùi      → siga-tooth-status/p-mode-kesson-siga.spec.ts
  * Bất biến cũ ("discard xong DB phải y nguyên") vì thế đã SAI, không phải chỉ lạc
  * hậu. Xem `userapp/inp-p0-open-issues.md` ISSUE-15.
  *
@@ -268,8 +268,8 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * ═════════════════════════════════════════════════════════════════════════════
  * CÁCH CHẠY (Rule 19)
  * ═════════════════════════════════════════════════════════════════════════════
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-kon-remaining-gaps.spec.ts
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-kon-remaining-gaps.spec.ts --headed
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-tooth-status/siga-kon-remaining-gaps.spec.ts
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-tooth-status/siga-kon-remaining-gaps.spec.ts --headed
  *
  * LUÔN chạy CẢ FILE, không bao giờ `-g` một testcase lẻ: các TC dùng chung `page`
  * và chung một mạch dựng dữ liệu.
@@ -393,9 +393,9 @@ if (!dbEnabled || !ALLOW_SAVE) {
         !ALLOW_SAVE ? 'TEST_ALLOW_SAVE=1 (spec bấm F9 登録 ⇒ GHI DB thật)' : null,
     ].filter(Boolean)
     console.log(
-        `\n⚠️  siga-kon-remaining-gaps.spec.ts BỎ QUA TOÀN BỘ testcase — thiếu: ${missing.join(' + ')}\n` +
+        `\n⚠️  siga-tooth-status/siga-kon-remaining-gaps.spec.ts BỎ QUA TOÀN BỘ testcase — thiếu: ${missing.join(' + ')}\n` +
             '   Chạy cho ra gap bằng:\n' +
-            '     TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-kon-remaining-gaps.spec.ts\n' +
+            '     TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-tooth-status/siga-kon-remaining-gaps.spec.ts\n' +
             '   (bulk-save ghi lại TOÀN BỘ 処置行 của tháng test; TC-6 xoá dòng siga rồi tạo lại —\n' +
             '    đọc khối doc đầu file trước khi chạy trên dữ liệu thật)\n',
     )

@@ -12,7 +12,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * `/treatments/{patNo}`. Menu này gắn vào chuột phải trên lưới `grdRegi` VÀ vào
  * phím F11 (frm203002.cs:375 `grdRegi.ContextMenuStrip = contextMenuStripSentaku`).
  *
- * File này KHÁC `treatment-f11-fkey-button-show-modal.spec.ts`: file kia lo việc
+ * File này KHÁC `fkey-menu/treatment-f11-fkey-button-show-modal.spec.ts`: file kia lo việc
  * menu có hiện ra và có bị cắt khỏi viewport không; file này lo việc BẤM VÀO thì
  * chạy đúng cái gì. Đừng nhét testcase bố cục vào đây.
  *
@@ -61,10 +61,10 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *  - 「9-8 チェックルール登録」: module CHKRULE (frm601001 + 6 cặp màn con) ĐÃ được
  *    port — nó KHÔNG còn bung toast 開発中 nữa. Ở đây chỉ kiểm đường dẫn menu →
  *    hub, đúng như mục 9-2. Nội dung hub, 6 màn 一覧 và các dialog 登録 thuộc
- *    `check-rule-registration.spec.ts` — đừng chép sang đây.
+ *    `trn-check/check-rule-registration.spec.ts` — đừng chép sang đây.
  *  - 「9-2 処置入力設定」: ở đây CHỈ kiểm phần điều hướng menu → dialog. Nội dung 32
  *    field, chia kho tenant_setting / agent, và F9 登録 thuộc
- *    `treatment-entry-setting-dialog.spec.ts` — đừng chép sang đây.
+ *    `dialogs-management/treatment-entry-setting-dialog.spec.ts` — đừng chép sang đây.
  *    ⚠️ Chú thích TODO trong `handleF11Action` (treatment-entry-detail.tsx) nói
  *    "nguồn agent chưa merge" là viết theo nhánh `dev`; trên `demo1` dialog ĐÃ có
  *    dây agent đầy đủ (AgentOfflineDialog + PUT /v1/config). Chú thích đó cần bỏ
@@ -85,7 +85,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *     AgentOfflineDialog 「エージェントが起動していません」 — cũng `role="dialog"`, nổi ĐÈ
  *     lên và nuốt cả click của handler ở (1). Màn đó đã BỎ HẲN lời mời khởi động
  *     agent nên bẫy này hết, `dismissAgentOffline()` cũng đã gỡ theo. Xem
- *     `treatment-entry-setting-dialog.spec.ts` TC-AGENT-1.
+ *     `dialogs-management/treatment-entry-setting-dialog.spec.ts` TC-AGENT-1.
  *  2. Các testcase điều hướng làm page RỜI KHỎI `/treatments/{patNo}` ⇒ mọi
  *     testcase sau phải gọi `backToEntry()`. Đừng giả định page còn ở màn cũ.
  *  3. `guardCurrentMonth` chặn thao tác khi ô đang focus thuộc tháng cũ. Spec
@@ -115,7 +115,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *     `searchString()` chứ đừng so thẳng `searchParams.get()`.
  *
  * ─── Cách chạy ───────────────────────────────────────────────────────────────
- *   TEST_DB=1 npx playwright test tests/treatment-f11-menu-ported-actions.spec.ts --retries=0
+ *   TEST_DB=1 npx playwright test tests/fkey-menu/treatment-f11-menu-ported-actions.spec.ts --retries=0
  *
  * `--retries=0` vì retry là chạy lại CẢ khối serial ⇒ thêm một lần login, tốn
  * quota (Rule 10.1). Chạy CẢ FILE, không `-g` một testcase lẻ (Rule 19): khối
@@ -628,7 +628,7 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
                 // `warnings` là field BẮT BUỘC của InsertUnpaidResponse kể từ bản
                 // fail-soft E00100 (BuiPriceFailureResponse). Rỗng = lượt này tính sạch;
                 // FE chỉ bật E00100 khi mảng có phần tử. Xem
-                // `bui-price-e00100-parity.spec.ts` cho nhánh có warning.
+                // `accounting-unpaid/bui-price-e00100-parity.spec.ts` cho nhánh có warning.
                 body: JSON.stringify({
                     success: true,
                     data: { deletedCount: 0, insertedCount: 0, warnings: [] },

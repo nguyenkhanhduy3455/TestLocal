@@ -62,7 +62,7 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  *
  * Testcase 確定 (F9) ĐẨY DÒNG VÀO GRID mặc định bị bỏ qua (chỉ sửa state màn hình,
  * chưa ghi DB, nhưng làm bẩn lưới đang mở). Muốn chạy:
- *   TEST_ALLOW_COMMIT=1 npx playwright test tests/pack-sidepanel-handler.spec.ts
+ *   TEST_ALLOW_COMMIT=1 npx playwright test tests/side-panel/pack-sidepanel-handler.spec.ts
  */
 
 const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'

@@ -134,11 +134,11 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * `describe.serial` + MỘT page chung tạo ở `beforeAll` ⇒ cả file login MỘT lần.
  * LUÔN chạy CẢ FILE, không bao giờ `-g` một testcase lẻ.
  *
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/tooth-extraction-siga-restore.spec.ts
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/tooth-extraction-siga-restore.spec.ts --headed
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-tooth-status/tooth-extraction-siga-restore.spec.ts
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-tooth-status/tooth-extraction-siga-restore.spec.ts --headed
  */
 
-/** Bệnh nhân test — dùng chung với kaigo-hutan-row.spec.ts. */
+/** Bệnh nhân test — dùng chung với treatment-grid/kaigo-hutan-row.spec.ts. */
 const PAT_NO = patNo('12138')
 
 /** Ngày test = HÔM NAY: chỉ dòng của tháng đang mở mới xoá/nhập tay được. */
@@ -242,9 +242,9 @@ if (!dbEnabled || !ALLOW_SAVE) {
         !ALLOW_SAVE ? 'TEST_ALLOW_SAVE=1 (spec bấm F9 登録 ⇒ GHI DB thật)' : null,
     ].filter(Boolean)
     console.log(
-        `\n⚠️  tooth-extraction-siga-restore.spec.ts BỎ QUA TOÀN BỘ 7 testcase — thiếu: ${missing.join(' + ')}\n` +
+        `\n⚠️  siga-tooth-status/tooth-extraction-siga-restore.spec.ts BỎ QUA TOÀN BỘ 7 testcase — thiếu: ${missing.join(' + ')}\n` +
             '   Chạy cho ra bug bằng:\n' +
-            '     TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/tooth-extraction-siga-restore.spec.ts\n' +
+            '     TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-tooth-status/tooth-extraction-siga-restore.spec.ts\n' +
             '   (bulk-save ghi lại TOÀN BỘ 処置行 của tháng test — xem khối doc đầu file)\n',
     )
 }

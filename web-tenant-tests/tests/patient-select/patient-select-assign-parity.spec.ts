@@ -20,7 +20,7 @@ import { rows, cells } from '../_shared/virtual-grid'
  * 診療入力（患者選択）— ĐỐI CHIẾU PARITY với WinForm, cùng số hiệu TC.
  *
  * ─── Quan hệ với hai file kia ────────────────────────────────────────────────
- * `patient-select-dr-staff-required.spec.ts` đo bản web theo **URL** (`drNo=` trên
+ * `patient-select/patient-select-dr-staff-required.spec.ts` đo bản web theo **URL** (`drNo=` trên
  * query string). Đó là mốc đúng cho việc kiểm chuỗi fallback của FE, nhưng WinForm
  * KHÔNG có URL — nên nó không so được với WinForm.
  *
@@ -85,7 +85,7 @@ import { rows, cells } from '../_shared/virtual-grid'
  * file tự skip.
  *
  * CHẠY TUẦN TỰ, dùng CHUNG một page (Rule 10.1 / Rule 19) — chạy lẻ bằng `-g` sẽ hỏng:
- *   npx playwright test tests/patient-select-assign-parity.spec.ts
+ *   npx playwright test tests/patient-select/patient-select-assign-parity.spec.ts
  */
 
 /**

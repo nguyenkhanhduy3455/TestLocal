@@ -17,7 +17,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * `fla-ui-tests/.../Tests/TreatmentGrid/TreatmentGridAdvancedTests.cs`, cùng số hiệu
  * TC-A1…TC-A5.
  *
- * Bộ CƠ BẢN (`treatment-grid-basic.spec.ts`) đã khớp parity hoàn toàn — 7/7 bên
+ * Bộ CƠ BẢN (`treatment-grid/treatment-grid-basic.spec.ts`) đã khớp parity hoàn toàn — 7/7 bên
  * WinForm, 8/8 bên web. Bộ này đi tiếp vào những luật mà đọc source KHÔNG kết luận
  * chắc được, vì chúng rẽ theo `linekbn` của dòng đang đứng — cột ẨN, giao diện không
  * hiện ra.
@@ -65,7 +65,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *     ĐỦ chiều rộng) nhưng sau NFKC nó thành 「-」 — so với 「－」 là KHÔNG BAO GIỜ khớp.
  *     (Probe bên FlaUI đã vấp đúng chỗ này.)
  *  3. Dòng 日計 bên web nằm ở FOOTER và KHÔNG có ô `data-grid-cell|2` — đây là chênh
- *     lệch DOM đã ghi nhận ở `treatment-grid-basic.spec.ts` TC-1. Vì thế TC-A1/TC-A3
+ *     lệch DOM đã ghi nhận ở `treatment-grid/treatment-grid-basic.spec.ts` TC-1. Vì thế TC-A1/TC-A3
  *     mốc vào `data-footer-cell`, không mốc vào `|2`.
  *  4. `SanteiConfirmDialog` 「〜を算定しますか？」 và 「カルテ記載選択」 bung ra lúc lưới nạp
  *     xong và che mọi thứ ⇒ `addLocatorHandler` (GUIDELINE Rule 14/14.1).
@@ -73,7 +73,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * ═══════════════════════════════════════════════════════════════════════════
  * CÁCH CHẠY
  * ═══════════════════════════════════════════════════════════════════════════
- *   npx playwright test tests/treatment-grid-advanced.spec.ts
+ *   npx playwright test tests/treatment-grid/treatment-grid-advanced.spec.ts
  *
  * `describe.serial` + MỘT page ở `beforeAll` ⇒ cả file login MỘT lần (GUIDELINE
  * Rule 19). Chạy CẢ FILE, đừng `-g` một testcase lẻ.
@@ -151,7 +151,7 @@ test.describe('診療入力 — lưới 処置: luật nâng cao (parity với W
 
     /**
      * 合計点数 ở header — mốc DUY NHẤT không phụ thuộc vị trí cuộn.
-     * Cùng cách đọc với `headerTotal` trong tests/kasan-buttons.spec.ts:163-169.
+     * Cùng cách đọc với `headerTotal` trong tests/treatment-grid/kasan-buttons.spec.ts:163-169.
      */
     async function readTotal(): Promise<number | null> {
         const raw = await page

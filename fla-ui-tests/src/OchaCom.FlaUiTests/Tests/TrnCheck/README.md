@@ -5,8 +5,8 @@ nửa WinForm của hai spec Playwright:
 
 | Spec web | Đo cái gì |
 |---|---|
-| [`trn-chk-sweep.spec.ts`](../../../../../web-tenant-tests/tests/trn-chk-sweep.spec.ts) | 一括 (F3) — 5 luật **月次** chạy một lần mỗi 処置月 |
-| [`single-check-w00100.spec.ts`](../../../../../web-tenant-tests/tests/single-check-w00100.spec.ts) | 行単位 — `SingleChk` → MessageBox **W00100** |
+| [`trn-check/trn-chk-sweep.spec.ts`](../../../../../web-tenant-tests/tests/trn-check/trn-chk-sweep.spec.ts) | 一括 (F3) — 5 luật **月次** chạy một lần mỗi 処置月 |
+| [`trn-check/single-check-w00100.spec.ts`](../../../../../web-tenant-tests/tests/trn-check/single-check-w00100.spec.ts) | 行単位 — `SingleChk` → MessageBox **W00100** |
 
 Bên kia đo **bản web**, bên này đo **chính WinForm** — tức là đo cái "đáp án" mà bản
 web phải khớp.
@@ -216,7 +216,7 @@ Lý do thật nằm ở **danh sách điểm gọi `new SingleChk` trong frm2030
 **ĐÚNG hành vi WinForm**, không phải hỏng — chốt một 処置 qua hai cửa đó thì WinForm
 **không** chạy 行単位チェック.
 
-> ⚠️ **Chỗ này ngược với chú thích của spec web.** `single-check-w00100.spec.ts` đặt
+> ⚠️ **Chỗ này ngược với chú thích của spec web.** `trn-check/single-check-w00100.spec.ts` đặt
 > tên testcase đầu là 「chốt 処置選択 → bắn ĐÚNG MỘT lượt SingleChk
 > (frm203002.cs:9051 → (row, 1))」 và assert `settledCallCount() === 1`. Nhưng :9051 là
 > `frmPack2_Let_Data` — **パック**, không phải 処置選択. Bản web gọi `runSingleCheck` khi

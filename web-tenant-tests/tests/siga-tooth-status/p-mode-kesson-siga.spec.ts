@@ -92,7 +92,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *  mở màn) khi 「いいえ」 chạy `Restore_Siga` sau đó.
  *
  *  Đã port ngày 2026-09-07 (nhánh `fix/inp-siga-eager-write-races`) và được khoá ở
- *  **`siga-eager-write-races.spec.ts`** — spec đó nhập 抜歯 QUA UI để bật `pSiga_chg`
+ *  **`siga-tooth-status/siga-eager-write-races.spec.ts`** — spec đó nhập 抜歯 QUA UI để bật `pSiga_chg`
  *  rồi mới bấm Ｐ変更, vì `Restore_Siga` chỉ chạy khi cờ đó lên.
  *
  *  Spec NÀY cố ý giữ nguyên hình dạng cũ: KHÔNG có lệnh ghi nóng nào ⇒ `pSiga_chg`
@@ -132,8 +132,8 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * ═════════════════════════════════════════════════════════════════════════════
  * CÁCH CHẠY (Rule 19) — LUÔN chạy CẢ FILE, không bao giờ `-g` một testcase lẻ
  * ═════════════════════════════════════════════════════════════════════════════
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/p-mode-kesson-siga.spec.ts
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/p-mode-kesson-siga.spec.ts --headed
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-tooth-status/p-mode-kesson-siga.spec.ts
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-tooth-status/p-mode-kesson-siga.spec.ts --headed
  */
 
 /** Bệnh nhân test — spec GHI bảng `siga` của họ, đừng trỏ vào dữ liệu thật. */
@@ -242,9 +242,9 @@ if (!dbEnabled || !ALLOW_SAVE) {
         !ALLOW_SAVE ? 'TEST_ALLOW_SAVE=1 (Chk_PModeKesson GHI thẳng bảng siga)' : null,
     ].filter(Boolean)
     console.log(
-        `\n⚠️  p-mode-kesson-siga.spec.ts BỎ QUA TOÀN BỘ 6 testcase — thiếu: ${missing.join(' + ')}\n` +
+        `\n⚠️  siga-tooth-status/p-mode-kesson-siga.spec.ts BỎ QUA TOÀN BỘ 6 testcase — thiếu: ${missing.join(' + ')}\n` +
             '   Chạy bằng:\n' +
-            '     TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/p-mode-kesson-siga.spec.ts\n' +
+            '     TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/siga-tooth-status/p-mode-kesson-siga.spec.ts\n' +
             '   (spec KHÔNG bấm F9 nên không đụng trn_trn, nhưng CÓ ghi bảng siga)\n',
     )
 }
@@ -504,7 +504,7 @@ test.describe('診療入力 — Ｐ変更 → 欠損自動マーキング (Chk_P
             .catch(() => null)
 
         // ⚠️ Q00100 dựng bằng `confirmDialog` → Radix **AlertDialog** ⇒ role
-        // `alertdialog`, KHÔNG phải `dialog` (cùng bẫy đã ghi ở p0-save-side-effects.spec.ts).
+        // `alertdialog`, KHÔNG phải `dialog` (cùng bẫy đã ghi ở save-f9/p0-save-side-effects.spec.ts).
         // Bó vào getByRole('dialog') là timeout 15s rồi đỏ như thể app hỏng.
         const gateDialog = page.getByRole('alertdialog').filter({ hasText: '変更を適用しますか？' })
         await gateDialog.getByRole('button', { name: /^(Yes|はい)$/ }).click()

@@ -10,7 +10,7 @@ import { makeStep } from '../_shared/step'
  * チェックルール登録 — hub frm601001 và 6 cặp 一覧 / 登録 của module CHKRULE.
  * Vào bằng 診療入力 → F11 → 「9 オプション」 → 「8 チェックルール登録」.
  *
- * File này KHÁC `treatment-f11-menu-ported-actions.spec.ts`: file kia chỉ lo
+ * File này KHÁC `fkey-menu/treatment-f11-menu-ported-actions.spec.ts`: file kia chỉ lo
  * đường dẫn từ menu tới hub (TC-MENU-3). Từ hub trở đi là việc của file này.
  * Đừng nhét testcase điều hướng menu vào đây.
  *
@@ -147,7 +147,7 @@ import { makeStep } from '../_shared/step'
  *     cho header lưới.
  *
  * ─── Cách chạy ───────────────────────────────────────────────────────────────
- *   npx playwright test tests/check-rule-registration.spec.ts --retries=0
+ *   npx playwright test tests/trn-check/check-rule-registration.spec.ts --retries=0
  *
  * `--retries=0` vì retry chạy lại CẢ khối serial ⇒ thêm một lần login, tốn quota
  * (Rule 10.1). Chạy CẢ FILE, không `-g` một testcase lẻ (Rule 19): khối serial

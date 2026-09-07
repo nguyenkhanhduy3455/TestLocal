@@ -22,7 +22,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * Bảy thao tác CƠ BẢN nhất: nhìn cột, chèn 処置 từ panel 個別, Enter, Tab, gõ số
  * vào ô 点, Insert 行追加, Delete 行削除. Cố ý KHÔNG có gì nâng cao.
  *
- * ⚠️ KHÔNG trùng với `treatment-table-handler.spec.ts`. File đó đo MENU CHUỘT PHẢI
+ * ⚠️ KHÔNG trùng với `treatment-grid/treatment-table-handler.spec.ts`. File đó đo MENU CHUỘT PHẢI
  * và các luật xoá theo cụm (dòng 介護, linekbn 30, phím ＋/－ của panel チェック) và
  * phải SEED DB. File này đo BÀN PHÍM trần trên lưới, KHÔNG seed gì, KHÔNG cần
  * TEST_DB. Chỗ gần nhau là 行追加/行削除 — bên kia bấm bằng menu, bên này bằng phím
@@ -129,11 +129,11 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *   · serial ⇒ một test đỏ thì các test SAU bị SKIP.
  *   · page tự tạo nên KHÔNG có trace/video/screenshot tự động của fixture.
  *
- *   npx playwright test tests/treatment-grid-basic.spec.ts
- *   npx playwright test tests/treatment-grid-basic.spec.ts --repeat-each=3 --retries=0
+ *   npx playwright test tests/treatment-grid/treatment-grid-basic.spec.ts
+ *   npx playwright test tests/treatment-grid/treatment-grid-basic.spec.ts --repeat-each=3 --retries=0
  *
  * Spec không seed nên chạy song song với chính nó vô hại (khác
- * `treatment-table-handler.spec.ts`, file đó bắt buộc `--workers=1` khi lặp).
+ * `treatment-grid/treatment-table-handler.spec.ts`, file đó bắt buộc `--workers=1` khi lặp).
  */
 
 /**
@@ -261,7 +261,7 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
     const cell = (key: string, col: number) => page.locator(`[data-grid-cell="${key}|${col}"]`)
 
     // ── Panel 個別 ──────────────────────────────────────────────────────────
-    // Toàn bộ locator dưới đây chép từ tests/kobetu-sidepanel-score.spec.ts (spec đo
+    // Toàn bộ locator dưới đây chép từ tests/side-panel/kobetu-sidepanel-score.spec.ts (spec đo
     // riêng panel này, đã chạy thật). KHÔNG phát minh lại: tab 個別 là <button> chứ
     // không phải role="tab", và ba ô 検索 là ANH EM RUỘT của <span> nhãn — nhãn 「ｺｰﾄﾞ」
     // là NỬA chiều rộng, khác hẳn 「コード」 đủ chiều rộng ở chỗ khác.
@@ -356,7 +356,7 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
         // `合計:` là TEXT NODE TRẦN trong div hàng (patient-info-header.tsx:94) — không
         // có element riêng bọc nó, nên `getByText('合計:', {exact:true})` KHÔNG match gì.
         // Regex non-exact thì Playwright trả element SÂU NHẤT khớp, trúng đúng div hàng.
-        // (Cùng cách đọc với `headerTotal` trong tests/kasan-buttons.spec.ts:163-169 —
+        // (Cùng cách đọc với `headerTotal` trong tests/treatment-grid/kasan-buttons.spec.ts:163-169 —
         // giữ giống nhau để hai spec không bao giờ đọc ra hai con số khác nhau.)
         const box = page.getByText(/合計:\s*[\d,]+\s*点/).first()
         const raw = await box.innerText().catch(() => null)
@@ -481,7 +481,7 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
         // click là đủ (hfgKobetu_Click tự gọi tiếp Enter → CellDoubleClick,
         // frm203002.cs:6928); bên web đi theo đúng thao tác của bản web.
         //
-        // Locator của panel lấy nguyên từ tests/kobetu-sidepanel-score.spec.ts — spec
+        // Locator của panel lấy nguyên từ tests/side-panel/kobetu-sidepanel-score.spec.ts — spec
         // đó đo RIÊNG panel này và đã chạy thật, nên không phát minh lại: tab 個別 là
         // <button> (KHÔNG phải role="tab"), và ô ｺｰﾄﾞ là ANH EM RUỘT của <span>「ｺｰﾄﾞ」.
         await openKobetuTab()

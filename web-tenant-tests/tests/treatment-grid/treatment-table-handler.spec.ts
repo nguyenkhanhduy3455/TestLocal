@@ -93,7 +93,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *     (registration-table.tsx). Luôn mốc theo TEXT của ô 療法・処置.
  *  2. NFKC ăn 「Ⅰ」 (U+2160 → `I`) y như nó biến `１` → `1`. Hằng số dò tìm CỐ Ý
  *     cắt bỏ đuôi Ⅰ — xem `KAIGO_KEY`. (Bẫy này đã làm đỏ oan
- *     `kaigo-hutan-row.spec.ts` một lần.)
+ *     `treatment-grid/kaigo-hutan-row.spec.ts` một lần.)
  *  3. Dòng 【介護保険一部負担金】 có `emptyMetrics` ⇒ ô 点/回 rỗng và không sửa được,
  *     nhưng ô 療法・処置 VẪN có `data-grid-cell` nên click đặt được focusedCell —
  *     đó là điều kiện cần để 行削除 tác động lên nó.
@@ -108,7 +108,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *     kéo theo カルテ記載選択).
  *  6. TC-8..TC-11 CHẶN `POST /tenant/treatment/check` và trả danh sách lỗi giả.
  *     Đối tượng kiểm ở đây là PHÍM của panel, không phải luật チェック (luật có spec
- *     riêng: single-check-w00100.spec.ts). Panel chỉ mở khi `hasErrors` = true, và
+ *     riêng: trn-check/single-check-w00100.spec.ts). Panel chỉ mở khi `hasErrors` = true, và
  *     phải cuộn được thì mới đo được ⇒ cần một số dòng lỗi ĐỦ NHIỀU và ỔN ĐỊNH,
  *     thứ dữ liệu thật của ngày test không hứa được. Nội dung message cố ý ghi rõ
  *     là dữ liệu dựng (`【E2E】`) để không ai nhầm với message thật.
@@ -129,8 +129,8 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * có 3 bộ dòng chồng nhau và mọi assert đếm dòng đỏ oan (đã vấp thật: 合計 816点 =
  * 272×3). Chạy lặp thì PHẢI kèm `--workers=1`:
  *
- *   TEST_DB=1 npx playwright test tests/treatment-table-handler.spec.ts
- *   TEST_DB=1 npx playwright test tests/treatment-table-handler.spec.ts \
+ *   TEST_DB=1 npx playwright test tests/treatment-grid/treatment-table-handler.spec.ts
+ *   TEST_DB=1 npx playwright test tests/treatment-grid/treatment-table-handler.spec.ts \
  *     --repeat-each=3 --retries=0 --workers=1
  */
 
@@ -265,9 +265,9 @@ async function currentMonthRows(page: Page): Promise<GridRow[]> {
 // thấy chữ "skipped" trơ trọi và tưởng spec đã chạy xong.
 if (!dbEnabled) {
     console.log(
-        'SKIP tests/treatment-table-handler.spec.ts — thiếu TEST_DB=1 ' +
+        'SKIP tests/treatment-grid/treatment-table-handler.spec.ts — thiếu TEST_DB=1 ' +
             '(cần seed 処置行 介護 jihi_flg = 3 cho ngày test).\n' +
-            `  TEST_DB=1 npx playwright test tests/treatment-table-handler.spec.ts`,
+            `  TEST_DB=1 npx playwright test tests/treatment-grid/treatment-table-handler.spec.ts`,
     )
 }
 test.skip(!dbEnabled, 'Cần TEST_DB=1 để seed 処置行 (jihi_flg = 3) cho ngày test')

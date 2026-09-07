@@ -72,7 +72,7 @@
  *    đang dò rate-limit thì chạy `--retries=0`.
  *
  * Spec KHÔNG hợp với fixture này (cứ giữ `newTestPage()` + `login()` riêng):
- *   · spec cần trạng thái đăng nhập KHÁC admin — `user-master.spec.ts` login 3
+ *   · spec cần trạng thái đăng nhập KHÁC admin — `user-master/user-master.spec.ts` login 3
  *     lần bằng 3 tài khoản, đó là nội dung được đo chứ không phải chi phí;
  *   · spec đo chính màn `/login` hoặc `/activate-login`;
  *   · spec đổi `viewport` / `locale` riêng.
