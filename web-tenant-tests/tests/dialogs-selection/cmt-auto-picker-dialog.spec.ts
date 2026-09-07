@@ -1,82 +1,209 @@
 /**
- * カルテ記載選択 (自動表示) — CmtAutoPickerDialog, WinForm frm203012 gType.Auto.
+ * カルテ記載選択 — bản 自動表示 (CmtAutoPickerDialog, WinForm frm203012 gType.Auto).
  *
- * Spec anh em của `dialogs-selection/cmt-auto-picker-enter.spec.ts` (chỉ lo phím Enter ở window).
- * File này chốt BỐN hành vi frm203012 mà bản 自動表示 vừa được port bổ sung —
- * trước đó chỉ có bản `gType.Cult` (dialogs-selection/karte-selection-dialog.spec.ts) là có.
+ * MỘT DIALOG = MỘT FILE. Trước đây dialog này bị chẻ làm hai spec: một lo phím
+ * Enter ở window level, một lo 4 hành vi frm203012 mới port. Cùng dialog, cùng
+ * `cmt-auto-picker-dialog.tsx`, cùng bệnh nhân 10, cùng một tiền đề khó dựng
+ * (`expectAutoPickerOpened`) — sửa dialog này lẽ ra chỉ nên mở một file.
  *
- * ─── FACT lấy từ source (Rule 21) ────────────────────────────────────────────
- *  - INP/Forms/frm203012.cs
- *      · initProc, nhánh `case gType.Auto` (:418): dòng
- *        `btnChgVisible(btnF1, false)` BỊ COMMENT OUT ⇒ F1 部位 vẫn BẬT ở
- *        自動表示, y hệt gType.Cult.
- *      · btnF1_Click (:188-215): mở frm902003 `InputType.PatMsg`, chèn
- *        `pData.strBui1` tại caret, KHÔNG kèm xuống dòng, kết bằng
- *        `txtValue.Focus()`.
- *      · defData (:614-624): chèn `cmt_nm` + xuống dòng tại caret, rồi
- *        `getAsta(wkMsg2, 0)` — quét CẢ ô text từ index 0 và bôi đen cụm `*`
- *        đầu tiên.
- *      · btnDummy_Click (:353) = Enter trong ô text (AcceptButton, :419): còn
- *        `*` → nhảy về cụm ĐẦU TIÊN; hết `*` → chèn xuống dòng tại caret.
- *        KHÔNG bao giờ 確定.
- *      · formBase_KeyDown (:167-172): `Keys.End` VÀ `Keys.Escape` đều gọi
- *        `btnF9_Click` ⇒ ESC là 確定, không phải huỷ.
- *      · initProc (:431-437): `this.ActiveControl = dgvView` khi lưới có dòng
- *        ⇒ mở lên là ↑/↓ chạy ngay, không phải click chuột trước
- *        (§3.23(1)). Nhánh rỗng `this.Close()` không tới được: cmtAutoNeedsPick
- *        chỉ xếp hàng batch có ≥2 comment.
- *      · btnF9_Click (:226) + fixProc (:1350-1364): `*` còn sót → dấu cách,
- *        trim từng dòng, bỏ dòng rỗng, cắt 300 byte; dòng vượt số pick →
- *        手入力 cmt_cd 7999.
- *  - components/cmt-auto-picker-dialog.tsx
- *      · Tab 「カルテコメント一覧」, 4 cột id: dispNo / cmtCd / cmtSb / cmtNm.
- *      · Ô テキスト = primitive Textarea → `textbox` DUY NHẤT trong dialog.
- *      · Lưới nằm trong một wrapper `tabIndex={0}` (Tab-stop, §3.23(3)); DÒNG
- *        của VirtualListTable cũng focus được nên locator phải loại
- *        `[data-index]` ra, nếu không sẽ bắt trúng dòng thay vì wrapper.
- *      · Footer: F1 部位 / F9 確定 / F10 戻る. `End` bind ẩn (hidden) — chính nó
- *        làm ESC-close của DraggableDialog đứng im (useEscapeClose).
- *      · onConfirm → karteCommentToPick → trtNm = cmtNm (KHÔNG có
- *        REGIRYO_PADLEFT như nhánh Cult), 点0 / 回1, chèn đáy ngày.
- *  - components/tooth-selection-dialog.tsx (部位選択, frm902003 PatMsg)
- *      · F7 全顎 / F10 反転 / F11 全消去 / F12 戻る / End = 確定. Đóng nó KHÔNG
- *        được dùng ESC (ESC → End → 確定 thật).
- *      · MỌI preset F1–F7 đều bị `selectRange` lọc theo SIGA (răng 欠損 thì bỏ
- *        qua, :420-441) ⇒ với bệnh nhân mất hết răng, 全顎 chọn ĐƯỢC 0 ô, End
- *        trả bui rỗng, `handleBuiConfirm` thấy dsp === '' nên không chèn gì —
- *        test sẽ đỏ oan. Đo thật trên BN 10 đúng như vậy.
- *        ⇒ Chọn răng bằng PHÍM SỐ: `cycleTooth` (:346-361) KHÔNG qua SIGA;
- *        selectedQuad mặc định 'RU' nên phím '1' bật ô đầu góc phần tư đó.
- *      · Ô răng đang bật có `title="Type: N"` (:265) — dùng làm bằng chứng đã
- *        chọn được, thay cho việc bám class Tailwind (Rule 3).
+ * Bản gType.Cult (F6, mở từ frm203011) là dialog KHÁC, ở
+ * `dialogs-selection/karte-selection-dialog.spec.ts`.
  *
- * ─── VÌ SAO GỘP MỌI ASSERT VÀO MỘT `test()` ─────────────────────────────────
- * Dialog này KHÔNG có nút nào mở tay: nó chỉ bung ra khi AutoSantei chạy, mà
- * AutoSantei chỉ chạy khi (患者, ngày) chưa có 処置 nào được lưu
- * (xem `auto-picker-precondition.ts`). 確定 một lần là hàng đợi 自動表示 đi tiếp
- * và không mở lại được nữa ⇒ mọi phép đo KHÔNG-確定 phải chạy trước, phép đo
- * 確定 (End/ESC) để CUỐI CÙNG. Cũng vì thế mà 1 test = 1 login (Rule 10.1).
+ * Hai khối dưới đây giữ NGUYÊN VĂN nội dung hai file cũ, mỗi khối một bộ locator
+ * riêng — hai bên bắt dialog theo hai cách khác nhau, đó là chủ ý (xem chú thích
+ * trong từng khối) chứ không phải trùng lặp.
  *
- * KHÔNG assert ở đây: cắt 300 byte của fixProc — mỗi lần mở chỉ 確定 được đúng
- * một lần, và một dòng dài 300+ byte hiển thị trong lưới 診療入力 phụ thuộc bề
- * rộng cột nên assert rất giòn.
- *
- * ─── GHI DB ─────────────────────────────────────────────────────────────────
- * 確定 KHÔNG gọi /use-count (fixProc chỉ chạy fixCmt2 cho gType.Cult) và cũng
- * KHÔNG lưu trn_trn — nó chỉ chèn dòng vào lưới 診療入力 trên RAM. Spec không
- * bấm F9 登録 nên không có gì xuống DB, vì vậy không cần cờ TEST_ALLOW_DB_WRITE.
- *
- * ─── ENV ────────────────────────────────────────────────────────────────────
- *   TEST_PAT_NO (10) · TEST_TRT_DT (hôm nay — phải là ngày CHƯA nhập 処置 nào).
+ * ⚠️ TIỀN ĐỀ CHUNG: dialog chỉ TỰ BẬT khi (患者, ngày) CHƯA có 処置 nào được lưu —
+ * `AutoSantei` không chạy thì không sinh queue 自動表示. Cách chạy lại khi ngày đã
+ * "bẩn" ghi ở `_shared/auto-picker-precondition.ts`.
  */
-import { expect, test, type Page } from '@playwright/test'
 
+import { expect, test, type Page } from '@playwright/test'
 import { expectAutoPickerOpened } from '../_shared/auto-picker-precondition'
+import { TODAY_ISO, patNo, trtDt } from '../_shared/env'
 import { makeStep } from '../_shared/step'
 import { ADMIN_USER, JA } from '../_shared/test-data'
 
-const PAT_NO = process.env.TEST_PAT_NO ?? '10'
-const TRT_DT = process.env.TEST_TRT_DT ?? new Date().toISOString().slice(0, 10)
+// ═══ nguyên văn từ cmt-auto-picker-enter.spec.ts (đã gộp vào file này) ═════════════════════════════════════
+test.describe('Enter ở window level', () => {
+
+const PAT_NO = patNo('10')
+const TRT_DT = trtDt(TODAY_ISO)
+
+const dialog = (page: Page) => page.getByRole('dialog')
+const header = (page: Page, label: string) =>
+  dialog(page).getByRole('button', { name: new RegExp(`^${label}\\s*[▲▼]?$`) })
+const cells = (page: Page, colId: string) => dialog(page).getByTestId(`cell-${colId}`)
+/** Textarea 記載内容 — không label/placeholder/testid → bắt bằng tag trong dialog. */
+const textarea = (page: Page) => dialog(page).locator('textarea')
+
+/** Số dòng thực sự có chữ trong textarea (append mỗi Enter thêm 1 dòng). */
+const lineCount = async (page: Page) =>
+  (await textarea(page).inputValue()).split('\n').filter((l) => l.trim() !== '').length
+
+test('カルテ記載選択 — Enter window-level (TC-1/2/3/4)', async ({ page }) => {
+  test.setTimeout(300_000)
+
+  // Rule 11 — nhịp quan sát: --headed/--ui → chậm lại, chạy nền → 0s (tests/step.ts).
+  const step = makeStep(page)
+
+  await page.goto('/login', { waitUntil: 'domcontentloaded' })
+  await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
+  await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
+  await page.getByRole('button', { name: JA.submit }).click()
+  await expect(page).toHaveURL(/\/$/)
+
+  await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
+
+  // Confirm 「歯科初診料を算定しますか？」 phải bấm Yes thì AutoSantei mới chạy →
+  // mới sinh queue 自動表示 → mới có カルテ記載選択.
+  const shoshinConfirm = page.getByRole('button', { name: 'Yes' })
+  await shoshinConfirm.waitFor({ state: 'visible', timeout: 30000 }).catch(() => { })
+  if (await shoshinConfirm.count()) await shoshinConfirm.click()
+
+  await expectAutoPickerOpened(page, PAT_NO, TRT_DT)
+  await expect(cells(page, 'cmtNm').first()).toBeVisible({ timeout: 20000 })
+  expect(
+    await cells(page, 'cmtNm').count(),
+    'dialog < 2 dòng → không test được Enter/sort, đổi TEST_PAT_NO',
+  ).toBeGreaterThan(1)
+
+  // ───────────────────────────────────────────────────────────────────────
+  // TC-1 — Enter khi con trỏ đang ở textarea 記載内容
+  // Kỳ vọng: KHÔNG append comment; Enter chỉ xuống dòng trong textarea.
+  // (#2 có guard activeElement → INPUT/TEXTAREA ⇒ kỳ vọng PASS)
+  // ───────────────────────────────────────────────────────────────────────
+  await textarea(page).click()
+  await textarea(page).fill('')
+  await textarea(page).type('あ')
+  await step()
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(300)
+  await step()
+  const afterTypeEnter = await textarea(page).inputValue()
+  expect(
+    afterTypeEnter,
+    'TC-1 FAIL: Enter trong textarea vẫn append comment của grid',
+  ).toBe('あ\n')
+
+  await textarea(page).fill('')
+
+  // ───────────────────────────────────────────────────────────────────────
+  // TC-2 — Enter khi có alertDialog đè lên trên
+  // Ép hiện alertdialog bằng cách inject (app chỉ mở alert theo E-code, không
+  // deterministic). Guard chỉ đọc querySelector('[role="alertdialog"]') nên
+  // node giả cũng đủ để verify đúng nhánh guard đó.
+  // Kỳ vọng: textarea KHÔNG bị append thêm dòng nào.
+  // ───────────────────────────────────────────────────────────────────────
+  await page.evaluate(() => {
+    const n = document.createElement('div')
+    n.id = 'tc2-fake-alert'
+    n.setAttribute('role', 'alertdialog')
+    document.body.appendChild(n)
+  })
+
+  // Focus PHẢI ra khỏi textarea: #2 CŨNG bỏ qua Enter khi activeElement là
+  // TEXTAREA/INPUT (guard riêng của TC-1). Để focus kẹt trong textarea thì
+  // TC-2 sẽ pass vì guard SAI → pass giả, không chứng minh được guard alertdialog.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  const activeTag = await page.evaluate(() => document.activeElement?.tagName ?? '')
+  expect(activeTag, 'TC-2 setup hỏng: focus vẫn ở TEXTAREA/INPUT → sẽ pass giả').not.toMatch(
+    /^(TEXTAREA|INPUT)$/,
+  )
+
+  await step()
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(300)
+  await step()
+  expect(
+    await lineCount(page),
+    'TC-2 FAIL: alertdialog đang mở mà picker phía dưới vẫn nhận Enter',
+  ).toBe(0)
+  await page.evaluate(() => document.getElementById('tc2-fake-alert')?.remove())
+
+  // ───────────────────────────────────────────────────────────────────────
+  // TC-3 — Enter khi một ROW của grid đang được focus
+  // VirtualListTable.handleRowKeyDown đã preventDefault + onOpenRow.
+  // #2 KHÔNG check e.defaultPrevented → handler window chạy tiếp ⇒ 2 lần.
+  // Kỳ vọng ĐÚNG: đúng 1 dòng được append. NGHI NGỜ FAIL: ra 2 dòng.
+  // ───────────────────────────────────────────────────────────────────────
+  await textarea(page).fill('')
+  // Focus row THẬT (không probe giả) để đo đúng số dòng được append: đây là
+  // kịch bản 1 Enter → row handler + window handler cùng chạy ⇒ 2 dòng.
+  const firstRow = dialog(page).locator('[data-testid^="row-"]').first()
+  await firstRow.evaluate((el: HTMLElement) => el.focus())
+  const focusedRow = await page.evaluate(
+    () => document.activeElement?.getAttribute('data-testid') ?? '',
+  )
+  expect(focusedRow, 'TC-3 setup hỏng: row không nhận được focus → không đo được').toMatch(/^row-/)
+
+  await step()
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(400)
+  await step()
+  expect
+    .soft(
+      await lineCount(page),
+      'TC-3 FAIL: thiếu guard e.defaultPrevented → Enter chạy 2 lần (row handler + window handler)',
+    )
+    .toBe(1)
+
+  // ───────────────────────────────────────────────────────────────────────
+  // TC-4 — Enter sau khi đã sort cột
+  // Sort カルテコメント desc → dòng hiển thị #0 phải là dòng được commit,
+  // không phải phần tử index 0 của mảng gốc.
+  // ───────────────────────────────────────────────────────────────────────
+  await textarea(page).fill('')
+  await header(page, 'カルテコメント').click()
+  await header(page, 'カルテコメント').click()
+  await expect(header(page, 'カルテコメント')).toHaveAttribute('aria-sort', 'descending')
+
+  const displayedFirst = (await cells(page, 'cmtNm').first().innerText()).trim()
+  // Chọn dòng đầu theo thứ tự HIỂN THỊ rồi Enter (click row = onSelectIndex).
+  await dialog(page).locator('[data-testid^="row-"]').first().click()
+  await step()
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(400)
+  await step()
+  expect(
+    (await textarea(page).inputValue()).trim(),
+    'TC-4 FAIL: commit nhầm dòng — tra theo mảng gốc thay vì mảng đã sort',
+  ).toContain(displayedFirst)
+
+  // ───────────────────────────────────────────────────────────────────────
+  // TC-5 — con trỏ phải TIẾN sau mỗi Enter, kể cả khi row đang giữ focus
+  //
+  // Click vào row đẩy DOM focus vào chính div của row (VirtualListTable gán
+  // tabIndex cho row), nên Enter do onKeyDown của row xử lý và nó
+  // preventDefault ⇒ listener window của dialog bị isWindowKeyBlocked chặn.
+  // Trước đây phần "nhảy dòng kế" CHỈ nằm ở listener window, nên sau khi click
+  // thì Enter lần 2 lặp lại đúng dòng cũ. WinForm dgvView_KeyDown không set
+  // e.Handled nên DataGridView vẫn tự hạ con trỏ 1 dòng.
+  // ───────────────────────────────────────────────────────────────────────
+  await textarea(page).fill('')
+  const displayed = (await cells(page, 'cmtNm').allTextContents()).map((t) => t.trim())
+  expect(displayed.length, 'TC-5 cần ≥2 dòng hiển thị').toBeGreaterThan(1)
+
+  await dialog(page).locator('[data-testid^="row-"]').first().click()
+  await step()
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(400)
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(400)
+  await step()
+  expect(
+    await textarea(page).inputValue(),
+    'TC-5 FAIL: con trỏ không tiến sau Enter → hai lần Enter chèn cùng một dòng',
+  ).toBe(`${displayed[0]}\n${displayed[1]}\n`)
+})
+
+})
+
+// ═══ nguyên văn từ cmt-auto-picker-parity.spec.ts (đã gộp vào file này) ════════════════════════════════════
+test.describe('F1 部位 / getAsta / btnDummy / End・ESC 確定', () => {
+
+const PAT_NO = patNo('10')
+const TRT_DT = trtDt(TODAY_ISO)
 
 /**
  * CSS chứ không `getByRole('dialog')`: Radix AlertDialog gọi `hideOthers` khi
@@ -339,4 +466,6 @@ test('カルテ記載選択 自動表示 — F1 部位 / getAsta / btnDummy / En
       texts.filter((t) => t.includes('テストESC')),
     )}`,
   ).toBe(true)
+})
+
 })

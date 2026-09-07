@@ -1,6 +1,6 @@
 # TEST-PLAYPWRIGHT-GUIDELINE — kinh nghiệm viết testcase Playwright
 
-Phần nối tiếp của [`GUIDELINE.md`](./GUIDELINE.md) (Rule 1–11). File này là **bài học rút ra từ debug thật**, chủ yếu khi viết `dialogs-management/oral-hygiene-instruction-dialog.spec.ts` (dialog 実地指１・訪衛指) và `fkey-menu/treatment-f11-fkey-button-show-modal.spec.ts`.
+Phần nối tiếp của [`GUIDELINE.md`](./GUIDELINE.md) (Rule 1–11). File này là **bài học rút ra từ debug thật**, chủ yếu khi viết `dialogs-management/oral-hygiene-instruction-dialog.spec.ts` (dialog 実地指１・訪衛指) và `fkey-menu/treatment-f11-menu.spec.ts`.
 
 Mỗi mục dưới đây đều là **một lần fail thật**, không phải lý thuyết. Đánh số tiếp Rule 12 để dùng chung hệ với `GUIDELINE.md`.
 

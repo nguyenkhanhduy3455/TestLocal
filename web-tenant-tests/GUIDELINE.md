@@ -166,7 +166,7 @@ Dấu hiệu nhận biết: chạy 1 test lẻ thì **pass**, chạy cả file t
 
 → **Cách giải hiện hành: fixture `authedPage` của `tests/_shared/session.ts`.**
 Nó cấp một `Page` đã đăng nhập dùng chung cho cả **worker process**, nên số
-login = số worker (4 local, 1 CI) chứ không còn cộng dồn theo số file. 55/71
+login = số worker (4 local, 1 CI) chứ không còn cộng dồn theo số file. 55/64
 spec đang dùng. Spec mới **mặc định phải import `test`/`expect` từ
 `_shared/session`**, không từ `@playwright/test`. Đổi lại, page dùng chung thì
 `page.route`, `addLocatorHandler` và state màn hình đều RÒ sang file chạy sau —
@@ -310,4 +310,4 @@ Test mới đặt trong `tests/<nhóm>/`, đặt tên `<tính-năng>.spec.ts`. T
 Chạy nguyên một mảng: `npx playwright test tests/siga-tooth-status/`
 
 Chưa rõ file mới thuộc nhóm nào thì **hỏi trước khi mở thư mục thứ 15** — 13
-nhóm hiện tại đã phủ hết 71 spec.
+nhóm hiện tại đã phủ hết 64 spec.

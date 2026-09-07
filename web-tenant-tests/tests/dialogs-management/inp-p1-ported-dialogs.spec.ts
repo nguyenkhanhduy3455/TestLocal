@@ -22,7 +22,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * liên thông với tab ガイド (trt_state → Shift+F4 / 前回 / リセット) và cần seed
  * ガイド master mới chạy được. Đừng thêm testcase STEP vào đây nữa.
  *
- * File này KHÁC `fkey-menu/treatment-f11-menu-ported-actions.spec.ts`: file kia lo menu có
+ * File này KHÁC `fkey-menu/treatment-f11-menu.spec.ts`: file kia lo menu có
  * đúng 8 mục và bấm vào thì điều hướng tới đâu; file này lo NỘI DUNG bên trong
  * dialog. Đừng nhét testcase menu vào đây.
  *

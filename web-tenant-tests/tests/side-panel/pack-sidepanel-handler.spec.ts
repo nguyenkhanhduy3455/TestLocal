@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { makeStep } from '../_shared/step'
+import { BASE_URL, patNo, trtDt } from '../_shared/env'
 import { ADMIN_USER, JA } from '../_shared/test-data'
 
 /**
@@ -65,14 +66,13 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  *   TEST_ALLOW_COMMIT=1 npx playwright test tests/side-panel/pack-sidepanel-handler.spec.ts
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 /**
  * Mặc định KHÔNG truyền trtDt → app lấy ngày hôm nay, đúng tháng hiện hành. Đây
  * là điều kiện tự nhiên của tab パック (WinForm chặn thao tác trên tháng khác).
  * Muốn ghim ngày: TEST_TRT_DT=YYYY-MM-DD.
  */
-const TRT_DT = process.env.TEST_TRT_DT ?? ''
+const TRT_DT = trtDt('')
 /** Bật nhánh F9 確定 (đẩy 処置 vào lưới đăng ký). Mặc định tắt. */
 const ALLOW_COMMIT = process.env.TEST_ALLOW_COMMIT === '1'
 

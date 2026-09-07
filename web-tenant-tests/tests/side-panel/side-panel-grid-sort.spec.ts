@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { makeStep } from '../_shared/step'
+import { BASE_URL, patNo, trtDt } from '../_shared/env'
 import { ADMIN_USER, JA } from '../_shared/test-data'
 
 /**
@@ -55,10 +56,9 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  * testcase CÓ ý nghĩa: mỗi nhóm TC mở tab của nó rồi để nguyên cho TC kế tiếp.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 /** Mặc định không ghim ngày → app lấy hôm nay (tháng hiện hành). */
-const TRT_DT = process.env.TEST_TRT_DT ?? ''
+const TRT_DT = trtDt('')
 
 /** Số dòng tối thiểu để một phép sort có ý nghĩa (Rule 10.6 — không hardcode). */
 const MIN_ROWS = 2

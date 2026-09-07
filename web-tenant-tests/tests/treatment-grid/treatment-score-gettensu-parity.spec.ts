@@ -88,7 +88,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *      `apps/api/tests/Ochacom.Application.UnitTests/Treatments/Handlers/
  *       GetAutoSanteiScoreBranchTests.cs` (6 ca, gồm cả thứ tự nhánh 乳幼児 > 27老人
  *       và việc dis_flg 3 KHÔNG lấy score2 vì :3389 so BẰNG với 1).
- *    Cùng lý do `auto-santei/auto-santei-cases.spec.ts:20-24` đã tuyên bố 乳幼児 là phần của
+ *    Cùng lý do `auto-santei/auto-santei.spec.ts:20-24` đã tuyên bố 乳幼児 là phần của
  *    unit test BE chứ không phải e2e.
  *  ・Đường 個別 tab → getTensu: đã có `side-panel/kobetu-sidepanel-score.spec.ts` TC-2.
  *

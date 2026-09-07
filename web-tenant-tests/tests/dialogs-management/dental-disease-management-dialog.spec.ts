@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
 
 import { countChiryoKanriR2, dbEnabled, deleteChiryoKanriR2, latestChiryoKanriR2 } from '../_shared/db'
+import { BASE_URL, patNo, trtDt } from '../_shared/env'
 import { foldForCompare, readPdf } from '../_shared/pdf-content'
 import { makeStep } from '../_shared/step'
 import { ADMIN_USER, JA } from '../_shared/test-data'
@@ -67,16 +68,15 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  * production không đặt biến → tự skip, không đụng Postgres.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
 /**
  * Mặc định trỏ vào ca CÓ record プラークコントロール để nhánh 歯面 chạy thật (cùng
  * bệnh nhân/ngày với spec 実地指１ — xem chú thích ở đó). Testcase KHÔNG bắt buộc
  * ngày phải có 部位: trạng thái rỗng vẫn chạy đủ, chỉ log lại.
  * Ca khác: TEST_PAT_NO=... TEST_TRT_DT=YYYY-MM-DD.
  */
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 const PAT_NO_NUM = Number(PAT_NO)
-const TRT_DT = process.env.TEST_TRT_DT ?? '2025-12-24'
+const TRT_DT = trtDt('2025-12-24')
 const ALLOW_SAVE = process.env.TEST_ALLOW_SAVE === '1'
 
 // ── URL các endpoint của màn này ─────────────────────────────────────────────

@@ -2,7 +2,7 @@
 
 Đo **đáp án WinForm** cho câu: *một ngày bệnh nhân đến hai lần thì 会計 chia điểm/tiền
 theo **lượt** hay theo **cả ngày**?* — để đối chiếu với bản web ở
-[`../../../../../web-tenant-tests/tests/accounting-unpaid/unpaid-raiin-cnt-parity.spec.ts`](../../../../../web-tenant-tests/tests/accounting-unpaid/unpaid-raiin-cnt-parity.spec.ts)
+[`../../../../../web-tenant-tests/tests/accounting-unpaid/unpaid-insert.spec.ts`](../../../../../web-tenant-tests/tests/accounting-unpaid/unpaid-insert.spec.ts)
 (ISSUE-14). Cùng số hiệu TC-0/1/2/3.
 
 ```powershell

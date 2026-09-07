@@ -8,7 +8,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
 /**
  * 診療入力設定 (frm203003) — TreatmentEntrySettingDialog, mở bằng phím F11 「設定」
  * trên màn DANH SÁCH `/treatments` (KHÔNG phải màn detail `/treatments/{patNo}` —
- * ở đó F11 là menu 「選択」, xem fkey-menu/treatment-f11-fkey-button-show-modal.spec.ts).
+ * ở đó F11 là menu 「選択」, xem fkey-menu/treatment-f11-menu.spec.ts).
  *
  * Các fact bám theo source (apps/web-tenant/src/features/treatments):
  *  - components/treatment-entry-page.tsx: `F11: { label: '設定', onPress: () =>

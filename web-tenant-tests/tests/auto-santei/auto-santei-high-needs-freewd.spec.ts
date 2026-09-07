@@ -87,7 +87,7 @@
  *    Q00200 của 185 (cũng nằm trong IregCodChk) từ trước.
  *
  * ─── RANH GIỚI: mock cái gì, KHÔNG mock cái gì ───────────────────────────────
- * Giống `auto-santei/auto-santei-cases.spec.ts`: mock ĐÚNG đường biên BE→FE. Cái đang kiểm là
+ * Giống `auto-santei/auto-santei.spec.ts`: mock ĐÚNG đường biên BE→FE. Cái đang kiểm là
  * cây quyết định của `runAutoSantei` + đường đi của `freewd` trong FE.
  * `dis_flg == 3` là việc của BE (`GetAutoSanteiHandler`) — hơn nữa dữ liệu tenant
  * demo hiện KHÔNG có bệnh nhân nào `dis_flg = 3` (chỉ 0/1/2, xem
@@ -103,7 +103,7 @@
  *   · Với MỌI bộ pick thật, index 0 luôn là 初診料/再診料 (100/110) — 105 là 加算
  *     nên không thể đứng đầu ⇒ hai bản cho cùng kết quả.
  *   · Chính chỗ này web đã dịch `kv.index == 0` thành `INITIAL_VISIT_FEE_CODES`
- *     cho luật tô chữ đỏ, và `auto-santei/auto-santei-cases.spec.ts` D-5 đã chốt cách dịch đó.
+ *     cho luật tô chữ đỏ, và `auto-santei/auto-santei.spec.ts` D-5 đã chốt cách dịch đó.
  * Dựng testcase cho nhánh không thể xảy ra chỉ đẻ ra một test đỏ vĩnh viễn.
  *
  * ─── KHÔNG GHI DB ────────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ const TRT_CD_SAISHIN = 110;
 /** Giá trị freewd của 「はい」 (modSave.cs:3455 → hFG1[72] = "1"). */
 const FREEWD_DIFFICULT = "1";
 
-/** Bộ 初診 / 再診 mặc định (giống auto-santei/auto-santei-cases.spec.ts). */
+/** Bộ 初診 / 再診 mặc định (giống auto-santei/auto-santei.spec.ts). */
 const INITIAL_SET = [
   pick(TRT_CD_SHOSHIN, 0, "初診料"),
   pick(108, 7, "外安全1初"),

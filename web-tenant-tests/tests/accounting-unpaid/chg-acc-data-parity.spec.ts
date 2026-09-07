@@ -114,7 +114,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *
  * ⚠️ CHẠY RIÊNG TỪNG FILE. `playwright.config.ts` để `fullyParallel: true` +
  * `workers: 4`, nên đưa spec này cùng lệnh với `accounting-unpaid/accounting-target-date.spec.ts`
- * hay `accounting-unpaid/unpaid-insert-parity.spec.ts` là ba file chạy SONG SONG trên CÙNG một
+ * hay `accounting-unpaid/unpaid-insert.spec.ts` là ba file chạy SONG SONG trên CÙNG một
  * `TEST_PAT_NO` và CÙNG vùng seed `disp_no >= 9000` của hôm nay —
  * `seedTreatmentRows` xoá vùng đó trước khi chèn, `afterAll` của file này lại xoá
  * đúng vùng file kia đang dùng ⇒ dòng biến mất giữa chừng, đỏ ngẫu nhiên.

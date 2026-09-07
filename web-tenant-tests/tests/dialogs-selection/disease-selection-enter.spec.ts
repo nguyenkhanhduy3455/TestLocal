@@ -20,10 +20,11 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import { ADMIN_USER, JA } from '../_shared/test-data'
+import { TODAY_ISO, patNo, trtDt } from '../_shared/env'
 import { makeStep } from '../_shared/step'
 
-const PAT_NO = process.env.TEST_PAT_NO ?? '11'
-const TRT_DT = process.env.TEST_TRT_DT ?? new Date().toISOString().slice(0, 10)
+const PAT_NO = patNo('11')
+const TRT_DT = trtDt(TODAY_ISO)
 
 const dialog = (page: Page) => page.getByRole('dialog')
 const header = (page: Page, label: string) =>

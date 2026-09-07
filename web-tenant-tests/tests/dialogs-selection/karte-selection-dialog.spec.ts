@@ -78,11 +78,11 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import { makeStep } from '../_shared/step'
+import { BASE_URL, TODAY_ISO, patNo, trtDt } from '../_shared/env'
 import { ADMIN_USER, JA } from '../_shared/test-data'
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '11'
-const TRT_DT = process.env.TEST_TRT_DT ?? new Date().toISOString().slice(0, 10)
+const PAT_NO = patNo('11')
+const TRT_DT = trtDt(TODAY_ISO)
 /** Nút group thứ mấy (1-based) sẽ được mở ở các TC. */
 const GRP_INDEX = Number(process.env.TEST_KARTE_GRP ?? '1')
 /** Rule 18.1 — 確定 bump use_cnt của mst_cmt2, mặc định KHÔNG chạy. */

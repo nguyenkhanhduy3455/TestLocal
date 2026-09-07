@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { makeStep } from '../_shared/step'
+import { BASE_URL, patNo } from '../_shared/env'
 import { ADMIN_USER, JA } from '../_shared/test-data'
 
 /**
@@ -110,8 +111,7 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  * F9 登録 nên KHÔNG ghi vào DB — tải lại trang là sạch.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 /**
  * Danh sách 点数 để dò một giá trị có ≥2 処置 (mở được 処置選択). Ghim cứng một số

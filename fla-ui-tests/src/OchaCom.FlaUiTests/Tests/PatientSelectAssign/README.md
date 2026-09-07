@@ -8,8 +8,8 @@ Nửa còn lại của cặp parity nằm ở:
 
 | | |
 |---|---|
-| `../web-tenant-tests/tests/patient-select/patient-select-dr-staff-required.spec.ts` | spec gốc của bản web |
-| `../web-tenant-tests/tests/patient-select/patient-select-assign-parity.spec.ts` | spec **đối chiếu**, cùng số hiệu TC với file này |
+| `../web-tenant-tests/tests/patient-select/patient-select-dr-staff.spec.ts` | spec gốc của bản web |
+| `../web-tenant-tests/tests/patient-select/patient-select-dr-staff.spec.ts` | spec **đối chiếu**, cùng số hiệu TC với file này |
 
 > ✅ **Đã chạy PROBE trên máy Windows thật (2026-08-26).** Kết quả đo nằm ở mục 4b.
 > Vẫn chạy `.\run-confirm-patient.ps1 -Diagnostics` trước khi chạy fixture assert trên
@@ -257,7 +257,7 @@ là cố ý thêm, thay vì gỡ đi cho 「giống WinForm」.
 ⇒ WinForm trả con trỏ về ô vừa bị từ chối, người dùng gõ lại được ngay; bên web phải
 click vào ô trước. Nhiều khả năng do dialog của Radix restore focus **sau** lệnh
 `.focus()` trong `openDetail` (`onCloseAutoFocus`). `TC-FOCUS-1` của
-`patient-select/patient-select-assign-parity.spec.ts` khoá điểm này.
+`patient-select/patient-select-dr-staff.spec.ts` khoá điểm này.
 
 ### THÊM BA CÁI BẪY UIA đã trả giá (2026-08-27)
 

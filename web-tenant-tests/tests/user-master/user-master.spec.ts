@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { dbEnabled, withDb, DB_SCHEMA } from '../_shared/db'
+import { BASE_URL } from '../_shared/env'
 import {
     extractActivateLink,
     extractActivateToken,
@@ -122,7 +123,6 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
 
 test.describe.configure({ mode: 'serial' })
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
 
 /** Rule 18.1 — mặc định không đụng DB. */
 const ALLOW_SAVE = process.env.TEST_ALLOW_SAVE === '1'

@@ -45,7 +45,7 @@
 ┌───────────┴─────────────────────────────┴────────────────────────────┐
 │ REPO NÀY — /Users/thinhnn/Documents/GitHub/TestLocalApp/TestLocal    │
 │                                                                      │
-│  A. web-tenant-tests/   Playwright E2E — 71 spec / 866 test          │
+│  A. web-tenant-tests/   Playwright E2E — 64 spec / 866 test          │
 │  B. file-viewer/        Web app xem file local (log/CSV/JSON/text)   │
 │  C. trouble-1..4.md     Tài liệu điều tra → đầu vào để viết testcase │
 └──────────────────────────────────────────────────────────────────────┘
@@ -82,7 +82,7 @@ TestLocal/
     ├── playwright.config.ts        # baseURL, viewport, timeout, chỉ Chrome
     ├── .env / .env.example         # cấu hình chạy (.env KHÔNG commit)
     ├── package.json
-    └── tests/                      # 71 spec, gom theo MÀN HÌNH / COMPONENT
+    └── tests/                      # 64 spec, gom theo MÀN HÌNH / COMPONENT
         ├── _shared/                # helper dùng chung — KHÔNG phải test
         │   ├── session.ts          # fixture `authedPage`: login 1 lần / worker ⚠
         │   ├── auth.ts             # login(page)
@@ -101,17 +101,17 @@ TestLocal/
         │
         ├── treatment-grid/      9  # 診療入力 lưới 処置 (frm203002 grdRegi)
         ├── dialogs-management/ 11  # hộp thoại quản lý / nhập liệu (Rule 23)
-        ├── patient-select/      7  # 患者選択 / 来患一覧
-        ├── accounting-unpaid/   6  # 会計 / 未精算 (modAcc)
-        ├── dialogs-selection/   6  # họ 「選択」 + Enter window-level
+        ├── patient-select/      6  # 患者選択 / 来患一覧
+        ├── accounting-unpaid/   5  # 会計 / 未精算 (modAcc)
+        ├── dialogs-selection/   5  # họ 「選択」 + Enter window-level
         ├── siga-tooth-status/   6  # 歯式 / 根数 / Ｐ変更
         ├── side-panel/          6  # 4 tab 病検・ガイド・パック・個別
-        ├── auto-santei/         4  # 自動算定 (modSave.AutoSantei)
+        ├── auto-santei/         2  # 自動算定 (modSave.AutoSantei)
         ├── cross-cutting/       4  # hành vi dùng chung mọi màn
-        ├── fkey-menu/           4  # thanh F-key / menu / nút ngoài
+        ├── fkey-menu/           3  # thanh F-key / menu / nút ngoài
         ├── trn-check/           3  # 診療チェック
         ├── perio/               2  # 歯周検査
-        ├── save-f9/             2  # F9 登録 side-effect
+        ├── save-f9/             1  # F9 登録 side-effect
         └── user-master/         1  # module riêng, không thuộc INP
 ```
 
@@ -274,7 +274,7 @@ App **cố ý** đọc mọi path người dùng nhập — đó là tính năng
 
 ### 5.2 Khung spec chuẩn — page dùng chung, login MỘT lần cho cả worker
 
-Đây là khuôn mẫu 55/71 spec đang dùng. Nó dung hoà "mỗi test độc lập" (Rule 8)
+Đây là khuôn mẫu 55/64 spec đang dùng. Nó dung hoà "mỗi test độc lập" (Rule 8)
 với "< 10 login" (Rule 10.1).
 
 **Vấn đề nó giải:** trước đây mỗi file tự `browser.newPage()` rồi tự đăng nhập
