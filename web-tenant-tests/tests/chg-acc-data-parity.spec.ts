@@ -461,7 +461,14 @@ test.describe('診療入力 F8 → 会計データ修正 (modAcc.ChgAccData) par
             await route.fulfill({
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ success: true, data: { deletedCount: 0, insertedCount: 0 } }),
+                // `warnings` là field BẮT BUỘC của InsertUnpaidResponse kể từ bản
+                // fail-soft E00100 (BuiPriceFailureResponse). Rỗng = lượt này tính sạch;
+                // FE chỉ bật E00100 khi mảng có phần tử. Xem
+                // `bui-price-e00100-parity.spec.ts` cho nhánh có warning.
+                body: JSON.stringify({
+                    success: true,
+                    data: { deletedCount: 0, insertedCount: 0, warnings: [] },
+                }),
             })
         })
 
