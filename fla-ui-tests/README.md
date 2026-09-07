@@ -180,6 +180,12 @@ src/OchaCom.FlaUiTests/
     │   ├── PerioKensaTestBase.cs      đo nhánh đang chạy + khôi phục Ocha.xml
     │   ├── PerioKensaOrderProbeTests.cs PROBE [Explicit] — 9 câu hỏi, không assert
     │   └── PerioKensaOrderTests.cs    TcREAD, Tc1, Tc2, Tc4, Tc5 … Tc8
+    ├── BuiPriceE00100/                E00100 一部負担金計算失敗 — xem mục 8b
+    │   ├── README.md                  hai câu E00100, và bản web chỉ có một
+    │   ├── BuiPriceE00100Db.cs        seed 公費 hỏng + ảnh chụp/khôi phục + oracle
+    │   ├── BuiPriceE00100Flow.cs      vét hàng đợi MessageBox bằng Win32, đọc 当日来患
+    │   ├── BuiPriceE00100ProbeTests.cs PROBE [Explicit] — sạch / có seed
+    │   └── BuiPriceE00100Tests.cs     TC-CLEAN-1/2 · TC-E00100-1/2/3
     └── InpP1Dialogs/                  ba dialog vừa port sang web — xem mục 8b
         ├── README.md                  bảng tương ứng với spec Playwright
         ├── InpP1MenuFlow.cs           F11 → 「９ オプション」 → mục con
@@ -278,6 +284,8 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 | `.\run-move-perio-exam-cursor.ps1` | Enter/←/→ trong 歯周基本・精密検査 → `getMoveIndex` / `getMoveIndexArrow`, rẽ theo 検査順 `pInpOpt[36]` | `Tests/PerioKensaOrder/` | ✖ không bấm F9; ⚠️ `-AllowSettingChange` GHI **`Ocha.xml` của MÁY** |
 | `.\run-patient-visit-list.ps1` | 検索 ở 来患一覧 → `setViewData` → `buiPrice.getReceiptType` (レセプト種別) · F4 CSV出力 | `Tests/PatientVisitList/` | ✖ CHỈ ĐỌC — chỉ ghi file CSV vào artifacts |
 | `.\run-unpaid-raiin-cnt.ps1` | F8 会計 → `modAcc.LetAccData2` với 当日来院回数 (`hfgRaiinCnt` → `hFG1[71]` → `UNPAID.TRT_CNT`) | `Tests/UnpaidRaiinCnt/` | ⚠️ **CÓ** — seed `TRNTRN` (disp_no 9101-9103) + `UNPAID` của ngày test |
+| `.\run-calc-bui-price.ps1` | mở 診療入力 / F4 当日来患 → `buiPrice.getBuiPrice2` (一部負担金計算) → E00100 | `Tests/BuiPriceE00100/` | ✖ nhóm CLEAN chỉ đọc |
+| `.\run-calc-bui-price.ps1 -Seed` | như trên, nhưng dựng sẵn một ca 公費 hỏng để E00100 nổ | `Tests/BuiPriceE00100/` | ⚠️ **CÓ** — `INSURANCE.PUBEXPINF_NO` + 1 dòng `PUBEXPINF` |
 | `.\run-edit-treatment-rows.ps1 -Case Probe_Advanced` | PROBE — dò hành vi, KHÔNG assert | `Tests/TreatmentGrid/` | ✖ |
 
 > Thêm luồng mới thì giữ đúng quy ước này: `run-<động từ>-<đối tượng>.ps1` mô tả việc
@@ -453,6 +461,41 @@ khuyết 25/32 (`F7 全顎` bỏ qua 欠損歯). Răng 15 không tồn tại ở
 đúng xuống răng 14 — thứ mà spec web assert cứng `răng 15` không bắt được. **歯周精密検査
 chưa đo được** (UIA sập giữa chừng + trần 15 phút của wrapper). Bảy cái bẫy đã trả giá và
 hai việc còn phải sửa nằm ở README của luồng, mục 6.
+
+**BuiPriceE00100** đo **đáp án** cho hộp thoại `E00100` của `buiPrice.getBuiPrice2` — nửa
+WinForm của `../web-tenant-tests/tests/accounting-unpaid/bui-price-e00100-parity.spec.ts`.
+Câu hỏi parity: 「一部負担金 tính hỏng thì màn hình có chết theo không」. WinForm **không**:
+`getBuiPrice2` tự bắt ngoại lệ, bật E00100 rồi trả `buiPriceData2` toàn 0 cho nơi gọi
+(buiPrice.cs:196-203), cả 8 nơi gọi đều chạy tiếp. Bản web từng ném lại thành 500 ⇒ một
+bệnh nhân dữ liệu lỗi làm chết cả danh sách.
+
+Đây là luồng đầu tiên phải **làm hỏng dữ liệu đăng ký thật** để đo. Bên Playwright chèn
+`warnings` vào response bằng `page.route`; bên này không có lớp nào chen vào giữa, và ba
+trong bốn đường phá dữ liệu **chết vì kiểu cột** (`date` / `tinyint` không nhét rác được —
+bảng đầy đủ ở README của luồng mục 3). Đường còn lại là `PUBEXPINF.LFLG` trỏ vào mã không
+có trong `LOCALFLG`. Nhóm seed nằm sau cờ **riêng** `buiPrice.allowSeed`: nó sửa *đăng ký
+bệnh nhân*, không phải 処置 hay sổ tiền.
+
+Tìm ra **một điểm LỆCH đã được ghi nhận trong chính source web**: `buiPrice.cs:1734` bật
+E00100 「福祉医療設定データが存在しません」 mà bản web cố ý **không có** —
+`BuiPriceService.cs:936` ghi thẳng *"legacy shows an error dialog … no UI here"*. WinForm
+báo cho người dùng, bản web im lặng đi tiếp.
+
+Đã chạy thật 2026-09-07 trên bệnh nhân 10 (診療月 2026-08): **5/5 xanh**, DB trả lại
+nguyên trạng. Hộp thoại khớp oracle tới từng ký tự (kể cả 全角 U+3000 đầu dòng 2 và
+`gggy年M月` không đệm 0), tiêu đề 「お茶コン」, đúng một nút OK và OK là nút mặc định. F4
+当日来患 **GIỮ** dòng bệnh nhân hỏng và vẫn cộng vào 合計 — ngược hẳn `frm204008` 来患一覧
+vốn LOẠI dòng, hai chỗ rất dễ bị port thành một.
+
+> ⚠️ Nhánh seed được **không ném**, app vá `localFlg` mặc định rồi tính tiếp, nên số trên
+> màn hình KHÔNG về 0. Nhánh trả `buiPriceData2` toàn 0 là nhánh ngoại lệ, chưa đo được —
+> lý do ở README của luồng mục 6.1.
+
+> Luồng này còn sửa một lỗi của **nền chung**: `AppNavigator.SetTreatmentDate` gõ xong
+> không dời focus, mà `CustomDate` chỉ dựng lại `SelDate` trong `CustomDate_Leave`
+> (CustomDate.cs:692-710) ⇒ mọi hàm đọc `_dtTrtDt.SelDate` vẫn nhận HÔM NAY. Nó "chạy
+> được" bấy lâu chỉ vì `OpenTreatmentEntry` gọi `EnterPatient` ngay sau đó và cú `Focus()`
+> vào `cboPatNo` tình cờ phát `Leave` hộ.
 
 > **Bài học dùng chung, đọc trước khi viết luồng mới:** app này **không nhận
 > InvokePattern ở bất kỳ control nào**. `Uia.Click` lên nhãn / caption / dòng lưới đều

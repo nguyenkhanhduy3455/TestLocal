@@ -26,11 +26,14 @@ WinForm để biết "fail-soft" phải trông ra sao.
 
 Ba đường đi qua 診療入力 / 患者選択 — cũng là ba thứ luồng này lái:
 
-| Đường | Hàm WinForm | Hành vi khi hỏng |
+| Đường | Hàm WinForm | Khi 一部負担金 **ném** |
 |---|---|---|
 | Mở 診療入力 | `frmInpMain_Load_Method` → `ModSave.GetTrnRs` → `modAcc.Calc_BuiPriceData2s` (modSave.cs:2467) | E00100 rồi 日計 ra `[負担金 0円]  [日計 0点]` (modAcc.cs:196-198) |
 | F4 当日来患 | `frm203001.getTodayViewData` (frm203001.cs:908-932) | E00100 rồi **GIỮ dòng** với số 0, và vẫn cộng vào 合計 |
-| F8 会計 | `modAcc.LetAccData2` (modAcc.cs:403) | (chưa đo — xem mục 6) |
+| F8 会計 | `modAcc.LetAccData2` (modAcc.cs:403) | (chưa đo — xem mục 6.2) |
+
+> Cột thứ ba mô tả nhánh **NGOẠI LỆ** (A ở mục 2). Nhánh mà bộ test seed được là **(B)**,
+> nó KHÔNG ném nên số **không** về 0 — xem mục 5b trước khi đọc kết quả.
 
 > ⚠️ Đừng nhầm 当日来患 với 来患一覧. `frm203001` **giữ** dòng hỏng và ghi 0; `frm204008`
 > mới là chỗ **loại** dòng (frm204008.cs:711-733). Bản web từng dùng chung một xử lý cho
@@ -154,15 +157,24 @@ chắn mọi thao tác sau, và log sẽ đổ oan cho app (PROBE-GUIDELINE 3.4)
 
 | Playwright | Ở đây | Ghi chú |
 |---|---|---|
-| TC-CLEAN-1 `monthly-copayments` có `warnings` và rỗng | KQ-5 / KQ-6 (probe sạch) | Bên này không có field nào để kiểm — mốc là 「không hộp thoại nào」 + 日計 ra số thật |
-| TC-CLEAN-2 F4 `summary.warnings` rỗng | *(chưa)* | |
-| TC-E00100-1 日計 hỏng: văn bản đúng, màn hình sống | KQ-14 … KQ-17 | |
-| TC-E00100-2 2 warnings = 2 hộp nối tiếp | KQ-11 / KQ-14 (đếm hộp) | WinForm chia theo **枝番**, không theo 「warning」 |
+| TC-CLEAN-1 `monthly-copayments` có `warnings` và rỗng | `TcClean1_TreatmentEntryHasNoDialogAndRealDailyTotals` | Bên này không có field nào để soi ⇒ mốc là 「không MessageBox nào」 **cộng** 「日計 khớp `TRNTRN`」 — thiếu vế sau thì một màn hình chết cứng cũng pass |
+| TC-CLEAN-2 F4 `summary.warnings` rỗng | `TcClean2_TodayViewHasNoDialog` | |
+| TC-E00100-1 日計 hỏng: văn bản đúng, màn hình sống | `TcE001003_TreatmentEntrySurvivesTheDialog` | Xem cảnh báo mục 5b — nhánh đo được **không** làm số về 0 |
+| TC-E00100-2 2 warnings = 2 hộp nối tiếp | `TcE001001_TodayViewRaisesExactDialogPerRow` | WinForm chia theo **dòng bệnh nhân** (F4) / **枝番** (診療入力), không theo 「warning」 |
 | TC-E00100-3 `reason` null ⇒ bỏ dòng `内容[]` | — | Không áp dụng: WinForm **luôn** in `内容[]` + `場所[]`; chính đó là điểm lệch đã chốt |
-| TC-E00100-4 当日来患 giữ dòng | KQ-11 … KQ-13 | |
-| TC-E00100-5 F8 vẫn sang 窓口精算 | *(chưa — mục 6)* | |
+| TC-E00100-4 当日来患 giữ dòng | `TcE001002_TodayViewKeepsTheFailingRow` | |
+| TC-E00100-5 F8 vẫn sang 窓口精算 | *(chưa — mục 6.2)* | |
 
----
+### 5b. Nhánh đo được KHÔNG phải nhánh trả 0 — đọc kỹ chỗ này
+
+Spec Playwright dựng cảnh 「tính hỏng ⇒ mọi số về 0 mà màn hình vẫn sống」. Nhánh mà bộ
+này seed được là **(B) 福祉医療設定データが存在しません**, và nó **không ném**: app bật hộp
+thoại, vá `localFlg` bằng giá trị mặc định (buiPrice.cs:1866-1872) rồi **tính tiếp bình
+thường**. Đo được: 日計 và 合計 sau E00100 **y hệt** lúc dữ liệu sạch.
+
+Nhánh trả `buiPriceData2` toàn 0 là **(A) nhánh ngoại lệ** (buiPrice.cs:196-203) — chưa
+seed được, xem mục 6.1. Nên đừng đọc `TcE001003` thành 「đã chứng minh màn hình sống với
+số 0」; nó chứng minh 「E00100 không chặn màn hình」, đúng bằng đó.
 
 ## 6. Chưa làm
 
@@ -187,4 +199,53 @@ nên E00100 bật lại ở đó; câu hỏi parity là 「E00100 xong có VẪN
 
 ## 7. Số đo thật
 
-> *(chưa chạy — điền sau lượt probe đầu tiên)*
+Máy `ochacom-win`, DB `SIM2000`, bệnh nhân **10** (`ins_kbn = 7` 公費単独, `old_flg = 3`,
+`bur_rate = 0`, `acc_rate = 0`, `pubexpinf_no = 0`), 診療日 **2026-08-03**.
+Lượt chạy **2026-09-07**: PROBE 2/2 xanh, testcase **5/5 xanh**, DB trả lại nguyên trạng
+(kiểm lại: `PUBEXPINF` 0 dòng, `INSURANCE.PUBEXPINF_NO = 0`).
+
+### Khuôn câu
+
+```
+MSGTBL['E00100'] = 「{0}」        ⇒ MsgDialog.getMsg thay {0} bằng thân ⇒ KHÔNG có tiền tố
+```
+
+### Hộp thoại — khớp oracle tới từng ký tự
+
+```
+tiêu đề : 「お茶コン」            ← Application.ProductName (MsgDialog.cs:35)
+nút     : [OK]                  ← ĐÚNG một nút, MessageBoxButtons.OK
+mặc định: 「OK」                 ← đọc bằng FocusedElement() TRƯỚC khi bấm
+thân    : 一部負担金計算に失敗しました。福祉医療設定データが存在しません。
+          　患者番号[10] 枝番[1] 診療年月[令和8年8月] 福祉医療フラグ[99999999]
+```
+
+Dấu cách đầu dòng 2 là **全角 U+3000**; 診療年月 dùng khuôn `gggy年M月` nên **không đệm 0**
+(`令和8年8月`, không phải `令和08年08月`).
+
+### F4 当日来患 (frm203001)
+
+| | sạch | có seed |
+|---|---|---|
+| số hộp E00100 | 0 | **1** (= số dòng của ngày) |
+| số dòng trên lưới | 1 | **1 — GIỮ NGUYÊN** |
+| dòng đọc được | — | `10 \| *池田 忠 \| 男性 \| 昭23年09月23日 \| 339 \| 0 \| 678 \| 2040 \| 0 \| 2040` |
+| dòng 合計 (`dgvTotal`) | — | `合 計 \| 1人 (初診:1人 再診:0人) \| \| \| 339点 \| 0円 \| 678点 \| 2,040円 \| 0円 \| 2,040円` |
+
+⇒ **xác nhận `frm203001` GIỮ dòng và vẫn cộng vào 合計** (frm203001.cs:921-932), ngược hẳn
+`frm204008` 来患一覧 vốn LOẠI dòng (frm204008.cs:711-733). Đây là điểm mà bản web từng dùng
+chung một xử lý cho cả hai màn.
+
+### Mở 診療入力 (frm203002)
+
+| | sạch | có seed |
+|---|---|---|
+| số hộp E00100 | 0 | **1** (bệnh nhân có 1 枝番) |
+| màn hình | mở | **VẪN MỞ** — 患者番号 10, 年月 08年08月, lưới 24 dòng |
+| 日計 | ngày 3 = 339点 · 14 = 70点 · 25 = 272点 | **y hệt** |
+| 合計 | `681 点` / `3 日` | **y hệt** |
+
+Cả ba con số 日計 khớp oracle `Σ (trt_pt × 回数)` trên dòng `jihi_flg = 0` của `TRNTRN`.
+
+`負担金` ra `0円` ở **cả hai** cột — đó là vì bệnh nhân test là 公費単独 `bur_rate = 0`,
+KHÔNG phải vì tính hỏng. Nên đừng dùng `負担金` làm mốc phân biệt trên bệnh nhân này.
