@@ -28,7 +28,7 @@ import {
     GRID_LOAD_TIMEOUT,
     GRID_RELOAD_TIMEOUT,
 } from './env'
-import { closeDialogs } from '../virtual-grid'
+import { closeDialogs } from './virtual-grid'
 
 /** Ô 療法・処置 của mọi dòng lưới — `RegiCol.ryo = 2` (frm203002.cs:158-169). */
 export const ryoCells = (page: Page) => page.locator('[data-grid-cell$="|2"]')

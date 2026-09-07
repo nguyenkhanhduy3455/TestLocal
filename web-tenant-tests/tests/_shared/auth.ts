@@ -29,7 +29,7 @@
  */
 import { expect, type Page } from '@playwright/test'
 
-import { ADMIN_USER, JA } from '../test-data'
+import { ADMIN_USER, JA } from './test-data'
 
 /**
  * Câu nhắc rate-limit. Bám vào assert cuối cùng của login vì đó là chỗ triệu

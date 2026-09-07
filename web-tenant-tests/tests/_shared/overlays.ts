@@ -158,4 +158,4 @@ export async function installOverlayHandlers(
  * `closeDialogs` vẫn nằm ở `virtual-grid.ts` (18 spec đang import từ đó).
  * Re-export để spec mới chỉ cần nhớ MỘT chỗ cho mọi việc dọn overlay.
  */
-export { closeDialogs } from '../virtual-grid'
+export { closeDialogs } from './virtual-grid'
