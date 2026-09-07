@@ -194,21 +194,19 @@ public sealed class KarteCmtBuiFlow
     /// </summary>
     public void CloseAll(TestTrace? trace = null)
     {
+        ClosePerioExamIfOpen(trace);
+
         var cmt = CmtList();
         if (cmt is not null)
         {
-            trace?.Step("F10 戻る (frm203012)");
-            ToothSelectDialog.FocusWindow(cmt);
-            Uia.SendKey(Vk.F10);
+            PressFKey(cmt, "btnF10", "戻る", Vk.F10, "F10 戻る (frm203012)", trace);
             Waits.TryUntil(() => CmtList() is null, TimeSpan.FromSeconds(10));
         }
 
         var grp = GroupGrid();
         if (grp is not null)
         {
-            trace?.Step("F10 戻る (frm203011)");
-            ToothSelectDialog.FocusWindow(grp);
-            Uia.SendKey(Vk.F10);
+            PressFKey(grp, "btnF10", "戻る", Vk.F10, "F10 戻る (frm203011)", trace);
             Waits.TryUntil(() => GroupGrid() is null, TimeSpan.FromSeconds(10));
         }
     }
@@ -408,6 +406,99 @@ public sealed class KarteCmtBuiFlow
     }
 
     /// <summary>
+    /// Bấm một phím F <b>của đúng form muốn nhắm</b>.
+    ///
+    /// <para>☠ <b>Đừng gửi phím F bằng <c>FocusWindow</c> + <c>SendKey</c> ở luồng này.</b>
+    /// <c>frm203011</c> và <c>frm203012</c> chồng lên nhau trong CÙNG một cửa sổ top-level,
+    /// và <c>ForceForeground</c> lên 「cửa sổ」 con không quyết định được form nào nhận
+    /// phím. Đo thật 2026-09-07: <c>FocusWindow(cmtList)</c> rồi <c>SendKey(F1)</c> làm
+    /// phím rơi vào <b>frm203011</b>, nơi F1 là 「病検」 ⇒ app mở 歯周基本検査 (frm203028)
+    /// chứ không mở 部位選択. Log lúc đó báo 「F1 không mở được 部位選択」 — đổ oan cho app,
+    /// đúng bẫy PROBE-GUIDELINE 3.4; chỉ có tấm ảnh mới nói ra sự thật.</para>
+    ///
+    /// <para>Và hậu quả không dừng ở một phép đo hỏng: bấm F1 lần nữa làm
+    /// <c>frm203011</c> gọi <c>showDialog</c> lên một form ĐANG VISIBLE, app không bắt và
+    /// bung hộp thoại crash 「Form that is already visible cannot be displayed as a modal
+    /// dialog box」 (cùng lỗi đã ghi ở <c>PerioKensaOrderFlow.OpenSettings</c>).</para>
+    ///
+    /// <para>Nên: <b>click thẳng vào nút trên thanh phím của chính form đó</b> — nút nằm
+    /// trong cây con của form nên không thể nhầm. Chỉ khi không thấy nút mới quay về
+    /// đường phím, và khi đó phải focus một CONTROL BÊN TRONG form (không phải cửa sổ):
+    /// đúng cách mà <see cref="FocusTextBox"/> làm, và đó là lý do các bước gõ chữ chạy
+    /// đúng trong khi các bước gửi phím F thì không.</para>
+    /// </summary>
+    private bool PressFKey(Window form, string buttonId, string nameFragment, ushort vk,
+                           string what, TestTrace? trace)
+    {
+        trace?.Step(what);
+
+        var btn = KarteAutoCalc.KarteAutoCalcDialog.FindChromeIdOrName(form, buttonId, nameFragment);
+        if (btn is not null)
+        {
+            // App này KHÔNG nhận InvokePattern ở bất kỳ control nào (README mục 8b) —
+            // phải bắn chuột thật, và luôn kiểm rect kẻo click rơi ra (0,0) tức DESKTOP.
+            var rect = Uia.RectOf(btn);
+            if (rect is not null && rect.Value.Width > 0 && rect.Value.Height > 0)
+            {
+                var (x, y) = Uia.Center(btn);
+                trace?.Note($"click nut 「{buttonId}」 cua {Uia.AutomationIdOf(form)} tai ({x},{y})");
+                Uia.LeftClickPhysical(x, y);
+                Waits.Step();
+                return true;
+            }
+            trace?.Note($"nut 「{buttonId}」 co rect RONG — quay ve duong phim");
+        }
+
+        trace?.Note($"khong thay nut 「{buttonId}」 — focus control BEN TRONG form roi gui phim");
+        FocusInside(form);
+        return Uia.SendKey(vk);
+    }
+
+    /// <summary>Đưa tiêu điểm vào một control BÊN TRONG form (không phải cửa sổ).</summary>
+    private void FocusInside(Window form)
+    {
+        ToothSelectDialog.FocusWindow(form);
+        try
+        {
+            var inner = Uia.ById(form, KarteCmtDialog.TextBoxId)
+                        ?? Uia.ById(form, KarteCmtDialog.GroupButtonId(1));
+            inner?.Focus();
+        }
+        catch { /* WinForms có lúc không nhận Focus qua UIA */ }
+        Thread.Sleep(120);
+    }
+
+    /// <summary>
+    /// 歯周基本検査 (<c>frm203028</c>) có đang mở không — nếu có thì đóng bằng F10 戻る và
+    /// trả về true.
+    ///
+    /// <para>Nó chỉ mở ra khi phím F1 đi lạc sang <c>frm203011</c>. Phải đóng NGAY và
+    /// KHÔNG được bấm F1 thêm lần nào (xem <see cref="PressFKey"/>). ⚠️ F1 của chính
+    /// <c>frm203028</c> là 「デフォルト設定」 — <c>btnF1_Click</c> hỏi Q00002 rồi
+    /// <c>setDefalut()</c> GHI <c>kihon_def</c> (frm203028.cs) — tuyệt đối không gửi F1
+    /// vào đây.</para>
+    /// </summary>
+    private bool ClosePerioExamIfOpen(TestTrace? trace)
+    {
+        var perio = KarteAutoCalc.KarteAutoCalcDialog.FindDialogWindow(
+                        _app, PerioExamId, PerioExamTitle, _screen.Window)
+                    ?? KarteAutoCalc.KarteAutoCalcDialog
+                        .FindNested(_screen.Window, PerioExamId, PerioExamTitle)?.AsWindow();
+        if (perio is null) return false;
+
+        trace?.Note("PHAT HIEN 歯周基本検査 (frm203028) dang mo — F1 da di lac sang frm203011");
+        PressFKey(perio, "btnF10", "戻る", Vk.F10, "F10 戻る (frm203028 — dong form mo nham)", trace);
+        Waits.TryUntil(
+            () => KarteAutoCalc.KarteAutoCalcDialog.FindNested(_screen.Window, PerioExamId, PerioExamTitle) is null,
+            TimeSpan.FromSeconds(8));
+        return true;
+    }
+
+    /// <summary>歯周基本検査 — mở ra khi F1 đi lạc sang <c>frm203011</c> (frm203011.cs:95).</summary>
+    private const string PerioExamId = "frm203028";
+    private const string PerioExamTitle = "歯周基本検査";
+
+    /// <summary>
     /// Ô テキスト còn thao tác được không.
     ///
     /// <para><b>Cách rẻ nhất phát hiện 「có modal đang chắn」.</b> WinForms vô hiệu hoá form
@@ -481,15 +572,8 @@ public sealed class KarteCmtBuiFlow
     {
         var before = ReadText(cmtList);
 
-        trace?.Step($"F1 部位 (frm203012) — preset {preset}");
-        ToothSelectDialog.FocusWindow(cmtList);
-        if (!Uia.SendKey(Vk.F1))
-        {
-            var btn = KarteAutoCalc.KarteAutoCalcDialog.FindChromeIdOrName(cmtList, "btnF1", "部位");
-            if (btn is null)
-                return new BuiInsert(false, "SendInput hong ma cung khong thay nut btnF1 (部位)", before, before);
-            Uia.MouseClick(btn);
-        }
+        if (!PressFKey(cmtList, "btnF1", "部位", Vk.F1, $"F1 部位 (frm203012) — preset {preset}", trace))
+            return new BuiInsert(false, "khong bam duoc F1 部位 cua frm203012", before, before);
 
         var tooth = KarteCmtDialog.WaitForToothDialog(_app, _screen.Window, cmtList, TimeSpan.FromSeconds(15));
         if (tooth is null)
@@ -497,21 +581,22 @@ public sealed class KarteCmtBuiFlow
             // ĐỪNG kết luận 「F1 không mở được」 khi chưa hỏi: hộp thoại CÓ THỂ đang mở mà
             // chỉ là không tìm ra, và hai chuyện đó phải chữa ở hai chỗ khác hẳn nhau.
             // Ô text bị khoá = có modal đang chắn (PROBE-GUIDELINE 3.4).
+            // Hỏi 「thật ra cái gì đã mở」 trước khi kết luận. Lần đo 17:10 báo 「F1 không mở
+            // được 部位選択」 trong khi ảnh cho thấy 歯周基本検査 đang chềnh ềnh giữa màn —
+            // tức phím đã tới frm203011 (F1 = 病検) chứ không tới frm203012.
+            var perio = ClosePerioExamIfOpen(trace);
             var blocked = !TextBoxEnabled(cmtList);
-            trace?.Note(blocked
-                ? "KHONG thay 部位選択 nhung txtValue DANG BI KHOA ⇒ co modal chan"
-                : "KHONG thay 部位選択 va txtValue van dung duoc ⇒ F1 that su khong mo gi");
-
-            // F12 là 戻る của frm902003 và là phím CHẾT trên frm203012 (BaseDialog không có
-            // case Keys.F12, frm203012 cũng không) ⇒ gửi mù được, không sợ lạc sang 確定.
-            if (blocked) { Uia.SendKey(Vk.F12); Thread.Sleep(600); }
 
             return new BuiInsert(false,
-                (blocked
-                    ? "F1 CO mo mot modal nhung khong tim ra 部位選択 (frm902003) — txtValue bi khoa " +
-                      "(ElementNotEnabledException). Da gui F12 戻る de go ket. "
-                    : "F1 khong mo duoc 部位選択 (frm902003). ") +
-                "Cua so top-level dang mo: " + KarteCmtDialog.DescribeWindows(_app),
+                (perio
+                    ? "F1 mở nhầm 歯周基本検査 (frm203028) ⇒ phím đã tới frm203011 (F1 = 病検) chứ " +
+                      "KHÔNG tới frm203012. Đã đóng lại bằng F10 戻る. TUYỆT ĐỐI đừng bấm F1 lần nữa: " +
+                      "frm203011 sẽ showDialog một form ĐANG VISIBLE và app bung hộp thoại crash " +
+                      "「Form that is already visible cannot be displayed as a modal dialog box」."
+                    : blocked
+                        ? "F1 CO mo mot modal nhung khong tim ra 部位選択 (frm902003) — txtValue bi khoa."
+                        : "F1 khong mo duoc gi ca.") +
+                " Cua so top-level dang mo: " + KarteCmtDialog.DescribeWindows(_app),
                 before, before);
         }
 
@@ -556,15 +641,17 @@ public sealed class KarteCmtBuiFlow
     public (bool Ok, string Reason, int MarkedTeeth) MeasureToothDialogRemembers(
         Window cmtList, TestTrace? trace = null)
     {
-        trace?.Step("F1 部位 lan nua — dem rang con danh dau TRUOC khi 全消去");
-        ToothSelectDialog.FocusWindow(cmtList);
-        if (!Uia.SendKey(Vk.F1)) return (false, "SendInput hong", 0);
+        if (!PressFKey(cmtList, "btnF1", "部位", Vk.F1,
+                       "F1 部位 lan nua — dem rang con danh dau TRUOC khi 全消去", trace))
+            return (false, "khong bam duoc F1 部位", 0);
 
         var tooth = KarteCmtDialog.WaitForToothDialog(_app, _screen.Window, cmtList, TimeSpan.FromSeconds(15));
         if (tooth is null)
         {
-            if (!TextBoxEnabled(cmtList)) { Uia.SendKey(Vk.F12); Thread.Sleep(600); }
-            return (false, "F1 khong mo duoc 部位選択 (hoac mo ma khong tim ra — xem PickBui)", 0);
+            var perio = ClosePerioExamIfOpen(trace);
+            return (false, perio
+                ? "F1 mở nhầm 歯周基本検査 (đã đóng) — phím tới frm203011 chứ không tới frm203012"
+                : "F1 khong mo duoc 部位選択 (hoac mo ma khong tim ra — xem PickBui)", 0);
         }
 
         int marked;

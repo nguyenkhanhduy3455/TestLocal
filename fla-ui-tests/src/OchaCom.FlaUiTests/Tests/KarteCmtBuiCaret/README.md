@@ -196,6 +196,40 @@ hoá form cha khi có modal. Đúng bẫy **PROBE-GUIDELINE 3.4**.
 > `PerioKensaOrderFlow` / `SigaToothFlow` gọi `ToothSelectDialog.Find` bình thường được vì
 > ở đó 部位選択 mở **từ `frm203002`**. Khác đường mở, khác chỗ nằm trong cây.
 
+## 8b. ☠☠ Phím F gửi bằng `FocusWindow` + `SendKey` rơi vào NHẦM FORM (đo 2026-09-07)
+
+Đây là cái bẫy đắt nhất của luồng, và **chỉ tấm ảnh mới nói ra sự thật**.
+
+`frm203011` và `frm203012` **chồng lên nhau trong cùng một cửa sổ top-level**. Ảnh
+`06_F1 部位…png` cho thấy hai thanh phím cùng nằm trên màn hình một lúc:
+
+```
+   góc trái dưới   「F1 病検」    ← của frm203011
+   giữa dưới       「F1 部位」    ← của frm203012
+```
+
+`ToothSelectDialog.FocusWindow(cmtList)` gọi `ForceForeground` lên handle của form con —
+việc đó **không quyết định được form nào nhận phím**. Kết quả đo: `SendKey(F1)` rơi vào
+**frm203011**, nơi F1 là 「病検」, nên app mở **歯周基本検査 (`frm203028`)** chứ không mở
+部位選択. Log lúc đó báo `F1 không mở được 部位選択` — **đổ oan cho app**.
+
+Và hậu quả không dừng ở một phép đo hỏng. Bấm F1 lần nữa ⇒ `frm203011` gọi `showDialog`
+lên một form **đang visible** ⇒ app không bắt ⇒ hộp thoại crash
+**`Form that is already visible cannot be displayed as a modal dialog box`** (đúng lỗi đã
+ghi ở `PerioKensaOrderFlow.OpenSettings`), và mọi bước sau đó đo trên một app đã hỏng.
+
+**Cách đúng — `KarteCmtBuiFlow.PressFKey`:** click thẳng vào **nút trên thanh phím của
+chính form đó** (nút nằm trong cây con của form nên không thể nhầm), luôn kiểm rect trước
+khi bắn chuột. Chỉ khi không thấy nút mới quay về đường phím, và khi đó phải focus một
+**control BÊN TRONG** form chứ không phải cửa sổ.
+
+> Đây cũng là lý do các bước **gõ chữ** chạy đúng ngay từ đầu còn các bước **gửi phím F**
+> thì không: `FocusTextBox` focus `txtValue` — một control bên trong `frm203012`.
+
+⚠️ Nếu 歯周基本検査 lỡ mở, `ClosePerioExamIfOpen` đóng nó bằng **F10 戻る**. Tuyệt đối
+không gửi F1 vào form đó: F1 của `frm203028` là 「デフォルト設定」, `btnF1_Click` hỏi
+`Q00002` rồi `setDefalut()` **ghi `kihon_def`**.
+
 ## 9. Hai form trùng tiêu đề
 
 `frm203011` và `frm203012` (gType `Cult`) **cùng mang tiêu đề 「カルテ記載選択」**

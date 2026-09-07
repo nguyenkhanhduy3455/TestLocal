@@ -166,6 +166,16 @@ public sealed class KarteCmtBuiCaretProbeTests : UiTestBase
         Say(() =>
         {
             if (cmtList is null) { Kq(6, "bỏ qua: chưa có frm203012"); return; }
+            // ☠ KQ-5 hỏng thì DỪNG, đừng bấm F1 thêm lần nữa. Lần đo 17:10 đi tiếp và
+            // frm203011 gọi showDialog lên một form ĐANG VISIBLE ⇒ app bung hộp thoại
+            // crash 「Form that is already visible cannot be displayed as a modal dialog
+            // box」, và mọi bước sau đó đo trên một app đã hỏng.
+            if (bui1 == "")
+            {
+                Kq(6, "BỎ QUA: KQ-5 chưa mở được 部位選択. Bấm F1 lần nữa lúc này là làm app " +
+                      "crash 「Form that is already visible…」 chứ không đo thêm được gì.");
+                return;
+            }
 
             var (ok, why, marked) = flow.MeasureToothDialogRemembers(cmtList, trace);
             Kq(6, !ok
