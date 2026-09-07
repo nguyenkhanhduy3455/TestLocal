@@ -50,8 +50,29 @@ public sealed class BuiPriceE00100CleanProbeTests : UiTestBase
     /// </summary>
     protected override string[] NuisanceDialogPatterns => [];
 
+    private IReadOnlyList<BuiPriceE00100Db.UnpaidRow> _unpaidBefore = [];
+
     [OneTimeSetUp]
-    public void CleanProbeSetUp() => _db = BuiPriceE00100Db.CreateOrNull(Settings);
+    public void CleanProbeSetUp()
+    {
+        _db = BuiPriceE00100Db.CreateOrNull(Settings);
+        if (_db is not null) _unpaidBefore = _db.ReadUnpaid(PatNo, TrtDate);
+    }
+
+    /// <summary>
+    /// Trả lại <c>UNPAID</c> của ngày test.
+    ///
+    /// <para>Probe này KHÔNG seed gì, nhưng bước F8 (KQ-7) đi qua
+    /// <c>UnPaid.deleteTrtDtUnPaid</c> ở modAcc.cs:427 — chạy TRƯỚC mọi cổng hộp thoại.
+    /// Không có transaction nào để lui, nên phải chụp ảnh và đặt lại.</para>
+    /// </summary>
+    [OneTimeTearDown]
+    public void RestoreUnpaid()
+    {
+        if (_db is null) return;
+        try { TestContext.Out.WriteLine("ĐÃ TRẢ LẠI — " + _db.RestoreUnpaidForDay(PatNo, TrtDate, _unpaidBefore)); }
+        catch (Exception e) { TestContext.Error.WriteLine($"!! KHÔNG TRẢ LẠI ĐƯỢC UNPAID: {e.Message}"); }
+    }
 
     [Test]
     [Description("PROBE SẠCH — dữ liệu thật có sinh E00100 không, và 日計 đang ra số gì")]
@@ -136,6 +157,46 @@ public sealed class BuiPriceE00100CleanProbeTests : UiTestBase
             Kq(6, $"合計点数 lbAllPoint = 「{new TreatmentGrid.TreatmentGridOps(Screen).AllPoint()}」 " +
                   $"実日数 lbDays = 「{new TreatmentGrid.TreatmentGridOps(Screen).Days()}」");
             trace.Shot("kq6-nhat-ke-luoi-sach");
+        });
+
+        // ── KQ-7: chuỗi F8 会計 trên dữ liệu SẠCH — MỐC NỀN ──────────────────
+        //
+        // Không có mốc này thì không kết luận được gì về lượt CÓ SEED. Lượt probe nhánh
+        // ngoại lệ 2026-09-07 kết thúc bằng 「システムエラーです。」 và KHÔNG sang 窓口精算 —
+        // nhưng seed đó còn đổi INS_KBN 7 → 2 (国保), nên system error rất có thể đến từ
+        // chỗ khác chứ không phải từ E00100. Đo chuỗi F8 khi dữ liệu nguyên vẹn là cách
+        // duy nhất phân biệt hai giả thuyết đó.
+        Say(() =>
+        {
+            if (!Settings.Parity.AllowSave)
+            {
+                Kq(7, "BỎ QUA chuỗi F8: chưa bật parity.allowSave. F8 đi qua " +
+                      "UnPaid.deleteTrtDtUnPaid (modAcc.cs:427) — chạy TRƯỚC mọi cổng hộp thoại " +
+                      "nên dòng 未精算 của ngày test bay bất kể sau đó trả lời gì.");
+                return;
+            }
+
+            var flowF8 = new BuiPriceE00100Flow(App);
+            var day2 = new AccountingDayFlow(App, Screen);
+            var before = _db?.ReadUnpaid(PatNo, TrtDate).Count;
+
+            var row = day2.RowForDay(TrtDate.Day);
+            if (row is null)
+            {
+                Kq(7, $"lưới không có dòng 日 = {TrtDate.Day}; các ngày đọc được: " +
+                      string.Join(", ", day2.DaysOnGrid()));
+                return;
+            }
+            day2.FocusRow(row, trace);
+
+            var walk = flowF8.PressF8AndWalk(App, Screen.Window, rounds: 10, trace);
+            Kq(7, $"MỐC NỀN — chuỗi F8 trên dữ liệu SẠCH ({walk.Trail.Count} hộp thoại), " +
+                  $"E00100 = {walk.E00100Count}, sang 窓口精算 = {walk.ReachedCounterPayment}");
+            foreach (var a in walk.Trail) Kq(7, "        " + a);
+            Kq(7, "        chẩn đoán: " + walk.Explain);
+            Kq(7, $"        UNPAID ngày {TrtDate:yyyy-MM-dd}: {before} → " +
+                  $"{_db?.ReadUnpaid(PatNo, TrtDate).Count}");
+            trace.Shot("kq7-sau-chuoi-f8-sach");
         });
     }
 
