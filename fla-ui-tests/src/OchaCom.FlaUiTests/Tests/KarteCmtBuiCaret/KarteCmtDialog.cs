@@ -171,6 +171,50 @@ public static class KarteCmtDialog
         return null;
     }
 
+    /// <summary>
+    /// Tìm <c>frm902003</c>「部位選択」 khi nó được mở <b>từ <c>frm203012</c></b>.
+    ///
+    /// <para>☠ <c>ToothSelectDialog.Find</c> KHÔNG thấy nó ở đường này. Đo thật
+    /// 2026-09-07: bấm F1 xong, <c>ToothSelectDialog.WaitFor(app, cmtList, 15s)</c> trả
+    /// null, và ngay sau đó <c>ValuePattern.SetValue</c> lên <c>txtValue</c> ném
+    /// <c>ElementNotEnabledException</c> — tức hộp thoại <b>CÓ mở</b> và đang khoá form
+    /// cha, chỉ là không tìm ra. Kết luận 「F1 không mở được 部位選択」 lúc đó là đổ oan
+    /// cho app, đúng cái bẫy PROBE-GUIDELINE 3.4 cảnh báo.</para>
+    ///
+    /// <para>Vì sao trượt: cả ba đường của <c>ToothSelectDialog.Find</c> đều giả định
+    /// hộp thoại là <b>top-level</b> hoặc là <c>ModalWindows</c> của cửa sổ chủ được
+    /// truyền vào. Ở luồng này thì <c>frm203011</c> / <c>frm203012</c> / <c>frm902003</c>
+    /// đều KHÔNG top-level — <c>app.Windows()</c> chỉ trả về đúng một cửa sổ
+    /// <c>frm203002</c> (xem KQ-5 của lượt đo đó). Chúng nằm trong CÂY của form chính.</para>
+    ///
+    /// <para>Nên phải thử đủ bốn đường, rẻ trước đắt sau, và lục cây bằng
+    /// <c>KarteAutoCalcDialog.FindNested</c> (BFS có chặn số nút và bỏ qua cây lưới) chứ
+    /// không phải <c>Uia.Descendants</c> — lưới 処置 có hàng nghìn dòng.</para>
+    /// </summary>
+    public static Window? FindToothDialog(OchaApp app, Window? screen, Window? cmtList)
+    {
+        var direct = ToothSelectDialog.Find(app, cmtList) ?? ToothSelectDialog.Find(app, screen);
+        if (direct is not null) return direct;
+
+        foreach (var root in new AutomationElement?[] { cmtList, screen })
+        {
+            if (root is null) continue;
+            try
+            {
+                var nested = KarteAutoCalc.KarteAutoCalcDialog.FindNested(
+                    root, ToothSelectDialog.DialogId, ToothSelectDialog.TitleFragment);
+                if (nested is not null) return nested.AsWindow();
+            }
+            catch { /* cây đang đổi */ }
+        }
+
+        return null;
+    }
+
+    /// <inheritdoc cref="FindToothDialog"/>
+    public static Window? WaitForToothDialog(OchaApp app, Window? screen, Window? cmtList, TimeSpan timeout) =>
+        Waits.TryFor(() => FindToothDialog(app, screen, cmtList), timeout);
+
     /// <summary>Liệt kê cửa sổ đang mở — để thông điệp lỗi nói được 「thấy gì thay vì」.</summary>
     public static string DescribeWindows(OchaApp app)
     {

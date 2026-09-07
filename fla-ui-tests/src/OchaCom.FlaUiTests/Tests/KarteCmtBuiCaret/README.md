@@ -170,7 +170,33 @@ ra được. Bộ test không tự kiểm điều này được — nó chỉ ch
   `Visible = false` (`frm203011.cs:200-207`) nên **không có trong cây UIA**. Không thấy nút
   thì đổi `karteCmt.groupNo`, đừng sửa code.
 
-## 8. Hai form trùng tiêu đề
+## 8. ☠ `ToothSelectDialog.Find` không thấy 部位選択 ở đường này (đo 2026-09-07)
+
+Ba form của luồng — `frm203011`, `frm203012`, **và cả `frm902003`** — đều **không phải
+top-level**. `app.Windows()` chỉ trả về đúng một cửa sổ `frm203002`; tất cả nằm trong
+**cây** của form chính. Mà cả ba đường của `ToothSelectDialog.Find` đều giả định hộp thoại
+là top-level hoặc là `ModalWindows` của cửa sổ chủ được truyền vào — nên nó trả `null`.
+
+Cái nguy hiểm là **thông điệp lỗi khi đó đổ oan cho app**. Lượt đo đầu tiên báo
+`F1 không mở được 部位選択`, trong khi sự thật là nó **mở rồi**: ngay bước sau
+`ValuePattern.SetValue` lên `txtValue` ném `ElementNotEnabledException` — WinForms vô hiệu
+hoá form cha khi có modal. Đúng bẫy **PROBE-GUIDELINE 3.4**.
+
+Đã sửa hai chỗ:
+
+* `KarteCmtDialog.FindToothDialog` thử **bốn** đường — `ToothSelectDialog.Find` với chủ là
+  `frm203012` rồi `frm203002`, sau đó lục cây bằng `KarteAutoCalcDialog.FindNested` (BFS có
+  chặn số nút, **bỏ qua cây lưới** — lưới 処置 hàng nghìn dòng);
+* không tìm thấy thì `PickBui` **hỏi `IsEnabled` của `txtValue` trước khi kết luận**, và
+  phân biệt rõ 「có modal chắn」 với 「phím không tới nơi」. Trường hợp đầu nó gửi `F12`
+  gỡ kẹt — `F12` là 戻る của `frm902003` và là **phím chết** trên `frm203012`
+  (`BaseDialog.formBase_KeyDown` không có `case Keys.F12`), nên gửi mù được mà không sợ
+  lạc sang 確定.
+
+> `PerioKensaOrderFlow` / `SigaToothFlow` gọi `ToothSelectDialog.Find` bình thường được vì
+> ở đó 部位選択 mở **từ `frm203002`**. Khác đường mở, khác chỗ nằm trong cây.
+
+## 9. Hai form trùng tiêu đề
 
 `frm203011` và `frm203012` (gType `Cult`) **cùng mang tiêu đề 「カルテ記載選択」**
 (`frm203012.cs:54`). `KarteAutoCalcDialog.FindDialogWindow` thử `app.WindowByTitle(...)` ở

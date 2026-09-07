@@ -408,6 +408,20 @@ public sealed class KarteCmtBuiFlow
     }
 
     /// <summary>
+    /// Ô テキスト còn thao tác được không.
+    ///
+    /// <para><b>Cách rẻ nhất phát hiện 「có modal đang chắn」.</b> WinForms vô hiệu hoá form
+    /// cha khi một hộp thoại modal mở ra, nên <c>IsEnabled = false</c> ở đây đồng nghĩa
+    /// 「hộp thoại CÓ mở, chỉ là chưa tìm ra」 — khác hẳn 「phím không tới nơi」, và hai
+    /// chuyện đó phải chữa ở hai chỗ khác nhau.</para>
+    /// </summary>
+    public bool TextBoxEnabled(Window cmtList)
+    {
+        try { return TextBox(cmtList).Properties.IsEnabled.ValueOrDefault; }
+        catch { return false; }
+    }
+
+    /// <summary>
     /// Đưa tiêu điểm vào ô テキスト.
     ///
     /// <para>Bắt buộc trước khi gõ ký tự hoặc gửi Enter: <c>txtValue_KeyDown</c> chỉ chạy
@@ -477,11 +491,29 @@ public sealed class KarteCmtBuiFlow
             Uia.MouseClick(btn);
         }
 
-        var tooth = ToothSelectDialog.WaitFor(_app, cmtList, TimeSpan.FromSeconds(15));
+        var tooth = KarteCmtDialog.WaitForToothDialog(_app, _screen.Window, cmtList, TimeSpan.FromSeconds(15));
         if (tooth is null)
+        {
+            // ĐỪNG kết luận 「F1 không mở được」 khi chưa hỏi: hộp thoại CÓ THỂ đang mở mà
+            // chỉ là không tìm ra, và hai chuyện đó phải chữa ở hai chỗ khác hẳn nhau.
+            // Ô text bị khoá = có modal đang chắn (PROBE-GUIDELINE 3.4).
+            var blocked = !TextBoxEnabled(cmtList);
+            trace?.Note(blocked
+                ? "KHONG thay 部位選択 nhung txtValue DANG BI KHOA ⇒ co modal chan"
+                : "KHONG thay 部位選択 va txtValue van dung duoc ⇒ F1 that su khong mo gi");
+
+            // F12 là 戻る của frm902003 và là phím CHẾT trên frm203012 (BaseDialog không có
+            // case Keys.F12, frm203012 cũng không) ⇒ gửi mù được, không sợ lạc sang 確定.
+            if (blocked) { Uia.SendKey(Vk.F12); Thread.Sleep(600); }
+
             return new BuiInsert(false,
-                "F1 khong mo duoc 部位選択 (frm902003). Cua so dang mo: " + KarteCmtDialog.DescribeWindows(_app),
+                (blocked
+                    ? "F1 CO mo mot modal nhung khong tim ra 部位選択 (frm902003) — txtValue bi khoa " +
+                      "(ElementNotEnabledException). Da gui F12 戻る de go ket. "
+                    : "F1 khong mo duoc 部位選択 (frm902003). ") +
+                "Cua so top-level dang mo: " + KarteCmtDialog.DescribeWindows(_app),
                 before, before);
+        }
 
         ToothSelectDialog.ClearAll(tooth, trace);
         switch (preset)
@@ -528,8 +560,12 @@ public sealed class KarteCmtBuiFlow
         ToothSelectDialog.FocusWindow(cmtList);
         if (!Uia.SendKey(Vk.F1)) return (false, "SendInput hong", 0);
 
-        var tooth = ToothSelectDialog.WaitFor(_app, cmtList, TimeSpan.FromSeconds(15));
-        if (tooth is null) return (false, "F1 khong mo duoc 部位選択", 0);
+        var tooth = KarteCmtDialog.WaitForToothDialog(_app, _screen.Window, cmtList, TimeSpan.FromSeconds(15));
+        if (tooth is null)
+        {
+            if (!TextBoxEnabled(cmtList)) { Uia.SendKey(Vk.F12); Thread.Sleep(600); }
+            return (false, "F1 khong mo duoc 部位選択 (hoac mo ma khong tim ra — xem PickBui)", 0);
+        }
 
         int marked;
         try { marked = ToothSelectDialog.MarkedToothCount(tooth); }
