@@ -134,6 +134,153 @@ public sealed class BuiPriceE00100Flow
         catch { return ""; }
     }
 
+    // ── Chuỗi F8 会計 (frm203002 → modAcc.LetAccData2) ───────────────────────
+
+    /// <summary>Một hộp thoại của chuỗi F8 và câu trả lời đã bấm.</summary>
+    public sealed record Answered(string Text, string Button, string Why)
+    {
+        public override string ToString() =>
+            $"「{Text.Replace("\n", " ⏎ ")}」 → bấm 「{Button}」 ({Why})";
+    }
+
+    /// <param name="Trail">Mọi hộp thoại đã gặp, theo thứ tự — đây là chuỗi THẬT.</param>
+    /// <param name="E00100Count">Số lần E00100 bung ra trong chuỗi.</param>
+    /// <param name="ReachedCounterPayment">Có sang được 窓口精算 (frm204002) không.</param>
+    /// <param name="Explain">Khi không tới đích: vì sao, nói bằng ngôn ngữ của modAcc.</param>
+    public sealed record F8Walk(IReadOnlyList<Answered> Trail, int E00100Count,
+                                bool ReachedCounterPayment, string Explain);
+
+    /// <summary>「会計処理を行う日が本日でありません。よろしいですか。」 — modAcc.cs:383.</summary>
+    public const string DateGateMsg = "本日でありません";
+
+    /// <summary>「処置データチェックでエラーがありました…このまま続けますか?」 — frm203002.cs:7713.</summary>
+    public const string PreCheckMsg = "続けますか";
+
+    /// <summary>「処置データは、変更されています。保存しますか？」 — ModSave.ExitWithoutSaving.</summary>
+    public const string SaveQuestionMsg = "保存しますか";
+
+    /// <summary>「既に、¥N の会計処理がされていますが、未清算データ（¥M）を作成してよろしいですか？」 — modAcc.cs:558.</summary>
+    public const string CreateUnpaidMsg = "未清算データ";
+
+    /// <summary>「会計処理後、請求金額が増えています。差額分の未精算データ…を作成しますか？」 — modAcc.cs:578.</summary>
+    public const string DiffUnpaidMsg = "差額分";
+
+    /// <summary>「…に計上しますか？」 — cây quyết định ChgAccData, modAcc.cs:956. GHI SỔ TIỀN ở nhánh はい.</summary>
+    public const string ChgAccDataMsg = "計上しますか";
+
+    /// <summary>
+    /// Bấm <b>F8 会計</b> rồi đi hết chuỗi hộp thoại, đếm E00100 và xem có sang 窓口精算 không.
+    ///
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// LÁI BẰNG WIN32, KHÔNG PHẢI UIA — VÀ VÌ SAO KHÁC <c>UnpaidCreationFlow</c>
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// Chuỗi này trộn hai loại hộp thoại: E00100 (một nút OK) và các cổng Yes/No. Cả hai
+    /// đều là <c>#32770</c>, nên một vòng lặp <see cref="MsgBoxWin32"/> đọc được tuốt —
+    /// trong khi <c>ModalDialogs</c> đi ba đường UIA và đường cuối quét cả desktop.
+    ///
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// LUẬT TRẢ LỜI: ĐI TIẾP, NHƯNG KHÔNG GHI SỔ TIỀN
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// Mục tiêu là 「E00100 xong có VẪN sang 窓口精算 không」, chứ KHÔNG phải tạo 未精算.
+    /// Nên luật ngược hẳn <c>UnpaidCreationFlow</c>: nó trả lời <b>はい</b> cho
+    /// 「…未清算データ…作成してよろしいですか?」 để ghi cho được; ở đây <b>いいえ</b>, vì
+    /// <c>modAcc.cs:571-574</c> cho biết khi số tiền hiện tại BẰNG số đã chốt thì nhánh
+    /// いいえ <c>return true</c> ngay — đúng cái cần, mà không chèn dòng nào.
+    ///
+    /// <para>⚠️ Điều KHÔNG tránh được: <c>UnPaid.deleteTrtDtUnPaid</c> nằm ở
+    /// <b>modAcc.cs:427</b>, tức TRƯỚC mọi cổng trên. Qua được cổng ngày là dòng 未精算 của
+    /// ngày đó BAY. Fixture gọi hàm này BẮT BUỘC phải chụp ảnh <c>UNPAID</c> và trả lại.</para>
+    ///
+    /// <para>「…計上しますか？」 luôn trả lời <b>いいえ</b>: <c>ChgAccData</c> chỉ ghi
+    /// <c>ACCDAT</c>/<c>PERSON_EXP</c> ở nhánh はい (modAcc.cs:956) — đó là SỔ TIỀN của
+    /// phòng khám, ngoài phạm vi luồng này.</para>
+    /// </summary>
+    public F8Walk PressF8AndWalk(OchaApp app, Window screen, int rounds = 10, TestTrace? trace = null)
+    {
+        var trail = new List<Answered>();
+        var e00100 = 0;
+
+        trace?.Step("bam F8 会計");
+        try { screen.SetForeground(); } catch { /* vẫn thử gõ */ }
+        try { screen.Focus(); } catch { /* nt */ }
+        Waits.Step();
+        Keyboard.Press(VirtualKeyShort.F8);
+
+        for (var i = 0; i < rounds; i++)
+        {
+            var found = Waits.TryFor(() => MsgBoxWin32.First(app.ProcessId),
+                                     TimeSpan.FromSeconds(i == 0 ? 30 : 6));
+            if (found is null) break;
+
+            var text = Txt.N(found.Text).Replace("\r\n", "\n");
+            var buttons = MsgBoxWin32.ButtonCaptions(found.Hwnd);
+            var (names, why) = RuleFor(text);
+
+            trace?.Note($"hop thoai [{trail.Count + 1}]: 「{text}」 nut=[{string.Join(", ", buttons)}]");
+            trace?.Shot($"f8-hop-thoai-{trail.Count + 1}");
+
+            if (Txt.Has(text, FailedHead)) e00100++;
+
+            if (!MsgBoxWin32.ClickButton(found.Hwnd, names))
+            {
+                trail.Add(new Answered(text, "(KHONG BAM DUOC)", why));
+                return new F8Walk(trail, e00100, false,
+                    $"không có nút nào trong [{string.Join(", ", names)}] trên hộp thoại cuối " +
+                    $"(đọc được [{string.Join(", ", buttons)}]).");
+            }
+            trail.Add(new Answered(text, names[0], why));
+            Waits.Step();
+        }
+
+        // IDM_Acc_Click: nhánh AccRet == true là showForm(ID204002) + this.Close()
+        // (frm203002.cs:7742-7746). Nên mốc 「đã sang 窓口精算」 là frm204002 XUẤT HIỆN,
+        // chứ không phải 「frm203002 biến mất」 — cửa sổ cũ chỉ Close() sau đó.
+        var seisan = Waits.TryFor(() => app.Window("frm204002"), TimeSpan.FromSeconds(30));
+        return new F8Walk(trail, e00100, seisan is not null,
+            seisan is not null
+                ? "đã sang 窓口精算 (frm204002)."
+                : "chuỗi F8 kết thúc mà KHÔNG sang 窓口精算. Cửa sổ đang mở: " +
+                  string.Join(" | ", app.Windows().Select(w => Uia.AutomationIdOf(w))));
+    }
+
+    /// <summary>
+    /// Luật trả lời. <b>Thứ tự là một phần của luật — cụ thể trước, chung chung sau.</b>
+    ///
+    /// <para>Câu 「既に…未清算データ(…)を作成してよろしいですか?」 chứa CẢ 「よろしいですか」
+    /// lẫn 「されています」; để luật chung đứng trước là nó bị nuốt và trả lời sai — đúng cái
+    /// bẫy mà <c>AccountingFlow</c> và <c>UnpaidCreationFlow</c> đều đã ghi lại.</para>
+    /// </summary>
+    private static (string[] Names, string Why) RuleFor(string text)
+    {
+        if (Txt.Has(text, FailedHead))
+            return (["OK"], "E00100 chỉ có một nút OK (MsgDialog.cs:35)");
+
+        if (Txt.Has(text, ChgAccDataMsg))
+            return (["いいえ", "No"], "いいえ ⇒ ChgAccData KHÔNG ghi sổ tiền (modAcc.cs:956)");
+
+        if (Txt.Has(text, DiffUnpaidMsg))
+            return (["いいえ", "No"], "いいえ ⇒ không tạo 未精算 phần chênh (modAcc.cs:578)");
+
+        if (Txt.Has(text, CreateUnpaidMsg))
+            return (["いいえ", "No"],
+                    "いいえ ⇒ số hiện tại bằng số đã chốt thì return true ngay, " +
+                    "không chèn dòng nào (modAcc.cs:571-574)");
+
+        if (Txt.Has(text, SaveQuestionMsg))
+            return (["いいえ", "No"], "いいえ ⇒ RestoreData, không ghi TRNTRN");
+
+        if (Txt.Has(text, DateGateMsg))
+            return (["OK", "はい", "Yes"], "OK ⇒ đi tiếp qua cổng ngày (Cancel là bỏ cuộc)");
+
+        if (Txt.Has(text, PreCheckMsg))
+            return (["OK", "はい", "Yes"], "OK ⇒ bỏ qua cảnh báo 処置データチェック");
+
+        // Lạ: phủ định cho an toàn. Hộp kiểu 「…続けますか」 phải có luật RIÊNG ở trên —
+        // với chúng, phủ định là BỎ CUỘC chứ không phải an toàn.
+        return (["いいえ", "No", "キャンセル", "Cancel", "OK"],
+                "KHÔNG khớp luật nào — trả lời phủ định");
+    }
+
     // ── 当日来患 (frm203001, F4) ──────────────────────────────────────────────
 
     /// <summary>Một dòng của lưới <c>dgvView</c> ở chế độ 当日来患.</summary>

@@ -180,19 +180,90 @@ public sealed class BuiPriceE00100Db
 
     // ── Ghi: seed + khôi phục ────────────────────────────────────────────────
 
+    /// <summary>
+    /// HAI kiểu hỏng, hai câu E00100 khác hẳn nhau — xem README của luồng mục 2.
+    /// </summary>
+    public enum SeedMode
+    {
+        /// <summary>
+        /// <c>LFLG</c> trỏ vào mã không có trong <c>LOCALFLG</c> ⇒ buiPrice.cs:1734 bật
+        /// 「福祉医療設定データが存在しません」. <b>KHÔNG ném</b>: app vá <c>localFlg</c> mặc
+        /// định (buiPrice.cs:1866-1872) rồi tính tiếp, nên số trên màn hình KHÔNG về 0.
+        /// </summary>
+        LocalFlgMissing,
+
+        /// <summary>
+        /// Ép <c>getLimitApplicationCertificateRelatedInfo</c> ném, ⇒ nhánh <c>catch</c>
+        /// của buiPrice.cs:196-203 bật 「患者登録データを確認してください」 — <b>đúng hộp mà
+        /// spec Playwright mô phỏng</b>, kèm <c>内容[]</c> và <c>場所[stack trace]</c>.
+        ///
+        /// <para>Chỗ ném: buiPrice.cs:998 gọi <c>BeneficiaryNumber.Substring(0, 2)</c>
+        /// trong khi guard chỉ kiểm <c>PublicExpenseNumber.Length == 8</c> — HAI FIELD
+        /// KHÁC NHAU. 受給者番号 rỗng ⇒ <c>ArgumentOutOfRangeException</c>. Đây là một lỗi
+        /// THẬT của WinForm, không phải chỗ test tự bịa.</para>
+        ///
+        /// <para>Nhánh đó chỉ tới được với bệnh nhân <b>70歳以上 医保</b>, nên seed phải
+        /// đổi thêm <c>INS_KBN</c> → 2 (国保) và <c>OLD_FLG</c> → 4 (前期高齢者). Hai cột đó
+        /// nằm trong ảnh chụp và được trả lại nguyên vẹn.</para>
+        ///
+        /// <para>Ném xảy ra ở buiPrice.cs:334, TRƯỚC <c>_rtnData.insPayDatas = payDatas</c>
+        /// (:649) ⇒ <c>buiPriceData2</c> trả về giữ nguyên giá trị khởi tạo <b>toàn 0</b> —
+        /// đúng cảnh mà spec web dựng.</para>
+        /// </summary>
+        CalcException,
+    }
+
+    /// <summary>Một dòng <c>UNPAID</c> — chỉ để chụp ảnh và trả lại.</summary>
+    public sealed record UnpaidRow(string TrtDt, int TrtCnt, int KmCd, int PatBr, int Lflg,
+                                   int Score, int ClaimAmt)
+    {
+        public override string ToString() =>
+            $"{TrtDt} 来院{TrtCnt} 科目{KmCd} 枝番{PatBr} lflg{Lflg} {Score}点 {ClaimAmt}円";
+    }
+
+    /// <summary>
+    /// <c>UNPAID</c> của MỘT ngày.
+    ///
+    /// <para>Cần vì <c>LetAccData2</c> gọi <c>UnPaid.deleteTrtDtUnPaid</c> ở
+    /// <b>modAcc.cs:427</b> — TRƯỚC mọi hộp thoại 「…作成してよろしいですか?」 (:560). Nghĩa
+    /// là chuỗi F8 đi qua được cổng ngày là dòng 未精算 của ngày đó BAY, bất kể sau đó trả
+    /// lời gì. Không có transaction nào để lui.</para>
+    /// </summary>
+    public IReadOnlyList<UnpaidRow> ReadUnpaid(int patNo, DateTime day)
+    {
+        using var con = Open();
+        using var cmd = Cmd(con,
+            "SELECT TRT_DT, TRT_CNT, KM_CD, PAT_BR, LFLG, SCORE, CLAIM_AMT FROM UNPAID " +
+            "WHERE PAT_NO = @pat AND TRT_DT = @d ORDER BY TRT_CNT, KM_CD");
+        cmd.Parameters.Add("@pat", SqlDbType.Int).Value = patNo;
+        cmd.Parameters.Add("@d", SqlDbType.VarChar, 10).Value = day.ToString("yyyy/MM/dd");
+
+        var rows = new List<UnpaidRow>();
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+            rows.Add(new UnpaidRow(S(r["TRT_DT"]), I(r["TRT_CNT"]), I(r["KM_CD"]), I(r["PAT_BR"]),
+                                   I(r["LFLG"]), I(r["SCORE"]), I(r["CLAIM_AMT"])));
+        return rows;
+    }
+
     /// <summary>Ảnh chụp trước khi seed — đủ để đưa DB về đúng như cũ.</summary>
-    /// <param name="Insurance">Toàn bộ dòng <c>INSURANCE</c> của bệnh nhân (cần cột PUBEXPINF_NO cũ).</param>
+    /// <param name="Insurance">Toàn bộ dòng <c>INSURANCE</c> (cần PUBEXPINF_NO, INS_KBN, OLD_FLG cũ).</param>
     /// <param name="Pubexp">Toàn bộ dòng <c>PUBEXPINF</c> của bệnh nhân trước khi seed.</param>
+    /// <param name="Unpaid">
+    /// <c>UNPAID</c> của ngày test. Chỉ nhóm chạy chuỗi F8 mới đụng tới; các nhóm khác chụp
+    /// cho có để lỡ có gì lệch thì còn biết mà so.
+    /// </param>
     public sealed record Snapshot(int PatNo,
                                   IReadOnlyList<InsuranceRow> Insurance,
-                                  IReadOnlyList<PubexpRow> Pubexp);
+                                  IReadOnlyList<PubexpRow> Pubexp,
+                                  IReadOnlyList<UnpaidRow> Unpaid);
 
-    public Snapshot TakeSnapshot(int patNo) =>
-        new(patNo, ReadInsurance(patNo), ReadPubexp(patNo));
+    public Snapshot TakeSnapshot(int patNo, DateTime day) =>
+        new(patNo, ReadInsurance(patNo), ReadPubexp(patNo), ReadUnpaid(patNo, day));
 
     /// <summary>Kết quả của một lượt seed — in ra log để đối chiếu với hộp thoại đọc được.</summary>
     /// <param name="Blocker">Khác null ⇒ KHÔNG seed được, testcase phải Ignore kèm lý do này.</param>
-    public sealed record Seed(int PatNo, int PatBr, int PubexpinfNo, string Lflg,
+    public sealed record Seed(SeedMode Mode, int PatNo, int PatBr, int PubexpinfNo, string Lflg,
                               DateTime Qualification, DateTime Expiry, string? Blocker);
 
     /// <summary>
@@ -210,7 +281,7 @@ public sealed class BuiPriceE00100Db
     ///
     /// <para>Tự dọn dòng seed cũ trước khi chèn — chạy lại nhiều lượt không cộng dồn.</para>
     /// </summary>
-    public Seed SeedBrokenPubexp(int patNo, string lflg, int pubexpinfNo, DateTime month)
+    public Seed SeedBrokenPubexp(SeedMode mode, int patNo, string lflg, int pubexpinfNo, DateTime month)
     {
         var insurance = ReadInsurance(patNo);
         if (insurance.Count == 0)
@@ -220,9 +291,17 @@ public sealed class BuiPriceE00100Db
             return Blocked("buiPrice.seedPubexpinfNo = 0 — PatInfoList.cs:678 bỏ hẳn dòng 公費 " +
                            "khi ins.pubexpinf_no = 0, seed sẽ không có tác dụng");
 
-        if (CountLocalFlg(lflg) != 0)
+        // 福祉医療番号: mode LocalFlgMissing SỐNG nhờ nó vắng mặt; mode CalcException thì
+        // ngược lại — phải để RỖNG, vì lflg khác rỗng sẽ bật hộp (B) TRƯỚC và probe không
+        // còn phân biệt được hai nhánh nữa.
+        var seedLflg = mode == SeedMode.LocalFlgMissing ? lflg : "";
+        if (mode == SeedMode.LocalFlgMissing && CountLocalFlg(lflg) != 0)
             return Blocked($"福祉医療番号 「{lflg}」 CÓ THẬT trong LOCALFLG ⇒ getLocalFlg không trả " +
                            "null và E00100 không bật. Đổi buiPrice.missingLflg sang mã khác.");
+
+        // 受給者番号 RỖNG là cả mấu chốt của mode CalcException (buiPrice.cs:998), và phải
+        // KHÁC rỗng ở mode kia để dòng 公費 trông như dữ liệu thật.
+        var cerNo = mode == SeedMode.CalcException ? "" : "7777777";
 
         var br = insurance.Min(i => i.PatBr);
         var qualification = new DateTime(month.Year, month.Month, 1).AddYears(-1);
@@ -239,18 +318,28 @@ public sealed class BuiPriceE00100Db
              "                       QualificationDate, PUBEXP_EXP_DT, LFLG, WelfareOfficeName) " +
              "VALUES (@pat, @no, 1, @def, @cer, @q, @e, @lflg, @office)",
              ("@pat", patNo), ("@no", pubexpinfNo),
-             ("@def", "88888888"), ("@cer", "7777777"),
+             // 負担者番号 phải ĐÚNG 8 ký tự: guard buiPrice.cs:997 kiểm Length == 8 rồi mới
+             // chạy tới cú Substring hỏng ở dòng ngay dưới.
+             ("@def", "88888888"), ("@cer", cerNo),
              ("@q", qualification), ("@e", expiry),
-             ("@lflg", lflg), ("@office", "FLAUI-SEED"));
+             ("@lflg", seedLflg), ("@office", "FLAUI-SEED"));
 
-        Exec(con, tx, "UPDATE INSURANCE SET PUBEXPINF_NO = @no WHERE PAT_NO = @pat AND PAT_BR = @br",
-             ("@no", pubexpinfNo), ("@pat", patNo), ("@br", br));
+        if (mode == SeedMode.CalcException)
+            // 70歳以上 医保: điều kiện để buiPrice.cs:990-998 chạy tới. ins_kbn 7 (公費単独)
+            // rơi vào nhánh rỗng ngay ở :989 nên KHÔNG bao giờ tới được cú Substring.
+            Exec(con, tx,
+                 "UPDATE INSURANCE SET PUBEXPINF_NO = @no, INS_KBN = 2, OLD_FLG = 4 " +
+                 "WHERE PAT_NO = @pat AND PAT_BR = @br",
+                 ("@no", pubexpinfNo), ("@pat", patNo), ("@br", br));
+        else
+            Exec(con, tx, "UPDATE INSURANCE SET PUBEXPINF_NO = @no WHERE PAT_NO = @pat AND PAT_BR = @br",
+                 ("@no", pubexpinfNo), ("@pat", patNo), ("@br", br));
 
         tx.Commit();
-        return new Seed(patNo, br, pubexpinfNo, lflg, qualification, expiry, null);
+        return new Seed(mode, patNo, br, pubexpinfNo, seedLflg, qualification, expiry, null);
 
         Seed Blocked(string why) =>
-            new(patNo, 0, pubexpinfNo, lflg, default, default, why);
+            new(mode, patNo, 0, pubexpinfNo, lflg, default, default, why);
     }
 
     /// <summary>
@@ -293,13 +382,48 @@ public sealed class BuiPriceE00100Db
             restored++;
         }
 
+        // Đặt lại CẢ BA cột mà seed có thể đã đụng — mode CalcException còn sửa
+        // INS_KBN/OLD_FLG, và quên chúng thì bệnh nhân test ở lại dạng 国保 前期高齢者
+        // vĩnh viễn: mọi luồng khác sau đó đo trên một bệnh nhân KHÁC hẳn mà không ai hay.
         foreach (var ins in snap.Insurance)
-            Exec(con, tx, "UPDATE INSURANCE SET PUBEXPINF_NO = @no WHERE PAT_NO = @pat AND PAT_BR = @br",
-                 ("@no", ins.PubexpinfNo), ("@pat", snap.PatNo), ("@br", ins.PatBr));
+            Exec(con, tx,
+                 "UPDATE INSURANCE SET PUBEXPINF_NO = @no, INS_KBN = @kbn, OLD_FLG = @old " +
+                 "WHERE PAT_NO = @pat AND PAT_BR = @br",
+                 ("@no", ins.PubexpinfNo), ("@kbn", ins.InsKbn), ("@old", ins.OldFlg),
+                 ("@pat", snap.PatNo), ("@br", ins.PatBr));
 
         tx.Commit();
         return $"PUBEXPINF: xoá {deleted}, chèn lại {restored}; " +
-               $"INSURANCE.PUBEXPINF_NO: đặt lại {snap.Insurance.Count} 枝番";
+               $"INSURANCE (PUBEXPINF_NO/INS_KBN/OLD_FLG): đặt lại {snap.Insurance.Count} 枝番";
+    }
+
+    /// <summary>
+    /// Trả <c>UNPAID</c> của ngày test về đúng ảnh chụp.
+    ///
+    /// <para>Tách khỏi <see cref="Restore"/> vì chỉ nhóm chạy chuỗi F8 mới cần: F8 đi qua
+    /// cổng ngày là <c>deleteTrtDtUnPaid</c> chạy (modAcc.cs:427) bất kể sau đó trả lời gì.
+    /// Nhóm nào không bấm F8 thì gọi hàm này chỉ tốn một truy vấn.</para>
+    ///
+    /// <para>Xoá sạch rồi chèn lại theo ảnh: dòng do F8 sinh ra mang khoá khác với dòng
+    /// cũ nên "xoá cái mới" không đủ.</para>
+    /// </summary>
+    public string RestoreUnpaidForDay(int patNo, DateTime day, IReadOnlyList<UnpaidRow> snap)
+    {
+        using var con = Open();
+        using var tx = con.BeginTransaction();
+
+        var removed = Exec(con, tx, "DELETE FROM UNPAID WHERE PAT_NO = @pat AND TRT_DT = @d",
+                           ("@pat", patNo), ("@d", day.ToString("yyyy/MM/dd")));
+
+        foreach (var u in snap)
+            Exec(con, tx,
+                 "INSERT INTO UNPAID (PAT_NO, TRT_DT, TRT_CNT, KM_CD, PAT_BR, LFLG, SCORE, CLAIM_AMT) " +
+                 "VALUES (@pat, @d, @cnt, @km, @br, @lflg, @sc, @amt)",
+                 ("@pat", patNo), ("@d", u.TrtDt), ("@cnt", u.TrtCnt), ("@km", u.KmCd),
+                 ("@br", u.PatBr), ("@lflg", u.Lflg), ("@sc", u.Score), ("@amt", u.ClaimAmt));
+
+        tx.Commit();
+        return $"UNPAID ngày {day:yyyy-MM-dd}: xoá {removed}, chèn lại {snap.Count}";
     }
 
     // ── ORACLE: 日計 tính lại từ TRNTRN ──────────────────────────────────────
@@ -404,6 +528,26 @@ public sealed class BuiPriceE00100Db
     /// mà bản web CỐ Ý bỏ <c>場所[]</c> (xem parity-notes mục 「意図的に WinForm と変えた点」).</para>
     /// </summary>
     public const string CalcFailedHead = "一部負担金計算に失敗しました。患者登録データを確認してください。";
+
+    /// <summary>
+    /// Phần ĐOÁN TRƯỚC ĐƯỢC của thân hộp thoại nhánh ngoại lệ — buiPrice.cs:197-201:
+    ///
+    /// <code>
+    /// string.Format("一部負担金計算に失敗しました。患者登録データを確認してください。\r\n" +
+    ///               "　患者番号[{0}] 枝番[{1}] 診療年月[{2}]\r\n\r\n内容[{3}]\r\n場所[{4}]",
+    ///               patNo, patBr, editDateToString(trtStDt, "gggy年M月"), ex.Message, ex.StackTrace);
+    /// </code>
+    ///
+    /// <para>Chỉ trả về tới hết dòng 2. <c>内容[]</c> mang <c>ex.Message</c> và
+    /// <c>場所[]</c> mang <c>ex.StackTrace</c> — hai thứ đổi theo phiên bản .NET và theo
+    /// bản build, viết cứng vào assert là tự chuốc lấy một testcase vỡ mỗi lần rebuild.
+    /// Testcase kiểm phần này bằng <c>StartsWith</c> rồi kiểm RIÊNG sự CÓ MẶT của
+    /// <c>内容[</c> và <c>場所[</c> — vì chính sự có mặt của <c>場所[stack trace]</c> mới là
+    /// điểm lệch đã chốt với bản web.</para>
+    /// </summary>
+    public static string CalcFailedPrefix(int patNo, int patBr, DateTime trtMonth) =>
+        CalcFailedHead + "\r\n" +
+        $"　患者番号[{patNo}] 枝番[{patBr}] 診療年月[{Wareki(trtMonth)}]";
 
     /// <summary>
     /// Bọc thân theo đúng <c>MsgDialog.getMsg</c> (MsgDialog.cs:184-213): khuôn có

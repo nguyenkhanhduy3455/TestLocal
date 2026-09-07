@@ -267,8 +267,9 @@ public sealed class BuiPriceE00100SeedTests : UiTestBase
         _db = BuiPriceE00100Db.CreateOrNull(Settings);
         if (_db is null) return;
 
-        _snapshot = _db.TakeSnapshot(PatNo);
-        _seed = _db.SeedBrokenPubexp(PatNo, Settings.BuiPrice.MissingLflg,
+        _snapshot = _db.TakeSnapshot(PatNo, TrtDate);
+        _seed = _db.SeedBrokenPubexp(BuiPriceE00100Db.SeedMode.LocalFlgMissing, PatNo,
+                                     Settings.BuiPrice.MissingLflg,
                                      Settings.BuiPrice.SeedPubexpinfNo, TrtDate);
         TestContext.Out.WriteLine(_seed.Blocker is null
             ? $"ĐÃ SEED: 枝番 {_seed.PatBr}, pubexpinf_no {_seed.PubexpinfNo}, lflg 「{_seed.Lflg}」"

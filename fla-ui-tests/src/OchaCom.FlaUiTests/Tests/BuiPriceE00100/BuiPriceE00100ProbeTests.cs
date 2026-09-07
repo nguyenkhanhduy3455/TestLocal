@@ -216,14 +216,14 @@ public sealed class BuiPriceE00100SeedProbeTests : UiTestBase
         _db = BuiPriceE00100Db.CreateOrNull(Settings);
         if (_db is null) return;
 
-        _snapshot = _db.TakeSnapshot(PatNo);
+        _snapshot = _db.TakeSnapshot(PatNo, TrtDate);
         TestContext.Out.WriteLine(
             $"ảnh chụp bệnh nhân {PatNo}: {_snapshot.Insurance.Count} dòng INSURANCE, " +
             $"{_snapshot.Pubexp.Count} dòng PUBEXPINF");
         foreach (var i in _snapshot.Insurance) TestContext.Out.WriteLine("        " + i);
         foreach (var p in _snapshot.Pubexp) TestContext.Out.WriteLine("        " + p);
 
-        _seed = _db.SeedBrokenPubexp(PatNo,
+        _seed = _db.SeedBrokenPubexp(BuiPriceE00100Db.SeedMode.LocalFlgMissing, PatNo,
                                      Settings.BuiPrice.MissingLflg,
                                      Settings.BuiPrice.SeedPubexpinfNo,
                                      TrtDate);
@@ -404,5 +404,232 @@ public sealed class BuiPriceE00100SeedProbeTests : UiTestBase
         trace.Step($"bam F8 閲覧/変更 cho benh nhan {Settings.Patient.PatNo}");
         Keyboard.Press(VirtualKeyShort.F8);
         Waits.Step();
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// <summary>
+/// PROBE nhánh <b>NGOẠI LỆ</b> — đúng hộp E00100 mà spec Playwright mô phỏng, cộng chuỗi
+/// F8 会計.
+///
+/// <para>Khác hẳn <see cref="BuiPriceE00100SeedProbeTests"/>: nhánh kia
+/// (福祉医療設定データが存在しません) KHÔNG ném, app vá <c>localFlg</c> mặc định rồi tính
+/// tiếp nên số trên màn hình không đổi. Nhánh này <b>ném thật</b>, và ném ở
+/// buiPrice.cs:334 — TRƯỚC <c>_rtnData.insPayDatas = payDatas</c> (:649) — nên
+/// <c>buiPriceData2</c> trả về giữ nguyên giá trị khởi tạo <b>toàn 0</b>. Đó mới là cảnh
+/// 「màn hình sống với số 0」 mà TC-E00100-1 bên web dựng.</para>
+///
+/// <para>Chỗ ném là một <b>lỗi thật của WinForm</b>: buiPrice.cs:997-998 kiểm
+/// <c>PublicExpenseNumber.Length == 8</c> rồi gọi <c>BeneficiaryNumber.Substring(0, 2)</c>
+/// — hai field khác nhau. 受給者番号 rỗng ⇒ <c>ArgumentOutOfRangeException</c>.</para>
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+/// BỐN CÂU HỎI CHƯA AI ĐO
+/// ═══════════════════════════════════════════════════════════════════════════
+/// <list type="number">
+/// <item>Thân hộp thoại có đúng khuôn buiPrice.cs:197-201 không, và <c>内容[]</c> /
+///   <c>場所[]</c> thực sự in ra cái gì.</item>
+/// <item>日計 / 合計 có về 0 thật không.</item>
+/// <item>当日来患 có còn giữ dòng khi <c>insScore</c> = 0 không.</item>
+/// <item>Chuỗi F8 会計 gồm những hộp nào, và E00100 xong có VẪN sang 窓口精算 không.</item>
+/// </list>
+///
+/// <para>⚠️ GHI DB, ba chỗ — đều của RIÊNG bệnh nhân test, đều khôi phục theo ảnh chụp:
+/// <c>INSURANCE</c> (PUBEXPINF_NO + <b>INS_KBN → 2</b> + <b>OLD_FLG → 4</b>),
+/// một dòng <c>PUBEXPINF</c>, và <c>UNPAID</c> của ngày test —
+/// <c>UnPaid.deleteTrtDtUnPaid</c> chạy ở modAcc.cs:427, TRƯỚC mọi cổng hộp thoại.</para>
+///
+/// <para>Chạy: <c>.\run-calc-bui-price.ps1 -Diagnostics -Exception</c></para>
+/// </summary>
+[TestFixture]
+[Category("bui-price-e00100")]
+[Explicit("PROBE + GHI DB — chạy tay")]
+public sealed class BuiPriceE00100ExceptionProbeTests : UiTestBase
+{
+    private BuiPriceE00100Db? _db;
+    private BuiPriceE00100Db.Snapshot? _snapshot;
+    private BuiPriceE00100Db.Seed? _seed;
+
+    protected override string[] NuisanceDialogPatterns => [];
+
+    /// <summary>Tự điều hướng — E00100 bung ra giữa lúc 診療入力 đang mở, xem lớp seed probe.</summary>
+    protected override bool NavigatesToTreatmentEntry => false;
+
+    protected override string? FixturePreflightSkipReason()
+    {
+        if (!Settings.BuiPrice.AllowSeed)
+            return "chưa bật buiPrice.allowSeed. Probe này SỬA ĐĂNG KÝ BỆNH NHÂN " +
+                   "(INSURANCE.PUBEXPINF_NO + INS_KBN + OLD_FLG, và một dòng PUBEXPINF) rồi " +
+                   "chạy CHUỖI F8 (đụng UNPAID của ngày test). " +
+                   "Chạy: .\\run-calc-bui-price.ps1 -Diagnostics -Exception";
+
+        if (!Settings.Db.Enabled || string.IsNullOrWhiteSpace(Settings.Db.ConnectionString))
+            return "cần db.connectionString";
+
+        return null;
+    }
+
+    protected override void PrepareDataBeforeApp()
+    {
+        _db = BuiPriceE00100Db.CreateOrNull(Settings);
+        if (_db is null) return;
+
+        _snapshot = _db.TakeSnapshot(PatNo, TrtDate);
+        TestContext.Out.WriteLine(
+            $"ảnh chụp bệnh nhân {PatNo}: {_snapshot.Insurance.Count} INSURANCE, " +
+            $"{_snapshot.Pubexp.Count} PUBEXPINF, {_snapshot.Unpaid.Count} UNPAID ngày test");
+        foreach (var i in _snapshot.Insurance) TestContext.Out.WriteLine("        " + i);
+        foreach (var u in _snapshot.Unpaid) TestContext.Out.WriteLine("        UNPAID " + u);
+
+        _seed = _db.SeedBrokenPubexp(BuiPriceE00100Db.SeedMode.CalcException, PatNo,
+                                     Settings.BuiPrice.MissingLflg,
+                                     Settings.BuiPrice.SeedPubexpinfNo, TrtDate);
+        TestContext.Out.WriteLine(_seed.Blocker is null
+            ? $"ĐÃ SEED (CalcException): 枝番 {_seed.PatBr}, ins_kbn→2, old_flg→4, " +
+              $"負担者番号 8 ký tự + 受給者番号 RỖNG"
+            : $"KHÔNG SEED ĐƯỢC: {_seed.Blocker}");
+    }
+
+    [OneTimeTearDown]
+    public void RestoreEverything()
+    {
+        if (_db is null || _snapshot is null) return;
+
+        try { TestContext.Out.WriteLine("ĐÃ TRẢ LẠI — " + _db.Restore(_snapshot)); }
+        catch (Exception e)
+        {
+            TestContext.Error.WriteLine($"!! KHÔNG TRẢ LẠI ĐƯỢC INSURANCE/PUBEXPINF: {e.Message}");
+            foreach (var i in _snapshot.Insurance)
+                TestContext.Error.WriteLine(
+                    $"   UPDATE INSURANCE SET PUBEXPINF_NO = {i.PubexpinfNo}, INS_KBN = {i.InsKbn}, " +
+                    $"OLD_FLG = {i.OldFlg} WHERE PAT_NO = {PatNo} AND PAT_BR = {i.PatBr};");
+        }
+
+        try { TestContext.Out.WriteLine("ĐÃ TRẢ LẠI — " + _db.RestoreUnpaidForDay(PatNo, TrtDate, _snapshot.Unpaid)); }
+        catch (Exception e) { TestContext.Error.WriteLine($"!! KHÔNG TRẢ LẠI ĐƯỢC UNPAID: {e.Message}"); }
+    }
+
+    [Test]
+    [Description("PROBE NGOẠI LỆ — 患者登録データ E00100, số có về 0 không, và F8 rẽ đi đâu")]
+    public void Tc0_Probe()
+    {
+        if (_seed?.Blocker is not null)
+        {
+            BuiPriceE00100CleanProbeTests.Kq(20, "KHÔNG SEED ĐƯỢC ⇒ probe vô nghĩa: " + _seed.Blocker);
+            Assert.Ignore(_seed.Blocker);
+        }
+
+        using var trace = TestTrace.Begin();
+        var flow = new BuiPriceE00100Flow(App);
+        var prefix = BuiPriceE00100Db.CalcFailedPrefix(PatNo, _seed!.PatBr, TrtDate)
+                                     .Replace("\r\n", "\n");
+
+        BuiPriceE00100CleanProbeTests.Kq(20,
+            "ORACLE — phần đoán trước được của thân (buiPrice.cs:197-201):\n        「" +
+            prefix.Replace("\n", "\n         ") + "」  + \\n\\n内容[…]\\n場所[…]");
+
+        // ── F4 当日来患 ──────────────────────────────────────────────────────
+        Window? patSelect = null;
+        BuiPriceE00100CleanProbeTests.Say(() =>
+        {
+            patSelect = AppNavigator.OpenPatientSelect(App, Settings);
+            AppNavigator.SetTreatmentDate(patSelect, TrtDate);
+            flow.PressF4(patSelect, trace);
+
+            var boxes = flow.Drain(TimeSpan.FromSeconds(45), rounds: 12, trace);
+            BuiPriceE00100CleanProbeTests.Kq(21, $"F4 当日来患 bật {boxes.Count} hộp E00100");
+            foreach (var b in boxes)
+            {
+                BuiPriceE00100CleanProbeTests.Kq(21, "        " + b);
+                BuiPriceE00100CleanProbeTests.Kq(21,
+                    "        bắt đầu đúng ORACLE? " + (b.Text.StartsWith(prefix, StringComparison.Ordinal) ? "CÓ" : "KHÔNG") +
+                    " · có 内容[? " + (b.Text.Contains("内容[", StringComparison.Ordinal) ? "CÓ" : "KHÔNG") +
+                    " · có 場所[? " + (b.Text.Contains("場所[", StringComparison.Ordinal) ? "CÓ" : "KHÔNG"));
+            }
+
+            var rows = flow.TodayRows(patSelect!);
+            BuiPriceE00100CleanProbeTests.Kq(22, $"lưới 当日来患 còn {rows.Count} dòng");
+            foreach (var r in rows) BuiPriceE00100CleanProbeTests.Kq(22, "        " + r);
+            BuiPriceE00100CleanProbeTests.Kq(22,
+                "        合計: " + string.Join(" | ", flow.TodayTotalRow(patSelect!)));
+            trace.Shot("kq22-luoi-当日来患");
+        });
+
+        // ── 患者確定 → 診療入力 ─────────────────────────────────────────────
+        TreatmentEntryScreen? screen = null;
+        BuiPriceE00100CleanProbeTests.Say(() =>
+        {
+            if (patSelect is null) return;
+            var combo = Waits.For(() => Uia.ById(patSelect, TestSettings.Current.Locator("patSelPatNo")),
+                                  "ô 患者番号 「cboPatNo」");
+            Uia.SetText(Uia.EditInside(combo), Settings.Patient.PatNo);
+            Waits.Step();
+            trace.Step($"bam F8 閲覧/変更 cho benh nhan {Settings.Patient.PatNo}");
+            Keyboard.Press(VirtualKeyShort.F8);
+
+            var boxes = flow.Drain(TimeSpan.FromSeconds(60), rounds: 12, trace);
+            BuiPriceE00100CleanProbeTests.Kq(23, $"mở 診療入力 bật {boxes.Count} hộp E00100");
+            foreach (var b in boxes) BuiPriceE00100CleanProbeTests.Kq(23, "        " + b);
+
+            var window = Waits.TryFor(() => App.Window("frm203002"), TimeSpan.FromSeconds(60));
+            if (window is null)
+            {
+                BuiPriceE00100CleanProbeTests.Kq(24, "KHÔNG mở được 診療入力. Cửa sổ: " +
+                    string.Join(" | ", App.Windows().Select(w => Uia.AutomationIdOf(w))));
+                trace.Shot("kq24-khong-mo-duoc");
+                return;
+            }
+
+            screen = new TreatmentEntryScreen(window, App.Automation);
+            screen.WaitUntilReady();
+            var grid = new TreatmentGrid.TreatmentGridOps(screen);
+            var day = new AccountingDayFlow(App, screen);
+
+            BuiPriceE00100CleanProbeTests.Kq(24,
+                $"診療入力 VẪN MỞ — 患者番号 「{screen.PatientNo()}」 年月 「{screen.YearMonth()}」, " +
+                $"lưới {grid.RowCount()} dòng");
+            BuiPriceE00100CleanProbeTests.Kq(25,
+                "日計: " + string.Join(" · ", day.DailyTotals()) +
+                $"  ·  合計点数 「{grid.AllPoint()}」 実日数 「{grid.Days()}」 " +
+                "— NGOẠI LỆ ném ở buiPrice.cs:334, TRƯỚC :649 nên insPayDatas rỗng ⇒ KỲ VỌNG toàn 0");
+            trace.Shot("kq25-nhat-ke-luoi");
+        });
+
+        // ── Chuỗi F8 会計 ───────────────────────────────────────────────────
+        BuiPriceE00100CleanProbeTests.Say(() =>
+        {
+            if (screen is null) { BuiPriceE00100CleanProbeTests.Kq(26, "bỏ qua F8: chưa mở được 診療入力"); return; }
+
+            var before = _db!.ReadUnpaid(PatNo, TrtDate);
+            BuiPriceE00100CleanProbeTests.Kq(26, $"UNPAID ngày {TrtDate:yyyy-MM-dd} TRƯỚC F8: {before.Count} dòng");
+
+            // Đặt con trỏ vào dòng của NGÀY TEST: F8 会計 chạy theo ngày của DÒNG CON TRỎ
+            // (modAcc.cs:415), không theo ngày mở màn hình — bẫy đã ghi ở README mục 8b.
+            var day = new AccountingDayFlow(App, screen);
+            var row = day.RowForDay(TrtDate.Day);
+            if (row is null)
+            {
+                BuiPriceE00100CleanProbeTests.Kq(26,
+                    $"lưới không có dòng 日 = {TrtDate.Day}; các ngày đọc được: " +
+                    string.Join(", ", day.DaysOnGrid()));
+                return;
+            }
+            day.FocusRow(row, trace);
+
+            var walk = flow.PressF8AndWalk(App, screen.Window, rounds: 10, trace);
+            BuiPriceE00100CleanProbeTests.Kq(26,
+                $"chuỗi F8 ({walk.Trail.Count} hộp thoại), E00100 = {walk.E00100Count}, " +
+                $"sang 窓口精算 = {walk.ReachedCounterPayment}");
+            foreach (var a in walk.Trail) BuiPriceE00100CleanProbeTests.Kq(26, "        " + a);
+            BuiPriceE00100CleanProbeTests.Kq(26, "        chẩn đoán: " + walk.Explain);
+
+            var after = _db.ReadUnpaid(PatNo, TrtDate);
+            BuiPriceE00100CleanProbeTests.Kq(27,
+                $"UNPAID SAU F8: {after.Count} dòng (trước {before.Count}) — " +
+                "deleteTrtDtUnPaid chạy ở modAcc.cs:427, TRƯỚC mọi cổng");
+            foreach (var u in after) BuiPriceE00100CleanProbeTests.Kq(27, "        " + u);
+            trace.Shot("kq26-sau-chuoi-f8");
+        });
     }
 }

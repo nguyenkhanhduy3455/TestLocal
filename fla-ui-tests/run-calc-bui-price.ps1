@@ -31,7 +31,8 @@
       buiPrice.cs:1734  PUBEXPINF.LFLG                   = varchar(8) => DUONG DUY NHAT
 
 .PARAMETER Seed
-    Chay nhom CO SEED (sua dang ky benh nhan). Bat luon buiPrice.allowSeed.
+    Chay nhom CO SEED nhanh (B) 「福祉医療設定データが存在しません」. Bat luon
+    buiPrice.allowSeed.
 
     ⚠️ GHI DB — hai cho, deu cua RIENG benh nhan test:
        1. INSURANCE.PUBEXPINF_NO cua 枝番 nho nhat  (dang 0 => moi dong 公費 bi bo qua,
@@ -39,6 +40,17 @@
        2. mot dong PUBEXPINF mang LFLG khong co trong LOCALFLG
     Fixture chup anh ca hai o PrepareDataBeforeApp va tra lai o OneTimeTearDown.
     TRO patient.patNo VAO BENH NHAN TEST truoc khi chay.
+
+.PARAMETER Exception
+    Chay nhom nhanh (A) 「患者登録データを確認してください」 — dung hop thoai ma spec
+    Playwright mo phong, kem 内容[] va 場所[stack trace].
+
+    Nhanh nay chi toi duoc voi benh nhan 70歳以上 医保 (buiPrice.cs:990-998) nen seed
+    doi THEM INSURANCE.INS_KBN -> 2 va OLD_FLG -> 4, va no con chay CHUOI F8 会計 nen
+    dung toi UNPAID cua ngay test (deleteTrtDtUnPaid o modAcc.cs:427 chay TRUOC moi
+    cong hop thoai). Ca ba deu duoc chup anh va tra lai.
+
+    Bat luon buiPrice.allowSeed, giong -Seed.
 
 .PARAMETER Diagnostics
     Chay fixture PROBE ([Explicit]): do, KHONG assert, khong bao gio nem.
@@ -56,6 +68,7 @@
 .EXAMPLE
     .\run-calc-bui-price.ps1 -Diagnostics
     .\run-calc-bui-price.ps1 -Diagnostics -Seed
+    .\run-calc-bui-price.ps1 -Diagnostics -Exception
     .\run-calc-bui-price.ps1 -TrtDate 2026-08-03
 #>
 [CmdletBinding()]
@@ -64,6 +77,7 @@ param(
     [int]$StepMs = -1,
     [string]$TrtDate = "",
     [switch]$Seed,
+    [switch]$Exception,
     [switch]$Diagnostics,
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug"
@@ -84,16 +98,19 @@ $env:OCHA_KILL_ON_FAIL = "0"
 # Co bat TU DONG khi -Seed, va TAT HAN khi khong -Seed. Tat la co chu y: bo nay co hai
 # nhom testcase trong CUNG mot namespace, va de co bat sot tu lan chay truoc thi nhom
 # "sach" se chay tren du lieu DA HONG — no do E00100 that va bao "du lieu that hong".
-$env:OCHA_BUI_PRICE_ALLOW_SEED = if ($Seed) { "1" } else { "0" }
+$env:OCHA_BUI_PRICE_ALLOW_SEED = if ($Seed -or $Exception) { "1" } else { "0" }
 
 $ns = "OchaCom.FlaUiTests.Tests.BuiPriceE00100"
 
 if ($Diagnostics) {
     # Fixture PROBE mang [Explicit] nen luot chay du khong goi toi; loc dich danh thi chay.
-    $filter = if ($Seed) { "FullyQualifiedName~BuiPriceE00100SeedProbeTests" }
-              else       { "FullyQualifiedName~BuiPriceE00100CleanProbeTests" }
+    $filter = if ($Exception) { "FullyQualifiedName~BuiPriceE00100ExceptionProbeTests" }
+              elseif ($Seed)   { "FullyQualifiedName~BuiPriceE00100SeedProbeTests" }
+              else             { "FullyQualifiedName~BuiPriceE00100CleanProbeTests" }
 } elseif ($Case -ne "") {
     $filter = "FullyQualifiedName~$ns&FullyQualifiedName~$Case"
+} elseif ($Exception) {
+    $filter = "FullyQualifiedName~BuiPriceE00100ExceptionTests"
 } elseif ($Seed) {
     $filter = "FullyQualifiedName~BuiPriceE00100SeedTests"
 } else {
@@ -109,7 +126,9 @@ $testArgs = @(
 )
 
 Write-Host "dotnet $($testArgs -join ' ')" -ForegroundColor Cyan
-if ($Seed) {
+if ($Exception) {
+    Write-Host "GHI DB: INSURANCE (PUBEXPINF_NO + INS_KBN + OLD_FLG) + 1 dong PUBEXPINF + UNPAID cua ngay test (co khoi phuc)." -ForegroundColor Yellow
+} elseif ($Seed) {
     Write-Host "GHI DB: INSURANCE.PUBEXPINF_NO + 1 dong PUBEXPINF cua benh nhan test (co khoi phuc)." -ForegroundColor Yellow
 } else {
     Write-Host "CHI DOC: nhom nay khang dinh du lieu THAT khong sinh E00100 nao." -ForegroundColor Green
