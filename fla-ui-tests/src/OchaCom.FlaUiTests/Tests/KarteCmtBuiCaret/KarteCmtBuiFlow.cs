@@ -441,7 +441,11 @@ public sealed class KarteCmtBuiFlow
             if (rect is not null && rect.Value.Width > 0 && rect.Value.Height > 0)
             {
                 var (x, y) = Uia.Center(btn);
-                trace?.Note($"click nut 「{buttonId}」 cua {Uia.AutomationIdOf(form)} tai ({x},{y})");
+                // In NHÃN của nút, không in AutomationId của cửa sổ chứa: frm203012 nằm
+                // TRONG cây của frm203011 nên cửa sổ bắt được luôn báo id 「frm203011」, và
+                // dòng log 「click btnF1 cua frm203011」 đọc như thể đã bấm nhầm nút.
+                // Nhãn thì phân biệt được ngay: 「部位」 của frm203012 vs 「病検」 của frm203011.
+                trace?.Note($"click nut 「{buttonId}」 nhan 「{Txt.N(Uia.NameOf(btn))}」 tai ({x},{y})");
                 Uia.LeftClickPhysical(x, y);
                 Waits.Step();
                 return true;
@@ -557,11 +561,13 @@ public sealed class KarteCmtBuiFlow
     /// <summary>
     /// F1 部位 → <c>frm902003</c> → F11 全消去 → preset → End 確定, rồi đọc lại ô テキスト.
     ///
-    /// <para><b>全消去 là bắt buộc mỗi lần.</b> <c>formControl.showDialog</c> dùng lại
-    /// <c>Instance</c> của form, và bản Playwright đã đo được rằng lựa chọn răng của lần
-    /// trước còn nguyên (「bẫy 3」) — không xoá thì lần thứ hai ra chuỗi cộng dồn của cả
-    /// hai preset và mọi phép so sau đó vô nghĩa. Ở đây còn có
-    /// <see cref="MeasureToothDialogRemembers"/> để kiểm chính điều đó trên WinForm.</para>
+    /// <para><b>全消去 vẫn giữ, dù đã đo ra là WinForm KHÔNG cần.</b> Bản Playwright đo
+    /// được 部位選択 của web giữ nguyên lựa chọn giữa hai lần mở (「bẫy 3」: <c>open=</c>
+    /// không unmount cây). Trên WinForm thì ngược lại —
+    /// <see cref="MeasureToothDialogRemembers"/> đo 2026-09-07: mở lại thấy <b>0 răng</b>
+    /// còn đánh dấu, form dựng lại sạch mỗi lần. Giữ 全消去 vì nó làm preset xác định
+    /// bất kể phía nào, và vì mất nó thì phép đo phụ thuộc một hành vi vừa được chứng
+    /// minh là KHÁC NHAU giữa hai bản.</para>
     ///
     /// <para>⚠️ End trong <see cref="ToothSelectDialog.Confirm"/> là 確定 của
     /// <c>frm902003</c> — nhưng nếu hộp thoại đó đã đóng mất thì cùng phím End rơi xuống

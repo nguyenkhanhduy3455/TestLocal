@@ -35,6 +35,42 @@ Luồng này đo, và trả lời dưới dạng **「khớp công thức nào�
 
 ---
 
+## 1b. ĐÃ ĐO — kết quả (2026-09-07, `ochacom-win`, BN 10 / 2026-08-03)
+
+**Cả hai phép đo then chốt đều KHỚP CÔNG THỨC WINFORM. Báo cáo #3b đúng, và đúng cả ở chi
+tiết. Đề xuất A có căn cứ.**
+
+省略表示 đo được trên WinForm — **trùng khít từng codepoint** với con số bản web in ra
+(spec #3b: 「3≁3」 6 ký tự, 「全顎」 15 ký tự), nên hai bên **so được với nhau**; đây là rủi
+ro lớn nhất của cả việc so sánh và nó đã được gỡ:
+
+```
+F3 ３～３  = \ue0a9\ue0af\ue0b2\ue0af\ue0a9\ue0a3                               (6)
+F7 全顎    = \ue11f\ue122\ue127\ue12a\ue12e\ue12f\ue132\ue142
+             \ue132\ue12f\ue12c\ue128\ue125\ue122\ue11f                        (15)
+```
+
+| Phép đo | WinForm đo được | Kết luận |
+|---|---|---|
+| lần chèn đầu | `ABC␍␊` + 部位 | nhánh 「nhảy qua newline」 — **đúng tiền đề #3b**; web ra y hệt nên nhìn bước này không phát hiện được gì |
+| **gõ `X` sau đó** | `ABC␍␊` `\ue0a9\ue0af\ue0b2\ue0af` **`X`** `\ue0a9\ue0a3` | **WINFORM** — `X` chen vào giữa cụm, sau ký tự thứ 4/6 |
+| **F1 部位 lần hai** | `ABC␍␊` `\ue0a9\ue0af\ue0b2\ue0af` **`全顎(15)`** `\ue0a9\ue0a3` | **WINFORM** — chuỗi 2 chen vào giữa chuỗi 1, đẩy 2 ký tự cuối ra sau |
+| đối chứng (caret ở dòng trống) | `ABC␍␊` + 部位 + `X` | `X` ở cuối — hai phía **giống nhau** ⇒ lệch ở trên là **do NHÁNH** |
+
+Chuỗi `X` đo được trùng đúng chuỗi mà spec Playwright *dự đoán* cho WinForm
+(`"ABC\n\ue0a9\ue0af\ue0b2\ue0afX\ue0a9\ue0a3"`, khác mỗi `\r\n` ↔ `\n` như dự
+kiến).
+
+> **Một chỗ WinForm KHÁC web, ngoài dự đoán:** mở lại 部位選択 lần hai thấy **0 răng** còn
+> đánh dấu — form dựng lại sạch mỗi lần. Bên web thì 「bẫy 3」 của spec ghi rõ là **có nhớ**
+> (`open=` không unmount cây). Luồng này vẫn bấm 全消去 mỗi lần: mất nó thì phép đo phụ
+> thuộc vào đúng một hành vi vừa được chứng minh là khác nhau giữa hai bản.
+
+> Câu hỏi Enter (KQ-11) **vẫn chưa đo** — cần `-AllowConfirm`, và nó có thể ghi
+> `mst_cmt2.use_cnt`. Không cần cho kết luận trên.
+
+---
+
 ## 2. Hàm đang đo
 
 `INP/Forms/frm203012.cs:196-215` — hai nhánh chèn nhưng **chung một dòng tính con trỏ**:
