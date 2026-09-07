@@ -680,7 +680,11 @@ public sealed class BuiPriceE00100ExceptionTests : UiTestBase
             "日計 phải về 0 ở MỌI ngày sau ngoại lệ — đọc được: " + string.Join(" · ", totals) +
             ". Còn số thật nghĩa là ngoại lệ không xảy ra (seed không tới được app) hoặc " +
             "nó ném ở chỗ khác, SAU khi insPayDatas đã được gán (buiPrice.cs:649).");
-        Assert.That(Txt.Int(grid.Days()), Is.EqualTo(0),
+        // Nhãn 実日数 là 「N 日」 (modAcc.cs:118 nối thêm " 日") nên Txt.Int trả null —
+        // lượt đầu tôi assert Txt.Int(...) == 0 và nó đỏ với 「Expected 0, but was null」
+        // trong khi app in ra đúng 「0 日」. Lấy riêng phần số ra.
+        var days = new string(grid.Days().TakeWhile(char.IsDigit).ToArray());
+        Assert.That(days, Is.EqualTo("0"),
             $"実日数 phải là 0 (Calc_MDPoint cộng insDays của _buiPriceData2s, modAcc.cs:106-118); " +
             $"đọc được 「{grid.Days()}」");
     }
