@@ -37,7 +37,21 @@ public static class MsgBoxWin32
     /// <summary>Lớp cửa sổ của MessageBox / dialog Win32.</summary>
     public const string DialogClass = "#32770";
 
-    public sealed record Found(IntPtr Hwnd, string Title, string Text)
+    /// <param name="Text">
+    /// Thân hộp thoại đã LÀM PHẲNG: mỗi <c>\r</c> / <c>\n</c> thành một space, các
+    /// control <c>Static</c> nối bằng space. Tiện để <c>Txt.Has</c> tìm mẫu và để log
+    /// một dòng — mọi luồng cũ dùng cái này.
+    /// </param>
+    /// <param name="Raw">
+    /// Thân hộp thoại <b>Y NGUYÊN</b>, giữ đủ ngắt dòng.
+    ///
+    /// <para>Cần cho luồng nào so NGUYÊN VĂN với chuỗi mà source WinForm ghép ra. Đã trả
+    /// giá 2026-09-07: <c>Text</c> biến <c>\r\n</c> thành HAI space, nên assert
+    /// <c>StartsWith</c> trên nó không bao giờ khớp một oracle có <c>\n</c> — mà thông
+    /// điệp lỗi thì đổ cho WinForm ("hai dòng đầu của E00100 lệch"), đúng cái kiểu đổ oan
+    /// mà PROBE-GUIDELINE 3.4 nói tới.</para>
+    /// </param>
+    public sealed record Found(IntPtr Hwnd, string Title, string Text, string Raw)
     {
         public override string ToString() => $"「{Text}」 (tiêu đề 「{Title}」)";
     }
@@ -58,7 +72,8 @@ public static class MsgBoxWin32
             GetClassName(hwnd, cls, cls.Capacity);
             if (cls.ToString() != DialogClass) return true;
 
-            result.Add(new Found(hwnd, TextOfWindow(hwnd), StaticTextOf(hwnd)));
+            var raw = StaticTextOf(hwnd, flatten: false);
+            result.Add(new Found(hwnd, TextOfWindow(hwnd), Flatten(raw), raw));
             return true;
         }, IntPtr.Zero);
 
@@ -117,8 +132,14 @@ public static class MsgBoxWin32
         return names;
     }
 
-    /// <summary>Chữ trong thân hộp thoại = text của các control <c>Static</c>.</summary>
-    private static string StaticTextOf(IntPtr dialog)
+    /// <summary>
+    /// Chữ trong thân hộp thoại = text của các control <c>Static</c>.
+    ///
+    /// <para><paramref name="flatten"/> = false giữ NGUYÊN ngắt dòng. Khi đó cũng KHÔNG
+    /// <c>Trim()</c> từng mảnh: 全角スペース U+3000 mở đầu một dòng là chi tiết mà bộ
+    /// parity đang khoá, <c>Trim()</c> xoá nó mất.</para>
+    /// </summary>
+    private static string StaticTextOf(IntPtr dialog, bool flatten = true)
     {
         var parts = new List<string>();
         EnumChildWindows(dialog, (child, _) =>
@@ -127,13 +148,19 @@ public static class MsgBoxWin32
             GetClassName(child, cls, cls.Capacity);
             if (!cls.ToString().Equals("Static", StringComparison.OrdinalIgnoreCase)) return true;
 
-            var text = TextOfWindow(child).Trim();
+            var text = TextOfWindow(child);
+            if (flatten) text = text.Trim();
             if (text.Length > 0) parts.Add(text);
             return true;
         }, IntPtr.Zero);
 
-        return string.Join(" ", parts).Replace("\r", " ").Replace("\n", " ").Trim();
+        var joined = string.Join(flatten ? " " : "\n", parts);
+        return flatten ? Flatten(joined) : joined;
     }
+
+    /// <summary>Làm phẳng: mỗi ngắt dòng thành một space, bỏ khoảng trắng hai đầu.</summary>
+    private static string Flatten(string s) =>
+        s.Replace("\r", " ").Replace("\n", " ").Trim();
 
     private static string TextOfWindow(IntPtr hwnd)
     {

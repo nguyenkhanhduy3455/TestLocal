@@ -101,7 +101,7 @@ public sealed class BuiPriceE00100Flow
             // ĐỌC TRƯỚC KHI BẤM: cú bấm dời con trỏ sang nút vừa bấm, hỏi sau là đo lại
             // chính lựa chọn của mình chứ không phải mặc định của WinForm
             // (bài học của AccountingFlow).
-            var box = new Box((found.Text ?? "").Replace("\r\n", "\n"),
+            var box = new Box((found.Raw ?? "").Replace("\r\n", "\n"),
                               Txt.N(found.Text),
                               Txt.N(found.Title),
                               MsgBoxWin32.ButtonCaptions(found.Hwnd),
