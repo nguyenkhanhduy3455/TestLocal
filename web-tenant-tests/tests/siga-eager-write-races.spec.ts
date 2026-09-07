@@ -116,6 +116,11 @@ import { closeDialogs } from './virtual-grid'
  *     sort side panel.
  *  6. TC-5 làm chậm request bằng `page.route`; PHẢI `page.unroute` sau đó, nếu không
  *     mọi 処置 nhập ở test sau đều lãnh thêm độ trễ và timeout lung tung.
+ *  7. ĐÃ VẤP: chốt 処置 xong ĐỌC DB NGAY là đua với chính cái request mình đang kiểm —
+ *     `SigaChg` bắn `void` nên lúc UI đã yên thì POST vẫn có thể còn bay, và TC-2 đỏ
+ *     ngẫu nhiên (`se_1 = 0`) rồi xanh khi retry. `enterExtractionViaUi()` vì thế CHỜ
+ *     response của `tooth-status-change` (mốc có thật, Rule 7 — không sleep). TC-5 là
+ *     ngoại lệ DUY NHẤT được truyền `awaitEagerWrite: false`: nó cần request còn bay.
  *
  * ═════════════════════════════════════════════════════════════════════════════
  * CÁCH CHẠY (Rule 19) — LUÔN chạy CẢ FILE, không bao giờ `-g` một testcase lẻ
@@ -189,6 +194,47 @@ const txt = (s: string) => s.normalize('NFKC').trim()
 
 /** Ô 療法・処置 (RegiCol.ryo = 2) của MỌI dòng lưới, đúng thứ tự hiển thị. */
 const ryoCells = (page: Page) => page.locator('[data-grid-cell$="|2"]')
+
+interface GridRow {
+    /** rowKey (phần trước `|N` của data-grid-cell). */
+    key: string
+    /** Ô 部位 (RegiCol.bui = 1). */
+    bui: string
+    /** Ô 療法・処置 (RegiCol.ryo = 2) — với 部位病名行 thì đây là `dsp_dis`. */
+    ryo: string
+}
+
+/**
+ * Mọi dòng lưới, GOM THEO rowKey.
+ *
+ * BẪY ĐÃ VẤP (2 lần, ở 2 spec): KHÔNG locate bằng `filter({ hasText })`. `hasText`
+ * chỉ chuẩn hoá KHOẢNG TRẮNG, không đổi 全角→半角, nên `txt()` (NFKC) biến 「Ｐ」 của
+ * chuỗi mong đợi thành 「P」 rồi không khớp gì với DOM. Phải NFKC CẢ HAI VẾ rồi so
+ * bằng `===`, đúng như ở đây.
+ *
+ * BẪY ĐÃ VẤP: đọc `|1` và `|2` thành HAI danh sách rồi zip theo chỉ số là SAI —
+ * không phải dòng nào cũng render đủ cả hai ô, nên hai danh sách lệch nhau và
+ * 部位 của dòng này bị ghép với 療法 của dòng khác.
+ */
+async function gridRows(page: Page): Promise<GridRow[]> {
+    const raw = await page.locator('[data-grid-cell]').evaluateAll((els) => {
+        const byKey = new Map<string, { bui: string; ryo: string }>()
+        for (const e of els) {
+            const attr = e.getAttribute('data-grid-cell') ?? ''
+            const i = attr.lastIndexOf('|')
+            if (i < 0) continue
+            const key = attr.slice(0, i)
+            const col = attr.slice(i + 1)
+            if (col !== '1' && col !== '2') continue
+            const cur = byKey.get(key) ?? { bui: '', ryo: '' }
+            if (col === '1') cur.bui = e.textContent ?? ''
+            else cur.ryo = e.textContent ?? ''
+            byKey.set(key, cur)
+        }
+        return [...byKey].map(([key, v]) => ({ key, ...v }))
+    })
+    return raw.map((r) => ({ key: r.key, bui: txt(r.bui), ryo: txt(r.ryo) }))
+}
 
 /** Mảng 32 ô 部位 với các ô chỉ định mang `val`. */
 const buiAt = (slots: readonly number[], val: number) =>
@@ -339,7 +385,20 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
      * 部位 mà dòng mới thừa kế là 部位病名行 đang chi phối nó (`governingBuiOf`, tương
      * đương `ModCommon.pbui`), tức dòng Ｐ vừa seed.
      */
-    async function enterExtractionViaUi() {
+    async function enterExtractionViaUi(opts: { awaitEagerWrite?: boolean } = {}) {
+        // BẪY 7 — đăng ký NGAY đầu hàm, trước cú click sinh ra request.
+        const eager =
+            (opts.awaitEagerWrite ?? true)
+                ? page
+                      .waitForResponse(
+                          (r) =>
+                              r.url().includes(TOOTH_STATUS_PATH) &&
+                              r.request().method() === 'POST',
+                          { timeout: 30_000 },
+                      )
+                      .catch(() => null)
+                : null
+
         await closeDialogs(page)
         const modeBtn = page.locator('button[title^="点数/コード 入力モード切替"]')
         const footerTen = page.locator('input[data-footer-cell$=":footer-ten"]').last()
@@ -381,6 +440,18 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
             timeout: 20_000,
         })
         await page.keyboard.press('Enter')
+
+        if (eager) {
+            const res = await eager
+            expect(
+                res,
+                `Chốt 処置 ${EXT_TRT_CD}/${EXT_SB} phải bắn POST ${TOOTH_STATUS_PATH} ` +
+                    '(frm203016.IregCodChk → SigaChg). Không có request nào ⇒ cổng ' +
+                    '`eagerToothStatusWrite` không nhận ra mã này, hoặc dòng mới không thừa kế ' +
+                    'được 部位 (部位なし ⇒ WinForm cũng không ghi).',
+            ).not.toBeNull()
+            expect(res!.status(), `POST ${TOOTH_STATUS_PATH} phải thành công`).toBeLessThan(400)
+        }
         await step()
     }
 
@@ -596,12 +667,28 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
 
         const footerTen = page.locator('input[data-footer-cell$=":footer-ten"]').last()
         await footerTen.scrollIntoViewIfNeeded().catch(() => {})
-        const seeded = ryoCells(page).filter({ hasText: txt(SEED_DIS_TEXT) })
-        await expect(
+
+        const rows = await gridRows(page)
+        console.log(
+            `lưới: ${rows.length} dòng mount, 10 dòng CUỐI (部位 | 療法): ` +
+                rows
+                    .map((r) => `${r.bui || '·'} | ${r.ryo}`)
+                    .slice(-10)
+                    .join('  /  '),
+        )
+        const seeded = rows.find((r) => r.ryo === txt(SEED_DIS_TEXT))
+        expect(
             seeded,
-            `không thấy 部位病名行 có 病名 「${SEED_DIS_TEXT}」 — seed hỏng hoặc màn hình đang mở ` +
-                `tháng khác (TEST_TRT_DT = ${TRT_DT})`,
-        ).toHaveCount(1, { timeout: 20_000 })
+            `không thấy 部位病名行 có 病名 「${SEED_DIS_TEXT}」 ở ô 療法 — seed hỏng hoặc màn hình ` +
+                `đang mở tháng khác (TEST_TRT_DT = ${TRT_DT}).`,
+        ).toBeDefined()
+        // Ô 部位 phải có nội dung: mapper chỉ dựng 部位病名行 khi bui khác 0, và chính
+        // điều kiện đó mới làm `isBuiLineRow` (→ aggregatePGTeeth) nhận ra dòng này.
+        expect(
+            seeded!.bui,
+            'ô 部位 rỗng ⇒ mapper không dựng được 部位病名行 ⇒ Ｐ変更 sẽ không gom được gì',
+        ).not.toBe('')
+        console.log(`dòng seed: 部位 「${seeded!.bui}」 | 病名 「${seeded!.ryo}」`)
 
         const s = await mustReadSiga()
         seAtOpen = [...s.se]
@@ -766,7 +853,8 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
                 )
                 .catch(() => null)
 
-            await enterExtractionViaUi()
+            // BẪY 7 — ngoại lệ DUY NHẤT: TC này CẦN request còn đang bay.
+            await enterExtractionViaUi({ awaitEagerWrite: false })
 
             // Mốc CÓ THẬT rằng ta đang ở đúng cửa sổ cần thử: request đã bay đi nhưng
             // CHƯA đáp (Rule 7 — không đoán bằng sleep).
