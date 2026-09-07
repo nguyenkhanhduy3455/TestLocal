@@ -20,6 +20,21 @@ namespace OchaCom.FlaUiTests.Tests.BuiPriceE00100;
 /// sau thì một màn hình chết cứng cũng pass.</para>
 ///
 /// <para>Không ghi gì, không cần cờ nào. Chạy: <c>.\run-calc-bui-price.ps1</c></para>
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+/// THỨ TỰ CHẠY NGƯỢC VỚI SỐ HIỆU TC — CÓ CHỦ Ý
+/// ═══════════════════════════════════════════════════════════════════════════
+/// Số hiệu giữ nguyên theo spec Playwright (TC-CLEAN-1 = 診療入力, TC-CLEAN-2 = F4
+/// 当日来患) để hai bên đối chiếu được. Nhưng <c>[Order]</c> cho <b>F4 chạy TRƯỚC</b>,
+/// vì đường đi của app một chiều: <c>frm203001</c> chỉ bị <c>Hide()</c> khi sang
+/// <c>frm203002</c> (frm203001.cs:1061), mà <c>OchaApp.Windows</c> lọc theo
+/// <c>IsOffscreen</c> nên cửa sổ ẩn không tìm lại được.
+///
+/// <para>Đã vấp thật 2026-09-07: bản đầu chạy 診療入力 trước rồi mới định lui về, và
+/// TC-CLEAN-2 đỏ với 「không thấy cửa sổ 患者選択 … App đang mở: frm203002」. Cách lui
+/// duy nhất là F10 戻る, mà F10 có thể bung 「処置データは、変更されています。保存しますか？」
+/// và trả lời nhầm là GHI THẬT xuống <c>trn_trn</c> (PROBE-GUIDELINE 3.3) — không đáng
+/// đổi lấy việc giữ thứ tự đọc cho đẹp.</para>
 /// </summary>
 [TestFixture]
 [Category("bui-price-e00100")]
@@ -32,6 +47,9 @@ public sealed class BuiPriceE00100CleanTests : UiTestBase
     /// bấm hộ thì TC-CLEAN-1 xanh SAI: nó kết luận 「app không hỏi」 trong khi app có hỏi.
     /// </summary>
     protected override string[] NuisanceDialogPatterns => [];
+
+    /// <summary>Đứng lại ở 患者選択 để TC-CLEAN-2 bấm được F4 — xem khối chú thích của lớp.</summary>
+    protected override bool NavigatesToTreatmentEntry => false;
 
     [OneTimeSetUp]
     public void CleanSetUp()
@@ -53,25 +71,6 @@ public sealed class BuiPriceE00100CleanTests : UiTestBase
     }
 
     [Test, Order(1)]
-    [Description("TC-CLEAN-1 — mở 診療入力: không E00100 nào, và 日計 khớp TRNTRN")]
-    public void TcClean1_TreatmentEntryHasNoDialogAndRealDailyTotals()
-    {
-        using var trace = TestTrace.Begin();
-        var flow = new BuiPriceE00100Flow(App);
-
-        // Màn hình đã mở xong ở OneTimeSetUp ⇒ đã đi qua ModSave.GetTrnRs →
-        // Calc_BuiPriceData2s (modSave.cs:2467). Còn hộp nào tức là dữ liệu thật hỏng.
-        var open = flow.OpenDialogs();
-        Assert.That(open, Is.Empty,
-            "mở 診療入力 với dữ liệu THẬT mà vẫn có MessageBox: " +
-            string.Join(" | ", open.Select(d => d.ToString())) +
-            ". Nếu là E00100 thì đây là lỗi DỮ LIỆU (hoặc seed sót lại), không phải lỗi spec.");
-        trace.Shot("tc-clean-1-khong-hop-thoai");
-
-        AssertDailyTotalsMatchOracle(new AccountingDayFlow(App, Screen), "TC-CLEAN-1");
-    }
-
-    [Test, Order(2)]
     [Description("TC-CLEAN-2 — F4 当日来患: không E00100 nào, và lưới có đủ dòng của ngày")]
     public void TcClean2_TodayViewHasNoDialog()
     {
@@ -86,7 +85,9 @@ public sealed class BuiPriceE00100CleanTests : UiTestBase
                 $"ngày {TrtDate:yyyy-MM-dd} không có dòng 当日来患 nào (Trntrn.cs:2132-2140) — " +
                 "trỏ patient.trtDate vào ngày CÓ 処置 thì testcase này mới đo được gì");
 
-        var patSelect = BackToPatientSelect(trace);
+        var patSelect = AppNavigator.OpenPatientSelect(App, Settings);
+        AppNavigator.SetTreatmentDate(patSelect, TrtDate);
+        trace.Shot("tc-clean-2-da-dat-ngay");
         flow.PressF4(patSelect, trace);
         Waits.Step();
 
@@ -102,6 +103,29 @@ public sealed class BuiPriceE00100CleanTests : UiTestBase
             $"trả {expected.Count} cặp (患者番号,枝番): " +
             string.Join(", ", expected.Select(k => $"{k.PatNo}/{k.PatBr}")) +
             ". Đọc được: " + string.Join(" ⏎ ", rows.Select(r => r.ToString())));
+    }
+
+    [Test, Order(2)]
+    [Description("TC-CLEAN-1 — mở 診療入力: không E00100 nào, và 日計 khớp TRNTRN")]
+    public void TcClean1_TreatmentEntryHasNoDialogAndRealDailyTotals()
+    {
+        using var trace = TestTrace.Begin();
+        var flow = new BuiPriceE00100Flow(App);
+
+        var window = OpenTreatmentEntry(trace);
+        var screen = new TreatmentEntryScreen(window, App.Automation);
+        screen.WaitUntilReady();
+
+        // Tới đây app đã đi qua ModSave.GetTrnRs → Calc_BuiPriceData2s (modSave.cs:2467).
+        // Còn hộp nào tức là dữ liệu thật đang hỏng.
+        var open = flow.OpenDialogs();
+        Assert.That(open, Is.Empty,
+            "mở 診療入力 với dữ liệu THẬT mà vẫn có MessageBox: " +
+            string.Join(" | ", open.Select(d => d.ToString())) +
+            ". Nếu là E00100 thì đây là lỗi DỮ LIỆU (hoặc seed sót lại), không phải lỗi spec.");
+        trace.Shot("tc-clean-1-khong-hop-thoai");
+
+        AssertDailyTotalsMatchOracle(new AccountingDayFlow(App, screen), "TC-CLEAN-1");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -139,31 +163,38 @@ public sealed class BuiPriceE00100CleanTests : UiTestBase
     }
 
     /// <summary>
-    /// Lui về 患者選択 khi đang đứng ở 診療入力.
+    /// Gõ 患者番号 rồi F8 閲覧/変更 và chờ frm203002.
     ///
-    /// <para>KHÔNG bấm F10 戻る: nó có thể bung 「処置データは、変更されています。保存しますか？」
-    /// và trả lời nhầm là GHI THẬT xuống <c>trn_trn</c> (PROBE-GUIDELINE 3.3). Fixture này
-    /// không sửa gì trên lưới, nhưng luật đó không phụ thuộc vào ý định của testcase.
-    /// frm203001 chỉ bị <c>Hide()</c> chứ không đóng (frm203001.cs:1061) nên nó vẫn nằm
-    /// trong tiến trình — dùng lại cửa sổ đó bằng cách đưa nó lên foreground.</para>
+    /// <para>Không dùng <c>AppNavigator.OpenTreatmentEntry</c>: hàm đó tự gọi
+    /// <c>OpenPatientSelect</c> lại từ đầu, mà TC-CLEAN-2 đã đưa màn hình vào chế độ
+    /// 当日来患 và đặt 診療日 rồi — mở lại là bỏ đi trạng thái đó.</para>
     /// </summary>
-    internal Window BackToPatientSelect(TestTrace trace)
+    private Window OpenTreatmentEntry(TestTrace trace)
     {
         var patSelect = App.Windows()
             .FirstOrDefault(w => Txt.Same(Uia.AutomationIdOf(w), "frm203001"));
-
         if (patSelect is null)
             Assert.Fail(
-                "không thấy cửa sổ 患者選択 (frm203001) trong tiến trình. App đang mở: " +
-                string.Join(" | ", App.Windows().Select(w => Uia.AutomationIdOf(w))) +
-                ". Fixture này KHÔNG bấm F10 戻る để lui về (xem chú thích) — đóng màn " +
-                "診療入力 bằng tay rồi chạy lại.");
+                "không thấy cửa sổ 患者選択 (frm203001). App đang mở: " +
+                string.Join(" | ", App.Windows().Select(w => Uia.AutomationIdOf(w))));
 
-        trace.Step("dua frm203001 患者選択 len foreground");
-        try { patSelect!.SetForeground(); } catch { /* thử tiếp */ }
-        try { patSelect!.Focus(); } catch { /* nt */ }
+        AppNavigator.SetTreatmentDate(patSelect!, TrtDate);
+
+        var combo = Waits.For(() => Uia.ById(patSelect!, TestSettings.Current.Locator("patSelPatNo")),
+                              "ô 患者番号 「cboPatNo」");
+        Uia.SetText(Uia.EditInside(combo), Settings.Patient.PatNo);
         Waits.Step();
-        return patSelect!;
+        trace.Step($"bam F8 閲覧/変更 cho benh nhan {Settings.Patient.PatNo}");
+        Keyboard.Press(VirtualKeyShort.F8);
+
+        var window = Waits.TryFor(() => App.Window("frm203002"),
+                                  TimeSpan.FromSeconds(Settings.App.LaunchTimeoutSeconds));
+        if (window is null)
+            Assert.Fail(
+                $"bấm F8 cho bệnh nhân {Settings.Patient.PatNo} mà 診療入力 không mở. " +
+                "MessageBox đang chắn: " +
+                string.Join(" | ", new BuiPriceE00100Flow(App).OpenDialogs().Select(d => d.ToString())));
+        return window!;
     }
 }
 
