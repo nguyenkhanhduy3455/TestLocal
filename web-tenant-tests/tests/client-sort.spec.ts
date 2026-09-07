@@ -116,17 +116,19 @@
  * sẽ không mount rồi `goto` lại, tối đa LOAD_ATTEMPTS lần. Muốn khỏi gặp hẳn thì
  * trỏ BASE_URL vào bản build: `npx vite preview`.
  */
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { BASE_URL, TODAY_ISO, patNo, trtDt } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { cells, emptyState, expectNoSortGlyph, header, rows } from './virtual-grid'
 
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 /** カルテ記載選択 chỉ tự bật khi (bệnh nhân, ngày) CHƯA có 処置 nào được lưu. */
 const AUTO_PAT_NO = process.env.TEST_AUTO_PAT_NO ?? '11'
-const TRT_DT = process.env.TEST_TRT_DT ?? new Date().toISOString().slice(0, 10)
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
+const TRT_DT = trtDt(TODAY_ISO)
 
 /** Kiểu comparator của app — comparators.ts::ComparatorKind. */
 type Kind = 'numeric' | 'word' | 'text'
@@ -352,16 +354,6 @@ test.describe('client sort — dialog grid + list màn hình', () => {
   const installSanteiNo = async () => {
     if (santeiHandlerOn) return
     santeiHandlerOn = true
-    await page.addLocatorHandler(
-      page.getByText(/を算定しますか？/).first(),
-      async () => {
-        await page
-          .getByRole('button', { name: /^(No|いいえ)$/ })
-          .first()
-          .click()
-      },
-      { times: 30 },
-    )
   }
 
   /**
@@ -615,23 +607,20 @@ test.describe('client sort — dialog grid + list màn hình', () => {
     )
   }
 
-  test.beforeAll(async ({ browser }) => {
-    // browser.newPage() KHÔNG kế thừa `use` của playwright.config.ts → truyền tay
-    // baseURL + ignoreHTTPSErrors (cert tự ký) + locale (Rule 19).
-    page = await browser.newPage({
-      baseURL: BASE_URL,
-      ignoreHTTPSErrors: true,
-      locale: 'ja-JP',
-      viewport: {
-        width: Number(process.env.TEST_VIEWPORT_W ?? 1600),
-        height: Number(process.env.TEST_VIEWPORT_H ?? 1000),
-      },
-    })
+  /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+   *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+  let disposeOverlays: (() => Promise<void>) | undefined
+
+  test.beforeAll(async ({ authedPage }) => {
+    // Page chia sẻ theo worker (`_shared/session.ts`): đăng nhập một lượt cho cả
+    // worker thay vì mỗi file một lần — app chặn ở 10 login/khung thời gian
+    // (Rule 10.1). `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
+    page = authedPage
+    disposeOverlays = await installOverlayHandlers(page, { santei: true })
     step = makeStep(page)
 
     // App crash → trang trắng → mọi test chỉ báo "element(s) not found". Log lỗi
     // JS ra để phân biệt "selector sai" với "app chết".
-    page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
 
     // Cắm SỚM (trước mọi goto) để không bỏ sót module chết ngay lúc điều hướng.
     // Chỉ ERR_FAILED mới tính: ERR_ABORTED là chuyện thường khi rời trang giữa
@@ -643,19 +632,11 @@ test.describe('client sort — dialog grid + list màn hình', () => {
       }
     })
 
-    await page.goto('/login', { waitUntil: 'domcontentloaded' })
-    await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-    await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-    await page.getByRole('button', { name: JA.submit }).click()
-    await expect(
-      page,
-      'login không vào được — nếu chạy lại nhiều lần thì đang dính rate-limit, ' +
-        'chờ ~4 phút chứ đừng sửa test (Rule 9 / 10.1)',
-    ).toHaveURL(/\/$/)
   })
 
   test.afterAll(async () => {
-    await page?.close()
+    await disposeOverlays?.()
+    await releaseSharedPage(page)
   })
 
   // ═══════════════════════════════════════════════════════════════════════════

@@ -1,7 +1,10 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { patNo, trtDt } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { closeDialogs } from './virtual-grid'
 
 /**
@@ -76,13 +79,11 @@ import { closeDialogs } from './virtual-grid'
  * Rule 19). Chạy CẢ FILE, đừng `-g` một testcase lẻ.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-
 /** PHẢI khớp `patient.patNo` bên testsettings.local.json (FlaUI). Xem BẪY 1. */
-const PAT_NO = process.env.TEST_PAT_NO ?? '10'
+const PAT_NO = patNo('10')
 
 /** PHẢI khớp `patient.trtDate` bên testsettings.local.json (FlaUI). Xem BẪY 1. */
-const TRT_DT = process.env.TEST_TRT_DT ?? '2026-08-03'
+const TRT_DT = trtDt('2026-08-03')
 
 /** Chỉ số cột — `RegiCol` (frm203002.cs:158-169) = `RegiCol` bản web. */
 const COL_DAY = 0
@@ -187,35 +188,14 @@ test.describe('診療入力 — lưới 処置: luật nâng cao (parity với W
         await closeDialogs(page)
     }
 
-    test.beforeAll(async ({ browser }) => {
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true, kartePicker: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
-
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page
-                    .getByRole('button', { name: /^(No|いいえ)$/ })
-                    .first()
-                    .click()
-            },
-            { times: 30 },
-        )
-        await page.addLocatorHandler(
-            page.getByText('カルテ記載選択').first(),
-            async () => {
-                const back = page.getByRole('button', { name: /戻る/ }).last()
-                if (await back.count()) await back.click()
-            },
-            { times: 30 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         await openTreatmentScreen()
         console.log(`beforeAll: bệnh nhân ${PAT_NO}, ngày ${TRT_DT}, 合計 = ${await readTotal()}`)
@@ -223,7 +203,8 @@ test.describe('診療入力 — lưới 処置: luật nâng cao (parity với W
 
     test.afterAll(async () => {
         // Không seed, không bấm F9 ⇒ không có gì để dọn.
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
     })
 
     // ═══════════════════════════════════════════════════════════════════════

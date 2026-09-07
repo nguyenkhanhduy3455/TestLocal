@@ -1,8 +1,11 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { dbEnabled, deleteMstTrtRows, seedMstTrtRows } from './db'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * 診療入力 — 行単位 診療チェック (SingleChk / W00100) trên màn `/treatments/{patNo}`.
@@ -86,8 +89,7 @@ import { ADMIN_USER, JA } from './test-data'
  *   npx playwright test tests/single-check-w00100.spec.ts
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 /** Endpoint của 行単位 診療チェック (TenantTreatmentEndpoints.cs:234). */
 const CHECK_SINGLE_PATH = '/tenant/treatment/check-single'
@@ -350,10 +352,14 @@ test.describe('診療入力 — 行単位 診療チェック W00100 (SingleChk)'
         await expect(trtPicker).toBeHidden({ timeout: 10000 })
     }
 
-    test.beforeAll(async ({ browser }) => {
-        // Page tự tạo để cả file chỉ login MỘT lần; browser.newPage() KHÔNG kế thừa
-        // `use` của config nên phải truyền tay ignoreHTTPSErrors (*.ochacom.local
-        // dùng cert tự ký) + baseURL.
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
+        // Page chia sẻ theo worker (`_shared/session.ts`): đăng nhập một lượt cho cả
+        // worker thay vì mỗi file một lần — app chặn ở 10 login/khung thời gian
+        // (Rule 10.1). `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
         // Seed TRƯỚC khi mở trình duyệt: danh sách 処置 của mã 108 được TanStack Query
         // cache (staleTime), nên nếu seed sau lần tra cứu đầu tiên thì picker vẫn là
         // bản cũ và 2 testcase 医情 sẽ skip nhầm.
@@ -370,7 +376,8 @@ test.describe('診療入力 — 行単位 診療チェック W00100 (SingleChk)'
             console.log(`seed 処置マスタ 医情: ${seededMstTrtIds.length} dòng`)
         }
 
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
 
         // Bắt MỌI lượt /check-single: request body cho các assert về định vị dòng,
@@ -392,23 +399,6 @@ test.describe('診療入力 — 行単位 診療チェック W00100 (SingleChk)'
             })()
         })
 
-        // AutoSantei bung SanteiConfirmDialog 「…を算定しますか？」 đè lên mọi thứ và nuốt
-        // click; thời điểm không đoán được (GUIDELINE Rule 14). Bấm 「No」 chứ không
-        // 「Yes」 — Yes lại kéo theo dialog カルテ記載選択.
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page.getByRole('button', { name: /^(No|いいえ)$/ }).first().click()
-            },
-            { times: 30 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
-
         // KHÔNG truyền trtDt → tháng hiện hành. Bắt buộc: chỉ dòng của tháng hiện
         // hành mới sửa được, và cửa sổ 医情 của WinForm được xét theo dteTrtDt.
         await page.goto(`/treatments/${PAT_NO}`, { waitUntil: 'domcontentloaded' })
@@ -428,7 +418,8 @@ test.describe('診療入力 — 行単位 診療チェック W00100 (SingleChk)'
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
         // Dọn master đã seed — DELETE thật (không soft-delete) theo đúng id đã tạo.
         if (seededMstTrtIds.length > 0) {
             const n = await deleteMstTrtRows(seededMstTrtIds).catch(() => 0)

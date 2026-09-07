@@ -1,9 +1,12 @@
-import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
+import { type Locator, type Page, type Route } from '@playwright/test'
+
+import { patNo, trtDt } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { countGisiKanri, dbEnabled, deleteGisiKanri } from './db'
 import { foldForCompare, readPdf } from './pdf-content'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * クラウン・ブリッジ維持管理・義歯管理 (frm203023) — ProsthesisManagementDialog,
@@ -62,15 +65,14 @@ import { ADMIN_USER, JA } from './test-data'
  * production không đặt biến → tự skip, không đụng Postgres.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
 /**
  * Dialog seed 区分 + 歯式 từ getGisiBui của ngày đang xem. Mặc định trỏ vào ca có
  * 補管/義管 算定 để chart có 部位 sẵn (như ảnh 池田 雄); nhưng testcase KHÔNG bắt
  * buộc có seed — trạng thái rỗng vẫn chạy đủ.
  */
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 const PAT_NO_NUM = Number(PAT_NO)
-const TRT_DT = process.env.TEST_TRT_DT ?? '2025-12-24'
+const TRT_DT = trtDt('2025-12-24')
 const ALLOW_SAVE = process.env.TEST_ALLOW_SAVE === '1'
 
 /** TOOTH_COUNT — 32 ô 歯式 (= GISIKANRI se_1..se_32). */
@@ -258,13 +260,6 @@ async function saveViaF8(page: Page, dialog: Locator) {
 
 /** Đóng SanteiConfirmDialog 「…を算定しますか？」 do AutoSantei bung ra (đè lên dialog). */
 async function installSanteiAutoClose(page: Page) {
-    await page.addLocatorHandler(
-        page.getByText(/を算定しますか？/).first(),
-        async () => {
-            await page.getByRole('button', { name: /^(No|いいえ)$/ }).first().click()
-        },
-        { times: 20 },
-    )
 }
 
 test.describe.configure({ mode: 'serial' })
@@ -293,16 +288,15 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
     /** File PDF agent render thật (chỉ có khi AGENT_AVAILABLE) — TC-IN-4 soi. */
     let renderedPdf: Buffer | null = null
 
-    test.beforeAll(async ({ browser }) => {
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
         await installSanteiAutoClose(page)
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
         await expect(page.getByText('合計:').first()).toBeVisible({ timeout: 60000 })
@@ -386,7 +380,8 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
     })
 
     test('mở dialog bằng nút 補管・義歯 của CategoryTabs', async () => {

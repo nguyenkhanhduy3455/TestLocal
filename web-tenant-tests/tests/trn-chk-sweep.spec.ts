@@ -1,8 +1,11 @@
-import { expect, test, type Page } from '@playwright/test'
+import { type Page } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { dbEnabled, deleteTreatmentRows, seedTreatmentRows } from './db'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * 診療入力 — 一括 診療チェック (F3/F8 → `Check.getCheckAnswer`) đọc KẾT QUẢ THẬT từ BE.
@@ -56,8 +59,7 @@ import { ADMIN_USER, JA } from './test-data'
  * bị đụng tới.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = Number(process.env.TEST_PAT_NO ?? '12138')
+const PAT_NO = Number(patNo('12138'))
 
 /**
  * Tháng test = tháng hiện hành.
@@ -260,29 +262,20 @@ test.describe('診療入力 — 一括 診療チェック: 月次チェック đ
         dspTrt: SCALING_NM,
     })
 
-    test.beforeAll(async ({ browser }) => {
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
 
-        // SanteiConfirmDialog đến chậm và đè lên mọi click (GUIDELINE Rule 14).
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page.getByRole('button', { name: /^(No|いいえ)$/ }).first().click()
-            },
-            { times: 30 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
         for (const d of [TRT_DT, EMPTY_MONTH_DT]) {
             const n = await deleteTreatmentRows(PAT_NO, d).catch(() => 0)
             console.log(`afterAll: đã xoá ${n} dòng seed của (${PAT_NO}, ${d})`)

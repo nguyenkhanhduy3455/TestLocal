@@ -1,7 +1,10 @@
-import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
+import { type Locator, type Page, type Route } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { emptyState, rows } from './virtual-grid'
 
 /**
@@ -85,8 +88,7 @@ import { emptyState, rows } from './virtual-grid'
  * đã trả lời OK cho nó nên không cần chỉnh gì.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 const TRT_DT =
     process.env.TEST_TRT_DT ??
@@ -423,21 +425,14 @@ test.describe('E00100 一部負担金計算失敗 — 診療入力 / 当日来�
         return e00100Seen
     }
 
-    test.beforeAll(async ({ browser }) => {
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
-        step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
 
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page
-                    .getByRole('button', { name: /^(No|いいえ)$/ })
-                    .first()
-                    .click()
-            },
-            { times: 50 },
-        )
+    test.beforeAll(async ({ authedPage }) => {
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
+        step = makeStep(page)
 
         // ── GET: để đi thật, ghi lại `warnings` của BE, chèn thêm nếu được yêu cầu.
         await page.route(MONTHLY_COPAYMENTS_URL, async (route: Route) => {
@@ -510,11 +505,6 @@ test.describe('E00100 一部負担金計算失敗 — 診療入力 / 当日来�
             })
         })
 
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
     })
 
     test.afterAll(async () => {
@@ -522,7 +512,8 @@ test.describe('E00100 一部負担金計算失敗 — 診療入力 / 当日来�
         // khi page đóng thì Playwright báo "Request context disposed" đè lên lỗi
         // thật của testcase.
         await page?.unrouteAll({ behavior: 'ignoreErrors' })
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
     })
 
     // ── Dữ liệu THẬT: không được có E00100 nào ───────────────────────────────

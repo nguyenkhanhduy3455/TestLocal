@@ -1,8 +1,11 @@
-import { expect, test, type Locator, type Page, type Request, type Route } from '@playwright/test'
+import { type Locator, type Page, type Request, type Route } from '@playwright/test'
+
+import { patNo, trtDt } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { foldForCompare, readPdf } from './pdf-content'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * GIỚI HẠN ĐỘ DÀI CỦA CÁC Ô TEXT ĐI VÀO 帳票 — hồi quy cho bug "nhập dài thì
@@ -53,10 +56,9 @@ import { ADMIN_USER, JA } from './test-data'
  *     Cần agent (Windows) → máy khác thì tự skip kèm lý do.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
 /** Trỏ vào ca có 補管/義管 算定 để chart có 部位 sẵn (giống 2 spec dialog kia). */
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
-const TRT_DT = process.env.TEST_TRT_DT ?? '2025-12-24'
+const PAT_NO = patNo('12138')
+const TRT_DT = trtDt('2025-12-24')
 
 /** MAX_LEN_TEXT — cap ký tự của 着脱方法 / その他情報 (WinForm MaxLength). */
 const MAX_LEN_TEXT = 60
@@ -114,13 +116,6 @@ interface RenderRequestBody {
 
 /** Đóng SanteiConfirmDialog 「…を算定しますか？」 do AutoSantei bung ra (đè lên dialog). */
 async function installSanteiAutoClose(page: Page) {
-    await page.addLocatorHandler(
-        page.getByText(/を算定しますか？/).first(),
-        async () => {
-            await page.getByRole('button', { name: /^(No|いいえ)$/ }).first().click()
-        },
-        { times: 20 },
-    )
 }
 
 /**
@@ -166,16 +161,15 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
     /** PdfPreviewDialog của agent (chỉ dùng ở TC-PDF-1). */
     let previewDialog: Locator
 
-    test.beforeAll(async ({ browser }) => {
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
         await installSanteiAutoClose(page)
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
         await expect(page.getByText('合計:').first()).toBeVisible({ timeout: 60000 })
@@ -215,7 +209,8 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
     })
 
     // ── 補管・義歯 (frm203023) ───────────────────────────────────────────────

@@ -1,7 +1,10 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { rows } from './virtual-grid'
 
 /**
@@ -51,13 +54,11 @@ import { rows } from './virtual-grid'
  * chỉ nằm trong state chưa lưu (không bấm F9 登録), rời màn là mất.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-
 /**
  * 患者番号 dùng cho mọi testcase. Mặc định 12138 — bệnh nhân demo được các spec
  * khác dùng (client-sort, dental-disease-management-dialog) nên chắc chắn tồn tại.
  */
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 /** `RegiCol` của registration-table (treatment-entry-shared.ts:94-105). */
 const REGI_COL_DAY = 0
@@ -217,44 +218,25 @@ test.describe('診療入力（患者選択）F8 閲覧 — 変更/閲覧モー�
             .filter((n) => Number.isInteger(n) && n >= 1 && n <= 31)
     }
 
-    test.beforeAll(async ({ browser }) => {
-        // Page tự tạo (không dùng fixture) để cả file dùng chung MỘT lần login.
-        // browser.newPage() không kế thừa `use` của config nên phải truyền tay
-        // ignoreHTTPSErrors — miền *.ochacom.local dùng cert tự ký.
-        page = await browser.newPage({
-            baseURL: BASE_URL,
-            ignoreHTTPSErrors: true,
-            locale: 'ja-JP',
-        })
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
+        // Page chia sẻ theo worker (`_shared/session.ts`): đăng nhập một lượt cho cả
+        // worker thay vì mỗi file một lần — app chặn ở 10 login/khung thời gian
+        // (Rule 10.1). `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-
-        // AutoSantei của chế độ Insert có thể bung hộp「〜を算定しますか？」bất kỳ lúc
-        // nào sau khi lưới nạp xong — thời điểm không đoán được, và nó nuốt mọi click
-        // (GUIDELINE Rule 14). Trả lời `No` (Rule 14.1: `Yes` lại mở tiếp カルテ記載選択).
-        // Chọn No vẫn算定 bộ 再診 nên lưới VẪN có dòng cho ngày đó — đúng thứ TC-F9-1 cần.
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page
-                    .getByRole('button', { name: /^(No|いいえ)$/ })
-                    .first()
-                    .click()
-            },
-            { times: 20 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         await page.goto('/treatments', { waitUntil: 'domcontentloaded' })
         await expect(page.locator('[data-fkey="F8"]')).toBeVisible({ timeout: 60000 })
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
     })
 
     // ── Tìm một ngày TRỐNG trong 処置月 ───────────────────────────────────────

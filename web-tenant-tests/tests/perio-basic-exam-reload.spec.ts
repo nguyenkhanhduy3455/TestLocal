@@ -1,4 +1,8 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { TODAY_ISO, patNo, trtDt } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import {
     countRealTreatmentRowsInMonth,
@@ -10,7 +14,6 @@ import {
     type SeedTrtRow,
 } from './db'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * 歯周基本検査 — 直近の基本検査表(7999/9)の再読込 (`frm203028.getEppMobility`).
@@ -97,9 +100,8 @@ import { ADMIN_USER, JA } from './test-data'
  *   TEST_DB=1 npx playwright test tests/perio-basic-exam-reload.spec.ts --headed
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '11'
-const TRT_DT = process.env.TEST_TRT_DT ?? new Date().toISOString().slice(0, 10)
+const PAT_NO = patNo('11')
+const TRT_DT = trtDt(TODAY_ISO)
 
 /** Mùng 10 tháng trước TRT_DT — ngày cho bản ghi "quá khứ" (lượt quét 2). */
 const HIST_DT = (() => {
@@ -160,18 +162,6 @@ const SANTEI_CONFIRM = /を算定しますか？/
 
 /** Trả lời **No** cho 「〜を算定しますか？」 (Rule 14) — chép từ perio-kensa-order.spec.ts. */
 const installSanteiNo = async (page: Page) => {
-    await page.addLocatorHandler(
-        page.getByText(SANTEI_CONFIRM).first(),
-        async () => {
-            await anyDialog(page)
-                .filter({ hasText: SANTEI_CONFIRM })
-                .getByRole('button', { name: /^(No|いいえ)$/ })
-                .first()
-                .click({ timeout: 3000 })
-                .catch(() => {})
-        },
-        { times: 30 },
-    )
 }
 
 const drainAlerts = async (page: Page) => {
@@ -325,7 +315,11 @@ test.describe('歯周基本検査 — 基本検査表の再読込 (getEppMobilit
     let presetEpp: string[] = []
     let presetDouyou: string[] = []
 
-    test.beforeAll(async ({ browser }) => {
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
         presetEpp = []
         presetDouyou = []
 
@@ -340,25 +334,17 @@ test.describe('歯周基本検査 — 基本検査表の再読込 (getEppMobilit
         await seedTreatmentRows(Number(PAT_NO), TRT_DT, BUI_ROWS)
         await deleteTreatmentRows(Number(PAT_NO), HIST_DT)
 
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
 
         await installSanteiNo(page)
 
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(
-            page,
-            'login không vào được — chạy nhiều lần liên tiếp thì đang dính rate-limit, ' +
-                'chờ ~4 phút chứ đừng sửa test (Rule 9 / 10.1)',
-        ).toHaveURL(/\/$/)
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
         // Chỉ dọn vùng seed (disp_no >= 9000) + chữ ký dòng spec tự dựng. KHÔNG dọn
         // theo trt_cd 7999: mã đó là カルテコメント dùng chung, xoá theo mã sẽ cuốn
         // theo cả PCR / ghi chú THẬT của bệnh nhân trong đúng ngày đó.

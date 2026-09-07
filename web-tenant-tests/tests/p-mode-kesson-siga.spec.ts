@@ -1,4 +1,8 @@
-import { expect, test, type Page, type Request } from '@playwright/test'
+import { type Page, type Request } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import {
     countRealTreatmentRowsInMonth,
@@ -15,7 +19,6 @@ import {
     type SigaSnapshot,
 } from './db'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { closeDialogs } from './virtual-grid'
 
 /**
@@ -133,10 +136,8 @@ import { closeDialogs } from './virtual-grid'
  *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/p-mode-kesson-siga.spec.ts --headed
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-
 /** Bệnh nhân test — spec GHI bảng `siga` của họ, đừng trỏ vào dữ liệu thật. */
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 /** Ngày test = HÔM NAY: chỉ dòng của tháng đang mở mới thao tác tay được. */
 const TRT_DT =
@@ -300,7 +301,11 @@ test.describe('診療入力 — Ｐ変更 → 欠損自動マーキング (Chk_P
         throw lastErr
     }
 
-    test.beforeAll(async ({ browser }) => {
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
         sigaRowCreated = await ensureSigaRow(Number(PAT_NO))
         sigaBefore = await readSiga(Number(PAT_NO))
         console.log(
@@ -340,9 +345,9 @@ test.describe('診療入力 — Ｐ変更 → 欠損自動マーキング (Chk_P
             },
         ])
 
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
 
         // BẪY 1 — kỳ vọng suy ra từ chính request, nên phải bắt body của nó.
         page.on('request', (req: Request) => {
@@ -356,30 +361,12 @@ test.describe('診療入力 — Ｐ変更 → 欠損自動マーキング (Chk_P
             }
         })
 
-        // AutoSantei bung 「…を算定しますか？」 vào thời điểm không đoán được và nuốt
-        // mọi click (Rule 14). Bấm No — Yes lại kéo theo カルテ記載選択.
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page
-                    .getByRole('button', { name: /^(No|いいえ)$/ })
-                    .first()
-                    .click()
-            },
-            { times: 30 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
-
         await openTreatmentScreen()
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
         const n =
             (await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)) +
             (await deleteTreatmentRowsByDspTrt(Number(PAT_NO), TRT_DT, 0, [SEED_NM]).catch(

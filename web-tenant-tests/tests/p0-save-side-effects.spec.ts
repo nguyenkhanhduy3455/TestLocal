@@ -1,4 +1,8 @@
-import { expect, test, type Page } from '@playwright/test'
+import { type Page } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import {
     countRealTreatmentRowsInMonth,
@@ -9,7 +13,6 @@ import {
     withDb,
 } from './db'
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { closeDialogs } from './virtual-grid'
 
 /**
@@ -241,9 +244,7 @@ import { closeDialogs } from './virtual-grid'
  *    TC-7 còn GHI `insurance.med_ed_dt` — snapshot + trả lại ở afterAll.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 const TRT_DT =
     process.env.TEST_TRT_DT ??
@@ -653,7 +654,11 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
             .filter({ hasText: /上書きしますか/ })
             .first()
 
-    test.beforeAll(async ({ browser }) => {
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
         insBefore = await readInsurance(Number(PAT_NO))
         const realRows = await countRealTreatmentRowsInMonth(Number(PAT_NO), TRT_DT)
 
@@ -669,34 +674,16 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
             )
         }
 
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
-
-        // Rule 14 — AutoSantei bung 「…を算定しますか？」 vào thời điểm không đoán được
-        // và nuốt mọi click. Bấm No — Yes lại kéo theo カルテ記載選択.
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page
-                    .getByRole('button', { name: /^(No|いいえ)$/ })
-                    .first()
-                    .click()
-            },
-            { times: 60 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         await openTreatmentScreen()
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
 
         const n = await purgeTestRows()
         await restoreInsurance(Number(PAT_NO), insBefore)

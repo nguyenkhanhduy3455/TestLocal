@@ -1,4 +1,8 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { patNo, trtDt } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import {
     dbEnabled,
@@ -9,7 +13,6 @@ import {
     type RxSharingRow,
 } from './db'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { cells, rows, scroller } from './virtual-grid'
 
 /**
@@ -97,9 +100,8 @@ import { cells, rows, scroller } from './virtual-grid'
  *     TEST_DB=1 TEST_ALLOW_DELETE=1 npx playwright test tests/karte-info-share-dialog.spec.ts
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
-const TRT_DT = process.env.TEST_TRT_DT ?? '2025-12-24'
+const PAT_NO = patNo('12138')
+const TRT_DT = trtDt('2025-12-24')
 /** F8 削除 nhánh Yes (UPDATE thật). Mặc định chỉ tới confirm rồi bấm No. */
 const ALLOW_DELETE = process.env.TEST_ALLOW_DELETE === '1'
 
@@ -154,13 +156,6 @@ const MSG = {
 
 /** Đóng SanteiConfirmDialog 「…を算定しますか？」 (AutoSantei) — nó đè lên mọi dialog. */
 async function installSanteiAutoClose(page: Page) {
-    await page.addLocatorHandler(
-        page.getByText(/を算定しますか？/).first(),
-        async () => {
-            await page.getByRole('button', { name: /^(No|いいえ)$/ }).first().click()
-        },
-        { times: 20 },
-    )
 }
 
 /** 令和 年/月 kỳ vọng của một Date (chỉ dùng cho ngày ≥ 2019-05-01). */
@@ -199,7 +194,11 @@ test.describe('Shift+F7 カルテ情報共有 — 電子カルテ情報共有サ
         await expect(a).toBeHidden({ timeout: 10000 })
     }
 
-    test.beforeAll(async ({ browser }) => {
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
         if (dbEnabled) {
             // Seed TRƯỚC khi mở màn: dialog nạp lưới ngay lúc open.
             await seedRxSharingViewHistory(PAT_NO, [
@@ -225,15 +224,10 @@ test.describe('Shift+F7 カルテ情報共有 — 電子カルテ情報共有サ
             ])
         }
 
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
         await installSanteiAutoClose(page)
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
         await expect(page.getByText('合計:').first()).toBeVisible({ timeout: 60000 })
@@ -246,7 +240,8 @@ test.describe('Shift+F7 カルテ情報共有 — 電子カルテ情報共有サ
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
         if (dbEnabled) {
             const n = await deleteRxSharingViewHistory(PAT_NO, SEED_REQ_DTS)
             console.log(`dọn rx_sharing_view_history: ${n} dòng`)

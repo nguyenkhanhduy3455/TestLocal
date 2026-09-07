@@ -1,8 +1,9 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { SEED_DISP_BASE, dbEnabled, deleteTreatmentRows, seedTreatmentRows, withDb } from './db'
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { emptyState, rows, scroller, skeletons } from './virtual-grid'
 
 /**
@@ -73,8 +74,6 @@ import { emptyState, rows, scroller, skeletons } from './virtual-grid'
  *   npx playwright test tests/monthly-visit-summary-dialog.spec.ts --repeat-each=3 --workers=1
  * Chạy một lần (mặc định) thì không sao: cả file là một job serial duy nhất.
  */
-
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
 
 /** ISO yyyy-MM-dd theo giờ máy — khớp cách `formatDateIso` của app dựng chuỗi. */
 function isoOf(d: Date): string {
@@ -505,22 +504,12 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
         throw lastErr
     }
 
-    test.beforeAll(async ({ browser }) => {
-        // Page tự tạo (không dùng fixture) để cả file dùng chung MỘT lần login.
-        // browser.newPage() không kế thừa `use` của config nên phải truyền tay
-        // ignoreHTTPSErrors — miền *.ochacom.local dùng cert tự ký.
-        page = await browser.newPage({
-            baseURL: BASE_URL,
-            ignoreHTTPSErrors: true,
-            locale: 'ja-JP',
-        })
+    test.beforeAll(async ({ authedPage }) => {
+        // Page chia sẻ theo worker (`_shared/session.ts`): đăng nhập một lượt cho cả
+        // worker thay vì mỗi file một lần — app chặn ở 10 login/khung thời gian
+        // (Rule 10.1). `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
+        page = authedPage
         step = makeStep(page)
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         // Đọc cờ cổng mật khẩu THẬT của tenant ngay khi vào màn: nó quyết định
         // F3 có hỏi mật khẩu hay không, và do đó quyết định cả file chạy được hay
@@ -555,7 +544,7 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
             console.log(`dọn ${removed} dòng 介護 test của 患者番号 ${patNo} (${TRT_DT})`)
         }
         seededPatNos = []
-        await page?.close()
+        await releaseSharedPage(page)
     })
 
     // Cổng bật mà không có mật khẩu thì server chặn MỌI request số liệu — mọi

@@ -1,8 +1,10 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { dbEnabled, deleteTreatmentRows, seedTreatmentRows, withDb } from './db'
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * 診療入力 — 点数 phải là kết quả `getTensu`, KHÔNG phải `mst_trt.score1` thô, trên
@@ -449,7 +451,11 @@ test.describe('診療入力 — 点数 = getTensu trên mọi đường nhập +
         return Number(txt(cell ?? ''))
     }
 
-    test.beforeAll(async ({ browser }) => {
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
         cand = await findScoreCandidate()
         infantPatNo = await findInfantPatient()
         infantCtx = infantPatNo === null ? null : await patientContext(infantPatNo)
@@ -463,27 +469,9 @@ test.describe('診療入力 — 点数 = getTensu trên mọi đường nhập +
                 `${infantCtx ? `tuổi ${infantCtx.age}, dis_flg ${infantCtx.disFlg}, old_flg ${infantCtx.oldFlg}` : ''}`,
         )
 
-        page = await browser.newPage()
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-
-        // 初診/再診 của 自動算定 hỏi 「…を算定しますか？」 ngay khi mở màn — bấm No để
-        // không kéo theo dây chuyền dialog khác. Riêng nhóm 自動算定 tự xử lý.
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page
-                    .getByRole('button', { name: /^(No|いいえ)$/ })
-                    .first()
-                    .click()
-            },
-            { times: 30 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         picker = page.getByRole('dialog').filter({ hasText: '処置選択' })
         ryoCells = page.locator(`[data-grid-cell$="|${REGI_COL_RYO}"]`)
@@ -493,7 +481,8 @@ test.describe('診療入力 — 点数 = getTensu trên mọi đường nhập +
         if (dbEnabled && infantPatNo !== null) {
             await deleteTreatmentRows(infantPatNo, TRT_DT).catch(() => 0)
         }
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
     })
 
     // ══════════════ Nhóm A — ngữ cảnh cùng ngày: 全身麻酔 ══════════════

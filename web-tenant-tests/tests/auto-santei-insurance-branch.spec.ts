@@ -60,13 +60,13 @@
  * ─── CẤU TRÚC (Rule 19) ──────────────────────────────────────────────────────
  * `serial` + MỘT page ở `beforeAll` (login 1 lần — Rule 10.1). Mỗi TC tự `goto`.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { type Page } from '@playwright/test'
+
+import { BASE_URL } from './_shared/env'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { branchInForceOn, dbEnabled, findMstTrt, insuranceBranches, type InsuranceBranch } from './db'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
-
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
 
 /** Bệnh nhân đổi thẻ giữa chừng — xem "ĐIỀU KIỆN DỮ LIỆU". */
 const PAT_NO = process.env.TEST_PAT_NO_INS_BR ?? '11307'
@@ -209,11 +209,12 @@ test.describe('自動算定 — 枝番 có hiệu lực tại 診療日 (GetVali
         }
     }
 
-    test.beforeAll(async ({ browser }) => {
-        // browser.newPage() KHÔNG kế thừa `use` của config → truyền tay.
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+    test.beforeAll(async ({ authedPage }) => {
+        // Page chia sẻ theo worker (`_shared/session.ts`): đăng nhập một lượt cho cả
+        // worker thay vì mỗi file một lần — app chặn ở 10 login/khung thời gian
+        // (Rule 10.1). `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
+        page = authedPage
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
         page.on('request', (req) => {
             const u = req.url()
             const i = u.indexOf('/tenant/')
@@ -228,16 +229,6 @@ test.describe('自動算定 — 枝番 có hiệu lực tại 診療日 (GetVali
             )
         })
 
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(
-            page,
-            'login không vào được — chạy lại nhiều lần liên tiếp thì đang dính rate-limit, ' +
-                'chờ ~4 phút chứ đừng sửa test (Rule 9 / 10.1)',
-        ).toHaveURL(/\/$/)
-
         branches = await insuranceBranches(Number(PAT_NO))
         backBranch = branchInForceOn(branches, TRT_DT_BACK)
         nowBranch = branchInForceOn(branches, TRT_DT_NOW)
@@ -249,7 +240,7 @@ test.describe('自動算定 — 枝番 có hiệu lực tại 診療日 (GetVali
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await releaseSharedPage(page)
     })
 
     test('TC-0 dữ liệu test còn phân biệt được hai luật', async () => {

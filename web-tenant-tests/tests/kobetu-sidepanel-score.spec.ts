@@ -1,8 +1,11 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { dbEnabled, deleteTreatmentRows, seedTreatmentRows, withDb } from './db'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * SidePanel — tab 個別 (tab thứ 4), BA CỘT ĐIỂM 一般 / 50/100 / 訪問 và điểm được
@@ -146,8 +149,7 @@ import { ADMIN_USER, JA } from './test-data'
  * xanh. Chúng nằm CUỐI và là hai lệch WinForm độc lập, xem mô tả bên trên.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 /** Ngày test = HÔM NAY — phải thuộc tháng hiện hành thì mới thao tác được. */
 const TRT_DT =
@@ -518,7 +520,11 @@ test.describe('SidePanel 個別 — 3 cột điểm 一般/50・100/訪問 và �
         return raw.map((r) => ({ key: r.key, text: txt(r.text) }))
     }
 
-    test.beforeAll(async ({ browser }) => {
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
         cand = await findScoreCandidate()
         patCtx = await patientScoreContext()
         cctCand = await findCctNmOnlyCandidate()
@@ -536,23 +542,9 @@ test.describe('SidePanel 個別 — 3 cột điểm 一般/50・100/訪問 và �
             },
         ])
 
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
-
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page.getByRole('button', { name: /^(No|いいえ)$/ }).first().click()
-            },
-            { times: 30 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
         await expect(page.getByText('合計:').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
@@ -562,7 +554,8 @@ test.describe('SidePanel 個別 — 3 cột điểm 一般/50・100/訪問 và �
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
         const n = await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)
         console.log(`afterAll: đã xoá ${n} dòng seed của (${PAT_NO}, ${TRT_DT})`)
     })

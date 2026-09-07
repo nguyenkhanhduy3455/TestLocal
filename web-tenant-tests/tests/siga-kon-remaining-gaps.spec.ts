@@ -1,4 +1,8 @@
-import { expect, test, type Page } from '@playwright/test'
+import { type Page } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import {
     countRealTreatmentRowsInMonth,
@@ -24,7 +28,6 @@ import {
     type SigaSnapshot,
 } from './db'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { closeDialogs } from './virtual-grid'
 
 /**
@@ -272,10 +275,8 @@ import { closeDialogs } from './virtual-grid'
  * và chung một mạch dựng dữ liệu.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-
 /** Bệnh nhân test — TC-6 XOÁ dòng siga của họ, đừng trỏ vào dữ liệu thật. */
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 /** Ngày test = HÔM NAY: chỉ dòng của tháng đang mở mới xoá/nhập tay được. */
 const TRT_DT =
@@ -587,7 +588,11 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
         }
     }
 
-    test.beforeAll(async ({ browser }) => {
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
         // ── DB: chụp nguyên trạng, in ra để cứu tay được ─────────────────────
         sigaRowCreated = await ensureSigaRow(Number(PAT_NO))
         konRowCreated = await ensureKonRow(Number(PAT_NO))
@@ -619,31 +624,16 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
         }
 
         // ── Trình duyệt ──────────────────────────────────────────────────────
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
-
-        // Rule 14 — AutoSantei bung 「…を算定しますか？」 vào thời điểm không đoán được
-        // và nuốt mọi click. Bấm No — Yes lại kéo theo カルテ記載選択.
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page.getByRole('button', { name: /^(No|いいえ)$/ }).first().click()
-            },
-            { times: 60 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         await openTreatmentScreen()
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
         const n = await purgeTestRows()
 
         if (sigaRowCreated) {

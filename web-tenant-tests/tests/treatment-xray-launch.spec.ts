@@ -78,16 +78,16 @@
  * login (Rule 10.1). Mỗi lần đổi linkCode phải reload vì `useTreatmentConfig`
  * cache query ['agent','config'] — helper `openWithPicLink()` lo việc đó.
  */
-import { expect, test, type Page, type Route } from '@playwright/test'
+import { type Page, type Route } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { closeDialogs } from './virtual-grid'
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-
 /** Bệnh nhân mở màn 診療入力. Không cần 処置行 — thanh công cụ render độc lập. */
-const PAT_NO = process.env.TEST_PAT_NO ?? '11'
+const PAT_NO = patNo('11')
 
 const AGENT_CONFIG_URL = /\/v1\/config(\?|$)/
 const XRAY_LAUNCH_URL = /\/v1\/xray\/launch(\?|$)/
@@ -231,18 +231,12 @@ test.describe('診療入力 — 画像 / レントゲン ボタン（PicLink ス
     const alertWithTitle = (title: string) =>
         page.getByRole('alertdialog').filter({ hasText: title })
 
-    test.beforeAll(async ({ browser }) => {
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+    test.beforeAll(async ({ authedPage }) => {
+        page = authedPage
         step = makeStep(page)
         // Lỗi JS chưa bắt làm React không mount → màn rỗng và test đỏ ở chỗ khó hiểu.
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
 
         // ─── Login ────────────────────────────────────────────────────────────
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         // ─── Stub GET /v1/config — chỉ để lái 連携先 ─────────────────────────
         // Lấy bản THẬT rồi vá đúng một trường: giữ nguyên shape của agent, nên agent
@@ -319,7 +313,7 @@ test.describe('診療入力 — 画像 / レントゲン ボタン（PicLink ス
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await releaseSharedPage(page)
     })
 
     // ═══ Hiện / ẩn nút theo 連携先 ═══════════════════════════════════════════

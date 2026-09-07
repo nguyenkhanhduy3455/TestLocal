@@ -1,4 +1,8 @@
-import { expect, test, type Page } from '@playwright/test'
+import { type Page } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import {
     dbEnabled,
@@ -8,7 +12,6 @@ import {
     seedTreatmentRows,
 } from './db'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { closeDialogs } from './virtual-grid'
 
 /**
@@ -80,10 +83,8 @@ import { closeDialogs } from './virtual-grid'
  * KHÔNG bấm F9 nên KHÔNG cần TEST_ALLOW_SAVE: cả hai TC chỉ mở/không mở một hộp thoại.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-
 /** Bệnh nhân test — spec chỉ seed 部位病名行 rồi xoá, không đụng 歯式. */
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 const TRT_DT =
     process.env.TEST_TRT_DT ??
@@ -184,33 +185,21 @@ test.describe('診療入力 — cổng vào của Ｐ変更 (MonthP)', () => {
         )
     }
 
-    test.beforeAll(async ({ browser }) => {
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
 
-        // AutoSantei bung 「…を算定しますか？」 vào lúc không đoán được (Rule 14).
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page
-                    .getByRole('button', { name: /^(No|いいえ)$/ })
-                    .first()
-                    .click()
-            },
-            { times: 30 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
     })
 
     test.afterAll(async () => {
         await cleanupSeed()
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
     })
 
     // ═════════════════════════════════════════════════════════════════════════

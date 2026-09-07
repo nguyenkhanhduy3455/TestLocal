@@ -1,4 +1,6 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import {
     dbEnabled,
@@ -12,7 +14,6 @@ import {
     personAttending,
 } from './db'
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { rows, cells } from './virtual-grid'
 
 /**
@@ -86,8 +87,6 @@ import { rows, cells } from './virtual-grid'
  * CHẠY TUẦN TỰ, dùng CHUNG một page (Rule 10.1 / Rule 19) — chạy lẻ bằng `-g` sẽ hỏng:
  *   npx playwright test tests/patient-select-assign-parity.spec.ts
  */
-
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
 
 /**
  * `inp.dispEiseisi` — 「衛生士を入力する」, BA trạng thái theo quy ước WinForm.
@@ -322,7 +321,7 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         await expect(page.getByText('≪受付患者一覧≫')).toBeVisible({ timeout: 30000 })
     }
 
-    test.beforeAll(async ({ browser }) => {
+    test.beforeAll(async ({ authedPage }) => {
         test.skip(!dbEnabled, 'cần TEST_DB=1 để dò 担当医/衛生士 và seed dòng 受付')
 
         const found = await findPatientsByAttDr()
@@ -379,9 +378,8 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
                 `patWithZeroWaitRow=${patWithZeroWaitRow ?? 'KHÔNG DỰNG ĐƯỢC'}`,
         )
 
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
 
         page.on('response', (res) => {
             if (res.request().method() !== 'GET') return
@@ -396,18 +394,12 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
                 .catch(() => undefined)
         })
 
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
-
         await page.goto('/treatments', { waitUntil: 'domcontentloaded' })
         await expect(page.locator('[data-fkey="F7"]')).toBeVisible({ timeout: 60000 })
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await releaseSharedPage(page)
         if (seededWaitIds.length > 0) {
             const n = await deleteWaitRows(seededWaitIds)
             console.log(`dọn ${n} dòng 受付 do test tạo`)

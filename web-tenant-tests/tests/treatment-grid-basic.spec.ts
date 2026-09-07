@@ -1,7 +1,10 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { patNo, trtDt } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { closeDialogs } from './virtual-grid'
 
 /**
@@ -133,8 +136,6 @@ import { closeDialogs } from './virtual-grid'
  * `treatment-table-handler.spec.ts`, file đó bắt buộc `--workers=1` khi lặp).
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-
 /**
  * Bệnh nhân test — PHẢI khớp `patient.patNo` trong
  * `fla-ui-tests/src/OchaCom.FlaUiTests/testsettings.local.json`.
@@ -143,7 +144,7 @@ const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
  * CÙNG một bệnh nhân và CÙNG một ngày thì mới so được. Bệnh nhân 10 được chọn vì chỉ
  * có 8 dòng TRNTRN trong toàn bộ lịch sử (12138 có 2.864 ⇒ WinForm treo hơn một phút).
  */
-const PAT_NO = process.env.TEST_PAT_NO ?? '10'
+const PAT_NO = patNo('10')
 
 /**
  * Ngày test — PHẢI khớp `patient.trtDate` bên `testsettings.local.json` (FlaUI).
@@ -155,7 +156,7 @@ const PAT_NO = process.env.TEST_PAT_NO ?? '10'
  *
  * Đổi ngày thì PHẢI đổi cả hai bên cùng lúc.
  */
-const TRT_DT = process.env.TEST_TRT_DT ?? '2026-08-03'
+const TRT_DT = trtDt('2026-08-03')
 
 /**
  * 処置 dùng để tạo MỘT dòng đơn giản, KHÔNG phải chọn 部位.
@@ -389,72 +390,14 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
         return addedKey!
     }
 
-    test.beforeAll(async ({ browser }) => {
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true, kartePicker: true, alerts: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
-
-        // SanteiConfirmDialog đến CHẬM và đè lên mọi click (Rule 14). Bấm No —
-        // Yes lại kéo theo カルテ記載選択 (Rule 14.1).
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page
-                    .getByRole('button', { name: /^(No|いいえ)$/ })
-                    .first()
-                    .click()
-            },
-            { times: 30 },
-        )
-
-        // カルテ記載選択 — dialog ĐI KÈM sau 算定 (GUIDELINE Rule 14.1). Nó KHÔNG tự tắt và
-        // che kín lưới, nên mọi phép đo sau đó đều vô nghĩa. Đã vấp thật 2026-08-25:
-        // TC-1 đọc "dòng cuối" ra một 処置行 ngẫu nhiên vì lưới bị che.
-        // Đóng bằng nút F10 戻る của chính dialog (Escape trong dialog này = CHỐT, Rule 10.4).
-        await page.addLocatorHandler(
-            page.getByText('カルテ記載選択').first(),
-            async () => {
-                const back = page.getByRole('button', { name: /戻る/ }).last()
-                if (await back.count()) await back.click()
-            },
-            { times: 30 },
-        )
-
-        // Alert お茶コン (算定チェック / SingleChk …) — bung TRỄ sau khi một 処置 được chèn,
-        // và nó là modal có overlay nên nuốt mọi click lên lưới. Đã vấp thật 2026-09-03:
-        // TC-2 chèn 歯科再診料 (110-0) vào ngày đã có 歯科初診料 ⇒ alert 「…当日算定不可です。」
-        // đến trong lúc TC-3 chạy rồi nằm lại, TC-4 click ô 点 bị overlay chặn 15s.
-        // Cảnh báo đó là hành vi ĐÚNG của app (WinForm cũng MsgBox), file này không có TC
-        // nào đo alert, nên dọn tự động — nhưng LOG nội dung ra để không giấu triệu chứng.
-        // Alert có thể xếp hàng, nên dọn hết trong MỘT lần vào handler: addLocatorHandler
-        // đòi locator phải biến mất khi handler xong.
-        await page.addLocatorHandler(
-            page.locator('[role="alertdialog"]'),
-            async () => {
-                for (let i = 0; i < 8; i++) {
-                    const box = page.locator('[role="alertdialog"]').first()
-                    if (!(await box.count())) return
-                    const txt = (await box.innerText().catch(() => ''))
-                        .replace(/\s+/g, ' ')
-                        .slice(0, 120)
-                    const ok = box.getByRole('button', { name: 'OK' })
-                    if (!(await ok.count())) return
-                    console.log(`alert お茶コン tự bung → bấm OK: ${txt}`)
-                    await ok
-                        .first()
-                        .click({ timeout: 3000 })
-                        .catch(() => {})
-                    await page.waitForTimeout(300)
-                }
-            },
-            { times: 30 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         sidePanel = page.locator('div[class*="w-[450px]"]').first()
         await openTreatmentScreen()
@@ -462,7 +405,8 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
 
     test.afterAll(async () => {
         // Không seed gì, không bấm F9 ⇒ không có gì để dọn. Đóng page là xong.
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
     })
 
     // ═══════════════════════════════════════════════════════════════════════

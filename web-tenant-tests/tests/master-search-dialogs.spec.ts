@@ -1,7 +1,10 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { cells, emptyState, rows as gridRows, scroller } from './virtual-grid'
 
 /**
@@ -133,8 +136,7 @@ import { cells, emptyState, rows as gridRows, scroller } from './virtual-grid'
  * máy thật, không phải từ trí nhớ.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 /** Ngày test = HÔM NAY — phải thuộc tháng hiện hành thì mới thao tác được. */
 const TRT_DT =
@@ -473,34 +475,21 @@ test.describe('master search — 処置検索 (frm902011) / 病名検索 (frm902
 
     // ── Vòng đời ─────────────────────────────────────────────────────────────
 
-    test.beforeAll(async ({ browser }) => {
-        // Page tự tạo (không dùng fixture) để cả file dùng chung MỘT lần login.
-        // browser.newPage() không kế thừa `use` của config nên phải truyền tay
-        // ignoreHTTPSErrors — miền *.ochacom.local dùng cert tự ký.
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
+        // Page chia sẻ theo worker (`_shared/session.ts`): đăng nhập một lượt cho cả
+        // worker thay vì mỗi file một lần — app chặn ở 10 login/khung thời gian
+        // (Rule 10.1). `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
         page.on('request', (req) => {
             const url = req.url()
             if (TRT_SEARCH_URL.test(url) || DIS_SEARCH_URL.test(url)) searchRequests.push(url)
         })
-
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page
-                    .getByRole('button', { name: /^(No|いいえ)$/ })
-                    .first()
-                    .click()
-            },
-            { times: 50 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         rowMenu = page.getByRole('menu').filter({ hasText: '1 メニュー' })
         autoCalcList = listScreenWith(/自\s*動\s*算\s*定\s*一\s*覧/)
@@ -515,7 +504,8 @@ test.describe('master search — 処置検索 (frm902011) / 病名検索 (frm902
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
     })
 
     // ═════════════════════════════════════════════════════════════════════════

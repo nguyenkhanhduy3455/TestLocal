@@ -1,8 +1,11 @@
-import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
+import { type Locator, type Page, type Route } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { dbEnabled, withDb } from './db'
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * 診療入力 — HAI dialog vừa được port khỏi trạng thái shell / sample data:
@@ -131,8 +134,7 @@ import { ADMIN_USER, JA } from './test-data'
  *   for i in 1 2 3; do npx playwright test tests/inp-p1-ported-dialogs.spec.ts --retries=0; done
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 /** Ngày test = HÔM NAY — phải thuộc tháng hiện hành thì mới thao tác được. */
 const TRT_DT =
@@ -221,7 +223,6 @@ interface ChkPrmItem {
     /** Giá trị THÔ mà mọi cổng gate so sánh — ModCommon.ChkPrm[] giữ y nguyên. */
     runtimeValue: number
 }
-
 
 test.describe.configure({ mode: 'serial', timeout: 300_000 })
 
@@ -468,31 +469,17 @@ test.describe('診療入力 — 2 dialog vừa port (チェック項目設定 / 
 
     // ── Vòng đời ─────────────────────────────────────────────────────────────
 
-    test.beforeAll(async ({ browser }) => {
-        // Page tự tạo (không dùng fixture) để cả file dùng chung MỘT lần login.
-        // browser.newPage() không kế thừa `use` của config nên phải truyền tay
-        // ignoreHTTPSErrors — miền *.ochacom.local dùng cert tự ký.
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
+        // Page chia sẻ theo worker (`_shared/session.ts`): đăng nhập một lượt cho cả
+        // worker thay vì mỗi file một lần — app chặn ở 10 login/khung thời gian
+        // (Rule 10.1). `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
-
-        // AutoSantei bung 「〜を算定しますか？」 sau MỖI lần vào lại màn 診療入力.
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page
-                    .getByRole('button', { name: /^(No|いいえ)$/ })
-                    .first()
-                    .click()
-            },
-            { times: 50 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         rowMenu = page.getByRole('menu').filter({ hasText: '1 メニュー' })
         chkDialog = page.getByRole('dialog').filter({ hasText: 'チ ェ ッ ク 項 目 設 定' })
@@ -515,7 +502,8 @@ test.describe('診療入力 — 2 dialog vừa port (チェック項目設定 / 
                 }
             }
         }
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
     })
 
     // ═════════════════════════════════════════════════════════════════════════

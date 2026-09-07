@@ -1,4 +1,8 @@
-import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
+import { type Locator, type Page, type Route } from '@playwright/test'
+
+import { TODAY_ISO, patNo, trtDt } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import {
     countRealTreatmentRowsInMonth,
@@ -9,7 +13,6 @@ import {
     seedTreatmentRows,
 } from './db'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * 検査順 — 歯周基本検査 / 歯周精密検査 の走査方向 (WinForm `ModCommon.pInpOpt[36]`).
@@ -105,9 +108,8 @@ import { ADMIN_USER, JA } from './test-data'
  *   TEST_DB=1 npx playwright test tests/perio-kensa-order.spec.ts --headed
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '11'
-const TRT_DT = process.env.TEST_TRT_DT ?? new Date().toISOString().slice(0, 10)
+const PAT_NO = patNo('11')
+const TRT_DT = trtDt(TODAY_ISO)
 
 /** `mst_cod` cd_type 68 の cd_val. */
 const KENSA_ORDER = { UpperLeftFirst: 1, UpperRightFirst: 2 } as const
@@ -148,18 +150,6 @@ const SANTEI_CONFIRM = /を算定しますか？/
 
 /** Trả lời **No** cho 「〜を算定しますか？」 (Rule 14) — chép từ karte-selection-dialog.spec.ts. */
 const installSanteiNo = async (page: Page) => {
-    await page.addLocatorHandler(
-        page.getByText(SANTEI_CONFIRM).first(),
-        async () => {
-            await anyDialog(page)
-                .filter({ hasText: SANTEI_CONFIRM })
-                .getByRole('button', { name: /^(No|いいえ)$/ })
-                .first()
-                .click({ timeout: 3000 })
-                .catch(() => {})
-        },
-        { times: 30 },
-    )
 }
 
 const drainAlerts = async (page: Page) => {
@@ -215,7 +205,11 @@ test.describe('歯周検査 — 検査順 (pInpOpt[36] / KensaOrder)', () => {
     /** Key của nhánh `clinic` TRƯỚC khi bị vá — xem TC-READ. */
     let realClinicKeys: string[] = []
 
-    test.beforeAll(async ({ browser }) => {
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
         const realRows = await countRealTreatmentRowsInMonth(Number(PAT_NO), TRT_DT)
         console.log(
             `tháng ${TRT_DT} của BN ${PAT_NO} đang có ${realRows} 処置行 THẬT. ` +
@@ -238,9 +232,9 @@ test.describe('歯周検査 — 検査順 (pInpOpt[36] / KensaOrder)', () => {
             },
         ])
 
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
 
         // Lấy body THẬT rồi chỉ sửa clinic.kensaOrder — xem khối 「VÌ SAO ĐÈ RESPONSE」.
         await page.route(SETTINGS_INP_URL, async (route: Route) => {
@@ -267,21 +261,13 @@ test.describe('歯周検査 — 検査順 (pInpOpt[36] / KensaOrder)', () => {
 
         await installSanteiNo(page)
 
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(
-            page,
-            'login không vào được — chạy nhiều lần liên tiếp thì đang dính rate-limit, ' +
-                'chờ ~4 phút chứ đừng sửa test (Rule 9 / 10.1)',
-        ).toHaveURL(/\/$/)
     })
 
     test.afterAll(async () => {
         await page?.unroute(SETTINGS_INP_URL).catch(() => {})
         await page?.unroute(INP_CONFIG_URL).catch(() => {})
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
         const n =
             (await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)) +
             (await deleteTreatmentRowsByDspTrt(Number(PAT_NO), TRT_DT, 0, [SEED_NM]).catch(

@@ -1,8 +1,10 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { trtDt } from './_shared/env'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { dbEnabled, withDb } from './db'
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { emptyState, rows, scroller, skeletons } from './virtual-grid'
 
 /**
@@ -72,8 +74,6 @@ import { emptyState, rows, scroller, skeletons } from './virtual-grid'
  * KHÔNG ghi DB — chỉ đọc.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-
 /** ISO yyyy-MM-dd theo giờ máy — khớp cách `formatDateIso` của app dựng chuỗi. */
 function isoOf(d: Date): string {
     const p = (n: number) => String(n).padStart(2, '0')
@@ -93,7 +93,7 @@ function isoParts(iso: string): { y: number; m: number; d: number } {
  * skip trông y hệt một lần chạy pass thật. 2018-04-20 có 64 người và trong đó
  * CÓ 初診 — cần thiết để nhánh marker '＊' của TC-ROW-1 được kiểm bằng số thật.
  */
-const TRT_DT = process.env.TEST_TRT_DT ?? '2018-04-20'
+const TRT_DT = trtDt('2018-04-20')
 
 /**
  * 診療日 THỨ HAI, cũng đông người (46 người, toàn 再診 — bổ sung nhánh
@@ -419,22 +419,12 @@ test.describe('F4 当日来患 — 当日来患一覧 (frm203001)', () => {
         await step()
     }
 
-    test.beforeAll(async ({ browser }) => {
-        // Page tự tạo (không dùng fixture) để cả file dùng chung MỘT lần login.
-        // browser.newPage() không kế thừa `use` của config nên phải truyền tay
-        // ignoreHTTPSErrors — miền *.ochacom.local dùng cert tự ký.
-        page = await browser.newPage({
-            baseURL: BASE_URL,
-            ignoreHTTPSErrors: true,
-            locale: 'ja-JP',
-        })
+    test.beforeAll(async ({ authedPage }) => {
+        // Page chia sẻ theo worker (`_shared/session.ts`): đăng nhập một lượt cho cả
+        // worker thay vì mỗi file một lần — app chặn ở 10 login/khung thời gian
+        // (Rule 10.1). `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
+        page = authedPage
         step = makeStep(page)
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         await page.goto('/treatments', { waitUntil: 'domcontentloaded' })
         // Footer F-key strip dựng xong = màn danh sách sẵn sàng nhận F4.
@@ -447,7 +437,7 @@ test.describe('F4 当日来患 — 当日来患一覧 (frm203001)', () => {
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await releaseSharedPage(page)
     })
 
     // ── Mở view ──────────────────────────────────────────────────────────────

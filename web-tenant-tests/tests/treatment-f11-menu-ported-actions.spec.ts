@@ -1,8 +1,11 @@
-import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
+import { type Locator, type Page, type Route } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { dbEnabled, withDb } from './db'
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * 診療入力 menu 「選択」 (RowContextMenu) — CÁC MỤC VỪA ĐƯỢC PORT, màn
@@ -121,8 +124,7 @@ import { ADMIN_USER, JA } from './test-data'
  * Kỳ vọng: tất cả XANH. TC-TENKI-3 tự skip khi không có TEST_DB.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 /** Ngày test = HÔM NAY — phải thuộc tháng hiện hành thì mới thao tác được. */
 const TRT_DT =
@@ -390,37 +392,24 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
         return -1
     }
 
-    test.beforeAll(async ({ browser }) => {
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
         if (dbEnabled) outcomeBefore = await readPatOutcome()
 
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
-
-        // AutoSantei bung 「〜を算定しますか？」 sau MỖI lần vào lại màn 診療入力.
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page
-                    .getByRole('button', { name: /^(No|いいえ)$/ })
-                    .first()
-                    .click()
-            },
-            { times: 50 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         rowMenu = page.getByRole('menu').filter({ hasText: '1 メニュー' })
         await backToEntry()
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
         // Lưới an toàn: TC-TENKI-3 tự trả lại rồi, nhưng nếu nó đỏ giữa chừng thì
         // bệnh nhân test nằm lại ở 転帰 khác — chữa ngay tại đây, không đợi người.
         if (dbEnabled && outcomeBefore !== null) {

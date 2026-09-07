@@ -1,8 +1,9 @@
-import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
+import { type Locator, type Page, type Route } from '@playwright/test'
+
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { listDoctors } from './db'
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * 診療入力設定 (frm203003) — TreatmentEntrySettingDialog, mở bằng phím F11 「設定」
@@ -84,8 +85,6 @@ import { ADMIN_USER, JA } from './test-data'
  * thì KHÔNG: 30 field đã rời agent.db sang tenant_config/device_config nên đọc và
  * ghi được ở mọi nền tảng — TC-SAVE-3 chỉ đổi cách chốt chặng 2 theo AGENT_AVAILABLE.
  */
-
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
 
 /**
  * Có agent trên máy chạy test hay không.
@@ -428,22 +427,12 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
         await expect(panel).toBeVisible()
     }
 
-    test.beforeAll(async ({ browser }) => {
-        // Page tự tạo (không dùng fixture) để cả file dùng chung MỘT lần login.
-        // browser.newPage() không kế thừa `use` của config nên phải truyền tay
-        // ignoreHTTPSErrors — miền *.ochacom.local dùng cert tự ký.
-        page = await browser.newPage({
-            baseURL: BASE_URL,
-            ignoreHTTPSErrors: true,
-            locale: 'ja-JP',
-        })
+    test.beforeAll(async ({ authedPage }) => {
+        // Page chia sẻ theo worker (`_shared/session.ts`): đăng nhập một lượt cho cả
+        // worker thay vì mỗi file một lần — app chặn ở 10 login/khung thời gian
+        // (Rule 10.1). `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
+        page = authedPage
         step = makeStep(page)
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         await page.goto('/treatments', { waitUntil: 'domcontentloaded' })
         // Footer F-key strip dựng xong = màn danh sách đã sẵn sàng nhận F11.
@@ -459,7 +448,7 @@ test.describe('F11 設定 — 診療入力設定 dialog (frm203003)', () => {
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await releaseSharedPage(page)
     })
 
     // ── Mở màn ───────────────────────────────────────────────────────────────

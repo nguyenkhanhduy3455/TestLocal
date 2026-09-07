@@ -43,10 +43,12 @@
  * vào hồ sơ bệnh nhân cho ngày TRT_DT. Chạy nhiều lần thì hồ sơ phình ra và các
  * spec cần "ngày còn sạch" (cmt-auto-picker) hỏng theo → đổi TEST_TRT_DT mỗi đợt.
  */
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { TODAY_ISO, patNo, trtDt } from './_shared/env'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import {
   cells,
   closeDialogs,
@@ -59,8 +61,8 @@ import {
   skeletons,
 } from './virtual-grid'
 
-const PAT_NO = process.env.TEST_PAT_NO ?? '11'
-const TRT_DT = process.env.TEST_TRT_DT ?? new Date().toISOString().slice(0, 10)
+const PAT_NO = patNo('11')
+const TRT_DT = trtDt(TODAY_ISO)
 const TRT_CD = process.env.TEST_TRT_CD ?? '153'
 const PICK_SCORE = process.env.TEST_PICK_SCORE ?? '48'
 
@@ -174,30 +176,25 @@ async function installSanteiAutoCancel(p: Page) {
   )
 }
 
-test.beforeAll(async ({ browser }) => {
-  // Page tự tạo KHÔNG đi qua fixture nên không thừa hưởng `use` của config →
+test.beforeAll(async ({ authedPage }) => {
+  // Page chia sẻ theo worker (`_shared/session.ts`): đăng nhập một lượt cho cả
+  // worker thay vì mỗi file một lần — app chặn ở 10 login/khung thời gian
+  // (Rule 10.1). `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
   // chép tay baseURL / viewport (test đo kích thước dialog phụ thuộc nó) và hai
   // mốc thời gian: navigation 90s vì Vite dev server transform nguội rất lâu.
   const { baseURL, viewport, ignoreHTTPSErrors, locale, navigationTimeout, actionTimeout } =
     test.info().project.use
-  page = await browser.newPage({ baseURL, viewport, ignoreHTTPSErrors, locale })
-  page.setDefaultNavigationTimeout(navigationTimeout ?? 90_000)
-  page.setDefaultTimeout(actionTimeout ?? 15_000)
+  page = authedPage
 
   step = makeStep(page)
   dialog = page.getByRole('dialog')
   fgDialog = dialog.last()
   await installSanteiAutoCancel(page)
 
-  await page.goto('/login', { waitUntil: 'domcontentloaded' })
-  await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-  await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-  await page.getByRole('button', { name: JA.submit }).click()
-  await expect(page).toHaveURL(/\/$/)
 })
 
 test.afterAll(async () => {
-  await page?.close()
+  await releaseSharedPage(page)
 })
 
 /**

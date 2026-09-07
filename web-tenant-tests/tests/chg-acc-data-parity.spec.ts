@@ -1,8 +1,11 @@
-import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
+import { type Locator, type Page, type Route } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { dbEnabled, deleteTreatmentRows, seedTreatmentRows, withDb } from './db'
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * 診療入力 F8 会計 — nhánh 「既に会計処理がされています」 → 会計データ修正 (ChgAccData).
@@ -118,8 +121,7 @@ import { ADMIN_USER, JA } from './test-data'
  * `mode: 'serial'` chỉ nối tiếp TRONG một file, không chặn được giữa các file.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = Number(process.env.TEST_PAT_NO ?? '12138')
+const PAT_NO = Number(patNo('12138'))
 
 /** Màn hình luôn mở ở HÔM NAY — con trỏ ở dòng hôm nay thì không có hộp 日付チェック. */
 const TODAY_ISO = (() => {
@@ -401,16 +403,20 @@ test.describe('診療入力 F8 → 会計データ修正 (modAcc.ChgAccData) par
         return true
     }
 
-    test.beforeAll(async ({ browser }) => {
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
         // Lưới phải có dòng của HÔM NAY thì mới đặt được con trỏ (BẪY 4).
         if (dbEnabled) {
             await seedTreatmentRows(PAT_NO, TODAY_ISO, [...SEED_ROWS])
             console.log(`seed ${SEED_ROWS.length} dòng 処置 cho ${TODAY_ISO} (bệnh nhân ${PAT_NO})`)
         }
 
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
 
         // 会計設定 — vá ĐÚNG hai trường trên response THẬT, giữ nguyên phần còn lại.
         await page.route(ACC_CONFIG_URL, async (route: Route) => {
@@ -493,26 +499,11 @@ test.describe('診療入力 F8 → 会計データ修正 (modAcc.ChgAccData) par
             })
         })
 
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page
-                    .getByRole('button', { name: /^(No|いいえ)$/ })
-                    .first()
-                    .click()
-            },
-            { times: 50 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
         if (!dbEnabled) return
 
         await deleteTreatmentRows(PAT_NO, TODAY_ISO).catch((e: unknown) =>

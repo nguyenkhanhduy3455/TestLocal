@@ -1,8 +1,9 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { dbEnabled, findPatientWithTrnThisMonth, listDoctors } from './db'
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * 処置入力 — vùng 「Ｄｒ」/「衛」 trên header (frm203002).
@@ -38,8 +39,6 @@ import { ADMIN_USER, JA } from './test-data'
  * đóng) nên chạy lẻ bằng `-g` sẽ hỏng:
  *   npx playwright test tests/treatment-header-staff.spec.ts
  */
-
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
 
 const MST_IIN_URL = /\/tenant\/mst-iin-2(\?|$)/
 
@@ -164,7 +163,7 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
         return [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? ''
     }
 
-    test.beforeAll(async ({ browser }) => {
+    test.beforeAll(async ({ authedPage }) => {
         test.skip(!dbEnabled, 'cần TEST_DB=1 để dò 担当医 của các dòng TRN')
 
         const found = await findPatientWithTrnThisMonth()
@@ -191,13 +190,8 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
                 `combo chọn ${pickedDoctor!.userNo}「${pickedDoctor!.userNm}」`,
         )
 
-        page = await browser.newPage({
-            baseURL: BASE_URL,
-            ignoreHTTPSErrors: true,
-            locale: 'ja-JP',
-        })
+        page = authedPage
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
         // Giữ lại URL + Authorization của một lời gọi 医院マスタ THẬT: TC-MST-2 cần
         // gọi lại chính endpoint đó nhưng KHÔNG kèm 区分, mà accessToken chỉ nằm
         // trong RAM của app (Rule 10.2) nên không có cách nào tự dựng token.
@@ -216,12 +210,6 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
                 })
                 .catch(() => undefined)
         })
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         // Đi qua 患者選択 chứ không goto thẳng: chỉ đường đó mới đặt được combo Ｄｒ．
         // khác với dr_no của các dòng TRN, tức mới tách được nhãn với combo.
@@ -272,7 +260,7 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await releaseSharedPage(page)
     })
 
     // ── /tenant/mst-iin-2 không được trả dòng sentinel ───────────────────────

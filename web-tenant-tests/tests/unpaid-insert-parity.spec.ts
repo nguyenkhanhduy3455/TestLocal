@@ -1,8 +1,11 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { dbEnabled, withDb } from './db'
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * 診療入力 F8 会計 → các cột của bảng `unpaid` phải khớp WinForm. Hai chỗ đã đo
@@ -128,8 +131,7 @@ import { ADMIN_USER, JA } from './test-data'
  * Chạy CẢ FILE, không `-g` một testcase lẻ (Rule 19).
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = Number(process.env.TEST_PAT_NO ?? '12138')
+const PAT_NO = Number(patNo('12138'))
 
 /** Ngày bất kỳ trong THÁNG muốn dò — chỉ phần 年月 được dùng. */
 const TRT_DT =
@@ -546,7 +548,11 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
         return true
     }
 
-    test.beforeAll(async ({ browser }) => {
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
         // ── Chọn ngày test từ chính dữ liệu của DB đang chạy ──────────────────
         const days = await readMonthDays()
         console.log(`Tháng ${MONTH_START.slice(0, 7)} của bệnh nhân ${PAT_NO}:`)
@@ -587,9 +593,9 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
             )
         }
 
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
 
         // Bảng bác sĩ lấy từ chính response màn hình tải, không hỏi DB (xem chú
         // thích ở `doctorNoByName`). Response tới trước khi dropdown render nên
@@ -614,26 +620,11 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
                 .catch(() => {})
         })
 
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page
-                    .getByRole('button', { name: /^(No|いいえ)$/ })
-                    .first()
-                    .click()
-            },
-            { times: 50 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
 
         const targets = [syosinDay, saisinDay].filter((d): d is string => d !== null)
         if (!dbEnabled || targets.length === 0) return

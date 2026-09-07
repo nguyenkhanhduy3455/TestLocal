@@ -1,15 +1,10 @@
-import {
-    expect,
-    test,
-    type Locator,
-    type Page,
-    type Request,
-    type Response,
-    type Route,
-} from '@playwright/test'
+import { type Locator, type Page, type Request, type Response, type Route } from '@playwright/test'
+
+import { patNo, trtDt } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * 診療入力設定「ガイドモード」 (pInpOpt[39]) đảo hai nhánh F4 / Shift+F4 của tab ガイド.
@@ -75,10 +70,9 @@ import { ADMIN_USER, JA } from './test-data'
  *   npx playwright test tests/guide-mode-f4-swap.spec.ts
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 /** Ghim ngày điều trị nếu cần: TEST_TRT_DT=YYYY-MM-DD. Mặc định = hôm nay. */
-const TRT_DT = process.env.TEST_TRT_DT ?? ''
+const TRT_DT = trtDt('')
 
 /** GET/PUT 診療入力設定 — 5 field phòng khám + 25 field máy trạm trong 1 request. */
 const SETTINGS_INP_URL = /\/tenant\/settings\/inp(\?|$)/
@@ -230,29 +224,17 @@ test.describe('ガイドモード — F4 / Shift+F4 đảo nhánh (frm203002 btn
         return stepRequested
     }
 
-    test.beforeAll(async ({ browser }) => {
-        // Page tự tạo (không dùng fixture) để cả file dùng chung MỘT lần login.
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
+        // Page chia sẻ theo worker (`_shared/session.ts`): đăng nhập một lượt cho cả
+        // worker thay vì mỗi file một lần — app chặn ở 10 login/khung thời gian
+        // (Rule 10.1). `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-
-        // AutoSantei có thể bung SanteiConfirmDialog đè lên mọi thứ và nuốt phím.
-        // Bấm 「No」 chứ không 「Yes」: Yes 算定 xong lại kéo theo カルテ記載選択.
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page
-                    .getByRole('button', { name: /^(No|いいえ)$/ })
-                    .first()
-                    .click()
-            },
-            { times: 30 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         sidePanel = page.locator('div[class*="w-[450px]"]').first()
         allBtn = sidePanel.getByRole('button', { name: '全て表示', exact: true })
@@ -262,7 +244,8 @@ test.describe('ガイドモード — F4 / Shift+F4 đảo nhánh (frm203002 btn
 
     test.afterAll(async () => {
         await page?.unroute(SETTINGS_INP_URL).catch(() => {})
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
     })
 
     test('TC-READ-1 — màn 診療入力 ĐỌC 診療入力設定 của máy (nguồn của ガイドモード)', async () => {

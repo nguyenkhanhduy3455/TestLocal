@@ -49,20 +49,20 @@
  * vào HAI ngày (TRT_DT và TRT_DT_2 — ngày thứ hai để kiểm luật "theo ngày con trỏ"),
  * `afterAll` dọn cả hai. Cần TEST_DB=1.
  */
-import { expect, test, type Page, type Route } from '@playwright/test'
+import { type Page, type Route } from '@playwright/test'
+
+import { patNo, trtDt } from './_shared/env'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { dbEnabled, deleteTreatmentRows, seedTreatmentRows } from './db'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { closeDialogs } from './virtual-grid'
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-
 /** Bệnh nhân tham chiếu — chỉ dùng để KẾ THỪA pat_br/insu_cd khi seed 処置行. */
-const PAT_NO = process.env.TEST_PAT_NO ?? '11'
+const PAT_NO = patNo('11')
 
 /** Ngày test tự sở hữu (seed vào, dọn ra) — cùng 処置月 mà màn render được. */
-const TRT_DT = process.env.TEST_TRT_DT ?? '2009-05-20'
+const TRT_DT = trtDt('2009-05-20')
 /** Ngày thứ hai CÙNG 処置月 — chỉ để kiểm luật "gom dòng theo NGÀY CON TRỎ". */
 const TRT_DT_2 = process.env.TEST_TRT_DT_2 ?? '2009-05-21'
 
@@ -315,18 +315,12 @@ test.describe('診療入力 — 加算ボタン 時間外(&J)/休日(&K)/深夜(
       .toBe(callsBefore + 1)
   }
 
-  test.beforeAll(async ({ browser }) => {
-    page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+  test.beforeAll(async ({ authedPage }) => {
+    page = authedPage
     step = makeStep(page)
     // Lỗi JS chưa bắt làm React không mount → lưới rỗng và test đỏ ở chỗ khó hiểu.
-    page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
 
     // ─── Login + vào màn 診療入力 ──────────────────────────────────────────
-    await page.goto('/login', { waitUntil: 'domcontentloaded' })
-    await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-    await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-    await page.getByRole('button', { name: JA.submit }).click()
-    await expect(page).toHaveURL(/\/$/)
 
     await openTreatmentScreen(page)
 
@@ -361,7 +355,7 @@ test.describe('診療入力 — 加算ボタン 時間外(&J)/休日(&K)/深夜(
   })
 
   test.afterAll(async () => {
-    await page?.close()
+    await releaseSharedPage(page)
   })
 
   // ═══ TC-1 — đủ 3 nút, đúng nhãn ══════════════════════════════════════════

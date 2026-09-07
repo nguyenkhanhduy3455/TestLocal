@@ -1,7 +1,9 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { rows } from './virtual-grid'
 
 /**
@@ -62,8 +64,6 @@ import { rows } from './virtual-grid'
  * (TC-F7-3) chỉ chạy khi TEST_ALLOW_SAVE=1, ngược lại tự skip kèm log.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-
 /** Chỉ chạy nhánh THẬT SỰ ghi acc_dat khi được bật tường minh (Rule 18.1). */
 const ALLOW_SAVE = process.env.TEST_ALLOW_SAVE === '1'
 
@@ -72,7 +72,7 @@ const ALLOW_SAVE = process.env.TEST_ALLOW_SAVE === '1'
  * được các spec khác dùng (client-sort, dental-disease-management-dialog) nên
  * chắc chắn tồn tại. Đổi bằng TEST_PAT_NO nếu dataset khác.
  */
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 /** `inp_config.acc_make` — 0 = 日単位, 1 = 月単位 (api/inp-config-api.ts AccMakeUnit). */
 const ACC_MAKE_MONTH = 1
@@ -256,15 +256,11 @@ test.describe('診療入力（患者選択）— F7 会計作成 / F2 患者情�
         return inpConfig?.accMake === ACC_MAKE_MONTH ? wareki.slice(0, -3) : wareki
     }
 
-    test.beforeAll(async ({ browser }) => {
-        // Page tự tạo (không dùng fixture) để cả file dùng chung MỘT lần login.
-        // browser.newPage() không kế thừa `use` của config nên phải truyền tay
-        // ignoreHTTPSErrors — miền *.ochacom.local dùng cert tự ký.
-        page = await browser.newPage({
-            baseURL: BASE_URL,
-            ignoreHTTPSErrors: true,
-            locale: 'ja-JP',
-        })
+    test.beforeAll(async ({ authedPage }) => {
+        // Page chia sẻ theo worker (`_shared/session.ts`): đăng nhập một lượt cho cả
+        // worker thay vì mỗi file một lần — app chặn ở 10 login/khung thời gian
+        // (Rule 10.1). `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
+        page = authedPage
         step = makeStep(page)
 
         // Bắt inp-config ngay từ đầu: react-query cache nó 10 phút (staleTime)
@@ -294,19 +290,13 @@ test.describe('診療入力（患者選択）— F7 会計作成 / F2 患者情�
                 })
         })
 
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
-
         await page.goto('/treatments', { waitUntil: 'domcontentloaded' })
         // Footer F-key strip dựng xong = màn danh sách sẵn sàng nhận phím.
         await expect(page.locator('[data-fkey="F7"]')).toBeVisible({ timeout: 60000 })
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await releaseSharedPage(page)
     })
 
     // ── 3. 衛生士欄 theo inp_config.eiseiji_flg ──────────────────────────────

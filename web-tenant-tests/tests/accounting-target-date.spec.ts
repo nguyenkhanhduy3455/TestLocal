@@ -1,8 +1,11 @@
-import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
+import { type Locator, type Page, type Route } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { dbEnabled, deleteTreatmentRows, seedTreatmentRows } from './db'
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
 /**
  * 診療入力 — 会計対象日 phải lấy theo DÒNG ĐANG CÓ CON TRỎ, màn `/treatments/{patNo}`.
@@ -135,8 +138,7 @@ import { ADMIN_USER, JA } from './test-data'
  * skip khi màn hình không mở ở ngày hôm nay.
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 /**
  * Ngày mở màn hình = HÔM NAY.
@@ -440,7 +442,11 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
     /** `YYYY-MM-DD` mà FE phải gửi cho một dòng có ô 日 = `day`. */
     const isoOf = (day: string) => `${TRT_MONTH_PREFIX}${day.padStart(2, '0')}`
 
-    test.beforeAll(async ({ browser }) => {
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
         // Dựng dữ liệu TRƯỚC khi mở màn hình lần đầu — `backToEntry()` cuối hook
         // này phải thấy đủ hai ngày, nếu không TC-DATE-1 đọc lưới ra rỗng.
         if (dbEnabled) {
@@ -448,21 +454,9 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
             await seedTreatmentRows(Number(PAT_NO), TRT_DT, [...SEED_ROWS])
         }
 
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
-
-        // AutoSantei bung 「〜を算定しますか？」 sau MỖI lần vào lại màn 診療入力.
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page
-                    .getByRole('button', { name: /^(No|いいえ)$/ })
-                    .first()
-                    .click()
-            },
-            { times: 50 },
-        )
 
         // POST GHI — xoá 未精算 của ngày. Chặn cứng: đây là spec chạy hằng ngày,
         // không được đụng dữ liệu thật.
@@ -519,17 +513,12 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
             })
         })
 
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
-
         await backToEntry()
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
         // Chỉ xoá vùng `disp_no >= SEED_DISP_BASE`, dòng thật của bệnh nhân còn nguyên.
         if (dbEnabled) {
             await deleteTreatmentRows(Number(PAT_NO), SEED_OTHER_ISO)

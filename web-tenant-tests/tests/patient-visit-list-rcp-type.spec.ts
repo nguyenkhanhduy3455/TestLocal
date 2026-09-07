@@ -1,8 +1,9 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { dbEnabled, receiptTypeInputsFor, type ReceiptTypeInputs } from './db'
 import { makeStep, skipWithReason } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { emptyState, rows, scroller, skeletons } from './virtual-grid'
 
 /**
@@ -104,8 +105,6 @@ import { emptyState, rows, scroller, skeletons } from './virtual-grid'
  *     「dsp_pat_no」, frm204008.cs:242) trong khi bản web sort được — CHƯA xử lý.
  *     Lưu ý 氏名 thì WinForm CÓ sort, bằng ComLibrary.kanaSort (50音順).
  */
-
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
 
 /** 診療年月 yyyyMM. Xem khối DỮ LIỆU ở doc-comment cho lý do chọn 200601. */
 const SINRYO_YM = process.env.TEST_SINRYO_YM ?? '200601'
@@ -448,22 +447,12 @@ test.describe('来患一覧 (frm204008) — レセプト種別 + chịu lỗi �
         )
     }
 
-    test.beforeAll(async ({ browser }) => {
-        // Page tự tạo (không dùng fixture) để cả file dùng chung MỘT lần login.
-        // browser.newPage() không kế thừa `use` của config nên phải truyền tay
-        // ignoreHTTPSErrors — miền *.ochacom.local dùng cert tự ký.
-        page = await browser.newPage({
-            baseURL: BASE_URL,
-            ignoreHTTPSErrors: true,
-            locale: 'ja-JP',
-        })
+    test.beforeAll(async ({ authedPage }) => {
+        // Page chia sẻ theo worker (`_shared/session.ts`): đăng nhập một lượt cho cả
+        // worker thay vì mỗi file một lần — app chặn ở 10 login/khung thời gian
+        // (Rule 10.1). `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
+        page = authedPage
         step = makeStep(page)
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
 
         await page.goto('/counter-payments/visit-list', { waitUntil: 'domcontentloaded' })
         await expect(
@@ -473,7 +462,7 @@ test.describe('来患一覧 (frm204008) — レセプト種別 + chịu lỗi �
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await releaseSharedPage(page)
     })
 
     // ── Mở màn + gọi API ─────────────────────────────────────────────────────

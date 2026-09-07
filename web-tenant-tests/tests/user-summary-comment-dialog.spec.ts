@@ -54,14 +54,16 @@
  *   TEST_PAT_NO (10 — bệnh nhân KHÔNG làm AutoSantei bung カルテ記載選択 chồng lên) ·
  *   TEST_TRT_DT (hôm nay) · TEST_USER_CMT_PACK (A000-1).
  */
-import { expect, test, type Page } from '@playwright/test'
+import { type Page } from '@playwright/test'
+
+import { TODAY_ISO, patNo, trtDt } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '10'
-const TRT_DT = process.env.TEST_TRT_DT ?? new Date().toISOString().slice(0, 10)
+const PAT_NO = patNo('10')
+const TRT_DT = trtDt(TODAY_ISO)
 /** 記載事項 mở frm203019 trực tiếp (pack_type 90). */
 const PACK_CD = process.env.TEST_USER_CMT_PACK ?? 'A000-1'
 
@@ -169,34 +171,14 @@ test.describe('ユーザー摘要コメント選択 + 摘要２検索 (frm203019
     await expect(userDialog(page)).toHaveCount(0, { timeout: 10000 })
   }
 
-  test.beforeAll(async ({ browser }) => {
-    page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+  /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+   *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+  let disposeOverlays: (() => Promise<void>) | undefined
+
+  test.beforeAll(async ({ authedPage }) => {
+    page = authedPage
+    disposeOverlays = await installOverlayHandlers(page, { santei: true })
     step = makeStep(page)
-    page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
-
-    // Confirm 算定 phải trả lời No: Yes chạy AutoSantei rồi bung カルテ記載選択 cùng
-    // tên tab, mọi assert sau đó đo nhầm dialog (Rule 14.1).
-    await page.addLocatorHandler(
-      page.getByText(SANTEI_CONFIRM).first(),
-      async () => {
-        await anyDialog(page)
-          .filter({ hasText: SANTEI_CONFIRM })
-          .getByRole('button', { name: /^(No|いいえ)$/ })
-          .first()
-          .click({ timeout: 3000 })
-          .catch(() => {})
-      },
-      { times: 30 },
-    )
-
-    await page.goto('/login', { waitUntil: 'domcontentloaded' })
-    await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-    await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-    await page.getByRole('button', { name: JA.submit }).click()
-    await expect(
-      page,
-      'login không vào được — chạy liên tiếp nhiều lần thì đang dính rate-limit, chờ ~4 phút (Rule 9)',
-    ).toHaveURL(/\/$/)
 
     await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
     await expect(page.locator('[data-grid-cell$="|3"]').last()).toBeVisible({ timeout: 60000 })
@@ -206,7 +188,8 @@ test.describe('ユーザー摘要コメント選択 + 摘要２検索 (frm203019
   })
 
   test.afterAll(async () => {
-    await page?.close()
+    await disposeOverlays?.()
+    await releaseSharedPage(page)
   })
 
   // ── A. nền F7 (frm203012 gType.Tekiyo) ───────────────────────────────────

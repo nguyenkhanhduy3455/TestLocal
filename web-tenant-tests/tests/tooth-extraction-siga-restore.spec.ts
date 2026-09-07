@@ -1,4 +1,8 @@
-import { expect, test, type Page } from '@playwright/test'
+import { type Page } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import {
     countRealTreatmentRowsInMonth,
@@ -15,7 +19,6 @@ import {
     type SigaSnapshot,
 } from './db'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { closeDialogs } from './virtual-grid'
 
 /**
@@ -135,10 +138,8 @@ import { closeDialogs } from './virtual-grid'
  *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/tooth-extraction-siga-restore.spec.ts --headed
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-
 /** Bệnh nhân test — dùng chung với kaigo-hutan-row.spec.ts. */
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 /** Ngày test = HÔM NAY: chỉ dòng của tháng đang mở mới xoá/nhập tay được. */
 const TRT_DT =
@@ -385,7 +386,11 @@ test.describe('診療入力 — 抜歯行削除 → 健全歯復元 (DelExtRec /
         await openTreatmentScreen()
     }
 
-    test.beforeAll(async ({ browser }) => {
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
         // ── DB: chụp nguyên trạng rồi dựng trạng thái xuất phát ──────────────
         sigaRowCreated = await ensureSigaRow(Number(PAT_NO))
         sigaBefore = await readSiga(Number(PAT_NO))
@@ -438,9 +443,9 @@ test.describe('診療入力 — 抜歯行削除 → 健全歯復元 (DelExtRec /
         ])
 
         // ── Trình duyệt ──────────────────────────────────────────────────────
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
 
         // Bóc origin + header auth từ chính request của app: accessToken nằm trong
         // RAM (zustand không persist) nên không có đường nào lấy ra (GUIDELINE 10.2).
@@ -458,27 +463,12 @@ test.describe('診療入力 — 抜歯行削除 → 健全歯復元 (DelExtRec /
             )
         })
 
-        // AutoSantei bung 「…を算定しますか？」 vào thời điểm không đoán được và nuốt
-        // mọi click (GUIDELINE Rule 14). Bấm No — Yes lại kéo theo カルテ記載選択.
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page.getByRole('button', { name: /^(No|いいえ)$/ }).first().click()
-            },
-            { times: 30 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
-
         await openTreatmentScreen()
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
         // Dọn BA ĐƯỜNG, vì F9 làm dòng test đổi hình dạng:
         //  1. vùng disp_no >= 9000            — bản seed gốc (chưa qua F9);
         //  2. theo dsp_trt                    — bản do F9 chèn lại, disp_no từ 1;

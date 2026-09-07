@@ -1,4 +1,8 @@
-import { expect, test, type Page, type Route } from '@playwright/test'
+import { type Page, type Route } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import {
     dbEnabled,
@@ -8,7 +12,6 @@ import {
     seedTreatmentRows,
 } from './db'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { closeDialogs } from './virtual-grid'
 
 /**
@@ -131,10 +134,8 @@ import { closeDialogs } from './virtual-grid'
  *     --repeat-each=3 --retries=0 --workers=1
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-
 /** Bệnh nhân test — 12138 không có bản 介護保険 nào ⇒ rate đi nhánh fallback. */
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 /**
  * Ngày test = HÔM NAY (yyyy-MM-dd). BẮT BUỘC thuộc tháng hiện hành: chỉ dòng của
@@ -380,7 +381,11 @@ test.describe('診療入力 — thao tác trên lưới 処置 (行追加 / 行�
         return (await currentMonthRows(page)).filter((r) => r.text.includes(txt(key))).length
     }
 
-    test.beforeAll(async ({ browser }) => {
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
         // Seed TRƯỚC khi mở trình duyệt: lưới đọc MỘT lần lúc vào màn.
         await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
             {
@@ -401,19 +406,9 @@ test.describe('診療入力 — thao tác trên lưới 処置 (行追加 / 行�
             },
         ])
 
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
-
-        // SanteiConfirmDialog đến CHẬM và đè lên mọi click (Rule 14). Bấm No —
-        // Yes lại kéo theo カルテ記載選択 (Rule 14.1).
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page.getByRole('button', { name: /^(No|いいえ)$/ }).first().click()
-            },
-            { times: 30 },
-        )
 
         // 処置データチェック (一括) — trả danh sách lỗi dựng sẵn cho TC-8..TC-11 (BẪY 6).
         // Cài từ beforeAll: không testcase nào khác bấm F3/F8 nên route này không
@@ -429,17 +424,12 @@ test.describe('診療入力 — thao tác trên lưới 処置 (行追加 / 行�
             })
         })
 
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
-
         await openTreatmentScreen()
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
         // Spec KHÔNG bấm F9 nên dòng seed giữ nguyên disp_no >= 9000 → một đường dọn
         // là đủ (khác tooth-extraction, nơi F9 chèn lại với disp_no từ 1).
         const n = await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)

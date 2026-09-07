@@ -1,4 +1,8 @@
-import { expect, test, type Page } from '@playwright/test'
+import { type Page } from '@playwright/test'
+
+import { patNo } from './_shared/env'
+import { installOverlayHandlers } from './_shared/overlays'
+import { expect, releaseSharedPage, test } from './_shared/session'
 
 import {
     careInsRateFor,
@@ -8,7 +12,6 @@ import {
     seedTreatmentRows,
 } from './db'
 import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
 import { closeDialogs } from './virtual-grid'
 
 /**
@@ -140,10 +143,8 @@ import { closeDialogs } from './virtual-grid'
  *   npx playwright test tests/kaigo-hutan-row.spec.ts
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-
 /** Bệnh nhân test — 12138 không có bản 介護保険 nào ⇒ rate đi nhánh fallback. */
-const PAT_NO = process.env.TEST_PAT_NO ?? '12138'
+const PAT_NO = patNo('12138')
 
 /**
  * Ngày test = HÔM NAY (yyyy-MM-dd). Bắt buộc thuộc tháng hiện hành: chỉ dòng của
@@ -378,7 +379,11 @@ test.describe('診療入力 — 【介護保険一部負担金】行 (KaigoHutan
         throw lastErr
     }
 
-    test.beforeAll(async ({ browser }) => {
+    /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
+     *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
+    let disposeOverlays: (() => Promise<void>) | undefined
+
+    test.beforeAll(async ({ authedPage }) => {
         // Seed TRƯỚC khi mở trình duyệt: lưới đọc 1 lần lúc vào màn, seed sau thì
         // phải nạp lại mới thấy.
         await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
@@ -411,9 +416,9 @@ test.describe('診療入力 — 【介護保険一部負担金】行 (KaigoHutan
                 `phần không-介護 = ${savedNonCareScore}点`,
         )
 
-        page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
+        page = authedPage
+        disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-        page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
 
         // Bóc origin + header auth từ chính request của app: accessToken nằm trong
         // RAM (zustand không persist) nên không có đường nào lấy ra ngoài ngoài cách
@@ -432,27 +437,12 @@ test.describe('診療入力 — 【介護保険一部負担金】行 (KaigoHutan
             )
         })
 
-        // AutoSantei bung 「…を算定しますか？」 vào thời điểm không đoán được và nuốt
-        // mọi click (GUIDELINE Rule 14). Bấm No — Yes lại kéo theo カルテ記載選択.
-        await page.addLocatorHandler(
-            page.getByText(/を算定しますか？/).first(),
-            async () => {
-                await page.getByRole('button', { name: /^(No|いいえ)$/ }).first().click()
-            },
-            { times: 30 },
-        )
-
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
-        await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-        await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await page.getByRole('button', { name: JA.submit }).click()
-        await expect(page).toHaveURL(/\/$/)
-
         await openTreatmentScreen()
     })
 
     test.afterAll(async () => {
-        await page?.close()
+        await disposeOverlays?.()
+        await releaseSharedPage(page)
         const n = await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)
         console.log(`dọn 処置行 seed: xoá ${n} dòng`)
     })
