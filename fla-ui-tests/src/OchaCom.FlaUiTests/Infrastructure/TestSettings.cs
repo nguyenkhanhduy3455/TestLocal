@@ -26,6 +26,7 @@ public sealed class TestSettings
     [JsonPropertyName("sigaTooth")] public SigaToothSection SigaTooth { get; set; } = new();
     [JsonPropertyName("perioKensa")] public PerioKensaSection PerioKensa { get; set; } = new();
     [JsonPropertyName("visitList")] public VisitListSection VisitList { get; set; } = new();
+    [JsonPropertyName("buiPrice")] public BuiPriceSection BuiPrice { get; set; } = new();
     [JsonPropertyName("locators")] public Dictionary<string, string> Locators { get; set; } = new();
 
     private static TestSettings? _current;
@@ -313,6 +314,52 @@ public sealed class TestSettings
         [JsonPropertyName("searchTimeoutMinutes")] public int SearchTimeoutMinutes { get; set; } = 8;
     }
 
+    /// <summary>
+    /// Luồng <c>Tests/BuiPriceE00100</c> — hộp thoại <b>E00100</b> mà
+    /// <c>buiPrice.getBuiPrice2</c> bật khi 一部負担金 tính hỏng (buiPrice.cs:196-203 và
+    /// :1734).
+    ///
+    /// <para>Nửa WinForm của
+    /// <c>../web-tenant-tests/tests/accounting-unpaid/bui-price-e00100-parity.spec.ts</c>.
+    /// Spec bên kia CHÈN <c>warnings</c> vào response bằng <c>page.route</c>; bên này
+    /// không có đường nào giả lập — muốn thấy E00100 thì phải làm hỏng dữ liệu đăng ký
+    /// THẬT, nên nhóm testcase đó nằm sau cờ riêng ở đây.</para>
+    /// </summary>
+    public sealed class BuiPriceSection
+    {
+        /// <summary>
+        /// Cho phép seed 公費 hỏng để E00100 nổ.
+        ///
+        /// <para>Cụ thể: <c>UPDATE INSURANCE.PUBEXPINF_NO</c> của bệnh nhân test (đang là
+        /// 0 nên <c>PatInfoList.setData</c> bỏ qua mọi dòng 公費, PatInfoList.cs:678) và
+        /// <c>INSERT</c> MỘT dòng <c>PUBEXPINF</c> mang <see cref="MissingLflg"/>. Cả hai
+        /// được chụp ảnh ở <c>OneTimeSetUp</c> và trả lại ở <c>OneTimeTearDown</c>.</para>
+        ///
+        /// <para>Cờ RIÊNG chứ không dùng chung <see cref="ParitySection.AllowSave"/>: hai
+        /// luồng ghi vào bảng khác hẳn nhau, và luồng này sửa <b>đăng ký bệnh nhân</b> chứ
+        /// không phải 処置/sổ tiền. Tắt (mặc định) ⇒ chỉ nhóm TC-CLEAN chạy, nhóm
+        /// TC-E00100 tự Ignore.</para>
+        /// </summary>
+        [JsonPropertyName("allowSeed")] public bool AllowSeed { get; set; }
+
+        /// <summary>
+        /// 福祉医療番号 KHÔNG có trong bảng <c>LOCALFLG</c> — đem gán vào
+        /// <c>PUBEXPINF.LFLG</c> để <c>LocalFlg.getLocalFlg</c> trả null
+        /// (LocalFlg.cs:275-281) ⇒ buiPrice.cs:1734 bật E00100.
+        ///
+        /// <para>Fixture VẪN kiểm lại mã này vắng mặt trong <c>LOCALFLG</c> trước khi
+        /// seed: trúng một mã CÓ THẬT thì app chạy trơn và testcase xanh sai.</para>
+        /// </summary>
+        [JsonPropertyName("missingLflg")] public string MissingLflg { get; set; } = "99999999";
+
+        /// <summary>
+        /// <c>PUBEXPINF_NO</c> của dòng seed. Phải KHÁC 0: <c>PatInfoList.setData</c> bỏ
+        /// hẳn dòng 公費 khi <c>ins.pubexpinf_no == 0</c> (PatInfoList.cs:678), nên để 0
+        /// thì seed không có tác dụng gì mà cũng không báo lỗi.
+        /// </summary>
+        [JsonPropertyName("seedPubexpinfNo")] public int SeedPubexpinfNo { get; set; } = 9001;
+    }
+
     public sealed class RunSection
     {
         [JsonPropertyName("stepMs")] public int StepMs { get; set; }
@@ -447,6 +494,8 @@ public sealed class TestSettings
         Set("OCHA_VISIT_MAX_PATIENTS", v => s.VisitList.MaxPatients = int.Parse(v));
         Set("OCHA_BR_TEETH", v => s.InpP1.BrTeeth = ToIntArray(v));
         Set("OCHA_BR_NO_MATCH_TEETH", v => s.InpP1.BrNoMatchTeeth = ToIntArray(v));
+        Set("OCHA_BUI_PRICE_ALLOW_SEED", v => s.BuiPrice.AllowSeed = ToBool(v));
+        Set("OCHA_BUI_PRICE_MISSING_LFLG", v => s.BuiPrice.MissingLflg = v);
 
         static void Set(string name, Action<string> apply)
         {

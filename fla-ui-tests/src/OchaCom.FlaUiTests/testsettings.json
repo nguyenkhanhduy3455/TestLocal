@@ -141,6 +141,28 @@
     "searchTimeoutMinutes": 8
   },
 
+  "buiPrice": {
+    "//": [
+      "Luong Tests/BuiPriceE00100 — hop thoai E00100 cua buiPrice.getBuiPrice2",
+      "(nua WinForm cua web-tenant-tests/tests/accounting-unpaid/bui-price-e00100-parity.spec.ts).",
+      "",
+      "Nhom TC-CLEAN chay khong can co gi: no khang dinh du lieu THAT khong sinh E00100.",
+      "Nhom TC-E00100 can allowSeed = true. Ben Playwright chen `warnings` vao response",
+      "bang page.route; ben nay KHONG gia lap duoc — phai lam hong du lieu dang ky that:",
+      "  UPDATE INSURANCE.PUBEXPINF_NO = seedPubexpinfNo  (dang la 0 => moi dong 公費 bi bo qua)",
+      "  INSERT PUBEXPINF (LFLG = missingLflg, khong co trong LOCALFLG)",
+      "Fixture chup anh ca hai truoc khi seed va tra lai o OneTimeTearDown.",
+      "",
+      "Co RIENG, khong dung chung parity.allowSave: luong nay sua DANG KY BENH NHAN,",
+      "khong phai 処置 hay so tien."
+    ],
+    "allowSeed": false,
+    "//missingLflg": "福祉医療番号 KHONG co trong LOCALFLG. Fixture tu kiem lai truoc khi seed.",
+    "missingLflg": "99999999",
+    "//seedPubexpinfNo": "PHAI khac 0 — PatInfoList.cs:678 bo qua 公費 khi ins.pubexpinf_no = 0.",
+    "seedPubexpinfNo": 9001
+  },
+
   "locators": {
     "//": "AutomationId = Control.Name bên WinForm. Nếu máy Windows soi Inspect thấy khác thì sửa ở đây, KHÔNG phải sửa code.",
     "kobetuTabItem": "個別",
