@@ -370,11 +370,13 @@ public sealed class BuiPriceE00100SeedTests : UiTestBase
 
         // ĐÂY là quyết định parity: frm203001.getTodayViewData GÁN price2.insScore /
         // insCopayment vào chính dòng đó rồi cộng vào total (frm203001.cs:921-932) —
-        // dòng Ở LẠI. frm204008 (来患一覧) mới là chỗ LOẠI dòng (frm204008.cs:711-733).
+        // dòng Ở LẠI, và nó không phải một 「chính sách giữ dòng」 — frm203001 đơn giản là
+        // KHÔNG có guard nào.
         Assert.That(rows, Has.Count.EqualTo(expectedRows.Count),
             $"dòng bị LOẠI khỏi 当日来患 sau E00100: còn {rows.Count}/{expectedRows.Count}. " +
             "WinForm giữ dòng và ghi số vào đó (frm203001.cs:921-932) — đừng nhầm với " +
-            "frm204008 来患一覧 vốn loại dòng.");
+            "frm204008 来患一覧: ở đó dòng toàn 0 rơi ra ngoài guard 実績あり CÓ SẴN " +
+            "(frm204008.cs:731-733), không phải một nhánh xử lý lỗi — đừng 「đồng bộ」 hai màn.");
 
         var total = flow.TodayTotalRow(patSelect);
         Assert.That(total, Is.Not.Empty,
@@ -624,8 +626,9 @@ public sealed class BuiPriceE00100ExceptionTests : UiTestBase
         trace.Shot("tc-e00100-4-luoi-当日来患");
         Assert.That(rows, Has.Count.EqualTo(expectedRows.Count),
             "dòng bị LOẠI khỏi 当日来患 sau E00100. frm203001.cs:921-932 GÁN price2.insScore " +
-            "vào chính dòng đó rồi cộng vào 合計 ⇒ dòng Ở LẠI. frm204008 来患一覧 mới là chỗ " +
-            "loại dòng — đừng port chung một xử lý cho hai màn.");
+            "vào chính dòng đó rồi cộng vào 合計 ⇒ dòng Ở LẠI, vì màn này KHÔNG có guard nào. " +
+            "Ở frm204008 来患一覧 dòng toàn 0 rơi ra ngoài guard 実績あり CÓ SẴN " +
+            "(frm204008.cs:731-733) — cũng không phải nhánh xử lý lỗi. Đừng 「đồng bộ」 hai màn.");
 
         // Cột 5 (0-based 4) của _patInfoViewItem là ins_score (frm203001.cs:939).
         // Ngoại lệ ném TRƯỚC :649 nên insPayDatas rỗng ⇒ insScore = 0.

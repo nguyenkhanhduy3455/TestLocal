@@ -485,8 +485,10 @@ báo cho người dùng, bản web im lặng đi tiếp.
 Đã chạy thật 2026-09-07 trên bệnh nhân 10 (診療月 2026-08): **8/8 xanh**, DB trả lại
 nguyên trạng sau mỗi lượt. Hộp thoại khớp oracle tới từng ký tự (kể cả 全角 U+3000 đầu dòng 2 và
 `gggy年M月` không đệm 0), tiêu đề 「お茶コン」, đúng một nút OK và OK là nút mặc định. F4
-当日来患 **GIỮ** dòng bệnh nhân hỏng và vẫn cộng vào 合計 — ngược hẳn `frm204008` 来患一覧
-vốn LOẠI dòng, hai chỗ rất dễ bị port thành một.
+当日来患 **GIỮ** dòng bệnh nhân hỏng và vẫn cộng vào 合計 — vì `frm203001` không có guard
+nào, chứ không phải vì nó 「chọn giữ dòng」. Ở `frm204008` 来患一覧 dòng toàn 0 rơi ra ngoài
+guard 実績あり **có sẵn** (frm204008.cs:731-733), nên dòng hỏng một phần vẫn ở lại. Cả hai
+màn đều không quyết định gì về failure — **đừng 「đồng bộ」 chúng**.
 
 Đo tiếp nhánh **NGOẠI LỆ** (2026-09-07, `-Exception`) thì ra **điểm lệch lớn hơn nữa**:
 `LetAccData2` bọc cả thân trong một `try/catch` mà nhánh catch chỉ hiện **E99999

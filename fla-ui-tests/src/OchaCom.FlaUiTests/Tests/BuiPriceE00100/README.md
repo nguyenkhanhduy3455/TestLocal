@@ -35,9 +35,23 @@ Ba đường đi qua 診療入力 / 患者選択 — cũng là ba thứ luồng 
 > Cột thứ ba mô tả nhánh **NGOẠI LỆ** (A ở mục 2). Nhánh mà bộ test seed được là **(B)**,
 > nó KHÔNG ném nên số **không** về 0 — xem mục 5b trước khi đọc kết quả.
 
-> ⚠️ Đừng nhầm 当日来患 với 来患一覧. `frm203001` **giữ** dòng hỏng và ghi 0; `frm204008`
-> mới là chỗ **loại** dòng (frm204008.cs:711-733). Bản web từng dùng chung một xử lý cho
-> cả hai — xem `parity-notes-buiprice-error-handling.md` mục 「F4 当日来患 は 来患一覧 と同型」.
+> ⚠️ **Cả hai màn đều KHÔNG có nhánh xử lý lỗi nào** — đừng đọc thành 「frm203001 giữ dòng,
+> frm204008 loại dòng」.
+>
+> `frm204008` có sẵn một guard 実績あり từ trước, không liên quan gì tới failure:
+>
+> ```csharp
+> // frm204008.cs:731-733
+> if (buiPriceData.insScore != 0 || buiPriceData.careScore != 0 || buiPriceData.jihiPrice != 0) {
+>     //行追加
+> ```
+>
+> Dòng hỏng **toàn 0** rơi ra ngoài guard đó nên trông như bị 「loại」; dòng hỏng **một phần**
+> (保険 xong, 自費 ném) thì **vẫn ở lại**. `frm203001` thì không có guard nào.
+>
+> Khác nhau là do **guard sẵn có khác nhau**, không phải do xử lý lỗi khác nhau — nên
+> **đừng 「đồng bộ」 hai màn**. (Đính chính 2026-09-07; bản trước của README này viết như
+> thể đó là một chính sách, đúng loại câu dẫn người sau đi sửa nhầm.)
 
 ---
 
@@ -210,7 +224,7 @@ chắn mọi thao tác sau, và log sẽ đổ oan cho app (PROBE-GUIDELINE 3.4)
 | TC-E00100-1 日計 hỏng: văn bản đúng, màn hình sống | `ExceptionTests.TcE001001` | Nhánh (A) — 日計 **về 0 thật** |
 | TC-E00100-2 2 warnings = 2 hộp nối tiếp | `SeedTests.TcE001001` | WinForm chia theo **dòng bệnh nhân** (F4) / **枝番** (診療入力), không theo 「warning」 |
 | TC-E00100-3 `reason` null ⇒ bỏ dòng `内容[]` | — | Không áp dụng: WinForm **luôn** in `内容[]` + `場所[]`; `ExceptionTests.TcE001004` khoá đúng điều đó |
-| TC-E00100-4 当日来患 giữ dòng | `SeedTests.TcE001002` (nhánh B) · `ExceptionTests.TcE001004` (nhánh A, 保険点数 = 0) | |
+| TC-E00100-4 当日来患 giữ dòng | `SeedTests.TcE001002` (nhánh B) · `ExceptionTests.TcE001004` (nhánh A, 保険点数 = 0) | Giữ được là vì frm203001 **không có guard nào**, không phải vì nó chọn giữ — xem mục 1 |
 | TC-E00100-5 F8 vẫn sang 窓口精算 | `ExceptionTests.TcE001005` | **NGƯỢC LẠI** — xem mục 5c |
 
 ### 5b. Nhánh (B) KHÔNG phải nhánh trả 0
@@ -264,9 +278,10 @@ không. Xem khung cảnh báo ở mục 5c.
 (2876 dòng, app mở hơn một phút) — chạy được nhưng chậm, và phải canh trần 15 phút của
 runner.
 
-**6.3 — 来患一覧 (frm204008).** Nó **LOẠI** dòng hỏng chứ không giữ như `frm203001`
-(frm204008.cs:711-733). Luồng `Tests/PatientVisitList/` đã có sẵn màn hình đó; ghép seed
-của luồng này vào là đo được vế còn lại của cặp.
+**6.3 — 来患一覧 (frm204008).** Chưa đo. Điều đáng đo KHÔNG phải 「nó loại dòng」 (nó không
+có nhánh lỗi nào — xem mục 1) mà là **dòng hỏng MỘT PHẦN**: 保険 tính xong, 自費 ném ⇒
+`insScore != 0` ⇒ dòng **vẫn ở lại** guard 実績あり. Seed hiện tại làm hỏng toàn bộ nên không
+dựng được ca đó. Luồng `Tests/PatientVisitList/` đã có sẵn màn hình.
 
 ## 7. Số đo thật
 

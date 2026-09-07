@@ -128,13 +128,32 @@ const ACC_CORRECT_URL = /\/tenant\/treatment\/accounting\/correct(\?|$)/
 /** Đầu thân E00100 — locales/ja.ts `buiPriceFailed`. */
 const BUI_PRICE_FAILED_HEAD = '一部負担金計算に失敗しました。患者登録データを確認してください。'
 
+/** Đầu thân E00100 THỨ HAI — locales/ja.ts `buiPriceWelfareMasterMissing`. */
+const BUI_PRICE_WELFARE_HEAD = '一部負担金計算に失敗しました。福祉医療設定データが存在しません。'
+
+/**
+ * `kind` của một phần tử `warnings` — chép từ `BuiPriceWarningKind` của FE
+ * (features/treatments/types/bui-price-warning.ts), vốn chép lại chuỗi mà BE publish
+ * (`BuiPriceFailureKind`).
+ */
+const KIND = {
+    /** 患者登録データを確認してください — tính toán DỪNG giữa chừng, đoạn đó còn 0. */
+    pricingThrew: 'pricing-threw',
+    /** 福祉医療設定データが存在しません — tính toán VẪN THÀNH CÔNG. */
+    welfareMasterMissing: 'welfare-master-missing',
+} as const
+
 /** Một phần tử `warnings` của BE. */
 interface BuiPriceWarning {
     patNo: number
     patBr: number
     /** ISO yyyy-MM-dd. FE in ra dạng 和暦 `gggy年M月`. */
     trtDt: string
+    /** Quyết định FE dựng thân nào. Thiếu ⇒ FE rơi về `buiPriceFailed`. */
+    kind: string
     reason: string | null
+    /** Chỉ có nghĩa với `welfare-master-missing`: lflg không tra được master. */
+    welfareFlg: string | null
 }
 
 /**
@@ -163,13 +182,39 @@ function expectedBody(w: BuiPriceWarning): string {
     return w.reason ? `${head}\n\n内容[${w.reason}]` : head
 }
 
+/**
+ * Dựng lại ĐÚNG thân của `ja.buiPriceWelfareMasterMissing` — thân E00100 THỨ HAI.
+ *
+ * Đo trên WinForm thật (fla-ui-tests, bệnh nhân 10 / 診療月 2026-08, 2026-09-07):
+ *
+ *     一部負担金計算に失敗しました。福祉医療設定データが存在しません。
+ *     　患者番号[10] 枝番[1] 診療年月[令和8年8月] 福祉医療フラグ[99999999]
+ *
+ * KHÔNG phải một biến thể của `buiPriceFailed`: câu thứ hai khác, có thêm trường
+ * 福祉医療フラグ, và KHÔNG có đuôi `内容[]` / `場所[]` nào cả — buiPrice.cs:1731-1737 không
+ * bắt ngoại lệ nào ở đó để mà in ra.
+ */
+function expectedWelfareBody(w: BuiPriceWarning): string {
+    return (
+        `${BUI_PRICE_WELFARE_HEAD}\n` +
+        `　患者番号[${w.patNo}] 枝番[${w.patBr}] ` +
+        `診療年月[${warekiYm(w.trtDt)}] 福祉医療フラグ[${w.welfareFlg ?? ''}]`
+    )
+}
+
 const warn = (over: Partial<BuiPriceWarning> = {}): BuiPriceWarning => ({
     patNo: Number(PAT_NO),
     patBr: 1,
     trtDt: TRT_DT,
+    kind: KIND.pricingThrew,
     reason: '介護保険データ不正',
+    welfareFlg: null,
     ...over,
 })
+
+/** Warning nhánh 福祉医療設定 — `reason` LUÔN null, WinForm không có gì để in vào 内容[]. */
+const welfareWarn = (over: Partial<BuiPriceWarning> = {}): BuiPriceWarning =>
+    warn({ kind: KIND.welfareMasterMissing, reason: null, welfareFlg: '99999999', ...over })
 
 /** `true` nếu locator hiện ra trong `timeout` (BẪY 5 của accounting-target-date). */
 async function appeared(locator: Locator, timeout: number): Promise<boolean> {
@@ -213,7 +258,14 @@ test.describe('E00100 一部負担金計算失敗 — 診療入力 / 当日来�
     const dlg = (text: string | RegExp) =>
         page.locator('[role="dialog"], [role="alertdialog"]').filter({ hasText: text })
 
-    const e00100 = () => dlg(BUI_PRICE_FAILED_HEAD)
+    /**
+     * Hộp E00100 — bắt CẢ HAI thân.
+     *
+     * Hai câu chỉ giống nhau ở vế đầu 「一部負担金計算に失敗しました。」, nên bám vào đó.
+     * Bám riêng `BUI_PRICE_FAILED_HEAD` là TC-E00100-6/7 không thấy hộp nào và đỏ với
+     * 「không thấy E00100」 — đúng chữ, sai nguyên nhân.
+     */
+    const e00100 = () => dlg('一部負担金計算に失敗しました。')
 
     const btn = (box: Locator, name: string | RegExp) =>
         box.getByRole('button', { name, exact: typeof name === 'string' })
@@ -651,11 +703,84 @@ test.describe('E00100 一部負担金計算失敗 — 診療入力 / 当日来�
 
         // frm203001.getTodayViewData (frm203001.cs:921-926) GÁN price2.insScore /
         // insCopayment vào chính dòng đó rồi cộng vào 合計 — nghĩa là dòng Ở LẠI với
-        // số 0. frm204008 (来患一覧) mới là chỗ LOẠI dòng. Đừng nhầm hai cái.
+        // số 0 — vì màn này KHÔNG có guard nào, chứ không phải vì nó 「chọn giữ dòng」.
+        // Ở frm204008 (来患一覧) dòng toàn 0 rơi ra ngoài guard 実績あり CÓ SẴN
+        // (insScore != 0 || careScore != 0 || jihiPrice != 0, frm204008.cs:731-733), nên
+        // dòng hỏng MỘT PHẦN vẫn ở lại. Cả hai màn đều không quyết định gì về failure —
+        // ĐỪNG 「đồng bộ」 chúng.
         expect(
             await rows(page).count(),
             'dòng bị loại khỏi 当日来患 khi tính hỏng — WinForm giữ dòng và ghi 0',
         ).toBe(baseline)
+        await step()
+    })
+
+    test('TC-E00100-6 — 福祉医療設定データが存在しません: thân KHÁC HẲN, KHÔNG có 内容[]/場所[]', async () => {
+        resetInject()
+        const w = welfareWarn()
+        inject.monthly.push(w)
+
+        await backToEntry()
+
+        const seen = await drainE00100(60_000)
+        expect(seen.length, 'không thấy E00100 dù response có warnings').toBeGreaterThan(0)
+
+        // Đây là thân E00100 THỨ HAI của WinForm (buiPrice.cs:1731-1737). Trước nhánh
+        // `fix/buiprice-e00100-parity-single-callers` bản web BỎ HẲN nó —
+        // `BuiPriceService.cs` chỉ để lại comment 「legacy shows an error dialog … no UI
+        // here」 rồi đi tiếp, nên người dùng không có cách nào biết 福祉医療フラグ nào hỏng.
+        //
+        // Nguyên văn đã đối chiếu với WinForm THẬT: fla-ui-tests
+        // `Tests/BuiPriceE00100/` chạy 2026-09-07 trên bệnh nhân 10 / 診療月 2026-08 đọc
+        // ra đúng chuỗi này (README của luồng đó, mục 7).
+        expect(seen[0]).toContain(expectedWelfareBody(w))
+
+        // KHÔNG phải một biến thể của `buiPriceFailed`: buiPrice.cs:1731-1737 không bắt
+        // ngoại lệ nào nên chẳng có gì để in vào 内容[], và 場所[] thì bản web không bao
+        // giờ in. Thiếu hai khẳng định này thì một FE dựng nhầm thân vẫn pass.
+        expect(seen[0], 'nhánh 福祉医療設定 KHÔNG được có dòng 内容[]').not.toContain('内容[')
+        expect(seen[0], 'không bao giờ gửi stack trace ra trình duyệt').not.toContain('場所[')
+        expect(
+            seen[0],
+            'đang dựng nhầm sang thân của nhánh ngoại lệ — kiểm `kind` trong ' +
+                'use-bui-price-warnings.ts',
+        ).not.toContain(BUI_PRICE_FAILED_HEAD)
+
+        // WinForm chỉ hiện hộp thoại rồi vá `localFlg` mặc định và TÍNH TIẾP — khác hẳn
+        // nhánh ngoại lệ vốn trả về số 0. Đo trên WinForm: 日計 và 合計 y hệt lúc dữ liệu
+        // sạch. Nên màn hình phải còn nguyên.
+        await expect(
+            page.getByText('合計:').first(),
+            'lưới 診療入力 biến mất sau E00100 — nhánh này thậm chí không dừng phép tính',
+        ).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
+        await step()
+    })
+
+    test('TC-E00100-7 — trộn HAI loại: 2 hộp, mỗi hộp một thân, vẫn 1 件 1 ダイアログ', async () => {
+        resetInject()
+        const thrown = warn({ patBr: 1, reason: '公費データ不正' })
+        const welfare = welfareWarn({ patBr: 2, welfareFlg: '81239998' })
+        inject.monthly.push(thrown, welfare)
+
+        await backToEntry()
+
+        const seen = await drainE00100()
+
+        // Độ hạt 「1 件 1 ダイアログ」 phải giữ nguyên khi HAI loại trộn lẫn — gộp lại là
+        // mất cả 患者番号/枝番 lẫn việc phân biệt hai nguyên nhân.
+        expect(
+            seen.length,
+            `2 warning khác LOẠI phải ra ĐÚNG 2 hộp thoại, đang ra ${seen.length}`,
+        ).toBe(2)
+
+        // Đúng thứ tự BE trả về, và mỗi hộp mang ĐÚNG thân của loại mình.
+        expect(seen[0], 'hộp thứ nhất phải là nhánh ngoại lệ').toContain(expectedBody(thrown))
+        expect(seen[1], 'hộp thứ hai phải là nhánh 福祉医療設定').toContain(
+            expectedWelfareBody(welfare),
+        )
+        expect(seen[1], 'hộp 福祉医療設定 không được mang 福祉医療フラグ của hộp kia').toContain(
+            '福祉医療フラグ[81239998]',
+        )
         await step()
     })
 

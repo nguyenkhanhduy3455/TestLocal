@@ -376,7 +376,14 @@ public sealed class BuiPriceE00100Flow
     ///
     /// <para>Đây là mốc tốt nhất cho câu hỏi 「dòng bệnh nhân hỏng còn được cộng vào tổng
     /// không」: <c>total[2] += price2.insScore</c> chạy cho MỌI dòng, kể cả dòng vừa
-    /// E00100 (khi đó cộng 0) — khác hẳn frm204008 vốn LOẠI dòng.</para>
+    /// E00100 (khi đó cộng 0).</para>
+    ///
+    /// <para>⚠️ ĐỪNG đọc thành 「frm203001 giữ dòng còn frm204008 loại dòng」. <b>Cả hai màn
+    /// đều KHÔNG có nhánh xử lý lỗi nào.</b> frm204008 có sẵn một guard 実績あり
+    /// (<c>insScore != 0 || careScore != 0 || jihiPrice != 0</c>, frm204008.cs:731-733) và
+    /// dòng hỏng TOÀN 0 rơi ra ngoài guard đó; dòng hỏng MỘT PHẦN (保険 xong, 自費 ném) thì
+    /// VẪN ở lại. frm203001 không có guard nào. Khác nhau là do guard sẵn có, không phải do
+    /// xử lý lỗi — nên đừng ai đi 「đồng bộ」 hai màn.</para>
     /// </summary>
     public IReadOnlyList<string> TodayTotalRow(Window patSelect)
     {

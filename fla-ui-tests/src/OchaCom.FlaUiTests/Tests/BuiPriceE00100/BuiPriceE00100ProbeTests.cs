@@ -29,8 +29,8 @@ namespace OchaCom.FlaUiTests.Tests.BuiPriceE00100;
 ///   (buiPrice.cs:196-203) — cần thấy tận mắt lưới + 日計 sau khi bấm OK.</item>
 /// <item><b>当日来患 giữ hay loại dòng hỏng.</b> <c>frm203001.getTodayViewData</c> GÁN
 ///   <c>price2.insScore</c> vào chính dòng đó rồi cộng vào 合計 (frm203001.cs:921-932) —
-///   tức là GIỮ dòng với số 0, ngược hẳn <c>frm204008</c> vốn loại dòng. Chưa ai nhìn
-///   thấy điều đó chạy thật.</item>
+///   tức là GIỮ dòng với số 0. Chưa ai nhìn thấy điều đó chạy thật. (frm204008 trông như
+///   「loại dòng」 nhưng đó chỉ là guard 実績あり có sẵn — xem <c>BuiPriceE00100Flow</c>.)</item>
 /// </list>
 ///
 /// <para>Chạy: <c>.\run-calc-bui-price.ps1 -Diagnostics</c> (sạch) ·
@@ -372,7 +372,7 @@ public sealed class BuiPriceE00100SeedProbeTests : UiTestBase
             BuiPriceE00100CleanProbeTests.Kq(12,
                 $"lưới 当日来患 còn {rows.Count} dòng sau E00100 " +
                 "(frm203001.cs:921-932 GÁN 0 vào dòng rồi cộng vào 合計 ⇒ phải GIỮ dòng, " +
-                "khác frm204008 vốn LOẠI dòng)");
+                "còn frm204008 chỉ có guard 実績あり sẵn có, không phải nhánh lỗi)");
             foreach (var r in rows) BuiPriceE00100CleanProbeTests.Kq(12, "        " + r);
 
             var total = flow.TodayTotalRow(patSelect);
