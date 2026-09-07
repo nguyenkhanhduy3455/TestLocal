@@ -54,7 +54,7 @@ import { closeDialogs } from './virtual-grid'
  *  · frm203002.cs:7446-7495 `Chk_PModeKesson`:
  *        updFlg = false
  *        for i in 0..31:
- *            pSiga_old[i+1] = siga[i+1]                        // ← xem "CHƯA PORT"
+ *            pSiga_old[i+1] = siga[i+1]                        // ← xem "ẢNH CHỤP pSiga_old"
  *            if grdByou[i+3] == "0" && siga[i+1] != 4:
  *                if i ∉ {0,15,16,31}: updFlg = true; break
  *        if updFlg:
@@ -82,12 +82,19 @@ import { closeDialogs } from './virtual-grid'
  *  · Endpoint này CỐ Ý không bật `pSiga_chg`, nên 「いいえ」 lúc thoát KHÔNG hoàn tác
  *    (TC-6). Cùng cơ chế với `DelExtRec` — xem ISSUE-15.
  *
- * ── CHƯA PORT (đừng tưởng là thiếu sót của spec) ─────────────────────────────
+ * ── ẢNH CHỤP pSiga_old — KIỂM Ở SPEC KHÁC, ĐỪNG THÊM VÀO ĐÂY ─────────────────
  *  Vòng lặp dò `updFlg` của WinForm VỪA dò VỪA chụp lại `pSiga_old`, và có `break`
- *  giữa chừng (:7457-7464) ⇒ `pSiga_old` chỉ được làm mới TỚI ĐÚNG chỉ số vừa break.
- *  Nếu sau đó F9 chạy `Restore_Siga` thì được một hàng siga LAI (nửa đầu theo trạng
- *  thái lúc bấm Ｐ変更, nửa sau theo lúc mở màn). Bản port chưa tái hiện; đang chờ
- *  quyết định (inp-c1-c2-c7-plan.md §KQ, mục "Còn lại"). Spec này vì thế KHÔNG bấm F9.
+ *  giữa chừng (:7457-7464) ⇒ `pSiga_old` chỉ được làm mới TỚI ĐÚNG chỉ số vừa break,
+ *  cho ra một hàng siga LAI (nửa đầu theo trạng thái lúc bấm Ｐ変更, nửa sau theo lúc
+ *  mở màn) khi 「いいえ」 chạy `Restore_Siga` sau đó.
+ *
+ *  Đã port ngày 2026-09-07 (nhánh `fix/inp-siga-eager-write-races`) và được khoá ở
+ *  **`siga-eager-write-races.spec.ts`** — spec đó nhập 抜歯 QUA UI để bật `pSiga_chg`
+ *  rồi mới bấm Ｐ変更, vì `Restore_Siga` chỉ chạy khi cờ đó lên.
+ *
+ *  Spec NÀY cố ý giữ nguyên hình dạng cũ: KHÔNG có lệnh ghi nóng nào ⇒ `pSiga_chg`
+ *  không bao giờ lên ⇒ TC-6 dưới đây kiểm đúng một điều 「Ｐ変更 tự nó không bị 「いいえ」
+ *  hoàn tác」. Thêm 抜歯 vào đây là làm TC-6 mất nghĩa.
  *
  * ═════════════════════════════════════════════════════════════════════════════
  * DỮ LIỆU TỰ DỰNG (CÓ GHI DB — cần TEST_DB=1 và TEST_ALLOW_SAVE=1)
