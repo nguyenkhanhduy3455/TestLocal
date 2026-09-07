@@ -285,7 +285,8 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 | `.\run-patient-visit-list.ps1` | 検索 ở 来患一覧 → `setViewData` → `buiPrice.getReceiptType` (レセプト種別) · F4 CSV出力 | `Tests/PatientVisitList/` | ✖ CHỈ ĐỌC — chỉ ghi file CSV vào artifacts |
 | `.\run-unpaid-raiin-cnt.ps1` | F8 会計 → `modAcc.LetAccData2` với 当日来院回数 (`hfgRaiinCnt` → `hFG1[71]` → `UNPAID.TRT_CNT`) | `Tests/UnpaidRaiinCnt/` | ⚠️ **CÓ** — seed `TRNTRN` (disp_no 9101-9103) + `UNPAID` của ngày test |
 | `.\run-calc-bui-price.ps1` | mở 診療入力 / F4 当日来患 → `buiPrice.getBuiPrice2` (一部負担金計算) → E00100 | `Tests/BuiPriceE00100/` | ✖ nhóm CLEAN chỉ đọc |
-| `.\run-calc-bui-price.ps1 -Seed` | như trên, nhưng dựng sẵn một ca 公費 hỏng để E00100 nổ | `Tests/BuiPriceE00100/` | ⚠️ **CÓ** — `INSURANCE.PUBEXPINF_NO` + 1 dòng `PUBEXPINF` |
+| `.\run-calc-bui-price.ps1 -Seed` | như trên, nhưng dựng sẵn một ca 公費 hỏng để E00100 nổ (nhánh 福祉医療設定) | `Tests/BuiPriceE00100/` | ⚠️ **CÓ** — `INSURANCE.PUBEXPINF_NO` + 1 dòng `PUBEXPINF` |
+| `.\run-calc-bui-price.ps1 -Exception` | nhánh NGOẠI LỆ (患者登録データ) + F8 会計 → `modAcc.LetAccData2` | `Tests/BuiPriceE00100/` | ⚠️ **CÓ** — thêm `INS_KBN`/`OLD_FLG` và `UNPAID` của ngày test |
 | `.\run-edit-treatment-rows.ps1 -Case Probe_Advanced` | PROBE — dò hành vi, KHÔNG assert | `Tests/TreatmentGrid/` | ✖ |
 
 > Thêm luồng mới thì giữ đúng quy ước này: `run-<động từ>-<đối tượng>.ps1` mô tả việc
@@ -481,15 +482,29 @@ E00100 「福祉医療設定データが存在しません」 mà bản web cố
 `BuiPriceService.cs:936` ghi thẳng *"legacy shows an error dialog … no UI here"*. WinForm
 báo cho người dùng, bản web im lặng đi tiếp.
 
-Đã chạy thật 2026-09-07 trên bệnh nhân 10 (診療月 2026-08): **5/5 xanh**, DB trả lại
-nguyên trạng. Hộp thoại khớp oracle tới từng ký tự (kể cả 全角 U+3000 đầu dòng 2 và
+Đã chạy thật 2026-09-07 trên bệnh nhân 10 (診療月 2026-08): **8/8 xanh**, DB trả lại
+nguyên trạng sau mỗi lượt. Hộp thoại khớp oracle tới từng ký tự (kể cả 全角 U+3000 đầu dòng 2 và
 `gggy年M月` không đệm 0), tiêu đề 「お茶コン」, đúng một nút OK và OK là nút mặc định. F4
 当日来患 **GIỮ** dòng bệnh nhân hỏng và vẫn cộng vào 合計 — ngược hẳn `frm204008` 来患一覧
 vốn LOẠI dòng, hai chỗ rất dễ bị port thành một.
 
-> ⚠️ Nhánh seed được **không ném**, app vá `localFlg` mặc định rồi tính tiếp, nên số trên
-> màn hình KHÔNG về 0. Nhánh trả `buiPriceData2` toàn 0 là nhánh ngoại lệ, chưa đo được —
-> lý do ở README của luồng mục 6.1.
+Đo tiếp nhánh **NGOẠI LỆ** (2026-09-07, `-Exception`) thì ra **điểm lệch lớn hơn nữa**:
+`LetAccData2` bọc cả thân trong một `try/catch` mà nhánh catch chỉ hiện **E99999
+「システムエラーです。」** (modAcc.cs:789-791) và trả **false**, còn `IDM_Acc_Click` có
+`if (AccRet == false) { }` — khối RỖNG (frm203002.cs:7727-7729). Nên **F8 会計 KHÔNG sang
+窓口精算** khi 一部負担金 ném. Bản web thì `announceBuiPriceWarnings(...)` rồi `return true`
+⇒ vẫn sang; chú thích TC-E00100-5 của spec bên đó viết 「WinForm thì đi tiếp」 — đo thật thì
+không.
+
+Kết luận đó đứng được là nhờ một seed **ĐỐI CHỨNG**: đổi đúng hai cột 保険 mà seed ngoại lệ
+buộc phải đổi (`INS_KBN` → 2, `OLD_FLG` → 4) nhưng KHÔNG chèn 公費 ⇒ không có E00100 nào ⇒
+chuỗi F8 giống hệt lượt sạch và **vẫn sang 窓口精算**. Không có nó thì không loại trừ được
+giả thuyết 「system error là do `INS_KBN`」.
+
+> ⚠️ Hai nhánh E00100 KHÁC NHAU ở chỗ quan trọng: nhánh 福祉医療設定 **không ném** (app vá
+> `localFlg` mặc định rồi tính tiếp, số trên màn hình không đổi); nhánh ngoại lệ ném ở
+> buiPrice.cs:334 — TRƯỚC `insPayDatas = payDatas` (:649) — nên `buiPriceData2` toàn 0 và
+> 日計 về 0 thật. Đừng đọc kết quả của nhánh này thành kết quả của nhánh kia.
 
 > Luồng này còn sửa một lỗi của **nền chung**: `AppNavigator.SetTreatmentDate` gõ xong
 > không dời focus, mà `CustomDate` chỉ dựng lại `SelDate` trong `CustomDate_Leave`
