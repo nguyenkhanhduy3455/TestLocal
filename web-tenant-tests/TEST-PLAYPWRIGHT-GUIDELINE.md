@@ -231,19 +231,28 @@ const ALLOW_SAVE = process.env.TEST_ALLOW_SAVE === '1'
 Rule 8 nói mỗi test độc lập, Rule 10.1 nói `< 10` login. Với một dialog sâu cần ~20 testcase thì hai điều đó xung khắc. Cách dung hoà:
 
 ```ts
+import { openTreatmentEntry } from '../_shared/entry'
+import { installOverlayHandlers } from '../_shared/overlays'
+import { expect, releaseSharedPage, test } from '../_shared/session'
+
 test.describe.configure({ mode: 'serial' })
 
 test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
   let page: Page
+  let disposeOverlays: (() => Promise<void>) | undefined
 
-  test.beforeAll(async ({ browser }) => {
-    // ⚠️ browser.newPage() KHÔNG kế thừa `use` của playwright.config.ts
-    //    → phải truyền tay ignoreHTTPSErrors (cert tự ký) + baseURL.
-    page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
-    // login + đi tới màn hình + cắm addLocatorHandler ở ĐÂY, một lần duy nhất
+  test.beforeAll(async ({ authedPage }) => {
+    // `authedPage` = Page ĐÃ đăng nhập, dùng chung CẢ WORKER — không phải cả file.
+    // ⇒ số login = số worker, KHÔNG cộng dồn theo số spec như trước.
+    page = authedPage
+    disposeOverlays = await installOverlayHandlers(page, { santei: true })
+    await openTreatmentEntry(page, PAT_NO, TRT_DT)   // goto mới = state sạch
   })
 
-  test.afterAll(async () => { await page?.close() })
+  test.afterAll(async () => {
+    await disposeOverlays?.()
+    await releaseSharedPage(page)     // ⚠️ KHÔNG page.close()
+  })
 
   test('mở dialog…', async () => { /* … */ })
   test('4 checkbox…', async () => { /* … */ })
@@ -254,7 +263,35 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
 
 - Testcase **nối tiếp trạng thái**, thứ tự có ý nghĩa → chạy lẻ một test ở giữa sẽ fail.
 - `serial`: một test đỏ thì các test sau bị **skip**.
-- Page tự tạo nên **không có trace/video/screenshot tự động** của fixture. Cần thì bật tay `context.tracing.start(...)`.
+- Page không do fixture `page` sinh ra nên **không có trace/video/screenshot tự động**. Cần thì bật tay `context.tracing.start(...)`.
+
+### 19.1 — Page dùng chung ⇒ BỐN thứ rò sang file chạy sau ⚠
+
+Đây là cái giá của việc hạ 71 login xuống còn 4. Triệu chứng của cả bốn đều là
+"spec X đỏ hay xanh tuỳ thứ tự chạy" — kiểu lỗi gần như không truy được nếu
+không biết trước.
+
+| Rò cái gì | Cách chặn |
+|---|---|
+| `page.close()` | Đừng gọi. Page thuộc về worker, đóng là mọi file sau nổ ở dòng đầu |
+| `page.route(...)` | `releaseSharedPage()` đã `unrouteAll()` |
+| `addLocatorHandler` | Gọi disposer mà `installOverlayHandlers` trả về; handler tự viết thì `page.removeLocatorHandler(loc)` |
+| State màn hình | Luôn mở lại bằng `openTreatmentEntry()` / `openTreatmentList()` trong `beforeAll` |
+
+Chi tiết đầy đủ ở đầu `tests/_shared/session.ts`.
+
+### 19.2 — Khi nào KHÔNG dùng `authedPage`
+
+Dựng page riêng bằng `newTestPage(browser)` + `login(page)` của `_shared/` khi:
+
+- spec đo chính màn `/login` hoặc `/activate-login`;
+- spec cần trạng thái đăng nhập KHÁC admin — `user-master.spec.ts` login 3 tài
+  khoản, đó là nội dung được đo chứ không phải chi phí;
+- spec ĐANG ĐO một trong 3 popup mà handler dùng chung sẽ dọn mất
+  (`dialogs-selection/karte-selection-dialog`, `cmt-auto-picker-*`);
+- spec đổi `viewport` / `locale` riêng.
+
+Ghi lý do vào doc-comment đầu file, nếu không người sau sẽ tưởng là sót.
 
 Test Explorer vẫn hiện đủ từng testcase để tick/chạy riêng — đúng mục tiêu.
 

@@ -10,7 +10,7 @@
 | Bạn đang định làm gì | Đọc theo thứ tự |
 |---|---|
 | Hiểu tổng thể | File này, mục 1–2 |
-| Viết một spec Playwright mới | Mục 5 → `web-tenant-tests/GUIDELINE.md` (Rule 1–11) → `web-tenant-tests/TEST-PLAYPWRIGHT-GUIDELINE.md` (Rule 12–22) |
+| Viết một spec Playwright mới | Mục 5 → `web-tenant-tests/GUIDELINE.md` (Rule 1–11) → `web-tenant-tests/TEST-PLAYPWRIGHT-GUIDELINE.md` (Rule 12–23) |
 | Mới học Playwright | `web-tenant-tests/tutorial.md` |
 | Test đang fail | Mục 7 (triage) → `test-results/<tên-test>/error-context.md` |
 | Cần seed/dọn dữ liệu ở tầng DB | Mục 3.5 → doc-comment đầu `web-tenant-tests/tests/db.ts` |
@@ -45,7 +45,7 @@
 ┌───────────┴─────────────────────────────┴────────────────────────────┐
 │ REPO NÀY — /Users/thinhnn/Documents/GitHub/TestLocalApp/TestLocal    │
 │                                                                      │
-│  A. web-tenant-tests/   Playwright E2E — 22 spec, ~16k dòng          │
+│  A. web-tenant-tests/   Playwright E2E — 71 spec / 866 test          │
 │  B. file-viewer/        Web app xem file local (log/CSV/JSON/text)   │
 │  C. trouble-1..4.md     Tài liệu điều tra → đầu vào để viết testcase │
 └──────────────────────────────────────────────────────────────────────┘
@@ -77,20 +77,48 @@ TestLocal/
 │
 └── web-tenant-tests/               # ── A ──
     ├── GUIDELINE.md                # Rule 1–11  — luật bắt buộc
-    ├── TEST-PLAYPWRIGHT-GUIDELINE.md # Rule 12–22 — bẫy rút ra từ debug thật
+    ├── TEST-PLAYPWRIGHT-GUIDELINE.md # Rule 12–23 — bẫy rút ra từ debug thật
     ├── tutorial.md                 # Playwright cơ bản cho người mới
     ├── playwright.config.ts        # baseURL, viewport, timeout, chỉ Chrome
     ├── .env / .env.example         # cấu hình chạy (.env KHÔNG commit)
     ├── package.json
-    └── tests/
-        ├── *.spec.ts               # 22 spec
-        ├── test-data.ts            # tài khoản + chuỗi UI tiếng Nhật (JA)
-        ├── step.ts                 # nhịp quan sát khi --headed
-        ├── db.ts                   # truy cập Postgres trực tiếp (seed/verify/dọn)
-        ├── virtual-grid.ts         # helper cho grid ảo hoá + closeDialogs
-        ├── auto-picker-precondition.ts # tiền đề dialog カルテ記載選択
-        └── pdf-content.ts          # bóc text từ PDF do print agent render
+    └── tests/                      # 71 spec, gom theo MÀN HÌNH / COMPONENT
+        ├── _shared/                # helper dùng chung — KHÔNG phải test
+        │   ├── session.ts          # fixture `authedPage`: login 1 lần / worker ⚠
+        │   ├── auth.ts             # login(page)
+        │   ├── env.ts              # BASE_URL, patNo(), trtDt(), TODAY_ISO, timeout lưới
+        │   ├── entry.ts            # newTestPage, openTreatmentEntry, openTreatmentList
+        │   ├── overlays.ts         # installOverlayHandlers (3 popup xen ngang) + disposer
+        │   ├── test-data.ts        # tài khoản + chuỗi UI tiếng Nhật (JA)
+        │   ├── step.ts             # nhịp quan sát khi --headed
+        │   ├── db.ts               # truy cập Postgres trực tiếp (seed/verify/dọn)
+        │   ├── virtual-grid.ts     # helper cho grid ảo hoá + closeDialogs
+        │   ├── auto-picker-precondition.ts # tiền đề dialog カルテ記載選択
+        │   ├── pdf-content.ts      # bóc text từ PDF do print agent render
+        │   ├── file-viewer.ts      # gọi API của file-viewer (phần B)
+        │   ├── mailpit.ts          # đọc mail test (kích hoạt tài khoản)
+        │   └── fkey-audit.ts       # quét/chụp thanh F-key
+        │
+        ├── treatment-grid/      9  # 診療入力 lưới 処置 (frm203002 grdRegi)
+        ├── dialogs-management/ 11  # hộp thoại quản lý / nhập liệu (Rule 23)
+        ├── patient-select/      7  # 患者選択 / 来患一覧
+        ├── accounting-unpaid/   6  # 会計 / 未精算 (modAcc)
+        ├── dialogs-selection/   6  # họ 「選択」 + Enter window-level
+        ├── siga-tooth-status/   6  # 歯式 / 根数 / Ｐ変更
+        ├── side-panel/          6  # 4 tab 病検・ガイド・パック・個別
+        ├── auto-santei/         4  # 自動算定 (modSave.AutoSantei)
+        ├── cross-cutting/       4  # hành vi dùng chung mọi màn
+        ├── fkey-menu/           4  # thanh F-key / menu / nút ngoài
+        ├── trn-check/           3  # 診療チェック
+        ├── perio/               2  # 歯周検査
+        ├── save-f9/             2  # F9 登録 side-effect
+        └── user-master/         1  # module riêng, không thuộc INP
 ```
+
+Trục gom trùng với `fla-ui-tests/src/OchaCom.FlaUiTests/Tests/` — cặp parity
+web ↔ WinForm nằm cùng tên thư mục, tra chéo được.
+
+Chạy nguyên một mảng: `npx playwright test tests/siga-tooth-status/`
 
 ---
 
@@ -151,10 +179,15 @@ npx playwright test tests/<spec> --repeat-each=3 --retries=0   # soi flaky
 | `TEST_ALLOW_PRINT` / `TEST_AGENT_BASE_URL` | — | `=1` in thật qua print agent; mặc định stub chặn request nhưng vẫn assert đủ datasource |
 | `TEST_PDF_TEXT` | `strict` | `loose` = chữ Hán không tìm thấy trong PDF chỉ cảnh báo |
 
-### 3.5 Helper dùng chung trong `tests/`
+### 3.5 Helper dùng chung — `tests/_shared/`
 
 | Module | Export chính | Dùng khi |
 |---|---|---|
+| `session.ts` | `test`, `expect`, fixture `authedPage`, `releaseSharedPage` | **Mặc định cho spec mới.** Import `test`/`expect` từ ĐÂY, không từ `@playwright/test`. Cho một `Page` đã đăng nhập dùng chung cả worker ⇒ login không còn cộng dồn theo số file. Đọc kỹ 5 cái bẫy ghi trong file trước khi dùng |
+| `auth.ts` | `login(page)`, `RATE_LIMIT_HINT` | Chỉ khi spec KHÔNG dùng được `authedPage` (đo chính màn login, cần tài khoản khác, đo popup mà spec khác dọn) |
+| `env.ts` | `BASE_URL`, `TODAY_ISO`, `patNo(mặc_định)`, `trtDt(mặc_định)`, `allowSave`, `GRID_LOAD_TIMEOUT` | Mọi spec. `patNo`/`trtDt` là HÀM — mặc định vẫn thuộc về từng spec vì 12138/11/10 và các ngày ghim phải khớp `testsettings.local.json` bên FlaUI |
+| `entry.ts` | `newTestPage`, `openTreatmentEntry`, `openTreatmentList`, `ryoCells` | Vào màn 診療入力 / danh sách. `openTreatmentEntry` đi URL trần (KHÔNG `inpKbn`) và tự nạp lại tối đa 3 lần khi Vite dev server nhả hụt module |
+| `overlays.ts` | `installOverlayHandlers(page, opts)` → **disposer**, `closeDialogs` | 3 popup xen ngang (算定しますか / カルテ記載選択 / alert お茶コン). Không có bộ mặc định "bật hết"; **bắt buộc gọi disposer ở `afterAll`** vì page dùng chung theo worker |
 | `test-data.ts` | `ADMIN_USER`, `JA` | Mọi spec. Chuỗi tiếng Nhật dùng chung để ở `JA`, **không rải khắp file** |
 | `step.ts` | `makeStep(page)`, `stepMs()`, `DEFAULT_STEP_MS` | Mọi spec mới (Rule 11). `await step()` sau mỗi thao tác đáng nhìn, và **trước + sau mỗi Enter được assert** |
 | `db.ts` | `dbEnabled`, `withDb`, `seedTreatmentRows`, `deleteTreatmentRows`, `seedMstTrtRows`, `countGisiKanri`, `latestChiryoKanriR2`, `readSiga`/`writeSigaTeeth`/`restoreSiga`, … | Seed dữ liệu test, verify ở tầng DB, dọn record mà UI không có nút xoá. Dòng seed nằm ở vùng `disp_no >= SEED_DISP_BASE (9000)` để không đụng data thật |
@@ -239,23 +272,31 @@ App **cố ý** đọc mọi path người dùng nhập — đó là tính năng
 6. **Chừa env override** cho mọi thứ chưa chắc: `TEST_PAT_NO`, `TEST_TRT_DT`, `TEST_ALLOW_SAVE`…
 7. **Giao ngay** (Rule 6). Không tự chạy dò vòng vo với spec đơn giản. *Ngoại lệ đã được ghi nhận:* dialog lồng sâu / SVG / có popup xen ngang thì locator không suy ra chắc chắn từ source được — chạy thử là hợp lý, xem ghi chú cuối `TEST-PLAYPWRIGHT-GUIDELINE.md`.
 
-### 5.2 Khung spec chuẩn — login MỘT lần, nhiều testcase
+### 5.2 Khung spec chuẩn — page dùng chung, login MỘT lần cho cả worker
 
-Đây là khuôn mẫu 16/22 spec đang dùng. Nó dung hoà "mỗi test độc lập" (Rule 8) với "< 10 login" (Rule 10.1).
+Đây là khuôn mẫu 55/71 spec đang dùng. Nó dung hoà "mỗi test độc lập" (Rule 8)
+với "< 10 login" (Rule 10.1).
+
+**Vấn đề nó giải:** trước đây mỗi file tự `browser.newPage()` rồi tự đăng nhập
+⇒ 71 lượt login cho một lần chạy đủ suite, trong khi app chặn ở 10. Fixture
+`authedPage` (worker-scope) hạ con số đó xuống **bằng số worker** (4 local, 1 CI).
 
 ```ts
-import { expect, test, type Page } from '@playwright/test'
+import { type Page } from '@playwright/test'
 
-import { dbEnabled, deleteTreatmentRows, seedTreatmentRows } from './db'
-import { makeStep } from './step'
-import { ADMIN_USER, JA } from './test-data'
-import { closeDialogs } from './virtual-grid'
+import { dbEnabled, deleteTreatmentRows, seedTreatmentRows } from '../_shared/db'
+import { patNo, trtDt } from '../_shared/env'
+import { openTreatmentEntry } from '../_shared/entry'
+import { installOverlayHandlers } from '../_shared/overlays'
+import { expect, releaseSharedPage, test } from '../_shared/session'
+import { makeStep } from '../_shared/step'
 
 /**
  * <画面名> — <mô tả> (WinForm `<HàmGốc>`).
  *
- * CHẠY SERIAL, login MỘT lần ở beforeAll. Thứ tự testcase CÓ ý nghĩa
- * (TC-4 đọc kết quả của TC-3) → chạy lẻ một testcase ở giữa sẽ hỏng.
+ * CHẠY SERIAL, page lấy từ fixture `authedPage` (login 1 lần / worker). Thứ tự
+ * testcase CÓ ý nghĩa (TC-4 đọc kết quả của TC-3) → chạy lẻ một testcase ở giữa
+ * sẽ hỏng. `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
  *
  * ─── Nguồn WinForm ──────────────────────────────────────────────────────
  *  - INP/Forms/frm203002.cs:3944 — …
@@ -263,9 +304,8 @@ import { closeDialogs } from './virtual-grid'
  *  - treatment-entry-detail.tsx:2423 — …
  */
 
-const BASE_URL = process.env.BASE_URL ?? 'https://tenant1.ochacom.local/'
-const PAT_NO = process.env.TEST_PAT_NO ?? '11'
-const TRT_DT = process.env.TEST_TRT_DT ?? '2009-05-20'
+const PAT_NO = patNo('11')
+const TRT_DT = trtDt('2009-05-20')
 
 test.beforeAll(async () => {
   if (dbEnabled) await seedTreatmentRows(Number(PAT_NO), TRT_DT, SEED_ROWS)
@@ -280,30 +320,25 @@ test.describe('<画面名> — <mô tả>', () => {
   let page: Page
   let step: () => Promise<void>
 
-  test.beforeAll(async ({ browser }) => {
-    // ⚠️ browser.newPage() KHÔNG kế thừa `use` của playwright.config.ts
-    //    → phải truyền tay ignoreHTTPSErrors (cert tự ký) + baseURL.
-    page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
-    step = makeStep(page)
-    page.on('pageerror', (e) => console.log(`pageerror: ${e.message}`))
+  /** Gỡ handler popup của RIÊNG file này ở afterAll — page dùng chung theo worker. */
+  let disposeOverlays: (() => Promise<void>) | undefined
 
-    await page.goto('/login', { waitUntil: 'domcontentloaded' })
-    await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
-    await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-    await page.getByRole('button', { name: JA.submit }).click()
-    await expect(page).toHaveURL(/\/$/)
+  test.beforeAll(async ({ authedPage }) => {
+    page = authedPage
+    step = makeStep(page)
 
     // Popup xen ngang: cắm handler MỘT lần ở đây, đừng chờ thủ công (Rule 14).
-    await page.addLocatorHandler(
-      page.getByText(/を算定しますか？/).first(),
-      async () => { await page.getByRole('button', { name: /^(No|いいえ)$/ }).first().click() },
-      { times: 20 },
-    )
+    // Khai ĐÚNG cái spec này cần — spec đang ĐO một popup thì không bật popup đó.
+    disposeOverlays = await installOverlayHandlers(page, { santei: true })
 
-    // … đi tới màn hình cần test
+    // goto mới = trạng thái sạch, bắt buộc vì page kế thừa từ file chạy trước.
+    await openTreatmentEntry(page, PAT_NO, TRT_DT)
   })
 
-  test.afterAll(async () => { await page?.close() })
+  test.afterAll(async () => {
+    await disposeOverlays?.()
+    await releaseSharedPage(page)   // ⚠️ KHÔNG page.close()
+  })
 
   test('TC-1 — mở dialog', async () => {
     const dialog = page.getByRole('dialog').filter({ hasText: '【歯・歯肉の状態】' })
@@ -315,17 +350,37 @@ test.describe('<画面名> — <mô tả>', () => {
 })
 ```
 
-Phải ghi rõ trong doc-comment khi dùng khung này: testcase **nối tiếp trạng thái**; `serial` nghĩa là một test đỏ thì các test sau bị **skip**; page tự tạo nên **không có trace/video tự động** (cần thì `context.tracing.start(...)`).
+Phải ghi rõ trong doc-comment khi dùng khung này: testcase **nối tiếp trạng
+thái**; `serial` nghĩa là một test đỏ thì các test sau bị **skip**; page không
+do fixture `page` sinh ra nên **không có trace/video tự động** (cần thì
+`context.tracing.start(...)`).
+
+**Bốn thứ RÒ sang file chạy sau** vì page dùng chung — xem đầy đủ ở
+`tests/_shared/session.ts`:
+
+| Rò cái gì | Cách chặn |
+|---|---|
+| `page.close()` | Đừng gọi. Dùng `releaseSharedPage(page)` |
+| `page.route(...)` | `releaseSharedPage` đã `unrouteAll()` |
+| `addLocatorHandler` | Gọi disposer của `installOverlayHandlers`; handler tự viết thì `page.removeLocatorHandler(loc)` |
+| State màn hình | Luôn `openTreatmentEntry()` / `openTreatmentList()` trong `beforeAll` |
+
+**Khi nào KHÔNG dùng `authedPage`** (giữ `newTestPage()` + `login()` riêng):
+spec đo chính màn `/login`; spec cần tài khoản khác admin (`user-master` login 3
+tài khoản — đó là nội dung đo); spec ĐANG ĐO một trong 3 popup mà handler dùng
+chung sẽ dọn mất (`dialogs-selection/karte-selection-dialog`, `cmt-auto-picker-*`).
 
 ### 5.3 Quy ước
 
 | Hạng mục | Quy ước |
 |---|---|
-| Tên file | `<tính-năng>.spec.ts`, đặt trong `tests/` |
+| Tên file | `<tính-năng>.spec.ts`, đặt trong `tests/<nhóm>/` — nhóm theo MÀN HÌNH/COMPONENT, xem cây ở mục 2. File mới không thuộc nhóm nào thì bàn trước khi mở thư mục mới |
 | Tên `describe` | `<画面名 tiếng Nhật> — <mô tả ngắn>` kèm mã WinForm, vd `診療入力 — 加算ボタン 時間外(&J)` |
 | Tên testcase | Bắt đầu bằng mã `TC-n` / `TC-A1` / `TC-B2` (nhóm theo mục kiểm) → lọc được bằng `-g "TC-3"` |
 | Hằng số | Đặt **đúng tên hằng của source**, kèm chú thích file gốc: `const TOOTH_COUNT = 32  // utils/tooth-chart.ts` |
-| Chuỗi tiếng Nhật dùng chung | Để trong `JA` của `test-data.ts` |
+| Chuỗi tiếng Nhật dùng chung | Để trong `JA` của `_shared/test-data.ts` |
+| Login | Qua fixture `authedPage` (`_shared/session.ts`). Tự `goto('/login')` chỉ khi có lý do ghi trong doc-comment |
+| Hằng số env | `patNo()` / `trtDt()` của `_shared/env.ts`, KHÔNG đọc thẳng `process.env` |
 | Skip | Phải `console.log` lý do rõ ràng — "không chạy" khác hẳn "chạy và pass" |
 | Ghi DB | Nằm sau cờ env (`TEST_ALLOW_SAVE`, `dbEnabled`) |
 
@@ -357,7 +412,7 @@ Lợi ích thật: khi source đổi, đọc doc-comment là biết ngay assert 
 
 ---
 
-## 6. Bảng tra luật (Rule 1–22)
+## 6. Bảng tra luật (Rule 1–23)
 
 Tóm tắt một dòng. Chi tiết + ví dụ code ở hai file guideline.
 
@@ -372,9 +427,9 @@ Tóm tắt một dòng. Chi tiết + ví dụ code ở hai file guideline.
 | 5 | App chết (502) thì đừng debug test — `curl` kiểm tra trước |
 | 6 | **Viết nhanh, không tự chạy thử.** Fail thì viết lại — rẻ hơn tự dò. Chỗ chưa chắc → để env |
 | 7 | **Không sleep.** `expect` tự retry. Ngoại lệ duy nhất: `step()` của Rule 11 |
-| 8 | Mỗi test độc lập, tự login |
+| 8 | Mỗi test độc lập. Login thì **qua fixture `authedPage`** (`tests/_shared/session.ts`), không tự `goto('/login')` — xem Rule 19 |
 | 9 | Không commit mật khẩu thật. App khoá tài khoản khi sai nhiều lần |
-| 10.1 | ⚠️ **Bẫy lớn nhất: < 10 login mỗi khung thời gian.** Chạy lẻ pass / chạy cả file fail hết = đúng triệu chứng. Limit cộng dồn, không reset. Đụng trần thì **chờ ~4 phút, đừng sửa code** |
+| 10.1 | ⚠️ **Bẫy lớn nhất: < 10 login mỗi khung thời gian.** Chạy lẻ pass / chạy cả file fail hết = đúng triệu chứng. Limit cộng dồn, không reset. Đụng trần thì **chờ ~4 phút, đừng sửa code**. Cách giải hiện hành: fixture `authedPage` → login = số worker |
 | 10.2 | `storageState` **vô dụng** với app này: accessToken chỉ nằm trong RAM, nạp lại từ cookie `rt` thì vào được nhưng data bệnh nhân không load |
 | 10.3 | Màn hình nền có nút trùng tên với dialog → luôn bó locator vào `role=dialog` |
 | 10.4 | Trong `GuideSelectionDialog`, **Escape = 確定 (ghi data)**, không phải huỷ. Đóng bằng `F10` |

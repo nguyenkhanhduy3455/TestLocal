@@ -164,6 +164,14 @@ Dấu hiệu nhận biết: chạy 1 test lẻ thì **pass**, chạy cả file t
 
 → **Giữ tổng số login mỗi lần chạy < 10.** Tách nhiều test được, miễn đừng vượt ngưỡng.
 
+→ **Cách giải hiện hành: fixture `authedPage` của `tests/_shared/session.ts`.**
+Nó cấp một `Page` đã đăng nhập dùng chung cho cả **worker process**, nên số
+login = số worker (4 local, 1 CI) chứ không còn cộng dồn theo số file. 55/71
+spec đang dùng. Spec mới **mặc định phải import `test`/`expect` từ
+`_shared/session`**, không từ `@playwright/test`. Đổi lại, page dùng chung thì
+`page.route`, `addLocatorHandler` và state màn hình đều RÒ sang file chạy sau —
+đọc 5 cái bẫy ghi ngay trong `session.ts` trước khi viết.
+
 → **Với flow sâu cần login (dialog lồng nhiều bước): vẫn nên gộp mọi assert vào MỘT test.** Không chỉ vì rate-limit — mà vì login + đi tới dialog tốn nhiều bước, mở 1 lần rồi kiểm hết là nhanh nhất.
 
 ⚠️ **Limit cộng dồn theo khung thời gian, KHÔNG reset mỗi lần chạy.** Lúc debug hay chạy đi chạy lại → rất dễ đụng trần. Nếu đang debug mà `toHaveURL` fail ở login: **chờ vài phút, đừng sửa code**.
@@ -265,14 +273,41 @@ Cơ chế: `--headed` và `--ui` đều làm Playwright đặt `project.use.head
 
 ```
 web-tenant-tests/
-├── GUIDELINE.md          # file này — rule bắt buộc
+├── GUIDELINE.md          # file này — Rule 1–11
+├── TEST-PLAYPWRIGHT-GUIDELINE.md  # Rule 12–23
 ├── tutorial.md           # hướng dẫn Playwright cơ bản
 ├── package.json
 ├── playwright.config.ts  # baseURL, ignoreHTTPSErrors, chỉ Chrome
 ├── tsconfig.json
 └── tests/
-    ├── test-data.ts      # tài khoản + chuỗi UI tiếng Nhật (JA)
-    └── login.spec.ts     # login thành công / thất bại
+    ├── _shared/          # helper dùng chung — Playwright KHÔNG thu làm test
+    │   ├── session.ts    # fixture `authedPage` — login 1 lần / worker
+    │   ├── auth.ts env.ts entry.ts overlays.ts
+    │   ├── test-data.ts step.ts db.ts virtual-grid.ts
+    │   └── pdf-content.ts file-viewer.ts mailpit.ts fkey-audit.ts
+    │       auto-picker-precondition.ts
+    │
+    ├── treatment-grid/       # 診療入力 lưới 処置 (frm203002 grdRegi)
+    ├── side-panel/           # 4 tab 病検・ガイド・パック・個別
+    ├── auto-santei/          # 自動算定 (modSave.AutoSantei)
+    ├── siga-tooth-status/    # 歯式 / 根数 / Ｐ変更
+    ├── accounting-unpaid/    # 会計 / 未精算 (modAcc)
+    ├── patient-select/       # 患者選択 / 来患一覧
+    ├── trn-check/            # 診療チェック
+    ├── perio/                # 歯周検査
+    ├── dialogs-management/   # hộp thoại quản lý / nhập liệu (Rule 23)
+    ├── dialogs-selection/    # họ 「選択」 + Enter window-level
+    ├── fkey-menu/            # thanh F-key / menu / nút ngoài
+    ├── save-f9/              # F9 登録 side-effect
+    ├── cross-cutting/        # hành vi dùng chung mọi màn
+    └── user-master/          # module riêng, không thuộc INP
 ```
 
-Test mới đặt trong `tests/`, đặt tên `<tính-năng>.spec.ts`.
+Test mới đặt trong `tests/<nhóm>/`, đặt tên `<tính-năng>.spec.ts`. Trục gom là
+**màn hình / component WinForm**, trùng trục của
+`fla-ui-tests/src/OchaCom.FlaUiTests/Tests/` để cặp parity nằm cùng tên thư mục.
+
+Chạy nguyên một mảng: `npx playwright test tests/siga-tooth-status/`
+
+Chưa rõ file mới thuộc nhóm nào thì **hỏi trước khi mở thư mục thứ 15** — 13
+nhóm hiện tại đã phủ hết 71 spec.
