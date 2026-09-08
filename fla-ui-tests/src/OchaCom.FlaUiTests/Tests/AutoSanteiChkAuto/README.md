@@ -1,0 +1,164 @@
+# AutoSanteiChkAuto — 自動算定 (bảng `chkauto`)
+
+Nửa WinForm của lệch parity **「bảng `chk_auto` chưa được port ở runtime」**.
+
+> Runner: [`../../../../run-insert-auto-santei-rows.ps1`](../../../../run-insert-auto-santei-rows.ps1)
+> Luật chung: [`../../../../FLA-UI-GUIDELINE.md`](../../../../FLA-UI-GUIDELINE.md) (F1–F24)
+
+---
+
+## 1. Lệch đang đo
+
+Nhập 抜歯 lên một răng rồi so hai bên — cùng bệnh nhân, cùng ngày, cùng thao tác:
+
+|        | WinForm                                        | Web                   |
+|--------|------------------------------------------------|-----------------------|
+|        | `6 (1) Ｃ₂`                                    | `6 (1) Ｃ₂`           |
+|        | `OA（ｺｰﾊﾟﾛﾝ）浸麻（…）` **0 点**               | *(không có)*          |
+|        | `抜歯手術(臼歯)` **270 点**                    | `抜歯手術(臼歯)` 270 点 |
+|        | `OA+ｵｰﾗ注歯科用ｶｰﾄﾘｯｼﾞ 料1.8mL` **11 点**      | *(không có)*          |
+| **日計** | **443 点**                                     | **432 点**            |
+
+Lệch **11 điểm cho MỘT ca 抜歯** ⇒ sai cả tiền thu lẫn レセプト. Đây là lệch **nặng hơn**
+hai cái trước vì nó sai **điểm số**, không phải sai hiển thị.
+
+---
+
+## 2. Cơ chế — ba lệnh gọi ngay sau khi Enter ô 回
+
+`frm203002.cs:5738-5752`, case 4 (ô 回). Điều kiện DUY NHẤT là `trtCnt >= 1`, không có cờ
+nào chặn:
+
+```csharp
+ModMain.Chk_CmtAuto(con, intCod, intNo, trtCnt);   // コメント自動入力  ← web CÓ (runCmtAutoCascade)
+ModMain.Chk_ChkAuto_soutyaku(con, intCod, intNo);  // 装着料自動算定
+ModMain.Chk_ChkAuto(con, intCod, intNo);           // 自動算定  ★ CHỖ ĐANG ĐO
+```
+
+`ModMain.Chk_ChkAuto` (`modMain.cs:812`):
+
+1. `ChkAuto.getChkAutoData(con, trtCd, trtSb)` — đọc bảng `chkauto`, lấy 5 cặp
+   `(cd_i, sb_i)`. Không có dòng ⇒ **return ngay** (`:841-844`).
+2. Với mỗi cặp:
+   * `cd` trong dải **摘要 700..899** ⇒ chèn một dòng **コメント 0 点** (`:862-908`);
+   * `cd > 100` ⇒ cho qua **診療チェック** `Check.getCheckAnswerGuide` (`:914-940`), rớt thì
+     `continue`; qua được thì tra master của tháng rồi chèn bằng
+     `frm203016.frm203016_Hide_Let_Trt_Data(0)` (`:990-1010`), rồi gọi `Chk_CmtAuto` cho
+     chính mã vừa chèn (`:1030`).
+
+Dữ liệu khớp đúng ảnh trên:
+
+```
+chkauto(179, 2)  →  cd1 = 310 / sb1 = 2
+MST_TRT266: 179/2 = 抜歯手術(臼歯) 270点   ·   310/2 = OA+ｵｰﾗ注歯科用ｶｰﾄﾘｯｼﾞ 料1.8mL 11点
+```
+
+**Phạm vi:** bảng `chkauto` có **196 dòng**, trong đó **25 dòng có từ 2 mã đi kèm trở lên**
+(`100/1→108/7`, `104/0→104/2`, `110/0→108/9 + 108/12`, `116/6→116/8`, `125/9→116/22`,
+`179/2→310/2` …) ⇒ khoảng **196 mã 処置** đang thiếu phần tự chèn ở bản web.
+
+> ⚠️ Bảng tên **`chkauto`**, KHÔNG gạch dưới — khác `chk_auto` của bản Postgres bên web.
+> Cột là `cd1..cd5` / `sb1..sb5` (`COMMON/DBAccess/ChkAuto.cs:26-43`).
+
+---
+
+## 3. Testcase
+
+| Case | Vai trò | Đo gì |
+|---|---|---|
+| `TcAUTO1` | mốc | `chkauto` có dòng cho mã đem thử; master của tháng có đủ mã đi kèm; mã ĐỐI CHỨNG **không** có trong `chkauto`. **Chỉ hỏi DB.** |
+| `TcAUTO2` | **lệch chính** | Nhập `179/2` ⇒ WinForm **TỰ CHÈN** `310/2`, dòng đó mang đúng `score1`, và 月計点数 tăng đúng `270 + 11`. |
+| `TcAUTO3` | đối chứng | Mã **không** có trong `chkauto` ⇒ 月計点数 chỉ tăng đúng điểm của chính nó. |
+
+Probe (`[Explicit]`, chạy bằng `-Diagnostics`):
+
+| Case | Đo gì |
+|---|---|
+| `Tc0` | Chỉ hỏi DB: `chkauto` có gì, master có gì. Rẻ — chạy trước tiên. |
+| `Tc1` | `179/2` 抜歯 — đúng ca trong báo cáo. |
+| `Tc2` | `171/0` 感根処 — đối chứng. |
+| `Tc3` | `110/0` 再診 — ô có **HAI** mã đi kèm, không cần 部位. |
+
+### Lô chạy (F7 — trần 15 phút của wrapper)
+
+Một vòng 「Insert → 部位選択 → 病名選択 → gõ mã → 処置選択」 tốn **2–3 phút** trên máy thật.
+**Không bao giờ chạy cả fixture một lượt.**
+
+```powershell
+.\run-insert-auto-santei-rows.ps1 -Diagnostics -Case Tc0      # 1. re, chi hoi DB
+.\run-insert-auto-santei-rows.ps1 -Case TcAUTO1               # 2. moc
+.\run-insert-auto-santei-rows.ps1 -AllowSave -Case TcAUTO2    # 3. lech chinh   (1 vong UI)
+.\run-insert-auto-santei-rows.ps1 -AllowSave -Case TcAUTO3    # 4. doi chung    (1 vong UI)
+```
+
+Chạy từ xa (F5) — `schtasks` không truyền được tham số, phải ghi lệnh vào file:
+
+```powershell
+Set-Content logs\command.txt "run-insert-auto-santei-rows.ps1 -AllowSave -Case TcAUTO2"
+schtasks /run /tn "FlaUI-Tests-Run"
+```
+
+---
+
+## 4. Ghi DB — cờ riêng `autoSantei.allowSave`
+
+**KHÔNG bấm F9** ⇒ `TRNTRN` **không bị đụng**: mọi dòng chỉ nằm trong bộ nhớ lưới và biến
+mất khi đóng màn hình mà không lưu.
+
+Nhưng `179` đi qua `frm203016.IregCodChk → SigaChg` nên nó **GHI THẲNG vào `SIGA` ngay lúc
+chốt** (`frm203016.cs:1032-1035`), và răng phải là **現存** thì `ChkSiga` mới cho 抜歯 đi
+qua. Vì thế:
+
+* cờ **RIÊNG** `autoSantei.allowSave` (mặc định `false` ⇒ fixture tự `Ignore` **trước khi
+  mở app**) — không dùng chung `sigaTooth.allowSave`, vì ở đây 歯式 chỉ là **tiền đề** chứ
+  không phải thứ đang đo;
+* `PrepareDataBeforeApp` **chụp `SIGA` TRƯỚC khi đặt mốc**, **IN RA STDOUT**, rồi mới
+  `ResetSigaToVital` — F20. Đặt mốc phải nằm **trước khi app mở**: `pSiga_old` chỉ được nạp
+  đúng một lần lúc mở 診療入力 (`modKonSiga.cs:70-84`);
+* `OneTimeTearDown` trả `SIGA` về nguyên trạng.
+
+Mã **ĐỐI CHỨNG** `171/0` cố ý chọn ngoài switch của `IregCodChk` nên nó **không ghi gì cả**.
+
+---
+
+## 5. Cạm bẫy đã biết
+
+* **日計行 / 合計行 in chính số điểm.** So hai lượt chụp lưới theo nội dung sẽ thấy chúng
+  「biến mất rồi xuất hiện」 mỗi lượt nhập ⇒ phải lọc ra trước khi đếm
+  (`AutoSanteiOps.EntryMeasure.IsData`). Không lọc thì cả ô ĐỐI CHỨNG cũng đỏ.
+* **Chụp mốc SAU 部位選択, TRƯỚC khi gõ mã.** 部位選択 + 病名選択 tự dựng thêm một 部位病名行;
+  chụp trước chúng thì dòng đó lọt vào "app tự chèn".
+* **Mốc là `lbAllPoint`, không phải số dòng lưới** (F12): UIA chỉ phơi ra dòng đang nhìn
+  thấy, mà chèn xong app lại cuộn.
+* **Không seed DB** (F21): `Chk_ChkAuto` đọc `ModCommon.pbui` / `pHoumon` / `dis_cd` —
+  trạng thái trong **bộ nhớ phiên chạy**. Dòng seed thẳng `TRNTRN` không đi qua case 4 của
+  `frm203002` nên cả nhánh này biến mất.
+* **診療チェック có thể loại mã đi kèm** (`modMain.cs:936-940`). Nếu tháng test đã có sẵn mã
+  đó (nhất là các 加算 giới hạn 月1回 như `108/9`, `108/12`), TcAUTO2 sẽ đỏ vì **DỮ LIỆU**
+  chứ không vì app — thông điệp assert đã nói rõ cách phân biệt. Vì đúng lý do này mà
+  `110/0` (ô có 2 mã đi kèm) **chỉ nằm trong probe**, không assert.
+
+---
+
+## 6. Đo được trên máy thật
+
+Điền sau **mỗi** lượt chạy — ngày, bệnh nhân, 診療月, số đo **nguyên văn**. Để trống là lần
+sau đo lại từ đầu.
+
+| Ngày | Case | Bệnh nhân / 診療日 | Số đo |
+|---|---|---|---|
+| | | | *(chưa chạy)* |
+
+### Đo sẵn từ DB (2026-09-08, `SIM2000` trên `OCHASQLEXPRESS`)
+
+```
+chkauto: 196 dòng, 25 dòng có từ 2 mã đi kèm trở lên
+chkauto(179,2) → 310/2                      chkauto(170,0..8) → 310/2
+chkauto(110,0) → 108/9 + 108/12             chkauto(171,*)    → KHÔNG có  (⇒ mã đối chứng)
+MST_TRT266 (áp dụng từ 2026-06-01):
+  179/2 = 抜歯(臼歯) / 抜歯手術(臼歯)                 score1=270 unit=19 acc_unit=10 f1=0
+  310/2 = OA+ｵｰﾗ注歯科用Ct 1.8mL / …ｶｰﾄﾘｯｼﾞ 料1.8mL  score1= 11 unit= 9 acc_unit=11 f1=1
+  171/0 = 感根処(1根) / 感染根管処置(単根)            score1=160 unit=61 acc_unit= 9 f1=0
+```
+
+⇒ TcAUTO2 mong đợi **月計 tăng 270 + 11 = 281**, TcAUTO3 mong đợi **tăng đúng 160**.

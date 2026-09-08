@@ -24,6 +24,7 @@ public sealed class TestSettings
     [JsonPropertyName("inpP1")] public InpP1Section InpP1 { get; set; } = new();
     [JsonPropertyName("highNeeds")] public HighNeedsSection HighNeeds { get; set; } = new();
     [JsonPropertyName("sigaTooth")] public SigaToothSection SigaTooth { get; set; } = new();
+    [JsonPropertyName("autoSantei")] public AutoSanteiSection AutoSantei { get; set; } = new();
     [JsonPropertyName("perioKensa")] public PerioKensaSection PerioKensa { get; set; } = new();
     [JsonPropertyName("visitList")] public VisitListSection VisitList { get; set; } = new();
     [JsonPropertyName("buiPrice")] public BuiPriceSection BuiPrice { get; set; } = new();
@@ -255,6 +256,70 @@ public sealed class TestSettings
         /// trước lượt chạy — xem <c>SigaKonDb.CleanupTestRows</c>.
         /// </summary>
         [JsonPropertyName("allowRowCleanup")] public bool AllowRowCleanup { get; set; } = true;
+    }
+
+    /// <summary>
+    /// Luồng <c>Tests/AutoSanteiChkAuto</c> — 自動算定 (bảng <c>chkauto</c>):
+    /// <c>ModMain.Chk_ChkAuto</c> tự chèn tối đa 5 処置 đi kèm ngay khi Enter ô 回
+    /// (frm203002.cs:5752 → modMain.cs:812).
+    ///
+    /// <para>Cờ RIÊNG, không dùng chung <see cref="SigaToothSection.AllowSave"/>: ở đây
+    /// 歯式 KHÔNG phải thứ đang đo, nó chỉ là tiền đề — răng phải là 現存 thì
+    /// <c>ChkSiga</c> mới cho 抜歯 đi qua. Trộn cờ thì bật luồng này là mở luôn đường ghi
+    /// của luồng kia.</para>
+    /// </summary>
+    public sealed class AutoSanteiSection
+    {
+        /// <summary>
+        /// Cho phép GHI <c>SIGA</c>: đặt răng đem thử về 現存 TRƯỚC KHI APP MỞ, và khôi
+        /// phục ảnh chụp ở <c>OneTimeTearDown</c>. Chỉ nhóm 抜歯 cần — mã 179 đi qua
+        /// <c>frm203016.SigaChg</c> nên mỗi lượt chốt là một 「update Siga」 thật
+        /// (frm203016.cs:1032-1035). Mặc định tắt ⇒ fixture đó tự Ignore trước khi mở app.
+        /// </summary>
+        [JsonPropertyName("allowSave")] public bool AllowSave { get; set; }
+
+        /// <summary>
+        /// 処置 ĐEM THỬ — mặc định 179/2 抜歯手術(臼歯), đúng ca trong báo cáo lệch parity.
+        /// <c>chkauto(179,2)</c> → <c>cd1 = 310 / sb1 = 2</c> (OA+ｵｰﾗ注歯科用ｶｰﾄﾘｯｼﾞ 1.8mL).
+        /// </summary>
+        [JsonPropertyName("trtCd")] public int TrtCd { get; set; } = 179;
+
+        /// <summary>枝番 của <see cref="TrtCd"/>.</summary>
+        [JsonPropertyName("trtSb")] public int TrtSb { get; set; } = 2;
+
+        /// <summary>
+        /// 処置 ĐỐI CHỨNG — cùng đường nhập (cùng răng, cùng 病名), nhưng KHÔNG có dòng nào
+        /// trong <c>chkauto</c>. Mặc định 171/0 感染根管処置(単根): cùng họ <c>acc_unit = 9</c>
+        /// với 170 抜髄 (mã CÓ chkauto), và KHÔNG nằm trong switch của
+        /// <c>frm203016.IregCodChk</c> nên không ghi 歯式.
+        ///
+        /// <para>Không có ô đối chứng này thì 「lưới dài thêm một dòng」 chẳng chứng minh
+        /// được gì: mọi lượt nhập đều làm lưới dài thêm.</para>
+        /// </summary>
+        [JsonPropertyName("controlTrtCd")] public int ControlTrtCd { get; set; } = 171;
+
+        /// <summary>枝番 của <see cref="ControlTrtCd"/>.</summary>
+        [JsonPropertyName("controlTrtSb")] public int ControlTrtSb { get; set; }
+
+        /// <summary>
+        /// Ô 部位 (0-based) đem thử. Mặc định 10 = 左上3 ⇒ cột <c>se11</c> — dùng lại đúng ô
+        /// của luồng SigaToothStatus để hai luồng không tranh nhau răng.
+        /// </summary>
+        [JsonPropertyName("buiSlot")] public int BuiSlot { get; set; } = 10;
+
+        /// <summary>
+        /// Mã 処置 mà probe dò thêm ở nhánh KHÔNG cần 部位 — mặc định 110/0 再診,
+        /// <c>chkauto(110,0)</c> có TỚI HAI mã đi kèm (108/9 và 108/12) nên là chỗ duy nhất
+        /// đo được vòng lặp <c>for (i = 0; i &lt; 5; i++)</c> chạy quá một lượt.
+        ///
+        /// <para>CHỈ probe, KHÔNG assert: cả hai mã đi kèm đều là 加算 giới hạn 月1回, nên
+        /// 診療チェック (<c>Check.getCheckAnswerGuide</c>, modMain.cs:914) loại hay không là
+        /// tuỳ tháng test đã có 再診 chưa — đỏ ở đó không nói gì về <c>Chk_ChkAuto</c>.</para>
+        /// </summary>
+        [JsonPropertyName("multiTrtCd")] public int MultiTrtCd { get; set; } = 110;
+
+        /// <summary>枝番 của <see cref="MultiTrtCd"/>.</summary>
+        [JsonPropertyName("multiTrtSb")] public int MultiTrtSb { get; set; }
     }
 
     /// <summary>
@@ -532,6 +597,9 @@ public sealed class TestSettings
         Set("OCHA_HIGH_NEEDS_PAT_NO", v => s.HighNeeds.BorrowPatNo = v);
         Set("OCHA_SIGA_ALLOW_SAVE", v => s.SigaTooth.AllowSave = ToBool(v));
         Set("OCHA_SIGA_ROW_CLEANUP", v => s.SigaTooth.AllowRowCleanup = ToBool(v));
+        Set("OCHA_AUTO_SANTEI_ALLOW_SAVE", v => s.AutoSantei.AllowSave = ToBool(v));
+        Set("OCHA_AUTO_SANTEI_TRT_CD", v => s.AutoSantei.TrtCd = int.Parse(v));
+        Set("OCHA_AUTO_SANTEI_TRT_SB", v => s.AutoSantei.TrtSb = int.Parse(v));
         Set("OCHA_PERIO_ALLOW_SETTING_CHANGE", v => s.PerioKensa.AllowSettingChange = ToBool(v));
         Set("OCHA_PERIO_DIS_CD", v => s.PerioKensa.DisCd = int.Parse(v));
         Set("OCHA_SINRYO_YM", v => s.VisitList.SinryoYm = v);

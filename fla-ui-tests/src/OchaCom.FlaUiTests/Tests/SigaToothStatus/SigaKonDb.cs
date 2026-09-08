@@ -94,12 +94,20 @@ public sealed class SigaKonDb
         _allowWrite = allowWrite;
     }
 
-    /// <summary>Null khi tắt DB hoặc thiếu chuỗi kết nối. Cờ ghi đọc từ <c>sigaTooth.allowSave</c>.</summary>
-    public static SigaKonDb? CreateOrNull(TestSettings settings)
+    /// <summary>
+    /// Null khi tắt DB hoặc thiếu chuỗi kết nối. Cờ ghi mặc định đọc từ
+    /// <c>sigaTooth.allowSave</c>.
+    ///
+    /// <para><paramref name="allowWrite"/> để luồng khác mượn lớp này mà vẫn nằm sau CỜ CỦA
+    /// CHÍNH NÓ — <c>Tests/AutoSanteiChkAuto</c> chỉ cần đặt răng về 現存 làm tiền đề cho
+    /// 抜歯, và nó nằm sau <c>autoSantei.allowSave</c>. Truyền null = giữ nguyên hành vi cũ.</para>
+    /// </summary>
+    public static SigaKonDb? CreateOrNull(TestSettings settings, bool? allowWrite = null)
     {
         var db = settings.Db;
         if (!db.Enabled || string.IsNullOrWhiteSpace(db.ConnectionString)) return null;
-        return new SigaKonDb(db.ConnectionString, db.CommandTimeoutSeconds, settings.SigaTooth.AllowSave);
+        return new SigaKonDb(db.ConnectionString, db.CommandTimeoutSeconds,
+                             allowWrite ?? settings.SigaTooth.AllowSave);
     }
 
     public bool CanWrite => _allowWrite;

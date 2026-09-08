@@ -107,6 +107,34 @@
     "//allowRowCleanup": "Xoa cac dong 179/122/185 ma luot chay de lai — chi khi thang test KHONG co san dong nao mang cac ma do.",
     "allowRowCleanup": true
   },
+  "autoSantei": {
+    "//": [
+      "Luong Tests/AutoSanteiChkAuto — 自動算定 (bang chkauto):",
+      "  ModMain.Chk_ChkAuto tu chen toi da 5 処置 di kem ngay khi Enter o 回",
+      "  (frm203002.cs:5752 -> modMain.cs:812).",
+      "",
+      "Nua WinForm cua lech parity 「chk_auto chua duoc port o runtime」: nhap 179/2 抜歯",
+      "thi WinForm chen them 310/2 (11 diem) con ban web thi khong => lech 11 diem/ca.",
+      "",
+      "KHONG bam F9 => TRNTRN khong bi dung. Nhung 179 di qua frm203016.SigaChg nen no",
+      "GHI THANG vao SIGA luc chot, va rang phai la 現存 thi ChkSiga moi cho 抜歯 di qua.",
+      "Vi the co CO RIENG allowSave, khong dung chung sigaTooth.allowSave: o day 歯式 chi",
+      "la TIEN DE chu khong phai thu dang do."
+    ],
+    "allowSave": false,
+    "//trtCd": "処置 dem thu. 179/2 = 抜歯手術(臼歯); chkauto(179,2) -> cd1 = 310 / sb1 = 2.",
+    "trtCd": 179,
+    "trtSb": 2,
+    "//controlTrtCd": "Ma DOI CHUNG — cung duong nhap nhung KHONG co trong chkauto. 171/0 = 感染根管処置(単根), cung ho acc_unit 9 voi 170 抜髄 (ma CO chkauto) va khong nam trong switch cua IregCodChk nen khong ghi 歯式.",
+    "controlTrtCd": 171,
+    "controlTrtSb": 0,
+    "//buiSlot": "O 部位 (0-based). 10 = 左上3 => cot se11 — dung lai dung o cua luong SigaToothStatus de hai luong khong tranh nhau rang.",
+    "buiSlot": 10,
+    "//multiTrtCd": "CHI PROBE, khong assert. 110/0 = 再診, chkauto(110,0) co TOI HAI ma di kem (108/9 va 108/12) nen la cho duy nhat do duoc vong lap 5 luot chay qua mot luot. Khong assert vi ca hai deu la 加算 gioi han 月1回 => 診療チェック loai hay khong la tuy thang test da co 再診 chua.",
+    "multiTrtCd": 110,
+    "multiTrtSb": 0
+  },
+
 
   "perioKensa": {
     "//": [

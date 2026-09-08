@@ -285,6 +285,7 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 | `.\run-bulk-change-dr.ps1` | Click nhãn 「Ｄｒ」 → `lblDrLabel_Click` (担当医 一括変更) | `Tests/TreatmentHeaderStaff/` | ✖ chỉ sửa lưới trong bộ nhớ |
 | `.\run-input-tooth-surfaces.ps1` | Chốt 枝番 `men=1` ở 処置選択 → `frm203035.fixProc` (面入力) | `Tests/MenInput/` | ✖ đọc cột ẩn 72, không bấm F9 |
 | `.\run-change-tooth-status.ps1` | chốt 処置 → `frm203016.SigaChg` · Delete → `DelExtRec` · Ｐ変更 → `Chk_PModeKesson` · F9 → `SigaChg_Save` (自歯状況変更・根数変更) | `Tests/SigaToothStatus/` | ⚠️ **CÓ** — `SIGA` + `KON`, và ghi **ngay lúc nhập** |
+| `.\run-insert-auto-santei-rows.ps1` | Enter ô 回 → `ModMain.Chk_ChkAuto` (自動算定 — bảng `chkauto` tự chèn tối đa 5 処置 đi kèm) | `Tests/AutoSanteiChkAuto/` | ✖ không bấm F9 (`TRNTRN` nguyên vẹn); ⚠️ `-AllowSave` GHI `SIGA` vì 抜歯 đi qua `SigaChg` |
 | `.\run-move-perio-exam-cursor.ps1` | Enter/←/→ trong 歯周基本・精密検査 → `getMoveIndex` / `getMoveIndexArrow`, rẽ theo 検査順 `pInpOpt[36]` | `Tests/PerioKensaOrder/` | ✖ không bấm F9; ⚠️ `-AllowSettingChange` GHI **`Ocha.xml` của MÁY** |
 | `.\run-patient-visit-list.ps1` | 検索 ở 来患一覧 → `setViewData` → `buiPrice.getReceiptType` (レセプト種別) · F4 CSV出力 | `Tests/PatientVisitList/` | ✖ CHỈ ĐỌC — chỉ ghi file CSV vào artifacts |
 | `.\run-unpaid-raiin-cnt.ps1` | F8 会計 → `modAcc.LetAccData2` với 当日来院回数 (`hfgRaiinCnt` → `hFG1[71]` → `UNPAID.TRT_CNT`) | `Tests/UnpaidRaiinCnt/` | ⚠️ **CÓ** — seed `TRNTRN` (disp_no 9101-9103) + `UNPAID` của ngày test |
