@@ -82,8 +82,11 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * 1. Sau F9 確定, FE chạy vòng per-pick: chèn dòng → `runCmtAutoCascade` → CHỜ
  *    dialog 摘要コメント đóng mới sang pick kế (`waitForCascadeDrain`). Hai slot 薬剤
  *    nằm gần CUỐI ガイド 抜歯, nên bỏ mặc một dialog cascade đang mở là vòng lặp
- *    ĐỨNG và hai dòng cần đo KHÔNG BAO GIỜ xuất hiện — test đỏ như thể bug khác.
- *    `drainCascade()` bên dưới vì vậy phải bấm 確定/戻る cho tới khi sạch.
+ *    ĐỨNG và dòng cần đo KHÔNG BAO GIỜ xuất hiện — test đỏ như thể bug khác.
+ *    ĐÃ VẤP THẬT ở lần chạy đầu: đọc lưới một phát ngay sau khi picker đóng thì
+ *    chỉ thấy 601, còn 602 kẹt sau dialog 「長期収載品…」 mà chính 601 bung ra —
+ *    và lúc soi `getByRole('dialog')` thì query của cascade còn đang chạy nên
+ *    đếm ra 0. Vì vậy `waitForDrugRows()` phải VỪA poll lưới VỪA dọn dialog.
  * 2. TUYỆT ĐỐI KHÔNG Escape trong ガイド処置選択: frm203017.cs:180 map Escape ⇒
  *    btnF9_Click (確定), web bê nguyên (Rule 10.4). Đóng bằng F10.
  * 3. So chuỗi phải NFKC CẢ HAI VẾ: DOM mang 半角 「ﾎﾞﾙﾀﾚﾝ」 còn master mang 全角
@@ -133,8 +136,11 @@ const BUI_VAL = 1
 /** Số dòng ガイド tối đa sẽ mở thử để tìm đúng `GUID_CD`. */
 const SCAN_LIMIT = 8
 
-/** Số vòng tối đa dọn dialog cascade sau F9 確定. */
-const CASCADE_DRAIN_ROUNDS = 12
+/**
+ * Hạn chờ cho cả chuỗi 「chèn dòng → dialog cascade → dòng kế」 sau F9 確定.
+ * ガイド 抜歯 có ~16 slot và mỗi 摘要コメント là một vòng modal, nên rộng tay.
+ */
+const CASCADE_DRAIN_TIMEOUT = 120_000
 
 /** NFKC + gộp khoảng trắng — dùng cho CẢ hai vế mọi phép so chuỗi (BẪY 3). */
 const norm = (s: string) => s.normalize('NFKC').replace(/\s+/g, ' ').trim()
@@ -292,31 +298,75 @@ test.describe('診療入力 — ガイド確定 dựng ô 薬剤 nhiều dòng (
     }
 
     /**
-     * Dọn chuỗi dialog 摘要コメント mà `runCmtAutoCascade` bung ra sau F9 確定 (BẪY 1).
+     * Đóng ĐÚNG MỘT dialog đang mở; trả về true khi có đóng cái nào.
      *
      * Ưu tiên 「F9 確定」 — đó đúng là phím người dùng bấm khi báo lỗi, và là nhánh
      * giữ lại dòng 摘要 giống WinForm. Dialog nào không có 確定 (hoặc đang disabled)
      * thì đóng bằng F10 戻る; cả hai nhánh đều làm `cascadeSteps` ngắn đi một bước
      * nên vòng per-pick chạy tiếp.
      */
-    async function drainCascade() {
-        for (let i = 0; i < CASCADE_DRAIN_ROUNDS; i++) {
-            const dialog = page.getByRole('dialog').first()
-            if ((await dialog.count()) === 0) return
-            const ok = page.getByRole('button', { name: 'OK' })
-            if (await ok.count()) {
-                await ok.first().click()
-                await page.waitForTimeout(400)
-                continue
-            }
-            const confirm = dialog.getByRole('button', { name: /F9\s*確定/ })
-            if ((await confirm.count()) > 0 && (await confirm.first().isEnabled())) {
-                await confirm.first().click()
-            } else {
-                await page.keyboard.press('F10')
-            }
-            await page.waitForTimeout(600)
+    async function drainOneDialog(): Promise<boolean> {
+        const ok = page.getByRole('button', { name: 'OK' })
+        if (await ok.count()) {
+            await ok
+                .first()
+                .click({ timeout: 3000 })
+                .catch(() => {})
+            return true
         }
+        const dialog = page.getByRole('dialog').first()
+        if ((await dialog.count()) === 0) return false
+        const confirm = dialog.getByRole('button', { name: /F9\s*確定/ })
+        const canConfirm =
+            (await confirm.count()) > 0 &&
+            (await confirm
+                .first()
+                .isEnabled()
+                .catch(() => false))
+        if (canConfirm) {
+            await confirm
+                .first()
+                .click({ timeout: 3000 })
+                .catch(() => {})
+        } else {
+            await page.keyboard.press('F10')
+        }
+        return true
+    }
+
+    /**
+     * Chờ ĐỦ các dòng 薬剤 rơi xuống lưới, VỪA CHỜ VỪA dọn dialog cascade (BẪY 1).
+     *
+     * KHÔNG được đọc lưới một phát ngay sau khi picker đóng (Rule 10.8): FE chèn
+     * dòng rồi mới `await runCmtAutoCascade` → `waitForCascadeDrain`, nên ngay lúc
+     * picker biến mất mới chỉ có pick ĐẦU TIÊN nằm trên lưới và dialog cascade thì
+     * CHƯA kịp mở (query còn đang chạy) — soi `getByRole('dialog')` lúc đó ra 0 rồi
+     * bỏ đi là test đỏ với thông báo 「không thấy dòng」, che mất bug thật. Đã vấp
+     * đúng như vậy ở lần chạy đầu: lưới chỉ có 601, còn 602 kẹt sau dialog
+     * 「長期収載品…」 của chính 601.
+     *
+     * Trả về ảnh chụp text lưới ở vòng poll thành công.
+     */
+    async function waitForDrugRows(needles: readonly string[]): Promise<string[]> {
+        let last: string[] = []
+        await expect
+            .poll(
+                async () => {
+                    await drainOneDialog()
+                    last = await ryoTexts()
+                    return needles.filter((n) => !last.some((c) => norm(c).includes(n)))
+                },
+                {
+                    timeout: CASCADE_DRAIN_TIMEOUT,
+                    intervals: Array.from({ length: 60 }, () => 1000),
+                    message:
+                        'Sau F9 確定 vẫn thiếu dòng 薬剤 trên lưới — vòng per-pick của ' +
+                        'GuideSelectionDialog.onConfirm có thể đang kẹt ở một dialog mà ' +
+                        'drainOneDialog() không đóng được.',
+                },
+            )
+            .toEqual([])
+        return last
     }
 
     test.beforeAll(async ({ authedPage }) => {
@@ -403,29 +453,20 @@ test.describe('診療入力 — ガイド確定 dựng ô 薬剤 nhiều dòng (
         // F9 確定 của frm203017 (btnF9_Click) → frmGuid2_Let_Data.
         await picker.getByRole('button', { name: /F9\s*確定/ }).click()
         await expect(picker).toBeHidden({ timeout: 30_000 })
-        await drainCascade()
-        await step()
 
-        const cells = await ryoTexts()
+        // Nhận diện dòng 薬剤 bằng TÊN THUỐC của master (`mst_drug.dg_nm`). Sau NFKC
+        // thì chuỗi này khớp CẢ bản 半角 của WinForm lẫn bản 全角 của
+        // `mst_trt.trt_nm` — nghĩa là nó tìm được dòng ở CẢ HAI trạng thái đúng/sai,
+        // rồi mới phán xét nội dung. Bắt theo chuỗi ĐÚNG thì test đỏ với thông báo
+        // 「không thấy dòng」 và che mất bug thật.
+        const cells = await waitForDrugRows(drugSlots.map((s) => norm(s.dgNm)))
+        await step()
 
         for (const slot of drugSlots) {
             const cnt = slotCnt(slot)
             const unit = doseUnit(slot.medKbn)
-            // Dòng 薬剤 nhận diện bằng TÊN THUỐC của master (`mst_drug.dg_nm`), sau
-            // NFKC thì khớp cả bản 半角 của WinForm lẫn bản 全角 của `mst_trt.trt_nm`
-            // — nghĩa là locator này TÌM ĐƯỢC dòng ở CẢ HAI trạng thái đúng/sai, rồi
-            // mới phán xét nội dung. Bắt theo chuỗi đúng thì test đỏ với thông báo
-            // 「không thấy dòng」, che mất bug thật.
-            const needle = norm(slot.dgNm)
-            const cell = cells.find((c) => norm(c).includes(needle))
-            expect(
-                cell,
-                `ガイド ${GUID_CD} chốt xong mà lưới không có dòng nào chứa 薬剤 ` +
-                    `「${slot.dgNm}」 (${slot.trtCd}/${slot.trtSb}). Có thể vòng per-pick bị ` +
-                    'một dialog cascade chặn — xem drainCascade().',
-            ).toBeDefined()
-
-            const flat = norm(cell!)
+            const cell = cells.find((c) => norm(c).includes(norm(slot.dgNm)))!
+            const flat = norm(cell)
 
             // (1) Dòng 用法 — EditControl.cs:1113 `usage_nm + ' ' + usage_suppl_inf`.
             expect(
@@ -439,7 +480,7 @@ test.describe('診療入力 — ガイド確定 dựng ô 薬剤 nhiều dòng (
 
             // (2) Ô phải là ô NHIỀU DÒNG — combineDrugNms nối bằng '\n'.
             expect(
-                cell!.includes('\n'),
+                cell.includes('\n'),
                 `Dòng 薬剤 ${slot.trtCd}/${slot.trtSb} chỉ có MỘT dòng: ${JSON.stringify(cell)}`,
             ).toBe(true)
 
