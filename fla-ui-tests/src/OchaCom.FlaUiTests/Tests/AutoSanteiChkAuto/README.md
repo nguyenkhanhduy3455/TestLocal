@@ -176,50 +176,50 @@ Mã **ĐỐI CHỨNG** `171/0` cố ý chọn ngoài switch của `IregCodChk` n
 
 ## 6. Đo được trên máy thật
 
-Điền sau **mỗi** lượt chạy — ngày, bệnh nhân, 診療月, số đo **nguyên văn**. Để trống là lần
-sau đo lại từ đầu.
+Bệnh nhân **10**, 診療日 **2026-08-03**, máy `ochacom-win`.
 
-Bệnh nhân **10**, 診療日 **2026-08-03** (lưới mở tháng 2026-08), máy `ochacom-win`.
+### ✅ 2026-09-08 — TC0..TC4 XANH CẢ NĂM, tái hiện đúng ảnh báo lỗi
 
-| Ngày | Case | Kết quả | Số đo nguyên văn |
-|---|---|---|---|
-| 2026-09-08 | probe `Tc0` | ✅ | `chkauto` 196 dòng / 25 dòng ≥2 mã · `chkauto(179,2) → 310/2` · `171/0` không có trong bảng |
-| 2026-09-08 | `TcAUTO1` | ✅ | master `MST_TRT266`; `179/2 = 抜歯手術(臼歯) 270点`; `310/2 = OA+ｵｰﾗ注…1.8mL 11点` |
-| 2026-09-08 | `TcAUTO2` lượt 1 | ❌ harness | `抜歯手術(臼歯) \| 270 \| 0` — 回 = 0 ⇒ `Chk_ChkAuto` không chạy |
-| 2026-09-08 | `TcAUTO2` lượt 2 | ❌ harness | gõ 1 vào ô 回 ⇒ `Chk_CmtAuto` chạy (`OA(コーパロン)浸麻(歯科用オーラ注Ct1.8ml) \| 0 \| 1`), `Chk_ChkAuto` vẫn bỏ qua |
-| 2026-09-08 | `TcAUTO2` lượt 3 | ❌ harness | đăng ký 病名 ⇒ app nhảy sang tab ガイド, gõ mã rơi vào 選択№, chốt nhầm 310/2 |
-| 2026-09-08 | `TcAUTO2` lượt 4 | ❌ harness | gõ đúng ô 点 nhưng dòng đích đã có dữ liệu ⇒ `AutoBui` bỏ qua |
-| 2026-09-08 | `TcAUTO2` lượt 5 | ⚠️ gần xong | **`Chk_ChkAuto` ĐÃ CHẠY**: `+ OA+オーラ注歯科用カートリッジ 料1.8mL` xuất hiện trên lưới. Nhưng ô 点 của nó đọc ra `(null)` và 月計 không đổi |
+```
+月計点数  413 → 694   (Δ 281 = 270 + 11)
 
-### Việc còn lại (bắt đầu từ đây)
++ [15] 3 | OA(コーパロン)浸麻(歯科用オーラ注Ct1.8ml) |   0 | 1   ← CMTAUTO, disp_no -1 ⇒ TRÊN
++ [16] 3 | 抜歯手術(臼歯)                            | 270 | 1   ← mã gõ vào
++ [17] 3 | OA+オーラ注歯科用カートリッジ 料1.8mL        |  11 | 1   ← chkauto 310/2 ⇒ DƯỚI
+```
 
-Lượt 5 đã dựng được **đúng hành vi cần đo** — WinForm tự chèn `310/2` sau khi nhập `179/2`.
-Chỗ còn hở là **部位 chưa bám được vào dòng 抜歯**: app vẫn bung
-「26/8/14 179-2 抜歯手術(臼歯)を算定していますが、算定可能な部位がありません。」 và vì thế
-ghi `回 = 0`, kéo theo 点 của dòng tự chèn chưa được tính (đọc ra `(null)`) và 月計 đứng yên.
+Khớp từng dòng với ảnh so sánh trong báo cáo, và **11 点** chính là phần bản web đang
+thiếu (443 / 432).
 
-Chạy lại probe `-Diagnostics -Case Tc1` và **mở ảnh** `bui-da-chon` / `byoumei-sub` để xem
-部位 + 病名 thực sự nằm ở dòng nào trên lưới trước khi sửa tiếp. Hai hướng đáng thử,
-**mỗi lượt một thứ** (F4):
+| Ngày | Case | Kết quả |
+|---|---|---|
+| 2026-09-08 | `TC0` | ✅ `chkauto` 196 dòng / 25 dòng ≥2 mã · `chkauto(179,2) → 310/2` · `171/0` không có (đối chứng hợp lệ) |
+| 2026-09-08 | `TC1` | ✅ `310/2` tự chèn, `11 点` đúng `score1`, 月計 tăng đúng `270 + 11` |
+| 2026-09-08 | `TC2` | ✅ dòng `CMTAUTO` 7321/1 rơi xuống lưới |
+| 2026-09-08 | `TC3` | ✅ `disp_no = -1` ⇒ comment nằm TRÊN 抜歯 |
+| 2026-09-08 | `TC4` | ✅ `310/2` nằm liền DƯỚI 抜歯 |
 
-1. `ModMain.AutoBui` chạy trên dòng mà `fDis_Move_Cell` dời con trỏ tới (frm203002.cs:8660).
-   Kiểm xem dòng đó có đúng là dòng trống thứ hai mình vừa chèn không — nếu app dời sang
-   dòng khác thì phải đọc con trỏ THẬT (`TreatmentGridOps.FocusedCellName`) chứ đừng suy
-   ra từ `LastBuiLineRow`.
-2. Ô 部位 đem thử là `buiSlot = 10` (左上3). `ChkSiga` chỉ cho 抜歯 trên răng **現存**;
-   fixture đã `ResetSigaToVital` trước khi app mở, nhưng đáng kiểm lại `SIGA.se11` ngay
-   trước lượt chốt — mốc có thể đã bị chính lượt chạy trước ghi đè.
+### Bốn cái bẫy đã trả giá để tới được đây (đừng lặp lại)
 
-### Đo sẵn từ DB (2026-09-08, `SIM2000` trên `OCHASQLEXPRESS`)
+| # | Triệu chứng | Nguyên nhân thật |
+|---|---|---|
+| 1 | `回 = 0` ⇒ `Chk_ChkAuto` không chạy | Chốt xong app mở editor ô 回 **RỖNG**; Enter ghi 0. `frm203002.cs:5745` chỉ vào nhánh khi `trtCnt >= 1`. |
+| 2 | 「算定可能な部位がありません」 | Dựng 部位病名行 bằng 部位選択 mà không kèm 病名, và `AutoBui` bỏ qua dòng đích đã có dữ liệu (`modMain.cs:139-146`). ⇒ chuyển sang **seed** đúng như spec Playwright. |
+| 3 | 「Quá 4s mà không thấy `grdRegi`」, 5/5 đỏ ở `OneTimeSetUp` | Dòng seed để `MED_ST_DT` = NULL trong khi mọi dòng thật đều có ngày ⇒ app không dựng nổi lưới. Kế thừa cột đó từ dòng mẫu. |
+| 4 | Nhập 処置 vào **nhầm ngày** | `grdRegi` mở CẢ THÁNG; `SeededBuiRow`/`LastBuiLineRow` quét cả tháng nên vớ phải 部位病名行 của ngày khác. ⇒ khoá mọi thao tác theo `patient.trtDate`. |
+
+### Đo sẵn từ DB (`SIM2000` trên `OCHASQLEXPRESS`)
 
 ```
 chkauto: 196 dòng, 25 dòng có từ 2 mã đi kèm trở lên
 chkauto(179,2) → 310/2                      chkauto(170,0..8) → 310/2
 chkauto(110,0) → 108/9 + 108/12             chkauto(171,*)    → KHÔNG có  (⇒ mã đối chứng)
+CMTAUTO(179,2) → 7321/1, disp_no -1, no_chk 1  (một dòng ⇒ app TỰ ÁP DỤNG, không hỏi)
+MST_CMT2(7321,1) = 「OA（ｺｰﾊﾟﾛﾝ）浸麻（歯科用ｵｰﾗ注Ct1.8ml）」   ← thứ lưới in
+CMTAUTO(179,2).CMT_NM = 「…ｵｸﾀﾌﾟﾚｼﾝCt1.8ml」                  ← ĐÃ LỆCH, đừng assert theo
+
 MST_TRT266 (áp dụng từ 2026-06-01):
   179/2 = 抜歯(臼歯) / 抜歯手術(臼歯)                 score1=270 unit=19 acc_unit=10 f1=0
   310/2 = OA+ｵｰﾗ注歯科用Ct 1.8mL / …ｶｰﾄﾘｯｼﾞ 料1.8mL  score1= 11 unit= 9 acc_unit=11 f1=1
   171/0 = 感根処(1根) / 感染根管処置(単根)            score1=160 unit=61 acc_unit= 9 f1=0
 ```
-
-⇒ TcAUTO2 mong đợi **月計 tăng 270 + 11 = 281**, TcAUTO3 mong đợi **tăng đúng 160**.
