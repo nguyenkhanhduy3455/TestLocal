@@ -56,7 +56,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *  Nhánh này chỉ mở ra khi ngày đó ĐÃ 窓口精算 (có `acc_dat`) và số tiền hiện tại
  *  khác số đã thu. Dựng trạng thái đó bằng dữ liệu thật nghĩa là phải ghi vào
  *  `acc_dat` + `person_exp` — đúng hai bảng tiền mà không spec nào được phép đụng.
- *  Nên spec CHẶN `GET …/accounting/precheck` và trả về đúng bộ cờ của kịch bản
+ *  Nên spec CHẶN `POST …/accounting/precheck` và trả về đúng bộ cờ của kịch bản
  *  cần đo. Thứ đang kiểm là LOGIC RẼ NHÁNH CỦA FE, và các cờ đó là toàn bộ đầu vào
  *  của nó — phần tính cờ đã có test riêng ở BE (`GetAccountingPrecheckHandler`).
  *

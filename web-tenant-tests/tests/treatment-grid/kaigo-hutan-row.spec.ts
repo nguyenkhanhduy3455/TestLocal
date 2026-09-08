@@ -70,7 +70,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *    (`isKaigo && 'bg-gray-200'`).
  *  - `Treatments/Pricing/BuiPriceService.cs:428-444 CalculateCareInfoAsync` là STUB
  *    (`// TODO: Implement care insurance calculation logic` → `SetCareData(0,0,0,0,…)`)
- *    ⇒ `GET /tenant/treatment/accounting/daily-summary` luôn trả careScore/carePrice = 0
+ *    ⇒ `POST /tenant/treatment/accounting/daily-summary` luôn trả careScore/carePrice = 0
  *    và dialog 入金指定 (`payment-designation-dialog.tsx:324`) luôn hiện 介護保険 0.
  *  - `Treatments/Handlers/SaveTreatmentsHandler.cs:37` — `TODO SetKaigoFlg`.
  *  - Đường đọc lưới `TreatmentQueries.GetPatientTreatmentsAsync` trả `jihi_flg` thô,
@@ -616,9 +616,16 @@ test.describe('診療入力 — 【介護保険一部負担金】行 (KaigoHutan
             'chưa bắt được request nào của app để lấy origin + token API',
         )
 
-        const url = `${apiOrigin}${DAILY_SUMMARY_PATH}?patNo=${PAT_NO}&trtDt=${TRT_DT}`
-        const res = await page.request.get(url, { headers: authHeaders })
-        expect(res.status(), `GET ${DAILY_SUMMARY_PATH}`).toBe(200)
+        // POST, KHÔNG phải GET: từ nhánh 「会計 tính tiền từ lưới」 endpoint này nhận
+        // cả lưới 当月 trong body nên đã đổi verb (GetDailyAccountingSummaryRequest —
+        // một tháng 処置 không nhét vừa query string). Ở đây KHÔNG gửi `rows` ⇒ BE đọc
+        // `trn_trn` đã lưu, đúng thứ TC này muốn đo.
+        const url = `${apiOrigin}${DAILY_SUMMARY_PATH}`
+        const res = await page.request.post(url, {
+            headers: { ...authHeaders, 'Content-Type': 'application/json' },
+            data: { patNo: Number(PAT_NO), trtDt: TRT_DT },
+        })
+        expect(res.status(), `POST ${DAILY_SUMMARY_PATH}`).toBe(200)
 
         const json = (await res.json().catch(() => ({}))) as {
             data?: { careScore?: number | string; carePrice?: number | string }

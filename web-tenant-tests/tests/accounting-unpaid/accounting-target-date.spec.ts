@@ -49,7 +49,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * ─── Cách spec chứng minh ────────────────────────────────────────────────────
  *  Không đọc DB. Bằng chứng nằm ở REQUEST mà FE bắn ra:
  *      POST /tenant/treatment/accounting/clear-unpaid  { trtDt: 'YYYY-MM-DD', … }
- *      GET  /tenant/treatment/accounting/precheck?patNo=…&trtDt=YYYY-MM-DD
+ *      POST /tenant/treatment/accounting/precheck   body { patNo, trtDt, raiinCnt, rows }
  *      POST /tenant/treatment/accounting/insert-unpaid  { trtDt: 'YYYY-MM-DD', … }
  *  Cả ba phải mang ngày của DÒNG CON TRỎ. Trước khi sửa, chúng luôn mang ngày
  *  trên URL — đó chính là triệu chứng tester thấy.
@@ -197,7 +197,7 @@ const SEED_ROWS = [
  * (modAcc.cs:428). CHẶN: nó xoá mềm 未精算 thật.
  */
 const ACC_CLEAR_UNPAID_URL = /\/tenant\/treatment\/accounting\/clear-unpaid(\?|$)/
-/** LetAccData2 bước ĐỌC — GET, mang `trtDt` trên query string. */
+/** LetAccData2 bước ĐỌC — POST (mang cả lưới 当月), `trtDt` nằm trong body. */
 const ACC_PRECHECK_URL = /\/tenant\/treatment\/accounting\/precheck/
 /** LetAccData2 bước GHI — POST, mang `trtDt` trong body. CHẶN, không cho ghi thật. */
 const INSERT_UNPAID_URL = /\/tenant\/treatment\/accounting\/insert-unpaid(\?|$)/
@@ -473,9 +473,14 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
             })
         })
 
-        // GET — để đi thật, chỉ ghi lại `trtDt` trên query string.
+        // ĐỌC — để đi thật, chỉ ghi lại `trtDt`.
+        //
+        // Từ nhánh 「会計 tính tiền từ lưới」 đây là POST chứ không còn GET: request
+        // mang theo cả lưới 当月 (`rows`) nên `trtDt` nằm trong BODY, không phải
+        // query string. Đọc kiểu cũ ra `''` và mọi assert ngày sẽ đỏ vì lý do sai.
         await page.route(ACC_PRECHECK_URL, async (route: Route) => {
-            calls.precheck.push(new URL(route.request().url()).searchParams.get('trtDt') ?? '')
+            const body = JSON.parse(route.request().postData() ?? '{}') as { trtDt?: string }
+            calls.precheck.push(body.trtDt ?? '')
             calls.order.push('precheck')
             await route.continue()
         })

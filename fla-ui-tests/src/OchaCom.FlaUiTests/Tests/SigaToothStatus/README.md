@@ -430,6 +430,46 @@ dựng lại `se11 = 4` từ cờ 抜歯同時 của dòng đã lưu. Đây là 
 Hộp thoại Q00200 đo lại lần nữa: 「歯根嚢胞摘出手術と同時に抜歯手術を行いましたか？」, nút
 **`Yes` / `No`** (nhãn theo ngôn ngữ Windows, KHÔNG phải はい/いいえ — xem mục 「Hai hộp thoại」).
 
+#### TcGAP11 — ✅ XANH (3,9 phút)
+
+```
+SIGA mốc trước khi nhập 185 + いいえ : se11 = 0
+SIGA sau khi chốt (CHƯA F9)          : se11 = 0
+SIGA sau F9                          : se11 = 0
+```
+⇒ cờ 抜歯同時 = 0 thì **cả hai** đường (nhập và F9) đều để yên 歯式. Khớp web TC-4b
+(`sau F9 (185 「いいえ」): se_11 = 0`).
+
+#### TcGAP9 — ✅ XANH (2,9 phút)
+
+```
+KON trước khi nhập 122/0 : ekon11 = NULL
+KON sau khi chốt 122/0   : ekon11 = NULL · ekon19 (ô đối chứng) = NULL
+```
+⇒ chỉ 枝番 3 mới mở nhánh 根数. Khớp web TC-3 vế (c) (`ekon_19 = null`).
+
+#### TcGAP12 — ⚠️ WARNING (đo được, KHÔNG kết luận được) — 4,3 phút
+
+```
+nkon4 trước         = NULL
+chốt 122/3 răng sữa → 「Unhandled exception … Invalid column name 'NKon4'.」  (bung HAI lần)
+nkon4 sau khi nhập  = NULL
+```
+
+Tái hiện **y nguyên** điểm lệch số 5 của mục 5 — và lần này ở fixture assert, không chỉ ở
+probe. Hệ quả cho parity: **bản web ghi `nkon_4 = 4`** (đo cùng ngày, TC-3), còn WinForm
+thì **không có đường nào qua giao diện** để tới được con số đó — nhánh input-time ném trước
+khi kịp tới F9. Vế F9 (`modSave.cs:800/804`, vốn ĐÚNG) vì thế vẫn chưa đo được từ UI.
+Testcase kết bằng `Assert.Warn` chứ không `Assert.That`: đây là 「chưa đo được」, khác hẳn
+「đo được và app không ghi」. VSTest hiện outcome đó ra bảng là `Skipped`.
+
+> 🪤 **Bẫy mới, đã trả giá một lượt chạy 15 phút (2026-09-08).** Cú ném xảy ra **SAU** khi
+> 処置選択 đã nhận double-click, nên `enter.Committed` vẫn về `true` **trong khi 処置選択 CÒN
+> ĐANG MỞ** (hộp thoại ném chồng lên nó). Bản đầu của TcGAP12 gác bằng `!enter.Committed`
+> ⇒ gác trượt, đi tiếp vào F9, và cú bấm rơi vào nút 「F9 確定」 của **chính 処置選択** chứ
+> không phải 「F9 登録」 của màn 診療入力 → `TimeoutException: Quá 90s mà không thấy hộp thoại
+> 「保存しますか」`. Gác đúng là gác bằng chính cờ `crashed`, và phải `DismissAll` trước khi ra.
+
 ---
 
 ### ⏱️ Thời gian thực đo được

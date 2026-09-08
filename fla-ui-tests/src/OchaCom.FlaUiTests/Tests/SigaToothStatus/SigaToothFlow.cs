@@ -582,11 +582,41 @@ public sealed class SigaToothFlow
         var confirm = WaitForDialog(NoDiseaseConfirmFragment, TimeSpan.FromSeconds(6));
         if (confirm is not null)
         {
-            var answer = acceptNoDisease ? "はい" : "いいえ";
-            trace?.Note($"bung 「{Txt.N(Dialogs.TextOf(confirm))}」 → tra loi 「{answer}」");
+            // Nhãn nút đi theo NGÔN NGỮ WINDOWS, và câu này là MsgBoxStyle.OKCancel —
+            // đo được 2026-09-08: nút thật là 「OK」/「Cancel」, không phải はい/いいえ.
+            // Vì thế mỗi nhánh phải có ĐỦ bộ ba đồng nghĩa của CHÍNH nó. Bản cũ để
+            // 「OK」 làm fallback CHUNG cho cả hai nhánh ⇒ trả lời 「いいえ」 lại bấm trúng
+            // OK, tức đáp NGƯỢC ý mà không có dấu hiệu gì.
+            string[] wanted = acceptNoDisease
+                ? ["はい", "Yes", "OK"]
+                : ["いいえ", "No", "Cancel"];
+            trace?.Note($"bung 「{Txt.N(Dialogs.TextOf(confirm))}」 → tra loi 「{wanted[0]}」");
             trace?.Shot("khong-chon-benh-danh");
-            if (!Dialogs.ClickButton(confirm, answer, acceptNoDisease ? "Yes" : "No"))
-                Dialogs.ClickButton(confirm, "OK");
+
+            // ⚠️ BẤM BẰNG WIN32 PostMessage, ĐỪNG BẰNG InvokePattern.
+            //
+            // `Uia.Click` gọi `IUIAutomationInvokePattern::Invoke` — ĐỒNG BỘ, nó đợi app xử
+            // lý xong mới trả về. Câu này là MessageBox modal nằm TRONG form modal 病名選択,
+            // và ở tổ hợp đó cú Invoke có thể KHÔNG BAO GIỜ trả về: mọi vòng chờ có deadline
+            // bên dưới đều vô dụng vì luồng test đứng ngay tại dòng click.
+            //
+            // ĐÃ TREO THẬT 2026-09-08 (TcGAP13): log dừng đúng ở dòng 「→ tra loi はい」 rồi
+            // im cho tới khi wrapper cắt — nhìn log thì y như app không phản hồi, trong khi
+            // app hoàn toàn khoẻ và chỉ đang đợi ai đó bấm nút.
+            //
+            // `MsgBoxWin32.ClickButton` dùng `PostMessage(BM_CLICK)` ⇒ TRẢ VỀ NGAY, không
+            // phụ thuộc app đang bận gì. Xem thêm Tests/BuiPriceE00100/README.md mục 「Win32」.
+            var hwnd = confirm.Properties.NativeWindowHandle.ValueOrDefault;
+            var clicked = hwnd != IntPtr.Zero && MsgBoxWin32.ClickButton(hwnd, wanted);
+            if (!clicked)
+            {
+                var có = hwnd != IntPtr.Zero
+                    ? string.Join(",", MsgBoxWin32.ButtonCaptions(hwnd))
+                    : "(khong doc duoc hwnd)";
+                trace?.Note($"Win32 khong bam duoc nut nao trong [{string.Join(",", wanted)}] — " +
+                            $"nut that su co: [{có}] — thu lai bang UIA");
+                Dialogs.ClickButton(confirm, wanted);
+            }
             Waits.TryUntil(() => !Uia.IsOnScreen(confirm), TimeSpan.FromSeconds(10));
         }
 
