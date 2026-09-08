@@ -55,6 +55,10 @@ param(
     # dung cung mot ngay thi 部位/病名 cua dong dang chon moi giong nhau, ma 部位/病名 la
     # dau vao cua chinh danh sach 処置 (frm203002.cs:6515 -> frm203017.ParamData).
     [string]$TrtDate = "",
+    # Ghim benh nhan. May Windows dang de patNo=10 trong testsettings.local.json (12138
+    # co 2864 dong TRNTRN => app treo hon 1 phut), nen ben Playwright PHAI tro vao dung
+    # benh nhan nay: TEST_PAT_NO=10.
+    [string]$PatNo = "",
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug"
 )
@@ -66,6 +70,10 @@ if ($StepMs -ge 0) { $env:OCHA_STEP_MS = "$StepMs" }
 if ($TrtDate -ne "") {
     $env:OCHA_TRT_DT = $TrtDate
     Write-Host "OCHA_TRT_DT = $TrtDate" -ForegroundColor Cyan
+}
+if ($PatNo -ne "") {
+    $env:OCHA_PAT_NO = $PatNo
+    Write-Host "OCHA_PAT_NO = $PatNo" -ForegroundColor Cyan
 }
 
 $ns = "OchaCom.FlaUiTests.Tests.GuideSidePanel"
