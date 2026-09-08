@@ -578,7 +578,10 @@ public sealed class GuideDialogTests : UiTestBase
         //
         // Với MỖI ガイド in ra một dòng `scan|…` (mở được hay E00024) và, nếu mở được, in
         // trọn các dòng 処置 (`scanrow|…`). Diff hai tập DUMP là ra bảng parity dữ liệu.
-        if (_guide.DialogOpen()) _guide.CloseDialogWithF10();
+        // In 部位 của lưới TRƯỚC khi mở dialog: 回数 mà frm203017 tính ra là CalcCnt của
+        // CHÍNH 部位 đó, nên so 回数 hai bên mà không kèm 部位 thì không kết luận được gì.
+        DumpFocusRowContext();
+
         if (!_guide.TabOpen()) { _guide.OpenRegular(); Thread.Sleep(800); }
         Assert.That(_guide.TabOpen(), Is.True, "không mở được tab ガイド ⇒ HARNESS hỏng");
 

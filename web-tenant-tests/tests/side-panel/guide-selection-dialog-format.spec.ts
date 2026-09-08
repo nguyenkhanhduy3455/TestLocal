@@ -692,6 +692,20 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
             }
             const raw = await picker.locator('span[class*="font-mono"]').first().innerText()
             const rows = await readRows()
+            // 回数 là CalcCnt của CHÍNH 部位 gửi lên — in kèm, nếu không thì so 回数 hai
+            // bên chẳng kết luận được gì.
+            if (lastTrtQuery) {
+                const q = new URL(lastTrtQuery).searchParams
+                dump(
+                    `scanreq|${i}|Bui=${q.getAll('Bui').filter((v) => v !== '0').join(',')}` +
+                        `|BuiIdx=${q
+                            .getAll('Bui')
+                            .map((v, k) => (v !== '0' ? k : -1))
+                            .filter((k) => k >= 0)
+                            .join(',')}` +
+                        `|DisCd=${q.getAll('DisCd').filter((v) => v !== '0').join(',')}`,
+                )
+            }
             dump(`scan|${i}|nm=${nm.normalize('NFKC')}|guid=${raw.trim()}|rows=${rows.length}`)
             rows.forEach((r, k) =>
                 dump(`scanrow|${i}|${k}|${r.map((c) => c.normalize('NFKC')).join('|')}`),
