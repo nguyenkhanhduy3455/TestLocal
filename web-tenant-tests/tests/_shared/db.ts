@@ -1820,3 +1820,110 @@ export async function findGuideDrugSlots(
         }))
     })
 }
+
+// ─── 自動算定 (chk_auto) + コメント自動入力 (cmt_auto) — bảng đi kèm một 処置 ────────
+//
+// Hai bảng này trả lời câu 「chốt 処置 này thì kéo theo dòng nào」 và là nguồn kỳ vọng
+// của spec `auto-santei/chk-auto-after-commit.spec.ts`. Đọc thẳng master để spec TỰ
+// TÍNH kỳ vọng — hardcode 「310/2」「7321/1」 sẽ xanh giả ở tenant có master khác.
+
+/** Một slot đi kèm của `chk_auto` (tối đa 5, theo đúng thứ tự cd_1..cd_5). */
+export interface ChkAutoSlot {
+    trtCd: number
+    trtSb: number
+}
+
+/**
+ * Các 処置 mà `chk_auto` bắt thêm vào sau khi chốt (trtCd, trtSb).
+ * Mảng rỗng = mã này không có dòng chk_auto ⇒ spec phải skip chứ đừng pass im lặng.
+ */
+export async function findChkAutoSlots(trtCd: number, trtSb: number): Promise<ChkAutoSlot[]> {
+    return withDb(async (c) => {
+        const r = await c.query<Record<string, unknown>>(
+            `SELECT cd_1, sb_1, cd_2, sb_2, cd_3, sb_3, cd_4, sb_4, cd_5, sb_5
+               FROM chk_auto
+              WHERE trt_cd = $1 AND trt_sb = $2 AND deleted_at IS NULL
+              LIMIT 1`,
+            [trtCd, trtSb],
+        )
+        const row = r.rows[0]
+        if (!row) return []
+        const out: ChkAutoSlot[] = []
+        for (let i = 1; i <= 5; i++) {
+            const cd = Number(row[`cd_${i}`] ?? 0)
+            if (cd === 0) continue
+            out.push({ trtCd: cd, trtSb: Number(row[`sb_${i}`] ?? 0) })
+        }
+        return out
+    })
+}
+
+/** Một dòng `cmt_auto` — カルテコメント tự chèn quanh 処置. */
+export interface CmtAutoRow {
+    cmtCd: number
+    cmtSb: number
+    cmtNm: string
+    /**
+     * `disp_no` quyết định CHỖ chèn (frm203002.cs:10085-10111):
+     * `< 0` → dòng TRÊN 処置, `= 0` → nối vào cuối ô 療法 của chính 処置,
+     * `> 0` → dòng DƯỚI.
+     */
+    dispNo: number
+    /**
+     * `no_chk` — 0 nghĩa là dòng này cần người chọn. Một batch chỉ bung
+     * カルテ記載選択 khi có ≥ 2 dòng VÀ có ít nhất một dòng `no_chk = 0`
+     * (frm203012.cs:536); ngược lại app tự áp dụng.
+     */
+    noChk: number
+}
+
+/** Các カルテコメント `cmt_auto` gắn với (trtCd, trtSb), theo thứ tự `disp_no`. */
+export async function findCmtAutos(trtCd: number, trtSb: number): Promise<CmtAutoRow[]> {
+    return withDb(async (c) => {
+        const r = await c.query<Record<string, unknown>>(
+            `SELECT cmt_cd, cmt_sb, cmt_nm, disp_no, no_chk
+               FROM cmt_auto
+              WHERE trt_cd = $1 AND trt_sb = $2 AND deleted_at IS NULL
+              ORDER BY disp_no`,
+            [trtCd, trtSb],
+        )
+        return r.rows.map((row) => ({
+            cmtCd: Number(row['cmt_cd'] ?? 0),
+            cmtSb: Number(row['cmt_sb'] ?? 0),
+            cmtNm: String(row['cmt_nm'] ?? '').trim(),
+            dispNo: Number(row['disp_no'] ?? 0),
+            noChk: Number(row['no_chk'] ?? 0),
+        }))
+    })
+}
+
+/**
+ * Xoá các dòng mà 自動算定 / コメント自動入力 kéo theo `trtCd` — dọn dẹp cho MỌI spec
+ * nhập 処置 rồi bấm F9 登録.
+ *
+ * Trước 2026-09-08 web không chèn các dòng này nên không spec nào phải dọn. Sau khi
+ * `Chk_ChkAuto` + nhánh tự-áp-dụng của `Chk_CmtAuto` được port, một cú 抜歯 để lại
+ * thêm 麻酔 (chk_auto) và カルテコメント (cmt_auto) — hai dòng đó KHÔNG mang `dsp_trt`
+ * của 処置 gốc nên các đường dọn theo tên đều trượt.
+ */
+export async function deleteChkAutoCompanionRows(
+    patNo: number,
+    trtDt: string,
+    trtCd: number,
+    trtSb: number,
+): Promise<number> {
+    const [slots, cmts] = await Promise.all([
+        findChkAutoSlots(trtCd, trtSb),
+        findCmtAutos(trtCd, trtSb),
+    ])
+    const codes = [...slots.map((s) => s.trtCd), ...cmts.map((c) => c.cmtCd)]
+    if (codes.length === 0) return 0
+    return withDb(async (c) => {
+        const r = await c.query(
+            `DELETE FROM trn_trn
+              WHERE pat_no = $1 AND trt_dt = $2 AND trt_cd = ANY($3::int[])`,
+            [patNo, trtDt, [...new Set(codes)]],
+        )
+        return r.rowCount ?? 0
+    })
+}

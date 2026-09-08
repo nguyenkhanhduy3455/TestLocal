@@ -12,6 +12,7 @@ import {
     deleteTreatmentRows,
     deleteTreatmentRowsByBui,
     deleteTreatmentRowsByDspTrt,
+    deleteChkAutoCompanionRows,
     deleteTreatmentRowsByTrtCd,
     ensureKonRow,
     ensureSigaRow,
@@ -530,6 +531,20 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
         // (「ＷＺ(歯冠大)」) nên hai đường trên trượt, và nếu việc thừa kế 部位 hỏng thì
         // đường theo ô 部位 cũng trượt nốt (bui toàn 0).
         n += await deleteTreatmentRowsByTrtCd(Number(PAT_NO), TRT_DT, CYST_TRT_CD).catch(() => 0)
+        // 2026-09-08: 自動算定 (chk_auto) và nhánh tự-áp-dụng của コメント自動入力
+        // (cmt_auto) vừa được port, nên một cú chốt 処置 giờ để lại thêm 麻酔 +
+        // カルテコメント. Chúng mang mã KHÁC nên mọi đường dọn theo tên/部位 ở trên
+        // đều trượt.
+        for (const [cd, sb] of [
+            [EXT_TRT_CD, EXT_SB],
+            [EMR_TRT_CD, EMR_SB_4ROOT],
+            [EMR_TRT_CD, EMR_SB_1ROOT],
+            [CYST_TRT_CD, CYST_SB],
+        ] as const) {
+            n += await deleteChkAutoCompanionRows(Number(PAT_NO), TRT_DT, cd, sb).catch(
+                () => 0,
+            )
+        }
         return n
     }
 

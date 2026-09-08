@@ -11,6 +11,7 @@ import {
     deleteTreatmentRows,
     deleteTreatmentRowsByBui,
     deleteTreatmentRowsByDspTrt,
+    deleteChkAutoCompanionRows,
     deleteTreatmentRowsByTrtCd,
     ensureSigaRow,
     findMstTrt,
@@ -341,6 +342,16 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
         // đường trên trượt, và nếu việc thừa kế 部位 hỏng thì đường theo ô 部位 cũng
         // trượt nốt (bui toàn 0).
         n += await deleteTreatmentRowsByTrtCd(Number(PAT_NO), TRT_DT, EXT_TRT_CD).catch(() => 0)
+        // 2026-09-08: 自動算定 (chk_auto) và nhánh tự-áp-dụng của コメント自動入力
+        // (cmt_auto) vừa được port, nên một cú chốt 処置 giờ để lại thêm 麻酔 +
+        // カルテコメント. Chúng mang mã KHÁC nên mọi đường dọn theo tên/部位 ở trên
+        // đều trượt.
+        n += await deleteChkAutoCompanionRows(
+            Number(PAT_NO),
+            TRT_DT,
+            EXT_TRT_CD,
+            EXT_SB,
+        ).catch(() => 0)
         return n
     }
 

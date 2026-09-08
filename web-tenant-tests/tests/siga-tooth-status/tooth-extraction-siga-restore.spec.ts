@@ -10,6 +10,7 @@ import {
     deleteSigaRow,
     deleteTreatmentRows,
     deleteTreatmentRowsByBui,
+    deleteChkAutoCompanionRows,
     deleteTreatmentRowsByDspTrt,
     ensureSigaRow,
     readSiga,
@@ -469,7 +470,7 @@ test.describe('診療入力 — 抜歯行削除 → 健全歯復元 (DelExtRec /
     test.afterAll(async () => {
         await disposeOverlays?.()
         await releaseSharedPage(page)
-        // Dọn BA ĐƯỜNG, vì F9 làm dòng test đổi hình dạng:
+        // Dọn BỐN ĐƯỜNG, vì F9 làm dòng test đổi hình dạng:
         //  1. vùng disp_no >= 9000            — bản seed gốc (chưa qua F9);
         //  2. theo dsp_trt                    — bản do F9 chèn lại, disp_no từ 1;
         //  3. theo ô 部位                      — 部位病名行 (trt_cd 0, tên rỗng) do
@@ -491,6 +492,22 @@ test.describe('診療入力 — 抜歯行削除 → 健全歯復元 (DelExtRec /
                 TRT_DT,
                 MILK_BUI_SLOT + 1,
                 MILK_BUI_VAL,
+            ).catch(() => 0)) +
+            // 4. 2026-09-08: 自動算定 (chk_auto) và nhánh tự-áp-dụng của
+            //    コメント自動入力 (cmt_auto) vừa được port, nên chốt 抜歯 giờ để lại
+            //    thêm 麻酔 + カルテコメント. Chúng mang mã KHÁC nên ba đường trên
+            //    đều trượt.
+            (await deleteChkAutoCompanionRows(
+                Number(PAT_NO),
+                TRT_DT,
+                EXT_TRT_CD,
+                EXT_SB_PERM,
+            ).catch(() => 0)) +
+            (await deleteChkAutoCompanionRows(
+                Number(PAT_NO),
+                TRT_DT,
+                EXT_TRT_CD,
+                EXT_SB_MILK,
             ).catch(() => 0))
         if (sigaRowCreated) {
             const k = await deleteSigaRow(Number(PAT_NO)).catch(() => 0)
