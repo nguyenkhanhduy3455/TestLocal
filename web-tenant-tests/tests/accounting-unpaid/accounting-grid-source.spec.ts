@@ -396,8 +396,15 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
      * dính luật 算定限度 1 ngày 2 lần — sửa lên là bung alert 診療チェック và chặn
      * luôn lần nạp lưới kế tiếp (đo thật). Spec này chỉ cần MỘT sửa đổi chưa lưu
      * bất kỳ, không cần đúng dòng 再診.
+     *
+     * ⚠️ Phải neo vào CUỐI tên, không được match lỏng `/初診|再診/`: rất nhiều dòng
+     * 加算 mang 「(再診)」 trong tên (`外安全1(再診)`,
+     * `歯科外来診療感染対策加算1(再診)`, `…ベースアップ評価料(1)(再診等)注5`) và chúng
+     * KHÔNG phải dòng khám. Đo thật: khi spec khác seed lại tháng chỉ còn
+     * `再診` + `外安全1(再診)`, bản match lỏng loại sạch mọi dòng và 4/5 testcase
+     * tự skip — "không chạy" đội lốt "chạy và pass".
      */
-    const VISIT_ROW_RE = /初診|再診/
+    const VISIT_ROW_RE = /^[^（(]*(初診|再診)料?$/
 
     async function pickEditableKaiRowKey(): Promise<string | null> {
         // MỘT lần evaluateAll cho cả lưới, KHÔNG innerText từng dòng.
@@ -504,7 +511,11 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
 
     test('TC-GRID-1 — F8 会計 gửi kèm lưới 当月 (`rows`) xuống bước ĐỌC lẫn bước GHI', async () => {
         const hasRow = (await pickEditableKaiRowKey()) !== null
-        skipWithReason(!hasRow, 'lưới không có dòng 処置 nào của tháng hiện hành')
+        skipWithReason(
+            !hasRow,
+            'lưới không có dòng 処置 nào (ngoài dòng 初診/再診) của tháng hiện hành — ' +
+                'spec khác chạy cùng lượt có thể vừa seed/xoá 処置 của bệnh nhân này',
+        )
         if (!hasRow) return
 
         resetCalls()
@@ -589,7 +600,11 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
         // và số thực ghi vào 未精算 có thể lệch nhau mà không ai báo.
         await backToEntry()
         const hasRow = (await pickEditableKaiRowKey()) !== null
-        skipWithReason(!hasRow, 'lưới không có dòng 処置 nào của tháng hiện hành')
+        skipWithReason(
+            !hasRow,
+            'lưới không có dòng 処置 nào (ngoài dòng 初診/再診) của tháng hiện hành — ' +
+                'spec khác chạy cùng lượt có thể vừa seed/xoá 処置 của bệnh nhân này',
+        )
         if (!hasRow) return
 
         resetCalls()
@@ -628,7 +643,11 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
         // đúng đường này ra 0 đồng.
         await backToEntry()
         const hasRow = (await pickEditableKaiRowKey()) !== null
-        skipWithReason(!hasRow, 'lưới không có dòng 処置 nào của tháng hiện hành')
+        skipWithReason(
+            !hasRow,
+            'lưới không có dòng 処置 nào (ngoài dòng 初診/再診) của tháng hiện hành — ' +
+                'spec khác chạy cùng lượt có thể vừa seed/xoá 処置 của bệnh nhân này',
+        )
         if (!hasRow) return
         resetCalls()
 
