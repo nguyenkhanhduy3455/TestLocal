@@ -122,10 +122,24 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *  · frm203016.cs:1024-1031 + 1141-1164 — `IregCodChk` case 122 → `SigaChg(122,3)`:
  *    chiều input-time cũng ghi `EKon{i+1} = 4` ngay khi chốt 処置.
  *    ⚠️ BUG CÓ THẬT TRONG CHÍNH WINFORM: nhánh 乳歯 của `SigaChg`
- *    (frm203016.cs:1155-1160) gọi `makeSql("NKon", …, ref strSiga)` — nhét
+ *    (frm203016.cs:1155-1163) gọi `makeSql("NKon", …, ref strSiga)` — nhét
  *    `NKon{n} = 4` vào câu UPDATE bảng **Siga**. Nhánh save-time (modSave.cs:800/804)
  *    thì ĐÚNG (`ref strKon`). File này chỉ soi đường F9 ⇒ nằm gọn trong phần
  *    WinForm làm đúng. ĐỪNG port theo nhánh input-time.
+ *
+ *    Hậu quả đã ĐO (FlaUI TcGAP12, patNo 10 / 2026-08): bảng `Siga` không có cột
+ *    `NKon*`, và không có `try/catch` nào bọc (`SigaChg` gọi trần ở
+ *    `IregCodChk:1029`; `Program.cs` cũng không đăng ký `ThreadException`) ⇒ **app
+ *    NÉM ngay tại 処置確定**. Vì nó ném trong khối `update Siga`, khối `update Kon`
+ *    nằm sau (`:1285-1292`) không bao giờ chạy ⇒ `nkon4 = NULL`.
+ *
+ *    ⛔ QUYẾT ĐỊNH 2026-09-08 — LỆCH CỐ Ý, ĐỪNG "SỬA CHO GIỐNG WINFORM":
+ *    web ghi `nkon_4 = 4` ở CẢ đường nóng lẫn F9 (`ToothStatusChangeCalculator.ApplyKon`
+ *    dùng chung). Tức là web ↔ WinForm-F9 KHỚP, web ↔ WinForm-nóng LỆCH. Không port
+ *    cái crash, vì thứ phải port sẽ là một SQL exception trên cột không tồn tại chứ
+ *    không phải một hành vi nghiệp vụ — xem `userapp/inp-p0-open-issues.md` ISSUE-17
+ *    (có các bước tái hiện crash + đối chứng). TC-3 dưới đây vì thế đang khoá đúng
+ *    hành vi LỆCH đó một cách có chủ ý.
  *
  * ── B. 歯根嚢胞摘出手術 185 ───────────────────────────────────────────────────
  *  · frm203016.cs:1045-1057 — `IregCodChk` case 185: NGAY khi chốt 処置, bung hỏi
