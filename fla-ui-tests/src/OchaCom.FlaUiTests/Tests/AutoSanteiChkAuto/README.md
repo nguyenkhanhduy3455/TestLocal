@@ -1,6 +1,8 @@
-# AutoSanteiChkAuto — 自動算定 (bảng `chkauto`)
+# AutoSanteiChkAuto — cái ĐUÔI của một cú chốt 処置
 
-Nửa WinForm của lệch parity **「bảng `chk_auto` chưa được port ở runtime」**.
+**Cặp parity của [`../../../../../web-tenant-tests/tests/auto-santei/chk-auto-after-commit.spec.ts`](../../../../../web-tenant-tests/tests/auto-santei/chk-auto-after-commit.spec.ts).**
+Hai bên đo CÙNG một thao tác, từ CÙNG một trạng thái xuất phát, với CÙNG cách tính kỳ vọng —
+có vậy thì đỏ/xanh mới quy được cho app chứ không cho harness.
 
 > Runner: [`../../../../run-insert-auto-santei-rows.ps1`](../../../../run-insert-auto-santei-rows.ps1)
 > Luật chung: [`../../../../FLA-UI-GUIDELINE.md`](../../../../FLA-UI-GUIDELINE.md) (F1–F24)
@@ -62,41 +64,73 @@ MST_TRT266: 179/2 = 抜歯手術(臼歯) 270点   ·   310/2 = OA+ｵｰﾗ注�
 
 ---
 
-## 3. Testcase
+## 3. Bảng tương ứng với spec Playwright
 
-| Case | Vai trò | Đo gì |
+| FlaUI | Playwright | Đo gì |
 |---|---|---|
-| `TcAUTO1` | mốc | `chkauto` có dòng cho mã đem thử; master của tháng có đủ mã đi kèm; mã ĐỐI CHỨNG **không** có trong `chkauto`. **Chỉ hỏi DB.** |
-| `TcAUTO2` | **lệch chính** | Nhập `179/2` ⇒ WinForm **TỰ CHÈN** `310/2`, dòng đó mang đúng `score1`, và 月計点数 tăng đúng `270 + 11`. |
-| `TcAUTO3` | đối chứng | Mã **không** có trong `chkauto` ⇒ 月計点数 chỉ tăng đúng điểm của chính nó. |
+| `TC0` | *(không có)* | **mốc harness**: `chkauto` / `CMTAUTO` / master có đủ dữ liệu chưa; mã ĐỐI CHỨNG không nằm trong `chkauto`. Chỉ hỏi DB. |
+| `TC1` | `TC-1` | 自動算定 — chốt 処置 xong, `chkauto` phải kéo các 処置 đi kèm xuống lưới, mỗi dòng mang đúng `score1`, và 月計 tăng đúng `270 + 11`. |
+| `TC2` | `TC-2` | コメント自動入力 — dòng `CMTAUTO` tự áp dụng phải rơi xuống lưới, không bị nuốt. |
+| `TC3` | `TC-3` | `disp_no` quyết định comment nằm **TRÊN** hay **DƯỚI** dòng 処置. |
+| `TC4` | `TC-4` | Dòng `chkauto` phải nằm **liền dưới** 処置, không trôi xuống cuối ngày. |
 
 Probe (`[Explicit]`, chạy bằng `-Diagnostics`):
 
 | Case | Đo gì |
 |---|---|
-| `Tc0` | Chỉ hỏi DB: `chkauto` có gì, master có gì. Rẻ — chạy trước tiên. |
-| `Tc1` | `179/2` 抜歯 — đúng ca trong báo cáo. |
-| `Tc2` | `171/0` 感根処 — đối chứng. |
-| `Tc3` | `110/0` 再診 — ô có **HAI** mã đi kèm, không cần 部位. |
+| `Tc0` | Chỉ hỏi DB: `chkauto` / `CMTAUTO` / master có gì; đối chiếu `CMTAUTO.CMT_NM` với `MST_CMT2`. Rẻ — chạy trước tiên. |
+| `Tc1` | Chốt `179/2` trên 部位病名行 đã seed — đúng đường của `TC1..TC4`, nhưng KHÔNG assert. |
 
-### Lô chạy (F7 — trần 15 phút của wrapper)
+### Lô chạy
 
-Một vòng 「Insert → 部位選択 → 病名選択 → gõ mã → 処置選択」 tốn **2–3 phút** trên máy thật.
-**Không bao giờ chạy cả fixture một lượt.**
+> ⚠️ **Luồng này là NGOẠI LỆ của thói quen 「luôn chạy bằng `-Case`」.** `TC2/TC3/TC4`
+> **đọc lại chính ảnh chụp lưới của cú chốt trong `TC1`** — y như spec Playwright, nơi
+> `TC-2/3/4` ghi rõ 「TC-1 đã chốt 処置 rồi; lưới hiện tại là kết quả của cùng một cú
+> Enter」. Chạy riêng chúng thì `RequireCommitted()` tự `Ignore` với lý do rõ ràng.
+>
+> Vẫn nằm trong trần 15 phút vì chỉ `TC1` đi giao diện: `TC0` hỏi DB, còn `TC2-TC4` đọc
+> lại snapshot trong bộ nhớ.
 
 ```powershell
-.\run-insert-auto-santei-rows.ps1 -Diagnostics -Case Tc0      # 1. re, chi hoi DB
-.\run-insert-auto-santei-rows.ps1 -Case TcAUTO1               # 2. moc
-.\run-insert-auto-santei-rows.ps1 -AllowSave -Case TcAUTO2    # 3. lech chinh   (1 vong UI)
-.\run-insert-auto-santei-rows.ps1 -AllowSave -Case TcAUTO3    # 4. doi chung    (1 vong UI)
+.\run-insert-auto-santei-rows.ps1 -Diagnostics -Case Tc0   # 1. re, chi hoi DB
+.\run-insert-auto-santei-rows.ps1 -AllowSave               # 2. ca bo TC0..TC4 (1 vong UI)
 ```
 
 Chạy từ xa (F5) — `schtasks` không truyền được tham số, phải ghi lệnh vào file:
 
 ```powershell
-Set-Content logs\command.txt "run-insert-auto-santei-rows.ps1 -AllowSave -Case TcAUTO2"
+Set-Content logs\command.txt "run-insert-auto-santei-rows.ps1 -AllowSave"
 schtasks /run /tn "FlaUI-Tests-Run"
 ```
+
+## 3b. Hai bên khớp nhau ở đâu
+
+| | WinForm (đây) | Web (spec Playwright) |
+|---|---|---|
+| Bệnh nhân / ngày | `patient.patNo`, `patient.trtDate` | `TEST_PAT_NO`, `TEST_TRT_DT` |
+| 処置 đem chốt | `autoSantei.trtCd/trtSb` = **179/2** | `TEST_TRIGGER_CD/SB` = **179/2** |
+| Ô 部位 | `autoSantei.buiSlot` = **2** (右上6) | `BUI_SLOT` = **2** |
+| 病名 | `disCd/disSb` = **100 / 2** (Ｃ₂) | `DIS_CD_C` / `DIS_SB_C2` = **100 / 2** |
+| Vùng seed | `TRNTRN.DISP_NO >= 9000` **+ đúng ngày** | `trn_trn.disp_no >= 9000` |
+| Cờ ghi | `autoSantei.allowSave` | `TEST_ALLOW_SAVE=1` |
+| Kỳ vọng | tính từ `chkauto` + `CMTAUTO` + `MST_TRT*` | tính từ `chk_auto` + `cmt_auto` + `mst_trt` |
+| Chuẩn hoá chuỗi | `AutoSanteiOps.Norm` (NFKC) | `norm()` (NFKC) |
+
+### Hai điểm LỆCH phát hiện khi đối chiếu — soi trước khi kết luận parity
+
+1. **Nguồn tên カルテコメント.** Bên này lấy từ `MST_CMT2(cmt_cd, cmt_sb)` — thứ app THẬT SỰ
+   in ra. Spec Playwright lấy từ `cmt_auto.cmt_nm`. Trên DB dev hai cột đã lệch:
+   `CMTAUTO(179,2).CMT_NM` = 「…**ｵｸﾀﾌﾟﾚｼﾝ**Ct1.8ml」 còn `MST_CMT2(7321,1)` =
+   「…**ｵｰﾗ注**Ct1.8ml」, và lưới in cái thứ hai. Nếu bản web port `cmt_nm` từ `CMTAUTO` thì
+   nó sẽ hiển thị chuỗi khác WinForm — **kiểm chỗ này trước khi tin TC2/TC3 xanh**.
+2. **Ô 回 sau 確定.** Web điền sẵn `1` (spec assert `toHaveValue('1')`); WinForm để editor
+   **RỖNG**, nên Enter ghi `回 = 0` và cả nhánh `Chk_ChkAuto` không chạy. Harness bên này
+   gõ `1` vào (`AutoSanteiOps.EnsureTrtCount`) để đo được phần còn lại — nhưng bản thân
+   sự khác nhau đó là một lệch parity thật, đáng mở hồ sơ riêng.
+3. **Cách lọc slot `chk_auto`.** `findChkAutoSlots` bên web chỉ lọc `cd !== 0`; bên này tách
+   thêm dải 摘要 700..899 ra `CommentPairs` vì `Chk_ChkAuto` xét nhánh đó TRƯỚC
+   (modMain.cs:862). Master hiện tại không có slot nào rơi vào dải ấy nên hai bên đang
+   trùng kết quả — nhưng tenant khác thì chưa chắc.
 
 ---
 
