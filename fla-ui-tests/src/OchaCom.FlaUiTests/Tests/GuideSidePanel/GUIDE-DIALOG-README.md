@@ -92,8 +92,13 @@ rồi diff — đó là bảng parity ở mục 4. Cả hai bên đều NFKC tr�
 | **TC-D16** | **QUÉT 8 ガイド** — cái nào có 処置, cái nào rỗng, trọn danh sách từng cái | `TC-D14` |
 | *(WinForm là đáp án)* | tên 薬剤 kèm 用法 | `WinForm parity D-d` |
 | *(WinForm là đáp án)* | 回数 của dòng nhóm 窩洞形態 lúc vừa mở | `WinForm parity D-e` |
+| *(chưa đo)* | chạm mặt răng thì 回数 nhóm 窩洞形態 được tính lại | `WinForm parity D-e2` |
 | *(không có)* | ô 回数 chỉ nhận chữ số | `TC-D9` |
-| *(không có)* | 回数 rộng hơn 枝番 | `WinForm parity D-c` |
+
+> Bốn testcase `WinForm parity D-a/D-b/D-d/D-e` sinh ra để CHỐT chỗ web lệch. Cả bốn
+> **đã sửa ngày 2026-09-08** ở nhánh `fix/inp-guide-tab-parity` của `ochacom-saas`
+> (xem mục 4.1/4.2), nên bây giờ chúng là test **hồi quy**: đỏ = web lệch LẠI.
+> `D-c` (回数 rộng hơn 枝番) đã bị xoá — bề rộng cột không còn là tiêu chí parity, xem 4.3.
 
 ---
 
@@ -149,6 +154,13 @@ WinForm để nguyên 算定回数 (CalcCnt = 5 răng của 部位). Bản web �
 về 0 và chỉ điền khi người dùng chọn mặt răng ở khối 窩洞形態 (`cavityRowCnt`,
 `guide-selection-dialog.tsx`). Vừa mở dialog là hai bên hiện hai con số khác nhau.
 
+> ✅ **ĐÃ SỬA 2026-09-08** (`fix/inp-guide-tab-parity`). `cavityRowCnt` bị bỏ; giá trị
+> derive được nay ghi thẳng vào `cntOverrides` trong `toggleCavity`, đúng như
+> `ucToothGuide_Changed` (frm203017.cs:1676-1728) ghi vào `dgvView.Cells[4]` — nghĩa là
+> chỉ khi NGƯỜI DÙNG chạm mặt răng. F9 確定 cũng theo cổng `blCavity` của `setPacData`:
+> chưa nhập mặt răng nào thì dòng nhóm 窩洞形態 đi đường thường với đúng 回数 đang hiện.
+> Nửa sau (chạm rồi thì tính lại) đo ở testcase mới `WinForm parity D-e2`.
+
 **(b) Tên 薬剤 thiếu hậu tố 用法 — testcase `WinForm parity D-d`**
 
 | dòng | WinForm | web |
@@ -160,16 +172,42 @@ về 0 và chỉ điền khi người dùng chọn mặt răng ở khối 窩洞
 khai thẳng trong doc-comment rằng 「drug-usage name suffix」 nằm ngoài Phase 1 — **đã biết
 và cố ý**, nhưng vẫn là lệch với người ngồi trước màn hình.
 
+> ✅ **ĐÃ SỬA 2026-09-08** (`fix/inp-guide-tab-parity`). Nguyên nhân gốc: 用法マスタ
+> `MST_MED` mà `SyoPac.getMstMed` đọc CHƯA được migrate sang Postgres. Đã thêm bảng
+> `mst_med` (`apps/ddl/scripts/migrate/schema-ddl.mjs` + `migrate-mst-med.mjs`) và
+> `IGuideTrtsQueries.GetMedUsagesAsync` đọc một lượt cho mọi dòng 薬剤 của ガイド.
+>
+> ⚠️ **Tiền đề chạy test**: tenant phải chạy lại `pnpm ddl:testdata`. Chưa migrate thì
+> `usageNm` rỗng và `D-d` đỏ vì THIẾU DỮ LIỆU, không phải vì code.
+>
+> BE trả 用法 ở field RIÊNG `usageNm`, KHÔNG nhét vào `trtNm`: lúc F9 確定, WinForm nhánh
+> 一般処置 tra lại tên từ 処置マスタ qua `frm203016_Hide_Let_Trt_Data` (frm203002.cs:9151+),
+> nên tên rơi xuống lưới đăng ký phải là ô nhiều dòng 「薬剤名 / 用法 / 用量」 —
+> đo riêng ở `guide-drug-usage-line.spec.ts`, không phải chuỗi một dòng của dialog.
+
 > WinForm chỉ phơi ra UIA **7 ガイド đang nhìn thấy** (luật F10), còn web báo tổng **86**.
 > Muốn so sâu hơn thì cuộn lưới rồi quét tiếp, hoặc chọn theo TÊN như `openGuideByName`
 > của spec Playwright.
 
-### 4.2 THAO TÁC — hai điểm lệch
+### 4.2 THAO TÁC — hai điểm lệch (đã sửa)
 
-| Thao tác | WinForm | web | Testcase |
+| Thao tác | WinForm | web (lúc đo) | Testcase |
 |---|---|---|---|
 | Đổi 回数 bằng chuột | **CLICK ĐƠN** lên ô bất kỳ của dòng (`dgvView_CellClick`, :363) — đo được 1→0→1→0 | **DOUBLE-CLICK**; click đơn không đổi gì | `WinForm parity D-a` |
 | Nền dòng | đổi theo **NHÓM** `acc_unit >> 4` (đo được: dòng 0-1 trắng, 2-5 RGB(234,246,253), 6 trắng, 7-9 xanh, 10-11 trắng) | đổi theo **CHẴN/LẺ** từng dòng | `WinForm parity D-b` |
+
+> ✅ **ĐÃ SỬA 2026-09-08** (`fix/inp-guide-tab-parity`).
+> - `D-a`: thêm prop `onRowClick` cho `VirtualListTable` (bắn ở MỖI click) và chuyển
+>   `handleRowCycle` từ `onOpenRow` sang đó. Kéo theo hai hệ quả cũng thành parity và đã
+>   được assert: double-click = **2 lần** CellClick (+2), Enter = **+0** (Designer
+>   :135-139 không nối `CellDoubleClick`; `formBase_KeyDown` :183-193 bỏ qua Enter khi
+>   ActiveControl là grid). Riêng click TRONG ô 回数 vẫn không cộng — ô đó là `<input>`
+>   thật của web, không cho thì không đặt được con trỏ.
+> - `D-b`: `getRowClassName` tô nền theo `acc_unit >> 4`, tính theo THỨ TỰ BE rồi khoá
+>   theo dòng (WinForm ghi `Cells[j].Style.BackColor` ngay sau khi bind ⇒ sắp xếp lại thì
+>   màu đi theo dòng). Dòng đang sáng vẫn giữ nền chọn, như `SelectionBackColor` phủ lên.
+>   `acc_unit` không hiện trên DOM nên spec Playwright đọc nó từ response
+>   `GET /tenant/guids/treatments` để so đúng ranh giới nhóm.
 
 Còn lại **khớp**: con trỏ vào ô 回数 dòng đầu khi mở, ↑/↓ đi giữa các ô 回数 + clamp ở dòng
 đầu, sắp xếp 4 cột đầu (lần hai đảo chiều) và 「回数」 KHÔNG sắp xếp được, ô 回数 chỉ nhận
@@ -198,7 +236,7 @@ assert. Tiêu đề cột thì `TcD2` vẫn so NGUYÊN VĂN, nhưng đó là đ�
 |---|---|
 | Nhánh F9 確定 đẩy 処置 vào lưới | Nhánh GHI. Nằm sau một cờ riêng, chưa làm |
 | ガイド rỗng 処置 → Q00100 / E00024 | Đã đo ở luồng cũ (`README.md` mục 3, parity 5) |
-| Khối 窩洞形態 (`tabGuide`) hiện ra thế nào | ガイド 611 「異種充填」 CÓ bật khối đó (điểm lệch 4.1a), nhưng bản thân khối (tab từng răng + 3 hình 窩洞形態) chưa đo — mới chỉ đo 回数 của các dòng thuộc nhóm |
+| Khối 窩洞形態 (`tabGuide`) hiện ra thế nào | ガイド 611 「異種充填」 CÓ bật khối đó (điểm lệch 4.1a). Bên web đã đo thêm 「chạm mặt răng thì 回数 nhóm được tính lại」 (`D-e2`), nhưng bố cục khối (tab từng răng + 3 hình 窩洞形態) và số derive được thì CHƯA có nửa WinForm để đối chiếu |
 | Hơn 7 ガイド | UIA chỉ phơi ra dòng đang nhìn thấy (F10); phải cuộn lưới ガイド rồi quét tiếp |
 | Sửa 点数 (chỉ mở khi 点数=0 và 自費) | Cần một dòng 自費 có 点数=0 trong list |
 | ←/→ trong lưới | WinForm chặn cả hai ở dòng đo được (点数≠0). Web: ←/→ chạy trong ô `<input>`, không dời ô — không so trực tiếp được |

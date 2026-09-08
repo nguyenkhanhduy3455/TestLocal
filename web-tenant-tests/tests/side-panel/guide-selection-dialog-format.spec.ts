@@ -33,6 +33,17 @@ import { makeStep } from '../_shared/step'
  *      padding), chỉ ghi nhận chứ không đánh đỏ.
  *  - :363-388 `dgvView_CellClick` — CLICK ĐƠN lên MỘT Ô BẤT KỲ của dòng làm
  *      回数 += 1; > 255 thì kẹp 255; > maxCnt (CalcCnt) thì về 0.
+ *      Đây là sự kiện MỖI CLICK MỘT LẦN ⇒ double-click chạy HAI lần (+2).
+ *  - Designer :135-139 — dgvView CHỈ nối CellBeginEdit / PreviewKeyDown / CellClick /
+ *      EditingControlShowing / KeyDown. KHÔNG có CellDoubleClick, và :183-193
+ *      `formBase_KeyDown` nhánh `Keys.Enter` bỏ qua khi ActiveControl là
+ *      (Gradient)DataGridView ⇒ Enter KHÔNG đụng tới 回数.
+ *  - :958-962 getViewData — dòng 薬剤 (dải 600-699) nối 用法 lấy từ 用法マスタ
+ *      MST_MED vào 処置名称: `newRow["trt_nm"] += " " + usage`
+ *      (`SyoPac.getMstMed`, COMMON/DBAccess/SyoPac.cs:242).
+ *  - :1676-1728 `ucToothGuide_Changed` — CHỈ khi người dùng chạm mặt răng mới
+ *      reset MỌI dòng nhóm 窩洞形態 về 0 rồi điền lại theo 複雑/単純. Lúc dialog
+ *      VỪA MỞ, mấy dòng đó vẫn mang 算定回数 mà getViewData ghi thẳng vào ô.
  *  - :418  `Columns[4].SortMode = NotSortable` ⇒ 「回数」 KHÔNG sắp xếp được,
  *      bốn cột kia sắp xếp được (mặc định Automatic của DataGridView).
  *  - :428-429 `txtGuidNo = guidCd`, `txtGuidNm = guidNm`; nhãn `lblName` = 「ガイド番号」.
@@ -48,15 +59,29 @@ import { makeStep } from '../_shared/step'
  * ─── Web port ───────────────────────────────────────────────────────────────
  *  - components/guide-selection-dialog.tsx — DraggableDialog width=650 height=620,
  *      title 「ガイド処置選択」, cụm header 「ガイド番号」 + guidCd + guidNm;
- *      `onOpenRow={handleRowCycle}` (VirtualListTable gọi nó ở DOUBLE-CLICK / Enter);
+ *      `onRowClick={handleRowCycle}` — VirtualListTable gọi nó ở MỖI CLICK, đúng
+ *      khuôn CellClick (trước đây treo ở `onOpenRow` = double-click/Enter);
+ *      `getRowClassName` tô nền theo NHÓM `acc_unit >> 4`;
+ *      `guideTrtDisplayNm` ghép 用法 (field `usageNm` của response) vào 処置名称;
+ *      `toggleCavity` ghi 回数 derive được vào `cntOverrides` (chỉ khi chạm mặt răng);
  *      `trtNameColorClass` port màu magenta/xanh; F9 disabled khi mọi 回数 = 0.
  *  - components/cnt-cell.tsx — `COL_GRID = 'grid-cols-[70px_60px_1fr_60px_50px]'`,
  *      header 「コード」「枝番」「処置名称」「点数」「回数」, `enableSorting: false`
  *      cho 回数; ô 回数 là `<input data-cnt-idx>`, tự focus dòng 0 khi mở.
  *  - shared/components/virtual-list-table — header `[data-testid="header-<id>"]`
  *      mang `aria-sort` (none/ascending/descending) CHỈ khi cột sắp xếp được;
- *      dòng `[data-testid^="row-"]`, ô `[data-testid="cell-<id>"]`; nền dòng đổi
- *      theo CHẴN/LẺ (`isEven ? bg-card : bg-muted/20`).
+ *      dòng `[data-testid^="row-"]` (khoá = `${trtCd}-${trtSb}`), ô
+ *      `[data-testid="cell-<id>"]`; nền MẶC ĐỊNH đổi theo CHẴN/LẺ
+ *      (`isEven ? bg-card : bg-muted/20`) — ガイド ĐÈ lên bằng `getRowClassName`,
+ *      dòng đang sáng vẫn giữ `bg-primary/10` (như SelectionBackColor của
+ *      DataGridView phủ lên BackColor của ô).
+ *
+ * ─── BE ─────────────────────────────────────────────────────────────────────
+ *  - `GET /tenant/guids/treatments` trả `{ items, showCavityForm }`. Mỗi item có
+ *    `accUnit` (= `flg2 << 4 | 印字フラグ`, cột ẩn của dgvView), `grpIdx` (nhóm
+ *    窩洞形態 0..7, hoặc -1) và `usageNm` (用法 của mst_med). Ba field đó KHÔNG
+ *    hiện trên DOM, nên mấy testcase parity phải đọc từ chính response — xem
+ *    `itemsByGuid` bắt ở `beforeAll`.
  *
  * ─── Cách đối chiếu với WinForm ─────────────────────────────────────────────
  * Mỗi testcase in ra các dòng `DUMP|web|…` cùng khuôn với `DUMP|win|…` mà fixture
@@ -113,6 +138,30 @@ const KARTE_CODE_MAX = 8999
 const DIALOG_W = 650
 const DIALOG_H = 620
 
+/** Bit shift tách NHÓM ra khỏi acc_unit — frm203017.cs:1043 `acc_unit >> 4`. */
+const ACC_UNIT_GROUP_SHIFT = 4
+
+/** Chỉ số nhóm 窩洞形態 hợp lệ (mst_trt_grp 9990..9997 → 0..7); -1 = không thuộc nhóm. */
+const CAVITY_GRP_MIN = 0
+const CAVITY_GRP_MAX = 7
+
+/**
+ * Một dòng trong response `GET /tenant/guids/treatments`.
+ *
+ * `accUnit` / `grpIdx` / `usageNm` là ba cột KHÔNG hiện trên lưới (WinForm để
+ * width 0 ở `_viewItem`), nhưng lại là thứ quyết định nền dòng và 回数 của nhóm
+ * 窩洞形態 — nên phải đọc từ response mới assert được, không bịa từ DOM.
+ */
+interface GuideTrtWire {
+    trtCd: number | string
+    trtSb: number | string
+    trtNm: string
+    cnt: number | string
+    accUnit: number | string
+    grpIdx: number | string
+    usageNm?: string
+}
+
 test.describe.configure({ mode: 'serial' })
 
 test.describe('ガイド処置選択 (frm203017) — định dạng dialog + danh sách 処置', () => {
@@ -139,6 +188,14 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
      * một ガイド KHÔNG phát request nào.
      */
     let lastTrtQuery = ''
+    /**
+     * Danh sách 処置 của từng ガイド, đọc từ RESPONSE (khoá = ガイド番号).
+     *
+     * TanStack Query cache theo (GuidCd, TrtDt, PatNo, Bui, DisCd) nên lần mở thứ
+     * hai của cùng một ガイド KHÔNG phát request — vì thế phải gom dần vào Map ở
+     * `beforeAll` chứ đừng chờ response ngay trong testcase.
+     */
+    const itemsByGuid = new Map<number, GuideTrtWire[]>()
 
     const headerCell = (id: string) => picker.locator(`[data-testid="header-${id}"]`)
     const dialogRows = () => picker.locator('[data-testid^="row-"]')
@@ -274,6 +331,31 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
         return out
     }
 
+    /**
+     * Khoá `${trtCd}-${trtSb}` của từng dòng lưới, theo ĐÚNG thứ tự đang hiển thị.
+     * (`getRowKey = trtRowKey` trong guide-selection-dialog.tsx ⇒ testid là
+     * `row-<trtCd>-<trtSb>`.) Dùng để ghép dòng DOM với item của response.
+     */
+    async function rowKeys(): Promise<string[]> {
+        return dialogRows().evaluateAll((els) =>
+            els.map((e) => (e.getAttribute('data-testid') ?? '').replace(/^row-/, '')),
+        )
+    }
+
+    /** Màu nền thật của từng dòng lưới, theo thứ tự hiển thị. */
+    async function rowBackgrounds(): Promise<string[]> {
+        return dialogRows().evaluateAll((els) =>
+            els.map((e) => getComputedStyle(e).backgroundColor),
+        )
+    }
+
+    /** Items của một ガイド đọc từ response, keyed `${trtCd}-${trtSb}`. */
+    function wireByKey(guidCd: number): Map<string, GuideTrtWire> {
+        const m = new Map<string, GuideTrtWire>()
+        for (const it of itemsByGuid.get(guidCd) ?? []) m.set(`${it.trtCd}-${it.trtSb}`, it)
+        return m
+    }
+
     test.beforeAll(async ({ authedPage }) => {
         page = authedPage
         step = makeStep(page)
@@ -281,6 +363,20 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
 
         page.on('request', (r) => {
             if (r.url().includes('/tenant/guids/treatments')) lastTrtQuery = r.url()
+        })
+        // Bọc try/catch: response có thể bị huỷ giữa chừng khi test kết thúc sớm.
+        page.on('response', (res) => {
+            if (!res.url().includes('/tenant/guids/treatments')) return
+            void (async () => {
+                try {
+                    const json = (await res.json()) as { data?: { items?: GuideTrtWire[] } }
+                    const items = json.data?.items
+                    const guid = new URL(res.url()).searchParams.get('GuidCd')
+                    if (items && guid) itemsByGuid.set(Number(guid), items)
+                } catch {
+                    /* không phải JSON / bị huỷ — assert bên dưới tự báo thiếu */
+                }
+            })()
         })
 
         picker = page.getByRole('dialog').filter({ hasText: 'ガイド番号' })
@@ -756,17 +852,30 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
     })
 
     // ═════════════════════════════════════════════════════════════════════════
-    // WinForm parity — chỗ web ĐANG LỆCH bản gốc. Đỏ ở đây = web lệch, KHÔNG phải
-    // test viết sai. Mỗi cái tự dựng trạng thái nên chạy lẻ được.
+    // WinForm parity — BỐN điểm web ĐÃ TỪNG lệch bản gốc, sửa ở nhánh
+    // `fix/inp-guide-tab-parity` (D-a click đơn · D-b nền theo nhóm · D-d 用法 ·
+    // D-e 回数 nhóm 窩洞形態). Giữ lại làm test HỒI QUY: đỏ ở đây nghĩa là web lệch
+    // LẠI, KHÔNG phải test viết sai. Mỗi cái tự dựng trạng thái nên chạy lẻ được.
     // ═════════════════════════════════════════════════════════════════════════
 
     test('WinForm parity D-d: tên 薬剤 phải kèm 用法 (「ボルタレン錠25mg1T 疼痛時 服用」)', async () => {
-        // frm203017.getViewData: với dòng 薬剤 có 用法, WinForm NỐI 用法 vào 処置名称
-        // (`newRow["trt_nm"] += " " + usage;`). Bản web bỏ qua — chú thích đầu
-        // guide-selection-dialog.tsx khai đây là 「drug-usage name suffix — skipped」 của
-        // Phase 1. ĐO ĐƯỢC 2026-09-08, cùng bệnh nhân/ngày:
-        //   WinForm 「ボルタレン錠25mg1T 疼痛時 服用」 · 「メイアクトMS錠100mg4T 1日4回朝昼夕食後と就寝前 服用」
-        //   web     「ボルタレン錠25mg1T」          · 「メイアクトMS錠100mg4T」
+        // frm203017.getViewData:958-962 — với dòng 薬剤 (600-699) có 用法 trong
+        // 用法マスタ MST_MED, WinForm NỐI 用法 vào 処置名称:
+        // `newRow["trt_nm"] += " " + usage;` (`SyoPac.getMstMed`).
+        //
+        // Web: BE giữ 用法 ở field RIÊNG `usageNm` (không nhét vào `trtNm`) rồi
+        // `guideTrtDisplayNm` mới ghép lại khi VẼ ô. Cố ý: lúc F9 確定, WinForm nhánh
+        // 一般処置 tra LẠI tên từ 処置マスタ qua `frm203016_Hide_Let_Trt_Data`
+        // (frm203002.cs:9151+) nên tên rơi xuống lưới đăng ký KHÔNG được dính hậu tố
+        // 用法 — cái lưới phải hiện là ô nhiều dòng 「薬剤名 / 用法 / 用量」, đo ở
+        // `guide-drug-usage-line.spec.ts`.
+        //
+        // ⚠️ TIỀN ĐỀ DỮ LIỆU: bảng `mst_med` mới được migrate sang Postgres. Tenant
+        // nào chưa chạy lại `pnpm ddl:testdata` thì `usageNm` rỗng và testcase này đỏ
+        // — đó là thiếu DỮ LIỆU, không phải lỗi code.
+        //
+        // ĐO ĐƯỢC trên WinForm 2026-09-08, cùng bệnh nhân/ngày:
+        //   「ボルタレン錠25mg1T 疼痛時 服用」 · 「メイアクトMS錠100mg4T 1日4回朝昼夕食後と就寝前 服用」
         test.skip(
             PAT_NO !== PARITY_PAT_NO || TRT_DT !== PARITY_TRT_DT,
             `số đo ghim theo bệnh nhân ${PARITY_PAT_NO} ngày ${PARITY_TRT_DT} — chạy bằng ` +
@@ -779,21 +888,27 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
         const drug = rows.find((r) => r[0] === '601')
         expect(drug, 'ガイド 10650 phải có dòng 薬剤 601/0 (ボルタレン)').toBeTruthy()
         dump(`drugnm|601|${drug![2]!.normalize('NFKC')}`)
+
+        // Response có `usageNm` thì in ra luôn: phân biệt 「BE chưa trả」 (mst_med
+        // chưa migrate) với 「BE trả rồi mà FE không ghép vào ô」.
+        const wire = wireByKey(10650).get('601-0')
+        if (wire) dump(`drugusage|601|usageNm=${(wire.usageNm ?? '').normalize('NFKC')}`)
+
         expect(
             drug![2]!.normalize('NFKC'),
             '処置名称 của dòng 薬剤 phải có hậu tố 用法 như WinForm (getViewData nối ' +
-                '`" " + usage` vào trt_nm)',
+                '`" " + usage` vào trt_nm). Nếu `usageNm` in ra ở dòng DUMP trên là rỗng ' +
+                'thì bảng mst_med chưa được migrate — chạy lại `pnpm ddl:testdata`.',
         ).toBe('ボルタレン錠25mg1T 疼痛時 服用')
         await step()
         await dismissPicker()
     })
 
     test('WinForm parity D-e: dòng nhóm 窩洞形態 vừa mở phải mang 回数 = 算定回数, không phải 0', async () => {
-        // ガイド 611 「異種充填」 bật khối 窩洞形態. WinForm vẫn để 回数 = CalcCnt (đo được
-        // 5 = số răng của 部位) cho các dòng thuộc nhóm 複雑/単純; bản web ép chúng về 0
-        // và chỉ điền khi người dùng chọn mặt răng (`cavityRowCnt` trong
-        // guide-selection-dialog.tsx). Người nhập liệu nhìn thấy hai màn hình khác nhau
-        // ngay lúc mở.
+        // ガイド 611 「異種充填」 bật khối 窩洞形態. getViewData ghi THẲNG 算定回数 vào ô
+        // (đo được 5 = số răng của 部位); chỉ `ucToothGuide_Changed` (frm203017.cs:1676)
+        // mới reset đám dòng đó về 0 — và nó CHỈ chạy khi người dùng chạm mặt răng.
+        // Bản web cũ ép chúng về 0 ngay lúc mở ⇒ hai màn hình khác nhau từ đầu.
         test.skip(
             PAT_NO !== PARITY_PAT_NO || TRT_DT !== PARITY_TRT_DT,
             `số đo ghim theo bệnh nhân ${PARITY_PAT_NO} ngày ${PARITY_TRT_DT}`,
@@ -808,72 +923,227 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
         expect(
             filling![4],
             '回数 của dòng 充填1(単純) — WinForm hiện 5 (CalcCnt theo 部位 5 răng), ' +
-                'web đang hiện 0 vì chờ chọn mặt răng',
+                'web từng hiện 0 vì chờ chọn mặt răng',
         ).toBe('5')
         await step()
         await dismissPicker()
     })
 
-    test('WinForm parity D-a: CLICK ĐƠN lên một dòng phải làm 回数 +1', async () => {
-        // frm203017.cs:363 dgvView_CellClick là sự kiện CLICK ĐƠN: click vào ô nào của
-        // dòng cũng làm 回数 tăng 1, vượt trần CalcCnt thì về 0. Web treo hành vi này
-        // vào `onOpenRow` của VirtualListTable, mà nó chỉ bắn ở DOUBLE-CLICK / Enter
-        // (guide-selection-dialog.tsx handleRowCycle).
+    test('WinForm parity D-e2: chạm mặt răng mới TÍNH LẠI 回数 của nhóm 窩洞形態 (ucToothGuide_Changed)', async () => {
+        // Nửa còn lại của D-e. frm203017.cs:1676-1728: mỗi lần ucToothGuide_Changed
+        // chạy, TOÀN BỘ dòng thuộc nhóm 窩洞形態 bị đặt về 0 rồi mới cộng lại theo
+        // 複雑/単純 của từng răng. Nói cách khác 算定回数 lúc mở KHÔNG phải là giá trị
+        // chết — nó bị thay khi người dùng bắt đầu nhập 窩洞.
+        //
+        // Không ghim con số derive được (nó phụ thuộc mặt răng click trúng và
+        // `cavityGroupCounts`): chỉ cần chứng minh 「trước khi chạm = 算定回数, sau khi
+        // chạm = giá trị TÍNH LẠI」. Ghim số ở đây là chép lại thuật toán của app.
+        test.skip(
+            PAT_NO !== PARITY_PAT_NO || TRT_DT !== PARITY_TRT_DT,
+            `cần ガイド 611 của bệnh nhân ${PARITY_PAT_NO} ngày ${PARITY_TRT_DT}`,
+        )
+        await dismissPicker()
+        await openGuideByName('異種充填', 611)
+
+        // Nhận diện dòng nhóm 窩洞形態 bằng `grpIdx` của response — cột đó ẩn trên lưới.
+        const wire = wireByKey(611)
+        if (wire.size === 0) {
+            console.log('không bắt được response của ガイド 611 (cache) → BỎ QUA')
+            return
+        }
+        const keys = await rowKeys()
+        const before = await readRows()
+        const cavityIdx = keys
+            .map((k, i) => ({ k, i, g: Number(wire.get(k)?.grpIdx ?? -1) }))
+            .filter((r) => r.g >= CAVITY_GRP_MIN && r.g <= CAVITY_GRP_MAX)
+        if (cavityIdx.length === 0) {
+            console.log('ガイド 611 không có dòng nào thuộc nhóm 窩洞形態 → BỎ QUA')
+            return
+        }
+        cavityIdx.forEach((r) => dump(`cavityrow|${r.k}|grp=${r.g}|cnt=${before[r.i]![4]}`))
+        expect(
+            cavityIdx.some((r) => Number(before[r.i]![4]) > 0),
+            'vừa mở mà MỌI dòng nhóm 窩洞形態 đều 0 ⇒ web lại ép 0 như bug D-e cũ',
+        ).toBe(true)
+
+        // Bấm mặt 咬合面 (vòng tròn giữa) của 窩洞形態(1). CavityToothModel là
+        // <svg viewBox="0 0 100 100"> — mốc theo viewBox để không đụng icon nào khác;
+        // model không có testid vì Rule 1 cấm sửa source app cho tiện test.
+        const firstCircle = picker
+            .locator('svg[viewBox="0 0 100 100"]')
+            .first()
+            .locator('circle')
+            .first()
+        if ((await firstCircle.count()) === 0) {
+            console.log('dialog không hiện khối 窩洞形態 (showCavityForm=false) → BỎ QUA')
+            return
+        }
+        await firstCircle.click()
+        await step()
+
+        const after = await readRows()
+        cavityIdx.forEach((r) => dump(`cavityrow|after|${r.k}|cnt=${after[r.i]![4]}`))
+        expect(
+            cavityIdx.some((r) => after[r.i]![4] !== before[r.i]![4]),
+            'chạm mặt răng mà 回数 của nhóm 窩洞形態 không đổi ⇒ ucToothGuide_Changed ' +
+                'chưa được port (frm203017.cs:1676-1728)',
+        ).toBe(true)
+
+        // Dòng NGOÀI nhóm (麻酔, コメント…) không được ăn theo — WinForm chỉ đụng
+        // `_guideData`, tức đúng mấy dòng thuộc 8 nhóm.
+        const outsiders = keys
+            .map((k, i) => ({ k, i, g: Number(wire.get(k)?.grpIdx ?? -1) }))
+            .filter((r) => r.g < CAVITY_GRP_MIN || r.g > CAVITY_GRP_MAX)
+        for (const r of outsiders) {
+            expect(
+                after[r.i]![4],
+                `dòng ${r.k} KHÔNG thuộc nhóm 窩洞形態 mà 回数 bị đổi khi chạm mặt răng`,
+            ).toBe(before[r.i]![4])
+        }
+        await step()
+        await dismissPicker()
+    })
+
+    test('WinForm parity D-a: CLICK ĐƠN làm 回数 +1; double-click +2; Enter không đổi', async () => {
+        // frm203017.cs:363-388 `dgvView_CellClick` là sự kiện CLICK ĐƠN: click vào ô
+        // nào của dòng cũng làm 回数 += 1, vượt trần CalcCnt thì về 0. Vì nó chạy mỗi
+        // click MỘT lần nên double-click = +2, và Enter = +0 (Designer :135-139 không
+        // nối CellDoubleClick; formBase_KeyDown :183-193 bỏ qua Enter khi con trỏ ở
+        // grid). Web từng treo hành vi này vào `onOpenRow` của VirtualListTable — chỉ
+        // bắn ở double-click / Enter, tức sai cả ba vế.
         await dismissPicker()
         await openPickableGuide()
 
         const row = dialogRows().first()
         const input = cellsOf(row, 'cnt').locator('input')
-        const before = await input.inputValue()
+        // Ô 処置名称 chứ KHÔNG phải ô 回数: WinForm bắt mọi cột, còn ô 回数 của web là
+        // <input> thật nên nuốt click (stopPropagation) để đặt được con trỏ.
+        const nameCell = cellsOf(row, 'trtNm')
 
-        // Click vào ô 処置名称 — WinForm bắt mọi cột, và ô 回数 của web nuốt click
-        // (stopPropagation) nên click vào đó không đo được gì.
-        await cellsOf(row, 'trtNm').click()
+        // Giá trị lúc VỪA MỞ chính là 算定回数 BE trả về, tức trần của vòng lặp
+        // (`maxCnt = max(cnt, 1)` trong guide-selection-dialog.tsx).
+        const base = Number(await input.inputValue())
+        const maxCnt = Math.max(base, 1)
+        const cycle = (n: number) => (n + 1 > maxCnt ? 0 : n + 1)
+        dump(`cycle|base=${base}|maxCnt=${maxCnt}`)
+
+        /** Đặt 回数 về 0 để mỗi phép đo có mốc xuất phát đã biết. */
+        const resetToZero = async () => {
+            await input.focus()
+            await input.fill('0')
+            expect(await input.inputValue(), 'không đặt được 回数 về 0').toBe('0')
+        }
+
+        await resetToZero()
+        await nameCell.click()
         const afterSingle = await input.inputValue()
-
-        await cellsOf(row, 'trtNm').dblclick()
-        const afterDouble = await input.inputValue()
-
-        dump(`cycle|start=${before}|after-single-click=${afterSingle}|after-dblclick=${afterDouble}`)
-        console.log(`回数: ${before} → click đơn ${afterSingle} → double-click ${afterDouble}`)
-
+        dump(`cycle|single|0->${afterSingle}`)
         expect(
             afterSingle,
-            'CLICK ĐƠN phải đổi 回数 (dgvView_CellClick, frm203017.cs:363-388). ' +
-                'Web đang đòi double-click ⇒ LỆCH bản gốc.',
-        ).not.toBe(before)
+            'CLICK ĐƠN phải làm 回数 +1 (dgvView_CellClick, frm203017.cs:363-388). ' +
+                'Còn đòi double-click ⇒ LỆCH bản gốc.',
+        ).toBe(String(cycle(0)))
+
+        await resetToZero()
+        await nameCell.dblclick()
+        const afterDouble = await input.inputValue()
+        dump(`cycle|double|0->${afterDouble}`)
+        expect(
+            afterDouble,
+            'DOUBLE-CLICK phải chạy CellClick HAI lần (+2, kẹp về 0 khi quá trần). ' +
+                'Ra +1 nghĩa là hành vi vẫn đang treo ở `onOpenRow`.',
+        ).toBe(String(cycle(cycle(0))))
+
+        await resetToZero()
+        await input.focus()
+        await page.keyboard.press('Enter')
+        await expect(
+            picker,
+            'Enter trong lưới không được đóng dialog — frm203017 chỉ map End/Escape ' +
+                'sang 確定, còn Enter thì formBase_KeyDown bỏ qua khi ActiveControl là grid',
+        ).toBeVisible()
+        const afterEnter = await input.inputValue()
+        dump(`cycle|enter|0->${afterEnter}`)
+        expect(
+            afterEnter,
+            'Enter KHÔNG được đổi 回数: dgvView không có handler Enter nào (Designer ' +
+                ':135-139), nên nó chỉ là phím di chuyển.',
+        ).toBe('0')
         await step()
+        await dismissPicker()
     })
 
     test('WinForm parity D-b: nền dòng đổi màu theo NHÓM (acc_unit >> 4), không theo chẵn/lẻ', async () => {
-        // frm203017.cs:1038-1050: bkCol chỉ lật khi `acc_unit >> 4` đổi ⇒ hai dòng
-        // CÙNG nhóm có CÙNG nền, dù một chẵn một lẻ. VirtualListTable của web tô theo
-        // `isEven` (virtual-list-table.tsx) ⇒ luôn xen kẽ từng dòng.
-        if ((await picker.count()) === 0) await openPickableGuide()
+        // frm203017.cs:1035-1050: `bkCol` CHỈ lật khi `acc_unit >> 4` đổi ⇒ hai dòng
+        // CÙNG nhóm có CÙNG nền, dù một chẵn một lẻ. VirtualListTable mặc định tô theo
+        // `isEven` ⇒ luôn xen kẽ từng dòng; ガイド phải đè lại bằng `getRowClassName`.
+        await dismissPicker()
+        const { guidCd } = await openPickableGuide()
         const n = await dialogRows().count()
         if (n < 3) {
             console.log(`dialog chỉ có ${n} dòng → không kết luận được về nhóm, BỎ QUA`)
             return
         }
 
-        const bgs: string[] = []
-        for (let i = 0; i < n; i++) {
-            bgs.push(
-                await dialogRows()
-                    .nth(i)
-                    .evaluate((el) => getComputedStyle(el).backgroundColor),
-            )
-        }
+        const bgs = await rowBackgrounds()
         bgs.forEach((b, i) => dump(`bg|${i}|${b}`))
 
-        // Nếu nền lật ở MỌI dòng thì đó chính là kiểu chẵn/lẻ, không phải theo nhóm.
-        const flipsEverywhere = bgs.every((b, i) => i === 0 || b !== bgs[i - 1])
+        // Dòng 0 đang SÁNG (getViewData đặt con trỏ ở ô 回数 dòng đầu) nên mang
+        // `bg-primary/10` — nền chọn phủ lên nền nhóm, đúng như SelectionBackColor của
+        // DataGridView. Bỏ nó ra khỏi phép so băng màu.
+        const body = bgs.slice(1)
+
+        // (1) Nền KHÔNG được lật ở mọi dòng — đó chính là kiểu chẵn/lẻ.
+        const flipsEverywhere = body.every((b, i) => i === 0 || b !== body[i - 1])
         expect(
             flipsEverywhere,
             'nền lật ở mọi dòng ⇒ web đang tô theo chẵn/lẻ; WinForm chỉ lật khi ĐỔI NHÓM ' +
-                '(acc_unit >> 4, frm203017.cs:1038-1050)',
+                '(acc_unit >> 4, frm203017.cs:1035-1050)',
         ).toBe(false)
-        await step()
-    })
 
+        // (2) Chỉ được có ĐÚNG hai tông — `bkCol` chỉ lật qua lại giữa White và
+        //     AlternatingRowsDefaultCellStyle. (Độ dài từng khối chỉ DUMP ra để đối
+        //     chiếu với WinForm, không assert: nó phụ thuộc dữ liệu ガイド nào mở được.)
+        const runs: { bg: string; len: number }[] = []
+        for (const b of body) {
+            const last = runs[runs.length - 1]
+            if (last && last.bg === b) last.len++
+            else runs.push({ bg: b, len: 1 })
+        }
+        dump(`bgruns|${runs.map((r) => `${r.len}`).join(',')}`)
+        expect(
+            new Set(body).size,
+            'lưới chỉ được dùng đúng 2 tông nền (trắng / tông xen kẽ)',
+        ).toBeLessThanOrEqual(2)
+
+        // (3) Nếu bắt được response thì so ĐÚNG ranh giới: nền chỉ đổi ở chỗ
+        //     `acc_unit >> 4` đổi. Đây mới là phép đo thật; (1)(2) là lưới an toàn cho
+        //     lần chạy mà TanStack Query trả cache nên không có response nào.
+        const wire = wireByKey(guidCd)
+        if (wire.size === 0) {
+            console.log(`không bắt được response của ガイド ${guidCd} (cache) → bỏ phần so acc_unit`)
+            await step()
+            return
+        }
+        const keys = await rowKeys()
+        const groups = keys.map((k) => {
+            const it = wire.get(k)
+            expect(it, `response của ガイド ${guidCd} thiếu dòng ${k}`).toBeTruthy()
+            return Number(it!.accUnit) >> ACC_UNIT_GROUP_SHIFT
+        })
+        keys.forEach((k, i) => dump(`bggrp|${i}|${k}|grp=${groups[i]}`))
+
+        for (let i = 2; i < bgs.length; i++) {
+            const sameGroup = groups[i] === groups[i - 1]
+            const sameBg = bgs[i] === bgs[i - 1]
+            expect(
+                sameBg,
+                sameGroup
+                    ? `dòng ${i - 1}/${i} cùng nhóm ${groups[i]} mà nền khác nhau`
+                    : `dòng ${i - 1}/${i} khác nhóm (${groups[i - 1]} → ${groups[i]}) mà nền giống nhau`,
+            ).toBe(sameGroup)
+        }
+        await step()
+        await dismissPicker()
+    })
 })
