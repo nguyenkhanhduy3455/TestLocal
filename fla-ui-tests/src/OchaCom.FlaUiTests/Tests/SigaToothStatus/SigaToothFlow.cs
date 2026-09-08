@@ -444,7 +444,12 @@ public sealed class SigaToothFlow
     /// <para>Không khớp mã nào thì app bung E00024 「該当病名…」 — hàm trả false và để
     /// nguyên hộp thoại cho testcase quyết định.</para>
     /// </summary>
-    public bool PickDisease(Window dialog, int disCd, TestTrace? trace = null)
+    /// <param name="disSb">
+    /// 病名枝番 cần chốt ở danh sách サブ. null = lấy dòng ĐẦU (hành vi cũ). Truyền vào khi
+    /// testcase cần đúng một 枝番 — vd 「Ｃ₂」 là <c>disCd 100 / disSb 2</c>, và chọn nhầm
+    /// 枝番 là đổi hẳn 病名 của 部位病名行.
+    /// </param>
+    public bool PickDisease(Window dialog, int disCd, TestTrace? trace = null, int? disSb = null)
     {
         // ⚠️ ĐƯỜNG NÀY LÀ ĐƯỜNG ĐO ĐƯỢC, đừng đổi lại sang gõ mã vào ô txtNo.
         //
@@ -494,8 +499,20 @@ public sealed class SigaToothFlow
 
         if (!looksLikeSubList) return false;
 
-        trace?.Step($"病名サブコード: double-click dong dau 「{subRows[0].Code} {subRows[0].Name}」");
-        DoubleClickRow(subRows[0]);
+        // Lưới サブ có 4 cột 選択番号|コード|枝番|病名 ⇒ ô thứ 3 (index 2) là 枝番.
+        var subTarget = subRows[0];
+        if (disSb is { } wantSb)
+        {
+            var matched = subRows.FirstOrDefault(r => Txt.Int(SubCodeOf(r)) == wantSb);
+            if (matched is null)
+                trace?.Note($"KHONG thay 枝番 = {wantSb} trong danh sach サブ — lui ve dong dau. " +
+                            "Danh sach: " + string.Join(" · ", subRows.Select(r => $"{r.Code}/{SubCodeOf(r)} {r.Name}")));
+            else
+                subTarget = matched;
+        }
+
+        trace?.Step($"病名サブコード: double-click dong 「{subTarget.Code}/{SubCodeOf(subTarget)} {subTarget.Name}」");
+        DoubleClickRow(subTarget);
         Thread.Sleep(800);
 
         chosen = DiseaseNameText(dialog);
@@ -505,6 +522,16 @@ public sealed class SigaToothFlow
 
     /// <summary>Một dòng của lưới 病名選択: 選択番号 / コード / 病名.</summary>
     public sealed record DiseaseRow(int Index, AutomationElement Element, string No, string Code, string Name);
+
+    /// <summary>
+    /// 枝番 của một dòng trong danh sách サブ — ô thứ 3 (4 cột 選択番号|コード|枝番|病名).
+    /// Danh sách CHÍNH chỉ có 3 cột nên hàm này trả rỗng ở đó.
+    /// </summary>
+    private static string SubCodeOf(DiseaseRow row)
+    {
+        var cells = Uia.Children(row.Element).ToList();
+        return cells.Count >= 4 ? Txt.N(Uia.ValueOf(cells[2])) : "";
+    }
 
     /// <summary>Các dòng DỮ LIỆU của <c>dgvView</c> trong 病名選択 (đã loại 「Top Row」).</summary>
     public IReadOnlyList<DiseaseRow> DiseaseRowElements(Window dialog, int limit = 60)

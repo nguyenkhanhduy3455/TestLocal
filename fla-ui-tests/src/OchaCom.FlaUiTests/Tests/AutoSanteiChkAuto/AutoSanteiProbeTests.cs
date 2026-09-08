@@ -11,14 +11,12 @@ namespace OchaCom.FlaUiTests.Tests.AutoSanteiChkAuto;
 /// assert. Mọi câu hỏi in ra dưới dạng <c>=== KQ-n ===</c>, runner lọc sẵn vào
 /// <c>auto-santei-KQ.txt</c>.</para>
 ///
-/// <para><b>CHẠY TỪNG CASE MỘT.</b> Một vòng 「Insert → 部位選択 → 病名選択 → gõ mã →
-/// 処置選択」 tốn 2–3 phút trên máy thật, mà wrapper cắt ở 15 phút (F7).</para>
+/// <para><b>CHẠY TỪNG CASE MỘT.</b> Một vòng chốt 処置 tốn 2-3 phút trên máy thật, mà
+/// wrapper cắt ở 15 phút (F7).</para>
 ///
 /// <code>
-///   -Case Tc0   chỉ hỏi DB: chkauto có gì, master có gì. KHÔNG mở app quá màn chính.
-///   -Case Tc1   179/2 抜歯 — ĐÚNG ca trong báo cáo lệch parity (cần allowSave)
-///   -Case Tc2   171/0 感根処 — ĐỐI CHỨNG, mã KHÔNG có trong chkauto
-///   -Case Tc3   110/0 再診 — ô có HAI mã đi kèm, không cần 部位
+///   -Case Tc0   chỉ hỏi DB: chkauto / CMTAUTO / master có gì. RẺ, chạy trước tiên.
+///   -Case Tc1   chốt 179/2 trên 部位病名行 đã seed — đúng đường của TC1..TC4
 /// </code>
 /// </summary>
 [TestFixture]
@@ -39,24 +37,30 @@ public sealed class AutoSanteiProbeTests : UiTestBase
     private int TrtCd => Settings.AutoSantei.TrtCd;
     private int TrtSb => Settings.AutoSantei.TrtSb;
     private int BuiSlot => Settings.AutoSantei.BuiSlot;
+    private const string DisMark = "Ｃ";
 
     /// <summary>
-    /// Đặt răng đem thử về 現存 TRƯỚC KHI APP MỞ — nếu không thì <c>ChkSiga</c> loại thẳng
-    /// 抜歯 và probe đo phải một cái không xảy ra.
-    ///
-    /// <para>Chỉ chạy khi <c>autoSantei.allowSave</c> bật. Tắt cờ thì Tc1 vẫn chạy được
-    /// miễn là răng vốn đã 現存 — probe không assert nên nó chỉ ghi lại sự thật.</para>
+    /// Dựng trạng thái xuất phát GIỐNG fixture assert: răng 現存 + một 部位病名行 đã seed,
+    /// cả hai TRƯỚC KHI APP MỞ. Chỉ chạy khi <c>autoSantei.allowSave</c> bật — tắt cờ thì
+    /// probe vẫn chạy được phần đọc, nó chỉ ghi lại sự thật chứ không assert.
     /// </summary>
     protected override void PrepareDataBeforeApp()
     {
-        var db = SigaKonDb.CreateOrNull(Settings, Settings.AutoSantei.AllowSave);
-        if (db is null || !db.CanWrite || db.ProbeError() is not null) return;
+        var siga = SigaKonDb.CreateOrNull(Settings, Settings.AutoSantei.AllowSave);
+        var chk = ChkAutoDb.CreateOrNull(Settings);
+        if (siga is null || !siga.CanWrite || siga.ProbeError() is not null) return;
+        if (chk is null || !chk.CanWrite) return;
 
-        db.EnsureSigaRow(PatNo);
-        _sigaBefore = db.ReadSiga(PatNo);
+        siga.EnsureSigaRow(PatNo);
+        _sigaBefore = siga.ReadSiga(PatNo);
         Log($"nguyên trạng SIGA (chụp TRƯỚC khi đặt mốc): {_sigaBefore}");
-        db.ResetSigaToVital(PatNo);
-        Log($"đặt mốc: mọi se* = {SigaKonDb.SeVital} (現存) ⇒ ChkSiga cho 抜歯 đi qua.");
+        siga.ResetSigaToVital(PatNo);
+
+        chk.SeedBuiDisRow(PatNo, TrtDate, BuiSlot, Settings.AutoSantei.BuiVal,
+                          Settings.AutoSantei.DisCd, Settings.AutoSantei.DisSb,
+                          dspBui: ToothSelectDialog.DescribeSlot(BuiSlot), dspDis: DisMark);
+        Log($"seed 部位病名行 ô {BuiSlot} ({ToothSelectDialog.DescribeSlot(BuiSlot)}) + 病名 " +
+            $"{Settings.AutoSantei.DisCd}/{Settings.AutoSantei.DisSb}, ngày {TrtDate:yyyy-MM-dd}.");
     }
 
     [OneTimeSetUp]
@@ -80,9 +84,22 @@ public sealed class AutoSanteiProbeTests : UiTestBase
     [OneTimeTearDown]
     public void ProbeOneTimeTearDown()
     {
-        if (_siga is null || !_siga.CanWrite || _sigaBefore is null) return;
-        try { _siga.RestoreSiga(PatNo, _sigaBefore); Log("dọn: SIGA trả về nguyên trạng."); }
-        catch (Exception e) { Log($"dọn HỎNG: {e.Message} — dựng tay theo dòng 「nguyên trạng SIGA」 ở trên."); }
+        try
+        {
+            if (_chk is not null && _chk.CanWrite)
+            {
+                _chk.DeleteSeededRows(PatNo, TrtDate);
+                if (Settings.AutoSantei.AllowRowCleanup)
+                    _chk.DeleteCompanionRows(PatNo, TrtDate, TrtCd, TrtSb);
+                Log("dọn: đã xoá vùng seed + dòng đi kèm của ngày test.");
+            }
+            if (_siga is not null && _siga.CanWrite && _sigaBefore is not null)
+            {
+                _siga.RestoreSiga(PatNo, _sigaBefore);
+                Log("dọn: SIGA trả về nguyên trạng.");
+            }
+        }
+        catch (Exception e) { Log($"dọn HỎNG: {e.Message} — dựng tay theo dòng 「nguyên trạng SIGA」."); }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -90,20 +107,19 @@ public sealed class AutoSanteiProbeTests : UiTestBase
     // ═════════════════════════════════════════════════════════════════════════
 
     [Test, Order(0)]
-    [Description("Tc0 — chkauto có gì cho mã đem thử, và master của tháng có đủ mã đi kèm không")]
-    public void Tc0_Read_ChkAuto_Table()
+    [Description("Tc0 — chkauto / CMTAUTO / master có gì cho mã đem thử")]
+    public void Tc0_Read_Master_Tables()
     {
-        var total = _chk.CountRows();
-        var multi = _chk.CountRowsWithSecondCode();
-        Log($"=== KQ-1 === chkauto có {total} dòng, trong đó {multi} dòng có từ 2 mã đi kèm trở lên.");
+        Log($"=== KQ-1 === chkauto có {_chk.CountRows()} dòng, " +
+            $"{_chk.CountRowsWithSecondCode()} dòng có ≥2 mã đi kèm.");
         foreach (var line in _chk.Describe()) Log($"=== KQ-1 ===   {line}");
 
         var row = _chk.ReadChkAuto(TrtCd, TrtSb);
         Log($"=== KQ-2 === {row?.ToString() ?? $"chkauto({TrtCd},{TrtSb}) KHÔNG có dòng nào"}");
         if (row is not null)
         {
-            Log($"=== KQ-2 ===   ô đi nhánh 処置 : [{string.Join(", ", row.TreatmentPairs.Select(p => $"{p.Cd}/{p.Sb}"))}]");
-            Log($"=== KQ-2 ===   ô đi nhánh 摘要 : [{string.Join(", ", row.CommentPairs.Select(p => $"{p.Cd}/{p.Sb}"))}]");
+            Log($"=== KQ-2 ===   ô nhánh 処置 : [{string.Join(", ", row.TreatmentPairs.Select(p => $"{p.Cd}/{p.Sb}"))}]");
+            Log($"=== KQ-2 ===   ô nhánh 摘要 : [{string.Join(", ", row.CommentPairs.Select(p => $"{p.Cd}/{p.Sb}"))}]");
         }
 
         var table = _siga.ActiveTrtTable(TrtDate);
@@ -113,94 +129,85 @@ public sealed class AutoSanteiProbeTests : UiTestBase
         foreach (var (cd, sb) in row?.TreatmentPairs ?? [])
             Log($"=== KQ-3 ===   {cd}/{sb} = " + (_siga.FindMasterRow(TrtDate, cd, sb)?.ToString() ?? "(KHÔNG có)"));
 
-        var control = _chk.ReadChkAuto(Settings.AutoSantei.ControlTrtCd, Settings.AutoSantei.ControlTrtSb);
-        Log($"=== KQ-4 === ĐỐI CHỨNG {Settings.AutoSantei.ControlTrtCd}/{Settings.AutoSantei.ControlTrtSb}: " +
-            (control is null ? "KHÔNG có trong chkauto (đúng thứ cần)" : $"CÓ trong chkauto — {control} ⇒ ĐỔI mã đối chứng đi"));
+        // CMTAUTO — và ĐỐI CHIẾU tên với MST_CMT2, vì hai cột này đã lệch trên DB dev.
+        var cmts = _chk.FindCmtAutos(TrtCd, TrtSb);
+        Log($"=== KQ-4 === CMTAUTO({TrtCd},{TrtSb}): {cmts.Count} dòng");
+        foreach (var c in cmts)
+        {
+            var shown = _chk.ResolveCmtName(c.CmtCd, c.CmtSb);
+            Log($"=== KQ-4 ===   {c}");
+            Log($"=== KQ-4 ===     MST_CMT2 (thứ LƯỚI in) = 「{shown ?? "(KHÔNG có)"}」" +
+                (shown is not null && AutoSanteiOps.Norm(shown) != AutoSanteiOps.Norm(c.CmtNm)
+                    ? "   ⚠️ LỆCH với CMTAUTO.CMT_NM"
+                    : ""));
+        }
 
-        var multiRow = _chk.ReadChkAuto(Settings.AutoSantei.MultiTrtCd, Settings.AutoSantei.MultiTrtSb);
-        Log($"=== KQ-5 === ô nhiều mã {Settings.AutoSantei.MultiTrtCd}/{Settings.AutoSantei.MultiTrtSb}: " +
-            (multiRow?.ToString() ?? "(KHÔNG có)"));
+        var control = _chk.ReadChkAuto(Settings.AutoSantei.ControlTrtCd, Settings.AutoSantei.ControlTrtSb);
+        Log($"=== KQ-5 === ĐỐI CHỨNG {Settings.AutoSantei.ControlTrtCd}/{Settings.AutoSantei.ControlTrtSb}: " +
+            (control is null ? "KHÔNG có trong chkauto (đúng thứ cần)" : $"CÓ — {control} ⇒ đổi mã đối chứng"));
+
+        Log("=== KQ-6 === dòng 処置 của ngày test:");
+        foreach (var line in _chk.DescribeDayRows(PatNo, TrtDate)) Log($"=== KQ-6 ===   {line}");
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // Tc1 — 179/2 抜歯: ĐÚNG ca trong báo cáo
+    // Tc1 — chốt 179/2 trên 部位病名行 đã seed
     // ═════════════════════════════════════════════════════════════════════════
 
     [Test, Order(1)]
-    [Description("Tc1 — nhập 179/2 抜歯 lên một răng và ghi lại app tự chèn thêm những gì")]
-    public void Tc1_Enter_Extraction_And_Watch()
+    [Description("Tc1 — chốt 処置 trên 部位病名行 đã seed và ghi lại app tự chèn thêm những gì")]
+    public void Tc1_Commit_And_Watch_Follow_Up_Rows()
     {
         using var trace = TestTrace.Begin();
-        ProbeOne(TrtCd, TrtSb, BuiSlot, "Tc1 抜歯", trace);
-    }
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // Tc2 — ĐỐI CHỨNG: mã KHÔNG có trong chkauto
-    // ═════════════════════════════════════════════════════════════════════════
-
-    [Test, Order(2)]
-    [Description("Tc2 (đối chứng) — mã KHÔNG có trong chkauto thì lưới chỉ dài thêm ĐÚNG dòng vừa gõ")]
-    public void Tc2_Enter_Control_Code_And_Watch()
-    {
-        using var trace = TestTrace.Begin();
-        ProbeOne(Settings.AutoSantei.ControlTrtCd, Settings.AutoSantei.ControlTrtSb, BuiSlot,
-                 "Tc2 đối chứng", trace);
-    }
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // Tc3 — ô có HAI mã đi kèm, không đi qua 部位選択
-    // ═════════════════════════════════════════════════════════════════════════
-
-    [Test, Order(3)]
-    [Description("Tc3 — 110/0 再診: chkauto có cd1 VÀ cd2, đo xem vòng lặp 5 lượt chèn được mấy dòng")]
-    public void Tc3_Enter_Multi_Companion_Code_And_Watch()
-    {
-        using var trace = TestTrace.Begin();
-        ProbeOne(Settings.AutoSantei.MultiTrtCd, Settings.AutoSantei.MultiTrtSb, buiSlot: -1,
-                 "Tc3 nhiều mã đi kèm", trace);
-    }
-
-    // ── Nội bộ ───────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Một vòng đo, KHÔNG BAO GIỜ NÉM — bắt hết ngoại lệ, ghi lại rồi đi tiếp. Probe mà ném
-    /// giữa chừng thì mất luôn phần trả lời của những câu hỏi phía sau.
-    /// </summary>
-    private void ProbeOne(int trtCd, int trtSb, int buiSlot, string label, TestTrace trace)
-    {
         try
         {
-            var row = _chk.ReadChkAuto(trtCd, trtSb);
-            Log($"=== KQ-6 === [{label}] {row?.ToString() ?? $"chkauto({trtCd},{trtSb}) KHÔNG có dòng nào"}");
+            var row = _chk.ReadChkAuto(TrtCd, TrtSb);
+            Log($"=== KQ-7 === {row?.ToString() ?? $"chkauto({TrtCd},{TrtSb}) KHÔNG có dòng nào"}");
 
-            var measure = _ops.EnterAndMeasure(trtCd, trtSb, buiSlot, trace,
-                                               buiSlot >= 0 ? Settings.AutoSantei.DisCd : null);
-            if (measure is null)
+            var seeded = _ops.SeededBuiRow(DisMark);
+            Log($"=== KQ-8 === 部位病名行 seed tren luoi: {seeded?.ToString() ?? "KHÔNG THẤY"}");
+            if (seeded is null)
             {
-                Log($"=== KQ-7 === [{label}] KHÔNG gõ được mã — xem _trace.log và ảnh chụp bước cuối.");
+                Log("=== KQ-8 ===   lưới: " + string.Join(" | ", _flow.DescribeGrid(40)));
                 return;
             }
 
-            Log($"=== KQ-7 === [{label}] {measure}");
-            Log($"=== KQ-8 === [{label}] các dòng app TỰ CHÈN (kể cả dòng vừa gõ):");
-            foreach (var added in measure.AddedRows) Log($"=== KQ-8 ===   + {added}");
-            Log($"=== KQ-9 === [{label}] 月計点数 {measure.PointBefore} → {measure.PointAfter} " +
+            var measure = _ops.CommitOnSeededRow(seeded, TrtCd, TrtSb, trace);
+            if (measure is null)
+            {
+                Log("=== KQ-9 === KHÔNG chốt được — xem _trace.log và ảnh chụp bước cuối.");
+                return;
+            }
+
+            Log($"=== KQ-9 === {measure}");
+            Log("=== KQ-10 === các dòng app TỰ CHÈN (kể cả dòng vừa chốt):");
+            foreach (var added in measure.AddedRows) Log($"=== KQ-10 ===   + {added}");
+            Log($"=== KQ-11 === 月計点数 {measure.PointBefore} → {measure.PointAfter} " +
                 $"(Δ {measure.PointDelta?.ToString() ?? "?"})");
 
             foreach (var (cd, sb) in row?.TreatmentPairs ?? [])
             {
                 var master = _siga.FindMasterRow(TrtDate, cd, sb);
                 var found = master is null ? null : AutoSanteiOps.RowOf(measure.AddedRows, master);
-                Log($"=== KQ-10 === [{label}] mã đi kèm {cd}/{sb} " +
-                    $"({master?.ToString() ?? "KHÔNG có trong master"}) → " +
+                Log($"=== KQ-12 === mã đi kèm {cd}/{sb} ({master?.ToString() ?? "KHÔNG có trong master"}) → " +
                     (found is null ? "KHÔNG thấy dòng nào trên lưới" : $"THẤY 「{found}」"));
             }
 
-            _ops.DeleteAdded(measure, trace);
+            foreach (var c in _chk.FindCmtAutos(TrtCd, TrtSb))
+            {
+                var shown = _chk.ResolveCmtName(c.CmtCd, c.CmtSb) ?? c.CmtNm;
+                var found = AutoSanteiOps.RowByName(measure.AddedRows, shown);
+                Log($"=== KQ-13 === CMTAUTO {c.CmtCd}/{c.CmtSb} 「{shown}」 (disp_no {c.DispNo}) → " +
+                    (found is null ? "KHÔNG thấy" : $"THẤY 「{found}」"));
+            }
+
+            var all = _ops.DataRows();
+            Log("=== KQ-14 === THỨ TỰ lưới sau khi chốt:");
+            foreach (var r in all) Log($"=== KQ-14 ===   {r}");
         }
         catch (Exception e)
         {
-            Log($"=== KQ-7 === [{label}] NÉM: {e.GetType().Name}: {e.Message}");
+            Log($"=== KQ-9 === NÉM: {e.GetType().Name}: {e.Message}");
             trace.Note($"probe nem: {e}");
             trace.Shot("probe-nem");
         }

@@ -314,10 +314,28 @@ public sealed class TestSettings
         [JsonPropertyName("disCd")] public int DisCd { get; set; } = 100;
 
         /// <summary>
-        /// Ô 部位 (0-based) đem thử. Mặc định 10 = 左上3 ⇒ cột <c>se11</c> — dùng lại đúng ô
-        /// của luồng SigaToothStatus để hai luồng không tranh nhau răng.
+        /// Ô 部位 (0-based, 0..31 ⇒ cột <c>BUI{n+1}</c> của TRNTRN). Mặc định <b>2 = 右上6</b>
+        /// — KHỚP <c>BUI_SLOT = 2</c> của spec Playwright, và đúng răng 「6」 trong ảnh báo lỗi.
+        ///
+        /// <para>⚠️ Đổi ô này là đổi cả cột <c>siga.se{n+1}</c> mà fixture đặt về 現存;
+        /// hai bên parity phải dùng CÙNG một ô, nếu không thì so nhau vô nghĩa.</para>
         /// </summary>
-        [JsonPropertyName("buiSlot")] public int BuiSlot { get; set; } = 10;
+        [JsonPropertyName("buiSlot")] public int BuiSlot { get; set; } = 2;
+
+        /// <summary>Giá trị ô 部位 seed; 1 = 永久歯 đang chọn (↔ <c>BUI_VAL = 1</c> bên web).</summary>
+        [JsonPropertyName("buiVal")] public int BuiVal { get; set; } = 1;
+
+        /// <summary>
+        /// 病名枝番 của <see cref="DisCd"/>. Mặc định 2 ⇒ 「Ｃ₂」 — khớp
+        /// <c>DIS_SB_C2 = 2</c> bên web và đúng dòng 「6 (1) Ｃ₂」 trong ảnh.
+        /// </summary>
+        [JsonPropertyName("disSb")] public int DisSb { get; set; } = 2;
+
+        /// <summary>
+        /// Cho phép XOÁ các dòng mang mã đem thử + mã đi kèm trong NGÀY test. Chỉ chạy khi
+        /// ngày đó KHÔNG có sẵn dòng nào mang các mã ấy trước lượt chạy (hàng rào F22).
+        /// </summary>
+        [JsonPropertyName("allowRowCleanup")] public bool AllowRowCleanup { get; set; } = true;
 
         /// <summary>
         /// Mã 処置 mà probe dò thêm ở nhánh KHÔNG cần 部位 — mặc định 110/0 再診,

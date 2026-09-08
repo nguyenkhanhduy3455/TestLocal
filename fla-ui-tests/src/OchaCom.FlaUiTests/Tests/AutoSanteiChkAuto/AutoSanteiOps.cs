@@ -7,17 +7,18 @@ using OchaCom.FlaUiTests.Tests.TreatmentGrid;
 namespace OchaCom.FlaUiTests.Tests.AutoSanteiChkAuto;
 
 /// <summary>
-/// Đo MỘT lượt nhập 処置: lưới trước — lưới sau — 月計点数 trước/sau, rồi tách ra
-/// 「dòng nào app TỰ CHÈN」.
+/// Chốt một 処置 rồi đo cái ĐUÔI của nó — nửa WinForm của <c>commitTrigger()</c> +
+/// <c>waitForFollowUpRows()</c> trong
+/// <c>../web-tenant-tests/tests/auto-santei/chk-auto-after-commit.spec.ts</c>.
 ///
-/// <para>Đường nhập thì mượn nguyên <see cref="SigaToothFlow"/> (Insert → 部位選択 →
-/// 病名選択 → gõ mã → 処置選択): nó đã gánh sẵn mọi cái bẫy của lưới <c>grdRegi</c>, và
-/// viết lại là chép lại luôn cả bẫy. Lớp này CHỈ thêm phần đo.</para>
+/// <para>Đường đi phải GIỐNG bên kia từng bước, nếu không hai vế parity đo hai thứ khác
+/// nhau: đặt con trỏ lên 部位病名行 đã seed → コードモード → gõ mã vào ô 点 → 処置選択 →
+/// chốt 枝番 → <b>Enter ở ô 回</b> (chính cú Enter đó mở nhánh
+/// <c>Chk_CmtAuto</c> + <c>Chk_ChkAuto</c>, frm203002.cs:5738-5752).</para>
 ///
-/// <para><b>Mốc chính là <c>lbAllPoint</c>, không phải số dòng của lưới</b> — F12: UIA của
-/// <c>DataGridView</c> chỉ phơi ra dòng ĐANG NHÌN THẤY, mà chèn xong app lại cuộn lưới.
-/// Số dòng đọc được vì thế trôi theo vị trí cuộn chứ không theo dữ liệu; 月計点数 thì nằm
-/// NGOÀI lưới (frm203002.Designer.cs:1062-1084, do <c>modAcc.Calc_MDPoint</c> ghi).</para>
+/// <para><b>Mốc là <c>lbAllPoint</c>, không phải số dòng lưới</b> (F12): UIA của
+/// <c>DataGridView</c> chỉ phơi ra dòng ĐANG NHÌN THẤY, mà chèn xong app lại cuộn.
+/// 月計点数 nằm NGOÀI lưới (frm203002.Designer.cs:1062-1084).</para>
 /// </summary>
 public sealed class AutoSanteiOps
 {
@@ -31,13 +32,12 @@ public sealed class AutoSanteiOps
     }
 
     public SigaToothFlow Flow => _flow;
+    public TreatmentGridOps Grid => _grid;
 
-    /// <summary>Kết quả một lượt nhập — mọi thứ testcase cần để kết luận đúng địa chỉ.</summary>
+    /// <summary>Kết quả một lượt chốt — mọi thứ testcase cần để kết luận đúng địa chỉ.</summary>
     /// <param name="Enter">Kết quả thô của đường nhập (có mở 処置選択 không, chốt được không).</param>
     /// <param name="Before">Lưới TRƯỚC khi gõ mã.</param>
-    /// <param name="After">Lưới SAU khi Enter ô 回 — tức sau khi <c>Chk_ChkAuto</c> đã chạy.</param>
-    /// <param name="PointBefore">月計点数 trước; null = không đọc được nhãn.</param>
-    /// <param name="PointAfter">月計点数 sau.</param>
+    /// <param name="After">Lưới SAU khi Enter ô 回 — tức sau khi cái đuôi đã chạy xong.</param>
     public sealed record EntryMeasure(
         SigaToothFlow.EnterResult Enter,
         IReadOnlyList<RegiRow> Before,
@@ -49,17 +49,14 @@ public sealed class AutoSanteiOps
         public int? PointDelta => PointBefore is { } b && PointAfter is { } a ? a - b : null;
 
         /// <summary>
-        /// Các dòng CÓ THÊM sau lượt nhập, so theo NỘI DUNG chứ không theo chỉ số.
+        /// Các dòng CÓ THÊM sau lượt chốt, so theo NỘI DUNG chứ không theo chỉ số.
         ///
         /// <para>So theo chỉ số là sai ngay từ đầu: <c>frmInpMain.AddRow</c> chèn vào giữa
-        /// lưới (ngay dưới con trỏ), nên mọi dòng phía dưới đều dịch chỉ số. So theo nội
-        /// dung thì miễn nhiễm — và cũng miễn nhiễm với việc lưới bị cuộn.</para>
+        /// lưới (ngay dưới con trỏ), nên mọi dòng phía dưới đều dịch chỉ số.</para>
         ///
-        /// <para>⚠️ <b>Phải loại 日計行 / 合計行 ra khỏi phép so.</b> Hai dòng đó IN CHÍNH
-        /// SỐ ĐIỂM (「[日計 339点]」), nên mỗi lượt nhập làm nội dung chúng đổi — so theo nội
-        /// dung sẽ thấy 「dòng cũ biến mất, dòng mới xuất hiện」 và đếm chúng thành dòng app
-        /// tự chèn. Bỏ qua chuyện này là mọi phép đếm 「tự chèn mấy dòng」 dôi ra 1–2 dòng và
-        /// cả ô ĐỐI CHỨNG cũng đỏ.</para>
+        /// <para>⚠️ <b>Phải loại 日計行 / 合計行.</b> Hai dòng đó IN CHÍNH SỐ ĐIỂM
+        /// (「[日計 339点]」) nên mỗi lượt nhập làm nội dung chúng đổi — so theo nội dung sẽ
+        /// thấy 「dòng cũ biến mất, dòng mới xuất hiện」 và đếm chúng thành dòng app tự chèn.</para>
         /// </summary>
         public IReadOnlyList<RegiRow> AddedRows
         {
@@ -70,30 +67,26 @@ public sealed class AutoSanteiOps
                 foreach (var row in After.Where(IsData))
                 {
                     var i = pool.IndexOf(Key(row));
-                    if (i >= 0) pool.RemoveAt(i);   // dòng cũ — bỏ đúng MỘT bản, giữ được dòng trùng lặp
+                    if (i >= 0) pool.RemoveAt(i);   // dòng cũ — bỏ đúng MỘT bản
                     else added.Add(row);
                 }
                 return added;
             }
         }
 
-        /// <summary>Khoá so sánh một dòng: 日 + 部位 + 療法・処置 + 点 + 回.</summary>
         private static string Key(RegiRow r) => $"{r.Day}|{r.Bui}|{r.Ryo}|{r.Ten}|{r.Kai}";
 
         /// <summary>
         /// Dòng DỮ LIỆU — loại 日計 / 合計 / 負担金 / 実日数 và dòng tiêu đề tháng (ô 日 rỗng).
         /// Bản sao có chủ ý của <c>SigaToothFlow.IsSummaryRow</c>: hàm bên đó là private và
-        /// đang phục vụ việc khác (tìm chỗ đứng để Insert), sửa nó là đụng vào luồng khác.
+        /// đang phục vụ việc khác.
         /// </summary>
         public static bool IsData(RegiRow r) =>
             !Txt.Has(r.Ryo, "日計") && !Txt.Has(r.Ryo, "合計") &&
             !Txt.Has(r.Ryo, "負担金") && !Txt.Has(r.Ryo, "実日数") &&
             !Txt.Has(r.Bui, "合計") && Txt.Int(r.Day) is not null;
 
-        /// <summary>
-        /// Tổng 点 × 回 của các dòng vừa thêm — đối chiếu với <see cref="PointDelta"/>.
-        /// Dòng 部位病名行 mang 「-」 ở ô 点 và dòng コメント mang 0, cả hai trả về 0.
-        /// </summary>
+        /// <summary>Tổng 点 × 回 của các dòng vừa thêm — đối chiếu với <see cref="PointDelta"/>.</summary>
         public int AddedPointSum =>
             AddedRows.Sum(r => (Txt.Int(r.Ten) ?? 0) * (Txt.Int(r.Kai) ?? 1));
 
@@ -103,18 +96,26 @@ public sealed class AutoSanteiOps
     }
 
     /// <summary>
-    /// Nhập một 処置 lên ĐÚNG một răng rồi đo. Trả về null khi chưa kịp gõ mã (không có
-    /// chỗ đứng / Insert hỏng) — testcase tự quyết định đó là đỏ hay Ignore.
+    /// 部位病名行 đã seed — nhận ra bằng ô 点 mang 「-」 VÀ ô 部位/療法 chứa
+    /// <paramref name="disMark"/> (tên 病名 mà seed ghi vào <c>DSP_DIS</c>).
     /// </summary>
-    /// <param name="buiSlot">Ô 部位 (0-based); &lt; 0 = KHÔNG đi qua 部位選択.</param>
-    /// <param name="disCd">
-    /// 病名 đăng ký kèm 部位. <b>Đừng để null.</b> Không có 病名 thì dòng không thành
-    /// 部位病名行 đúng nghĩa, app bung 「算定可能な部位がありません」 và ghi 回 = 0 — mà
-    /// 回 = 0 đóng luôn cửa vào <c>Chk_ChkAuto</c> (đo 2026-09-08, xem
-    /// <see cref="EnsureTrtCount"/>).
-    /// </param>
-    public EntryMeasure? EnterAndMeasure(int trtCd, int trtSb, int buiSlot, TestTrace trace,
-                                         int? disCd = null)
+    public RegiRow? SeededBuiRow(string disMark, int limit = 80) =>
+        _grid.Snapshot(limit).LastOrDefault(
+            r => Txt.Int(r.Day) is not null
+                 && (Txt.N(r.Ten) is "-" or "－")
+                 && (Txt.Has(r.Bui, disMark) || Txt.Has(r.Ryo, disMark)));
+
+    /// <summary>
+    /// Chốt <paramref name="trtCd"/>/<paramref name="trtSb"/> ngay trên 部位病名行 đã seed,
+    /// rồi đo lưới trước/sau. Trả về null khi chưa gõ được mã.
+    ///
+    /// <para>Đối ứng 1-1 với <c>commitTrigger()</c> bên Playwright. Khác biệt DUY NHẤT là
+    /// bên này phải chèn một dòng trống dưới 部位病名行 trước khi gõ: WinForm không có
+    /// 「dòng mời nhập」 ở cuối (<c>AllowUserToAddRows = false</c>), và
+    /// <c>ModMain.AutoBui</c> chỉ chép 部位/病名 xuống dòng đích khi dòng đó CÒN TRỐNG
+    /// (modMain.cs:139-146 「すでに入っていれば何もしない」).</para>
+    /// </summary>
+    public EntryMeasure? CommitOnSeededRow(RegiRow seededBuiRow, int trtCd, int trtSb, TestTrace trace)
     {
         if (!_flow.EnsureCodeMode())
         {
@@ -122,106 +123,38 @@ public sealed class AutoSanteiOps
             return null;
         }
 
-        var seat = _flow.InputRow();
-        if (seat is null)
+        // Dòng trống NGAY DƯỚI 部位病名行 — chỗ mà AutoBui chép 部位/病名 sang.
+        var below = _flow.RowAfter(seededBuiRow);
+        RegiRow? target;
+        if (below is not null && SigaToothFlow.IsBlank(below.Ryo) && SigaToothFlow.IsBlank(below.Ten))
         {
-            trace.Note("luoi khong co dong 処置 nao cua thang dang mo. Luoi:\n  " +
-                       string.Join("\n  ", _flow.DescribeGrid()));
-            return null;
-        }
-
-        var blank = _flow.InsertBlankRow(seat, trace);
-        if (blank is null)
-        {
-            trace.Note("Insert khong chen duoc dong trong. Luoi:\n  " +
-                       string.Join("\n  ", _flow.DescribeGrid()));
-            return null;
-        }
-
-        SigaToothFlow.EnterResult enter;
-        IReadOnlyList<RegiRow> before;
-        int? pointBefore;
-
-        if (buiSlot >= 0)
-        {
-            // ⚠️ PHẢI CÓ HAI DÒNG TRỐNG LIỀN NHAU: một để thành 部位病名行, một để nhận 処置.
-            //
-            // `ModMain.AutoBui` là thứ chép 部位/病名 từ 部位病名行 xuống dòng ngay dưới
-            // (frm203002.cs:8660), NHƯNG nó BỎ QUA khi dòng đích đã có sẵn bất cứ gì ở cột
-            // 8..49 — 「すでに入っていれば何もしない」 (modMain.cs:139-146).
-            //
-            // Đo được 2026-09-08 (TcAUTO2 lượt 4): chỉ chèn MỘT dòng trống thì dòng ngay dưới
-            // 部位病名行 là một 処置行 CÓ SẴN của bệnh nhân, AutoBui im lặng bỏ qua, và 抜歯 gõ
-            // vào đó không mang 部位 nào ⇒ app bung 「…算定可能な部位がありません。」 rồi ghi
-            // 回 = 0 ⇒ Chk_ChkAuto không bao giờ chạy. Ba lượt chạy đầu đều chết ở đây.
-            var second = _flow.InsertBlankRow(blank, trace);
-            if (second is null)
-                trace.Note("KHONG chen duoc dong trong thu hai — 部位 se khong chep xuong duoc (AutoBui bo qua)");
-
-            // Chỉ số đã xê dịch sau cú Insert thứ hai ⇒ đọc lại lưới, lấy dòng TRÊN của cặp trống.
-            var blanks = _grid.Snapshot()
-                              .Where(r => Txt.Int(r.Day) is not null
-                                          && SigaToothFlow.IsBlank(r.Ryo)
-                                          && SigaToothFlow.IsBlank(r.Ten))
-                              .ToList();
-            var upper = blanks.Count >= 2 ? blanks[^2] : second ?? blank;
-            trace.Note($"cap dong trong: {blanks.Count} dong trong tren luoi; dat 部位 vao 「{upper}」");
-
-            var bui = _flow.SetBuiOnRow(upper, buiSlot, milk: false, disCd, trace);
-            trace.Note($"dat 部位: {bui}");
-            if (!bui.ToothDialogOpened)
-            {
-                trace.Note("KHONG mo duoc 部位選択 — dung o day, dung di tiep (F15).");
-                return null;
-            }
-
-            // ⚠️ CHỤP MỐC Ở ĐÂY, SAU 部位選択 và TRƯỚC khi gõ mã.
-            // 部位選択 + 病名選択 tự dựng thêm một 部位病名行; chụp trước chúng thì dòng đó
-            // lọt vào AddedRows và mọi phép đếm 「app tự chèn mấy dòng」 lệch đúng một dòng.
-            before = _grid.Snapshot();
-            pointBefore = _grid.AllPointValue();
-            trace.Note($"moc truoc khi go ma: {before.Count} dong, 月計 = {pointBefore?.ToString() ?? "?"}");
-
-            // ⚠️ GÕ VÀO Ô 点 CỦA MỘT DÒNG CỤ THỂ, ĐỪNG 「gõ tại chỗ con trỏ」.
-            //
-            // Đăng ký 病名 THẬT (điều mà testcase này bắt buộc phải làm) đưa app vào nhánh
-            // 「病名入力あり」 của frmDis_KeyFunc_EndKey_Method: với pInpOpt[9] == 1 như máy
-            // test, nó bắn F4 rồi txtGuid1Sel.Focus() (frm203002.cs:8376-8384) — panel bên
-            // phải nhảy sang tab ガイド và TIÊU ĐIỂM RỜI KHỎI LƯỚI.
-            //
-            // Đo được 2026-09-08 (TcAUTO2 lượt 3): gõ 「179」 lúc đó là gõ vào ô 選択№ của
-            // ガイド, và cái bung ra là cửa sổ 「ガイド番号」 — cũng mang lưới dgvView nên
-            // SigaToothFlow.Picker() nhận nhầm nó là 処置選択, rồi chốt phải 310/2. Cả lượt
-            // chạy đo một đường HOÀN TOÀN KHÁC (lối ガイド) mà không có dấu hiệu gì.
-            //
-            // EnterTreatment → EnterCodeOnRow click thẳng ô 点 nên tiêu điểm quay lại lưới.
-            var buiLine = _flow.LastBuiLineRow();
-            var target = buiLine is null ? null : _flow.RowAfter(buiLine);
-            if (target is null)
-            {
-                trace.Note("khong tim ra dong ngay duoi 部位病名行 — lui ve go tai cho con tro");
-                enter = _flow.EnterTreatmentAtCursor(trtCd, trtSb, answerYes: null, trace);
-            }
-            else
-            {
-                trace.Note($"go ma vao o 点 cua dong ngay duoi 部位病名行: 「{target}」");
-                enter = _flow.EnterTreatment(target, trtCd, trtSb, answerYes: null, trace);
-            }
+            trace.Note($"duoi 部位病名行 da san co dong trong: 「{below}」");
+            target = below;
         }
         else
         {
-            before = _grid.Snapshot();
-            pointBefore = _grid.AllPointValue();
-            trace.Note($"moc truoc khi go ma: {before.Count} dong, 月計 = {pointBefore?.ToString() ?? "?"}");
-
-            enter = _flow.EnterTreatment(blank, trtCd, trtSb, answerYes: null, trace);
+            trace.Note($"duoi 部位病名行 la 「{below?.ToString() ?? "KHONG CO"}」 — chen mot dong trong");
+            var blank = _flow.InsertBlankRow(below ?? seededBuiRow, trace);
+            if (blank is null)
+            {
+                trace.Note("Insert khong chen duoc dong trong. Luoi:\n  " +
+                           string.Join("\n  ", _flow.DescribeGrid()));
+                return null;
+            }
+            // Insert đẩy mọi thứ xuống ⇒ đọc lại lưới rồi lấy lại dòng ngay dưới 部位病名行.
+            var line = _flow.LastBuiLineRow();
+            target = line is null ? blank : _flow.RowAfter(line) ?? blank;
         }
 
-        Settle(trace);
+        var before = _grid.Snapshot();
+        var pointBefore = _grid.AllPointValue();
+        trace.Note($"moc truoc khi go ma: {before.Count} dong, 月計 = {pointBefore?.ToString() ?? "?"}");
 
-        // ⚠️ 回 PHẢI >= 1, nếu không thì CẢ NHÁNH ĐANG ĐO KHÔNG BAO GIỜ CHẠY.
-        // frm203002.cs:5745 `if (trtCnt >= 1)` là cửa duy nhất dẫn tới Chk_ChkAuto_soutyaku
-        // và Chk_ChkAuto; 回 = 0 thì app chỉ gọi Chk_CmtAuto rồi thôi.
+        // ⚠️ Gõ vào ô 点 của MỘT DÒNG CỤ THỂ, đừng 「gõ tại chỗ con trỏ」: sau 病名選択 app
+        // có thể đã nhảy sang tab ガイド và tiêu điểm rời khỏi lưới (frm203002.cs:8376-8384).
+        var enter = _flow.EnterTreatment(target!, trtCd, trtSb, answerYes: null, trace);
+
+        Settle(trace);
         EnsureTrtCount(before, trace);
 
         var after = _grid.Snapshot();
@@ -230,15 +163,14 @@ public sealed class AutoSanteiOps
 
         trace.Note($"do duoc: {measure}");
         foreach (var row in measure.AddedRows) trace.Note("  + " + row);
-        trace.Shot($"sau-khi-nhap-{trtCd}-{trtSb}");
+        trace.Shot($"sau-khi-chot-{trtCd}-{trtSb}");
         return measure;
     }
 
     /// <summary>
     /// Chờ cho tới khi không còn cửa sổ nào chồng lên lưới.
     ///
-    /// <para>Deadline NGẮN có chủ ý (F2): thao tác đang chờ là thuần bộ nhớ, 8s đã là rộng
-    /// rãi, và chờ lâu hơn không cho thêm thông tin nào — nó chỉ đổi 5 giây thành 15 phút.
+    /// <para>Deadline NGẮN có chủ ý (F2): thao tác đang chờ là thuần bộ nhớ.
     /// <c>Chk_ChkAuto</c> có thể mở 処置選択 lần nữa cho chính mã đi kèm (case 179 分割抜歯,
     /// case 202, case 549 — modMain.cs:990-1010), nên vẫn phải chờ.</para>
     /// </summary>
@@ -255,21 +187,19 @@ public sealed class AutoSanteiOps
     /// Bảo đảm ô 回 của dòng vừa nhập mang giá trị &gt;= 1 — <b>điều kiện DUY NHẤT</b> mở
     /// nhánh 自動算定 (<c>frm203002.cs:5745</c>).
     ///
-    /// <para><b>Đo được 2026-09-08 (lượt chạy đầu của TcAUTO2):</b> chốt xong 処置選択, app mở
-    /// editor ô 回 nhưng editor <b>RỖNG</b> (trace: 「editor dang mo voi 「」」), nên cú Enter
-    /// đóng editor ghi luôn <c>回 = 0</c>. Dòng lên lưới đúng 「抜歯手術(臼歯) | 270 | 0」 và
-    /// <c>Chk_ChkAuto</c> KHÔNG BAO GIỜ được gọi. Testcase khi đó đỏ với thông điệp
-    /// 「app không tự chèn mã đi kèm」 — <b>đổ oan cho app</b>, trong khi lỗi nằm ở harness.</para>
+    /// <para><b>Đo được 2026-09-08:</b> chốt xong 処置選択, app mở editor ô 回 nhưng editor
+    /// <b>RỖNG</b>, nên cú Enter đóng editor ghi luôn <c>回 = 0</c> và <c>Chk_ChkAuto</c>
+    /// KHÔNG BAO GIỜ được gọi. Testcase khi đó đỏ với thông điệp 「app không tự chèn mã đi
+    /// kèm」 — <b>đổ oan cho app</b>, trong khi lỗi nằm ở harness.</para>
     ///
-    /// <para>Gõ thẳng 「1」 vào ô 回 rồi Enter là đúng thao tác của người dùng thật, và nó đưa
-    /// luồng qua lại case 4 một lần nữa — lần này với <c>trtCnt = 1</c>.</para>
+    /// <para>Bên Playwright không cần bước này: sau 確定 ô 回 của web đã sẵn 「1」 và spec
+    /// assert đúng điều đó (<c>toHaveValue('1')</c>). <b>Chính chỗ này là một điểm lệch
+    /// đáng soi</b> — WinForm để editor rỗng, web điền sẵn 1.</para>
     /// </summary>
     private void EnsureTrtCount(IReadOnlyList<RegiRow> before, TestTrace trace)
     {
         var mid = new EntryMeasure(default!, before, _grid.Snapshot(), null, null);
 
-        // Dòng vừa gõ = dòng THÊM cuối cùng có ô 点 là số (loại 部位病名行 mang 「-」 và
-        // dòng コメント của Chk_CmtAuto).
         var typed = mid.AddedRows.LastOrDefault(r => Txt.Int(r.Ten) is not null);
         if (typed is null)
         {
@@ -286,8 +216,6 @@ public sealed class AutoSanteiOps
         trace.Step($"o 回 cua dong 「{typed}」 dang la 「{typed.Kai}」 — go 1 roi Enter " +
                    "de mo nhanh 自動算定 (frm203002.cs:5745 `trtCnt >= 1`)");
         _grid.FocusCell(typed, RegiGrid.Col.Kai);
-        // Mở editor y như `SigaToothFlow.EnterCodeOnRow`: gõ khi ô mới chỉ được CHỌN thì phím
-        // đầu tiên bị nuốt để mở edit, và ô 回 chỉ có một ký tự nên mất nó là mất tất.
         if (!_grid.IsEditing()) { _grid.Press(VirtualKeyShort.RETURN); Thread.Sleep(250); }
         _grid.Type("1");
         _grid.Press(VirtualKeyShort.RETURN);
@@ -296,29 +224,59 @@ public sealed class AutoSanteiOps
         trace.Shot("sau-khi-go-o-kai");
     }
 
+    // ── Đọc kết quả ──────────────────────────────────────────────────────────
+
+    /// <summary>NFKC + gộp khoảng trắng — bản sao của <c>norm()</c> bên spec Playwright.</summary>
+    /// <remarks>
+    /// BẪY: lưới in 半角 「ｵｰﾗ」 còn master giữ 全角 「オーラ」. Phải chuẩn hoá CẢ HAI VẾ,
+    /// nếu không mọi phép so tên đều trượt và testcase đỏ oan.
+    /// </remarks>
+    public static string Norm(string? s) =>
+        (s ?? "").Normalize(System.Text.NormalizationForm.FormKC)
+                 .Replace('　', ' ')
+                 .Trim() is var t && t.Length > 0
+            ? System.Text.RegularExpressions.Regex.Replace(t, @"\s+", " ")
+            : "";
+
+    /// <summary>Dòng đầu tiên trong <paramref name="rows"/> có ô 療法・処置 chứa tên đã chuẩn hoá.</summary>
+    public static RegiRow? RowByName(IReadOnlyList<RegiRow> rows, string name)
+    {
+        var needle = Norm(name);
+        return needle.Length == 0 ? null : rows.FirstOrDefault(r => Norm(r.Ryo).Contains(needle));
+    }
+
     /// <summary>
-    /// Dòng nào trong <paramref name="rows"/> là 処置 <paramref name="cd"/>/<paramref name="sb"/>.
+    /// Dòng nào trong <paramref name="rows"/> là 処置 của <paramref name="master"/>.
     ///
     /// <para>Nhận theo TÊN, vì cột <c>trt_cd</c> là cột ẩn — không ra tới UIA
     /// (RegiGrid.cs:11-14). Chấp nhận CẢ HAI tên của master: lưới in <c>cct_nm</c> hay
-    /// <c>trt_nm</c> tuỳ cờ <c>ModCommon.pCultTrt</c>, và cờ đó là cấu hình của máy chứ
-    /// không phải của testcase.</para>
+    /// <c>trt_nm</c> tuỳ cờ <c>ModCommon.pCultTrt</c>, và cờ đó là cấu hình của MÁY.</para>
     /// </summary>
     public static RegiRow? RowOf(IReadOnlyList<RegiRow> rows, MstTrtRow master) =>
-        rows.FirstOrDefault(r => master.DisplayNames.Any(n => n.Length > 0 && Txt.Has(r.Ryo, n)));
+        master.DisplayNames.Select(n => RowByName(rows, n)).FirstOrDefault(r => r is not null);
 
-    /// <summary>Dọn sạch những dòng một lượt đo vừa để lại (kể cả dòng app tự chèn).</summary>
-    public void DeleteAdded(EntryMeasure measure, TestTrace trace)
+    /// <summary>Chỉ số của dòng khớp tên trong danh sách đã chuẩn hoá; -1 nếu không có.</summary>
+    public static int IndexByName(IReadOnlyList<RegiRow> rows, string name)
     {
-        // Xoá từ DƯỚI lên: DeleteRow làm mọi dòng phía dưới dịch chỉ số, còn dòng phía trên
-        // thì không. Và đọc lại lưới mỗi vòng — phần tử UIA của lượt chụp cũ đã thành rác.
-        foreach (var row in measure.AddedRows.Reverse())
-        {
-            var live = _grid.Snapshot().FirstOrDefault(r => r.Ryo == row.Ryo && r.Ten == row.Ten);
-            if (live is null) continue;
-            try { _flow.DeleteRow(live, trace); }
-            catch (Exception e) { trace.Note($"khong xoa duoc dong 「{live}」: {e.Message}"); }
-        }
-        _flow.DismissAll(trace: trace);
+        var needle = Norm(name);
+        if (needle.Length == 0) return -1;
+        for (var i = 0; i < rows.Count; i++)
+            if (Norm(rows[i].Ryo).Contains(needle)) return i;
+        return -1;
     }
+
+    /// <summary>Chỉ số của dòng 処置 <paramref name="master"/>; -1 nếu không có.</summary>
+    public static int IndexOf(IReadOnlyList<RegiRow> rows, MstTrtRow master)
+    {
+        foreach (var n in master.DisplayNames)
+        {
+            var i = IndexByName(rows, n);
+            if (i >= 0) return i;
+        }
+        return -1;
+    }
+
+    /// <summary>Chụp lại lưới (chỉ dòng dữ liệu) — dùng cho các assert về THỨ TỰ.</summary>
+    public IReadOnlyList<RegiRow> DataRows(int limit = 80) =>
+        _grid.Snapshot(limit).Where(EntryMeasure.IsData).ToList();
 }
