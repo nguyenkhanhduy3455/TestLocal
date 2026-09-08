@@ -1941,3 +1941,26 @@ export async function deleteChkAutoCompanionRows(
         return r.rowCount ?? 0
     })
 }
+
+/**
+ * `inp_config.tre_inp_flg` của tenant — WinForm `ModCommon.pCultTrt`.
+ *
+ * `1` = 「カルテ処置を入力する」: mọi chỗ hiển thị tên 処置 dùng `mst_trt.cct_nm`
+ * (tên カルテ, dài) THAY VÌ `mst_trt.trt_nm` (tên ngắn). Spec nào dựng kỳ vọng từ
+ * `mst_trt` đều phải hỏi cờ này trước, nếu không sẽ đỏ oan: ví dụ 310/2 có
+ * `trt_nm` = 「OA+ｵｰﾗ注歯科用Ct 1.8mL」 nhưng `cct_nm` = 「OA+ｵｰﾗ注歯科用ｶｰﾄﾘｯｼﾞ 料1.8mL」,
+ * và lưới in cái thứ hai.
+ *
+ * BE đọc cùng giá trị đó qua `MstTrtLookupResultExtensions.NameFor`.
+ */
+export async function findTreInpFlg(): Promise<number> {
+    return withDb(async (c) => {
+        const r = await c.query<{ flg: string | null }>(
+            `SELECT value->>'treInpFlg' AS flg
+               FROM tenant_config
+              WHERE value ? 'treInpFlg' AND deleted_at IS NULL
+              LIMIT 1`,
+        )
+        return Number(r.rows[0]?.flg ?? 0)
+    })
+}

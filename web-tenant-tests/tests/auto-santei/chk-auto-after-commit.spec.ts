@@ -9,6 +9,7 @@ import {
     findChkAutoSlots,
     findCmtAutos,
     findMstTrt,
+    findTreInpFlg,
     readSiga,
     restoreSiga,
     seedTreatmentRows,
@@ -93,6 +94,14 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * 3. Các dòng đi kèm KHÔNG mang `dsp_trt` của 処置 gốc, nên mọi đường dọn theo tên
  *    đều trượt — dùng `deleteChkAutoCompanionRows()`.
  * 4. So chuỗi phải NFKC CẢ HAI VẾ: lưới in 半角 「ｵｰﾗ」 còn master giữ 全角.
+ * 5. Tên hiển thị là `cct_nm` hay `trt_nm` tuỳ `inp_config.tre_inp_flg`
+ *    (WinForm `ModCommon.pCultTrt`). 310/2 có `trt_nm` = 「OA+ｵｰﾗ注歯科用Ct 1.8mL」
+ *    nhưng `cct_nm` = 「OA+ｵｰﾗ注歯科用ｶｰﾄﾘｯｼﾞ 料1.8mL」 — đoán sai cột là đỏ oan.
+ * 6. ⚠️ LƯỚI CHỨA CẢ THÁNG. Bệnh nhân test đã có sẵn 浸麻 + 麻酔 đã lưu ở một ngày
+ *    khác, TRÙNG TÊN với thứ ta đang đo. Dò cả lưới là XANH GIẢ: đã vấp thật —
+ *    TC-1..TC-3 pass trong khi ngày test chưa hề nhận dòng nào. Mọi assert vì vậy
+ *    phải neo vào LẦN XUẤT HIỆN CUỐI (`lastIndexOf`) và so vị trí với dòng 処置 vừa
+ *    chốt, chứ không phải `find`/`some` trên toàn lưới.
  *
  * ═════════════════════════════════════════════════════════════════════════════
  * CHẠY
@@ -178,9 +187,25 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
     let cmts: CmtAutoRow[] = []
     /** 処置名 + 点数 của từng slot `chk_auto`, tra từ `mst_trt` của tháng test. */
     let slotMaster = new Map<string, { trtNm: string; score1: number }>()
+    /**
+     * `tre_inp_flg` của tenant (WinForm `ModCommon.pCultTrt`) — quyết định lưới in
+     * `cct_nm` hay `trt_nm`. Đọc từ DB chứ không giả định, vì mỗi phòng khám một khác.
+     */
+    let treInpFlg = 0
 
     /** Ô 療法・処置 của lưới đăng ký (RegiCol.ryo = 2). */
     const ryoCells = () => page.locator('[data-grid-cell$="|2"]')
+
+    /**
+     * Chỉ số lần xuất hiện CUỐI của `needle` trong lưới (BẪY 6). Dòng vừa chèn luôn
+     * là lần cuối; bản đã lưu của tháng trước nằm phía trên nên không cướp mất.
+     */
+    const lastIdxOf = (cells: readonly string[], needle: string) => {
+        for (let i = cells.length - 1; i >= 0; i--) {
+            if ((cells[i] ?? '').includes(needle)) return i
+        }
+        return -1
+    }
 
     /** Text mọi ô 療法・処置 theo ĐÚNG thứ tự hiển thị. */
     async function ryoTexts(): Promise<string[]> {
@@ -347,15 +372,19 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
             .poll(
                 async () => {
                     if ((await page.getByRole('dialog').count()) > 0) await closeDialogs(page, 2)
-                    last = await ryoTexts()
-                    return needles.filter((n) => !last.some((c) => norm(c).includes(n)))
+                    last = (await ryoTexts()).map(norm)
+                    // Neo vào dòng 処置 vừa chốt: chỉ những gì nằm QUANH nó mới là
+                    // của cú nhập này (BẪY 6). Chưa thấy 処置 ⇒ coi như còn thiếu hết.
+                    const at = lastIdxOf(last, norm(triggerNm))
+                    if (at < 0) return [...needles]
+                    return needles.filter((n) => lastIdxOf(last, n) < at)
                 },
                 {
                     timeout: FOLLOWUP_TIMEOUT,
                     intervals: Array.from({ length: 30 }, () => 1000),
                     message:
-                        'Sau 回 Enter lưới vẫn thiếu dòng đi kèm — xem chuỗi ' +
-                        'runCmtAutoCascade → runKarteCmtAuto → runChkAuto trong ' +
+                        'Sau 回 Enter lưới vẫn thiếu dòng 処置 đi kèm BÊN DƯỚI dòng vừa chốt — ' +
+                        'xem chuỗi runCmtAutoCascade → runKarteCmtAuto → runChkAuto trong ' +
                         'treatment-entry-detail.tsx có chạy hết không.',
                 },
             )
@@ -384,8 +413,11 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
         )
 
         // ── Master: kỳ vọng tính từ đây, không hardcode ──────────────────────
+        treInpFlg = await findTreInpFlg()
+        const displayName = (m: { trtNm: string; cctNm: string }) =>
+            treInpFlg === 1 ? m.cctNm : m.trtNm
         const trigger = (await findMstTrt(TRT_DT, TRIGGER_CD)).find((r) => r.trtSb === TRIGGER_SB)
-        triggerNm = trigger?.trtNm ?? ''
+        triggerNm = trigger ? displayName(trigger) : ''
         slots = await findChkAutoSlots(TRIGGER_CD, TRIGGER_SB)
         cmts = await findCmtAutos(TRIGGER_CD, TRIGGER_SB)
         const masters = await Promise.all(slots.map((s) => findMstTrt(TRT_DT, s.trtCd)))
@@ -393,13 +425,19 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
             slots.flatMap((s, i) => {
                 const m = (masters[i] ?? []).find((r) => r.trtSb === s.trtSb)
                 return m
-                    ? ([[`${s.trtCd}/${s.trtSb}`, { trtNm: m.trtNm, score1: m.score1 }]] as const)
+                    ? ([
+                          [
+                              `${s.trtCd}/${s.trtSb}`,
+                              { trtNm: displayName(m), score1: m.score1 },
+                          ],
+                      ] as const)
                     : []
             }),
         )
         console.log(
             `master: 処置 ${TRIGGER_CD}/${TRIGGER_SB} 「${triggerNm}」 — ` +
-                `chk_auto ${slots.length} slot, cmt_auto ${cmts.length} dòng`,
+                `chk_auto ${slots.length} slot, cmt_auto ${cmts.length} dòng, ` +
+                `tre_inp_flg=${treInpFlg} (${treInpFlg === 1 ? 'cct_nm' : 'trt_nm'})`,
         )
 
         // ── DB: chụp nguyên trạng siga rồi dựng trạng thái xuất phát ─────────
@@ -436,17 +474,10 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
                 'WinForm cũng bỏ qua chúng, không kết luận được gì',
         )
 
-        const cells = await waitForFollowUpRows(expected.map((m) => norm(m.trtNm)))
+        // waitForFollowUpRows đã khẳng định mỗi dòng nằm BÊN DƯỚI 処置 vừa chốt.
+        await waitForFollowUpRows(expected.map((m) => norm(m.trtNm)))
 
         for (const m of expected) {
-            const cell = cells.find((c) => norm(c).includes(norm(m.trtNm)))
-            expect(
-                cell,
-                `chốt ${TRIGGER_CD}/${TRIGGER_SB} rồi mà lưới không có dòng 「${m.trtNm}」.\n` +
-                    '  WinForm: frm203002.cs:5752 gọi ModMain.Chk_ChkAuto ngay sau 回 Enter\n' +
-                    `  lưới đang có: ${JSON.stringify(cells.map(norm).filter(Boolean))}`,
-            ).toBeDefined()
-
             // 点数 lấy từ master, không phải 0 — đây chính là 11点 bị mất trong báo cáo.
             const ten = await tenOfRow(norm(m.trtNm))
             expect(
@@ -473,14 +504,22 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
         )
 
         // TC-1 đã chốt 処置 rồi; lưới hiện tại là kết quả của cùng một cú Enter.
-        const cells = await waitForFollowUpRows(autoApplied.map((c) => norm(c.cmtNm)))
+        const cells = (await ryoTexts()).map(norm)
+        const trtIdx = lastIdxOf(cells, norm(triggerNm))
+        expect(trtIdx, `không thấy dòng 処置 「${triggerNm}」`).toBeGreaterThanOrEqual(0)
 
         for (const c of autoApplied) {
+            // disp_no < 0 nằm TRÊN 処置 nên phải dò quanh `trtIdx`, không dùng
+            // lastIndexOf trần (BẪY 6: tháng khác có bản đã lưu trùng tên).
+            const near = cells.some(
+                (x, i) => Math.abs(i - trtIdx) <= autoApplied.length && x.includes(norm(c.cmtNm)),
+            )
             expect(
-                cells.some((x) => norm(x).includes(norm(c.cmtNm))),
-                `lưới thiếu カルテコメント 「${c.cmtNm}」 (${c.cmtCd}/${c.cmtSb}).\n` +
+                near,
+                `lưới thiếu カルテコメント 「${c.cmtNm}」 (${c.cmtCd}/${c.cmtSb}) cạnh dòng ` +
+                    `「${triggerNm}」 vừa chốt.\n` +
                     '  WinForm: Chk_CmtAuto mở frm203012 gType.Auto rồi frmCmt3_Cmt3_SetData\n' +
-                    '  ghi thẳng khi không cần hỏi (frm203002.cs:10034).',
+                    `  ghi thẳng khi không cần hỏi (frm203002.cs:10034).\n  lưới: ${JSON.stringify(cells.filter(Boolean))}`,
             ).toBe(true)
         }
     })
@@ -495,11 +534,16 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
         skipWithReason(triggerNm === '', `không tra được 処置名 của ${TRIGGER_CD}/${TRIGGER_SB}`)
 
         const cells = (await ryoTexts()).map(norm)
-        const trtIdx = cells.findIndex((c) => c.includes(norm(triggerNm)))
+        const trtIdx = lastIdxOf(cells, norm(triggerNm))
         expect(trtIdx, `không thấy dòng 処置 「${triggerNm}」 trên lưới`).toBeGreaterThanOrEqual(0)
 
         for (const c of placed) {
-            const idx = cells.findIndex((x) => x.includes(norm(c.cmtNm)))
+            // Dòng gần 処置 vừa chốt nhất — bản đã lưu ở tháng khác nằm xa hơn.
+            let idx = -1
+            for (let i = 0; i < cells.length; i++) {
+                if (!(cells[i] ?? '').includes(norm(c.cmtNm))) continue
+                if (idx < 0 || Math.abs(i - trtIdx) < Math.abs(idx - trtIdx)) idx = i
+            }
             expect(idx, `không thấy comment 「${c.cmtNm}」`).toBeGreaterThanOrEqual(0)
             if (c.dispNo < 0) {
                 expect(
@@ -522,7 +566,7 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
         skipWithReason(triggerNm === '', 'không tra được 処置名 của mã trigger')
 
         const cells = (await ryoTexts()).map(norm)
-        const trtIdx = cells.findIndex((c) => c.includes(norm(triggerNm)))
+        const trtIdx = lastIdxOf(cells, norm(triggerNm))
         expect(trtIdx, `không thấy dòng 処置 「${triggerNm}」`).toBeGreaterThanOrEqual(0)
 
         // WinForm AddRow chèn NGAY tại con trỏ, mà con trỏ lúc này đứng ngay sau
