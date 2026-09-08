@@ -44,12 +44,17 @@
     .\run-open-guide-dialog.ps1 -Probe -Case TcD0_ProbeDialogFormat
     .\run-open-guide-dialog.ps1
     .\run-open-guide-dialog.ps1 -Case TcD5
+    .\run-open-guide-dialog.ps1 -Case TcD16 -TrtDate 2026-07-10
 #>
 [CmdletBinding()]
 param(
     [string]$Case = "",
     [int]$StepMs = -1,
     [switch]$Probe,
+    # Ghim 診療日 (yyyy-MM-dd). Bat buoc khi doi chieu du lieu voi ban web: hai ben phai
+    # dung cung mot ngay thi 部位/病名 cua dong dang chon moi giong nhau, ma 部位/病名 la
+    # dau vao cua chinh danh sach 処置 (frm203002.cs:6515 -> frm203017.ParamData).
+    [string]$TrtDate = "",
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug"
 )
@@ -58,6 +63,10 @@ $ErrorActionPreference = "Stop"
 $project = Join-Path $PSScriptRoot "src\OchaCom.FlaUiTests\OchaCom.FlaUiTests.csproj"
 
 if ($StepMs -ge 0) { $env:OCHA_STEP_MS = "$StepMs" }
+if ($TrtDate -ne "") {
+    $env:OCHA_TRT_DT = $TrtDate
+    Write-Host "OCHA_TRT_DT = $TrtDate" -ForegroundColor Cyan
+}
 
 $ns = "OchaCom.FlaUiTests.Tests.GuideSidePanel"
 

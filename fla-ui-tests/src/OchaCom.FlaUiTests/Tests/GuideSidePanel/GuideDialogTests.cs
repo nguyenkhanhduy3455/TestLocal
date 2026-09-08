@@ -69,6 +69,13 @@ public sealed class GuideDialogTests : UiTestBase
     /// <summary>Số dòng ガイド tối đa sẽ thử click để tìm dòng mở được dialog.</summary>
     private const int ScanLimit = 5;
 
+    /// <summary>
+    /// Số ガイド quét trong TC-D16 — testcase đối chiếu DỮ LIỆU với spec Playwright
+    /// (`TEST_GUIDE_SCAN` bên đó). Đổi bằng biến môi trường <c>OCHA_GUIDE_SCAN</c>.
+    /// </summary>
+    private static readonly int ScanDeep =
+        int.TryParse(Environment.GetEnvironmentVariable("OCHA_GUIDE_SCAN"), out var n) ? n : 8;
+
     /// <summary>Dải mã コメント được tô màu (frm203017.cs:1053, DbLibrary.codeType).</summary>
     private const int ReceiptCodeMin = 700;
     private const int ReceiptCodeMax = 899;
@@ -266,17 +273,10 @@ public sealed class GuideDialogTests : UiTestBase
                     "(frm203017.cs:97-101) — DataGridView không tự co giãn nên phải khớp");
         });
 
-        // Quan hệ giữa các cột là thứ bản web PHẢI giữ (nó dùng CSS grid, không dùng px):
-        // 処置名称 rộng nhất, 枝番 hẹp nhất, 回数 rộng hơn 枝番.
-        Assert.Multiple(() =>
-        {
-            Assert.That(widths[GuideDialogFlow.ColNm], Is.GreaterThan(widths.Max(w => w == widths[GuideDialogFlow.ColNm] ? 0 : w)),
-                "処置名称 (370) phải là cột rộng nhất");
-            Assert.That(widths[GuideDialogFlow.ColSb], Is.EqualTo(widths.Min()),
-                "枝番 (40) phải là cột HẸP NHẤT");
-            Assert.That(widths[GuideDialogFlow.ColCnt], Is.GreaterThan(widths[GuideDialogFlow.ColSb]),
-                "回数 (70) phải rộng hơn 枝番 (40)");
-        });
+        // ⚠️ KHÔNG assert quan hệ bề rộng để đòi bản web giữ theo: bề rộng cột KHÔNG phải
+        // tiêu chí parity (WinForm đo bằng px Designer, web bằng CSS grid; người nhập
+        // liệu không thao tác trên bề rộng). Con số ở đây chỉ chốt rằng CHÍNH WinForm
+        // vẽ đúng _viewItem.
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -562,6 +562,54 @@ public sealed class GuideDialogTests : UiTestBase
                 $"10 nút còn lại là OCHA_OFF nên không mang nhãn (frm203017.cs:79-91). Đọc ra: " +
                 string.Join(" · ", btns));
         });
+    }
+
+    [Test, Order(16)]
+    [Description("TC-D16 — QUÉT 8 ガイド đầu: cái nào có 処置, cái nào rỗng, và danh sách của từng cái")]
+    public void TcD16_ScanGuidesForFocusedRow()
+    {
+        // Đây là testcase ĐỐI CHIẾU DỮ LIỆU chính với bản web (spec `TC-D14`). Nó đứng
+        // được vì hai bên ở CÙNG tiền đề:
+        //   · cùng bệnh nhân, cùng 診療日 — ghim bằng `-TrtDate` (OCHA_TRT_DT) bên này và
+        //     TEST_TRT_DT bên Playwright;
+        //   · hai DB có DỮ LIỆU GIỐNG HỆT NHAU cho bệnh nhân này — đã đối chiếu TRNTRN
+        //     (SQL Server) với trn_trn (Postgres): 29 dòng trùng khít, cùng 部位, cùng
+        //     病名, cùng ngày.
+        //
+        // Với MỖI ガイド in ra một dòng `scan|…` (mở được hay E00024) và, nếu mở được, in
+        // trọn các dòng 処置 (`scanrow|…`). Diff hai tập DUMP là ra bảng parity dữ liệu.
+        if (_guide.DialogOpen()) _guide.CloseDialogWithF10();
+        if (!_guide.TabOpen()) { _guide.OpenRegular(); Thread.Sleep(800); }
+        Assert.That(_guide.TabOpen(), Is.True, "không mở được tab ガイド ⇒ HARNESS hỏng");
+
+        var guides = _guide.Rows(ScanDeep);
+        var total = Math.Min(guides.Count, ScanDeep);
+        Dump($"scan|total={guides.Count}|quét={total}");
+        Assert.That(total, Is.GreaterThan(0), "list ガイド rỗng ⇒ không có gì để đối chiếu");
+
+        for (var i = 0; i < total; i++)
+        {
+            var nm = Txt.N(_guide.Rows(ScanDeep)[i].At(GuideTabFlow.Col.Name));
+            if (!_guide.ClickRow(i)) { Dump($"scan|{i}|nm={nm}|KHÔNG click được"); continue; }
+
+            var dialog = _guide.WaitDialog(TimeSpan.FromSeconds(10));
+            if (dialog is null)
+            {
+                // ガイド không có 処置 nào tính được → getViewData tự Close() kèm E00024
+                // (frm203017.cs:1001-1024). Đây là KẾT QUẢ hợp lệ, không phải lỗi.
+                Dump($"scan|{i}|nm={nm}|empty");
+                _dlg.DismissMsgBoxes();
+                continue;
+            }
+
+            var rows = _dlg.RowElements(dialog);
+            Dump($"scan|{i}|nm={nm}|guid={Txt.N(_guide.DialogGuidNo(dialog))}|rows={rows.Count}");
+            for (var k = 0; k < rows.Count; k++)
+                Dump($"scanrow|{i}|{k}|" + string.Join("|", _dlg.RawCells(rows[k]).Select(Txt.N)));
+
+            _guide.CloseDialogWithF10();
+            _dlg.DismissMsgBoxes();
+        }
     }
 
     [Test, Order(15)]
