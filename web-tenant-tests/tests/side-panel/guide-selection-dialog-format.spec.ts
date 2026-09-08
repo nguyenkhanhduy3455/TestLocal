@@ -617,6 +617,46 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
         await dismissPicker()
     })
 
+    test('TC-D13 — cùng tiền đề với WinForm: chọn dòng CÓ 部位 rồi mới mở ガイド', async () => {
+        // Danh sách 処置 phụ thuộc 部位/病名 của DÒNG ĐANG CHỌN (frm203002.cs:6515 →
+        // frm203017 ParamData). So hai bên khi một bên đang đứng ở dòng KHÔNG có 部位 là
+        // so hai câu hỏi khác nhau — đã vấp đúng thế 2026-09-08: web gửi `Bui=` rỗng
+        // trong khi WinForm đang đứng ở dòng 部位 「54321…」, và dòng 「186 歯槽骨整形手術」
+        // vắng mặt bên web chỉ vì tiền đề khác.
+        await dismissPicker()
+
+        const buiCells = page.locator('[data-grid-cell$="|1"]')
+        const total = await buiCells.count()
+        let rowKey: string | null = null
+        for (let i = 0; i < total; i++) {
+            const text = (await buiCells.nth(i).innerText()).trim()
+            if (!text) continue
+            const attr = await buiCells.nth(i).getAttribute('data-grid-cell')
+            rowKey = attr!.split('|')[0]!
+            dump(`ctx|regi|${i}|bui=${text.replace(/\s+/g, ' ')}`)
+            break
+        }
+        if (!rowKey) {
+            console.log('lưới 処置 không có dòng nào mang 部位 → BỎ QUA phần so cùng tiền đề')
+            return
+        }
+
+        // Click ô 療法・処置 của chính dòng đó, KHÔNG click ô 部位 — ô 部位 mở 部位選択.
+        await page.locator(`[data-grid-cell="${rowKey}|2"]`).click()
+        await step()
+
+        const { guidCd } = await openPickableGuide()
+        const rows = await readRows()
+        dump(`rowbui|guid=${guidCd}|count=${rows.length}`)
+        rows.forEach((r, i) =>
+            dump(`rowbui|${i}|${r.map((c) => c.normalize('NFKC')).join('|')}`),
+        )
+        console.log(`ガイド ${guidCd} với dòng CÓ 部位: ${rows.length} dòng 処置`)
+        expect(rows.length, 'ガイド mở được thì phải có dòng').toBeGreaterThan(0)
+        await step()
+        await dismissPicker()
+    })
+
     // ═════════════════════════════════════════════════════════════════════════
     // WinForm parity — chỗ web ĐANG LỆCH bản gốc. Đỏ ở đây = web lệch, KHÔNG phải
     // test viết sai. Mỗi cái tự dựng trạng thái nên chạy lẻ được.

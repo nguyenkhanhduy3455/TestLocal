@@ -564,6 +564,48 @@ public sealed class GuideDialogTests : UiTestBase
         });
     }
 
+    [Test, Order(15)]
+    [Description("TC-D15 — cùng tiền đề với bản web: chọn dòng CÓ 部位 rồi mới mở ガイド")]
+    public void TcD15_ListForRowWithBui()
+    {
+        // Danh sách 処置 phụ thuộc 部位/病名 của DÒNG ĐANG CHỌN (frm203002.cs:6515 snapshot
+        // getFocusBui/getFocusDis vào frm203017.ParamData). So danh sách với bản web mà
+        // hai bên đứng ở hai dòng khác nhau là so hai câu hỏi khác nhau — đã vấp đúng thế
+        // 2026-09-08: WinForm đang ở dòng 部位 「54321…」 còn web gửi Bui rỗng, và dòng
+        // 「186 歯槽骨整形手術」 vắng mặt bên web CHỈ vì tiền đề khác.
+        if (_guide.DialogOpen()) _guide.CloseDialogWithF10();
+
+        var rows = Screen.Regi.Grid.Rows(30);
+        AutomationElement? target = null;
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var bui = Txt.N(rows[i].At(Screens.RegiGrid.Col.Bui));
+            var ryo = Txt.N(rows[i].At(Screens.RegiGrid.Col.Ryo));
+            // Dòng tiêu đề đọc ra 「部位」/「療法・処置」, dòng tổng tháng đọc ra 「R 08年…」.
+            if (bui.Length == 0 || bui.Contains("部位") || bui.StartsWith("R ") || ryo.Length == 0) continue;
+            var cells = Uia.Children(rows[i].Element).ToList();
+            if (cells.Count <= Screens.RegiGrid.Col.Ryo) continue;
+            Dump($"ctx|pick|{i}|bui={Txt.Vis(rows[i].At(Screens.RegiGrid.Col.Bui))}|ryo={ryo}");
+            // Click ô 療法・処置, KHÔNG click ô 部位 — ô 部位 mở 部位選択.
+            target = cells[Screens.RegiGrid.Col.Ryo];
+            break;
+        }
+        if (target is null) Assert.Ignore("lưới 処置 không có dòng nào mang 部位 — không dựng được tiền đề");
+
+        GuideDialogFlow.ClickElement(target);
+        Thread.Sleep(600);
+        _guide.FocusScreen();
+        GuideTabFlow.SendKey(GuideTabFlow.Vk.F4);
+        Thread.Sleep(1500);
+
+        var dialog = EnsureDialog();
+        var trt = RequireRows(dialog);
+        Dump($"rowbui|guid={Txt.N(_guide.DialogGuidNo(dialog))}|count={trt.Count}");
+        for (var i = 0; i < trt.Count; i++)
+            Dump($"rowbui|{i}|" + string.Join("|", _dlg.RawCells(trt[i]).Select(Txt.N)));
+        Log($"ガイド {Txt.N(_guide.DialogGuidNo(dialog))} với dòng CÓ 部位: {trt.Count} dòng 処置");
+    }
+
     [Test, Order(14)]
     [Description("TC-D14 — đóng bằng 戻る rồi mở lại: form MỚI, 回数 vừa sửa KHÔNG sống sót")]
     public void TcD14_ReopenResetsCnt()
