@@ -127,45 +127,56 @@ public sealed class GuideDialogFlow
     public AutomationElement? GridElement(Window dialog) =>
         Uia.ById(dialog, TestSettings.Current.Locator("guideDialogGrid"));
 
-    /// <summary>Dòng tiêu đề của <c>dgvView</c> — phần tử con mà mọi ô đều là HeaderItem.</summary>
-    public IReadOnlyList<AutomationElement> HeaderCells(Window dialog)
+    /// <summary>
+    /// Tách lưới thành (dòng TIÊU ĐỀ, các dòng DỮ LIỆU).
+    ///
+    /// <para>⚠️ ĐO ĐƯỢC 2026-09-08: cầu MSAA→UIA của <c>dgvView</c> KHÔNG dựng ô tiêu đề
+    /// kiểu <c>HeaderItem</c> — dòng tiêu đề ra tới UIA y như một dòng dữ liệu, và
+    /// <c>WinFormsGrid.Headers()</c> vì thế trả về RỖNG còn 「số dòng」 thì dư đúng 1
+    /// (đúng cái bẫy F11). Nhận dạng bằng GIÁ TRỊ: dòng nào ô 「ｺｰﾄﾞ」 không parse ra số
+    /// thì đó là tiêu đề.</para>
+    /// </summary>
+    private (AutomationElement? Header, List<AutomationElement> Rows) Split(Window dialog)
     {
         var grid = GridElement(dialog);
-        if (grid is null) return [];
+        if (grid is null) return (null, []);
+
+        AutomationElement? header = null;
+        var rows = new List<AutomationElement>();
         foreach (var child in Uia.Children(grid))
         {
+            var type = Uia.ControlTypeOf(child);
+            if (type is ControlType.ScrollBar or ControlType.Header) continue;
+
             var cells = Uia.Children(child).ToList();
-            if (cells.Count > 0 && cells.All(c => Uia.ControlTypeOf(c) == ControlType.HeaderItem))
-                return cells;
+            if (cells.Count == 0) continue;
+
+            var isHeader = cells.All(c => Uia.ControlTypeOf(c) == ControlType.HeaderItem)
+                           || Txt.Int(Uia.ValueOf(cells[0])) is null;
+            if (isHeader && header is null) { header = child; continue; }
+            if (isHeader) continue;
+            rows.Add(child);
         }
-        return [];
+        return (header, rows);
     }
 
-    /// <summary>Tiêu đề cột NGUYÊN VĂN (chưa NFKC, chưa trim).</summary>
+    /// <summary>Ô của dòng tiêu đề <c>dgvView</c>.</summary>
+    public IReadOnlyList<AutomationElement> HeaderCells(Window dialog)
+    {
+        var header = Split(dialog).Header;
+        return header is null ? [] : Uia.Children(header).ToList();
+    }
+
+    /// <summary>Tiêu đề cột NGUYÊN VĂN (chưa NFKC, chưa trim) — 「 ｺｰﾄﾞ」 có dấu cách đứng trước.</summary>
     public IReadOnlyList<string> RawHeaderTexts(Window dialog) =>
-        HeaderCells(dialog).Select(Uia.NameOf).ToList();
+        HeaderCells(dialog).Select(Uia.ValueOf).ToList();
 
     /// <summary>Bề rộng THẬT trên màn hình của từng cột, theo pixel.</summary>
     public IReadOnlyList<int> ColumnWidths(Window dialog) =>
         HeaderCells(dialog).Select(c => (int)(Uia.RectOf(c)?.Width ?? 0)).ToList();
 
     /// <summary>Các dòng DỮ LIỆU (đã loại dòng tiêu đề và thanh cuộn).</summary>
-    public IReadOnlyList<AutomationElement> RowElements(Window dialog)
-    {
-        var grid = GridElement(dialog);
-        if (grid is null) return [];
-        var rows = new List<AutomationElement>();
-        foreach (var child in Uia.Children(grid))
-        {
-            var type = Uia.ControlTypeOf(child);
-            if (type is ControlType.ScrollBar or ControlType.Header) continue;
-            var cells = Uia.Children(child).Take(3).ToList();
-            if (cells.Count == 0) continue;
-            if (cells.All(c => Uia.ControlTypeOf(c) == ControlType.HeaderItem)) continue;
-            rows.Add(child);
-        }
-        return rows;
-    }
+    public IReadOnlyList<AutomationElement> RowElements(Window dialog) => Split(dialog).Rows;
 
     /// <summary>Ô của một dòng, theo thứ tự cột trái→phải.</summary>
     public IReadOnlyList<AutomationElement> Cells(AutomationElement row) => Uia.Children(row).ToList();
@@ -216,7 +227,9 @@ public sealed class GuideDialogFlow
             if (Uia.ControlTypeOf(el) != ControlType.Button) continue;
             var id = Uia.AutomationIdOf(el);
             if (!id.StartsWith("btnF", StringComparison.Ordinal)) continue;
-            var name = Uia.NameOf(el);
+            // Nhãn nút là hai dòng (「F9」 + 「確定」) — làm phẳng, nếu không dòng KQ bị
+            // cắt làm đôi và runner chỉ lọc được nửa đầu (đã vấp 2026-09-08).
+            var name = Txt.N(Uia.NameOf(el));
             if (string.IsNullOrWhiteSpace(name)) continue;
             found.Add($"{id}=「{name}」");
         }
