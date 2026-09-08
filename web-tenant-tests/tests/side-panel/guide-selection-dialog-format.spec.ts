@@ -110,6 +110,16 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
     let sidePanel: Locator
     /** Dòng của tab ガイド (header cũng dùng grid-cols-[46px_1fr] nên phải kèm cursor-pointer). */
     let guideRows: Locator
+    /**
+     * URL request 「danh sách 処置 của một ガイド」 gần nhất.
+     *
+     * Là TIỀN ĐỀ của mọi phép so danh sách với WinForm: hai bên chỉ so được khi cùng
+     * ガイド VÀ cùng 部位/病名 — WinForm lấy chúng từ dòng đang có con trỏ trên grdRegi
+     * (frm203002.cs:6515), web gửi `Bui`/`DisCd` của dòng đang focus. Bắt ở beforeAll
+     * chứ không trong testcase: TanStack Query cache list nên lần mở thứ hai của cùng
+     * một ガイド KHÔNG phát request nào.
+     */
+    let lastTrtQuery = ''
 
     const headerCell = (id: string) => picker.locator(`[data-testid="header-${id}"]`)
     const dialogRows = () => picker.locator('[data-testid^="row-"]')
@@ -225,6 +235,10 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
         page = authedPage
         step = makeStep(page)
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
+
+        page.on('request', (r) => {
+            if (r.url().includes('/tenant/guids/treatments')) lastTrtQuery = r.url()
+        })
 
         picker = page.getByRole('dialog').filter({ hasText: 'ガイド番号' })
         noTrtAlert = page.getByText('算定できる処置がありません')
@@ -346,9 +360,25 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
     test('TC-D4 — danh sách 処置: in trọn từng dòng để đối chiếu với WinForm', async () => {
         if ((await picker.count()) === 0) await openPickableGuide()
 
+        // Tiền đề của phép so danh sách: 部位/病名 mà FE gửi lên (xem lastTrtQuery).
+        if (lastTrtQuery) {
+            const q = new URL(lastTrtQuery).searchParams
+            dump(
+                `req|GuidCd=${q.get('GuidCd')}|TrtDt=${q.get('TrtDt')}|PatNo=${q.get('PatNo')}` +
+                    `|Bui=${q.getAll('Bui').filter((v) => v !== '0').join(',')}` +
+                    `|DisCd=${q.getAll('DisCd').filter((v) => v !== '0').join(',')}`,
+            )
+        } else {
+            console.log('CẢNH BÁO: không bắt được request /tenant/guids/treatments (cache?)')
+        }
+
         const rows = await readRows()
         expect(rows.length, 'ガイド đã mở được dialog thì phải có ít nhất một dòng 処置').toBeGreaterThan(0)
-        rows.forEach((r, i) => dump(`row|${i}|${r.join('|')}`))
+        // NFKC trước khi in: cùng một 処置名称 trong DB ra WinForm là 「ﾃﾞｼﾞﾀﾙ(標)」 nửa
+        // chiều rộng còn ra web là full-width tuỳ ô, và fixture FlaUI cũng in bản đã
+        // NFKC (Txt.N). Không chuẩn hoá thì diff hai tập DUMP đỏ ở mọi dòng vì một khác
+        // biệt KHÔNG có thật.
+        rows.forEach((r, i) => dump(`row|${i}|${r.map((c) => c.normalize('NFKC')).join('|')}`))
         console.log(`dialog có ${rows.length} dòng 処置`)
 
         // Mọi ô ｺｰﾄﾞ/枝番/点数/回数 phải là số — cả 4 cột đó là int trong dspDt

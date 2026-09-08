@@ -27,6 +27,11 @@ Kết quả: `select-guide-treatment-KQ.txt` (các dòng `=== KQ-n ===`, UTF-8 s
 **Không ghi DB.** Không bấm F9 登録 của frm203002. Nút 「リセット」 *có* ghi
 (`StepReset` → `UPDATE TRTSTATE`) nên mọi chỗ bấm nó đều trả lời キャンセル/いいえ.
 
+> **Dialog 「ガイド処置選択」 có README riêng:**
+> [`GUIDE-DIALOG-README.md`](./GUIDE-DIALOG-README.md) — `GuideDialogTests` (TC-D1..D14)
+> đo ĐỊNH DẠNG và DANH SÁCH 処置 của frm203017, chạy bằng `run-open-guide-dialog.ps1`.
+> File này chỉ đo TAB ガイド.
+
 ---
 
 ## 2. Nguồn WinForm

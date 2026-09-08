@@ -89,6 +89,21 @@ public sealed class GuideDialogTests : UiTestBase
             Thread.Sleep(1500);
         }
         catch (Exception e) { TestContext.Out.WriteLine("khởi động: " + e.Message); }
+
+        // TIỀN ĐỀ của mọi phép so danh sách với bản web: frm203017 nhận 部位/病名 của
+        // DÒNG ĐANG CÓ CON TRỎ trên grdRegi (frm203002.cs:6515 snapshot getFocusBui /
+        // getFocusDis). Hai bên chỉ so được với nhau khi hai tiền đề đó bằng nhau — bản
+        // web in cùng thông tin ra dòng `DUMP|web|req|…`. Đọc TRƯỚC khi mở dialog: lúc
+        // modal đang chặn luồng UI của frm203002 thì mọi phép đọc grdRegi đều treo.
+        try
+        {
+            var row = Screen.Regi.CurrentRow();
+            Dump(row is null
+                ? "ctx|focusRow=(không đọc được dòng đang chọn)"
+                : $"ctx|bui={Txt.N(row.At(Screens.RegiGrid.Col.Bui))}|" +
+                  $"ryo={Txt.N(row.At(Screens.RegiGrid.Col.Ryo))}");
+        }
+        catch (Exception e) { Dump($"ctx|lỗi đọc grdRegi: {e.Message}"); }
     }
 
     [OneTimeTearDown]
