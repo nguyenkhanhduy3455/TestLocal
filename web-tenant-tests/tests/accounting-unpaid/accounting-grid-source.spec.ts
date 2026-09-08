@@ -117,6 +117,7 @@ const INSERT_UNPAID_URL = /\/tenant\/treatment\/accounting\/insert-unpaid(\?|$)/
 const ACC_CORRECT_URL = /\/tenant\/treatment\/accounting\/correct(\?|$)/
 
 /** `RegiCol` — frm203002.cs:158-169. Lưới web chỉ render 5 cột này. */
+const COL_DAY = 0
 const COL_RYO = 2
 const COL_KAI = 4
 
@@ -212,12 +213,47 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
         }
     }
 
+    /**
+     * Alert 「お茶コン」 của 診療チェック (vd 「1日の算定限度（2回）を超えています」).
+     *
+     * Đo thật: nó bung sau khi sửa 回数 và nếu để nguyên thì chặn luôn lần
+     * `goto` kế tiếp — lưới không dựng và testcase SAU đỏ ở chỗ không liên quan.
+     *
+     * CHỈ bấm OK cho alert của 診療チェック. Các cổng của chuỗi 会計 cũng là
+     * `alertdialog`, nên `installOverlayHandlers({ alerts: true })` dùng chung sẽ
+     * bấm OK vào cả 日付チェック — đổi nhánh mà không ai thấy. Vì vậy lọc theo NỘI DUNG.
+     */
+    const CHECK_ALERT_RE = /算定していますが|超えています|算定できません/
+
+    async function drainCheckAlerts() {
+        for (let i = 0; i < 8; i++) {
+            const box = page.locator('[role="alertdialog"]').filter({ hasText: CHECK_ALERT_RE })
+            if (!(await box.first().isVisible().catch(() => false))) return
+            const txt = ((await box.first().innerText().catch(() => '')) || '')
+                .replace(/\s+/g, ' ')
+                .slice(0, 120)
+            console.log(`alert 診療チェック → bấm OK: ${txt}`)
+            await box
+                .first()
+                .getByRole('button', { name: 'OK' })
+                .first()
+                .click({ timeout: 3_000 })
+                .catch(() => {})
+        }
+    }
+
     /** Đóng mọi hộp 「カルテ記載選択」 còn treo — F10戻る = không chọn gì, không ghi gì. */
     async function drainKarteCmtDialogs() {
         const karte = page.locator('[role="dialog"]').filter({ hasText: 'カルテ記載選択' })
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 25; i++) {
             if (!(await appeared(karte.first(), 2_000))) return
-            await btn(karte.first(), /F10\s*戻る/)
+            const back = btn(karte.first(), /F10\s*戻る/).first()
+            if (await back.isVisible().catch(() => false)) {
+                await back.click().catch(() => {})
+                continue
+            }
+            // Vài trạng thái của hộp chỉ có nút 閉じる ở header.
+            await btn(karte.first(), '閉じる')
                 .first()
                 .click()
                 .catch(() => {})
@@ -225,15 +261,19 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
     }
 
     async function backToEntry() {
+        // Alert của 診療チェック còn treo từ testcase trước sẽ chặn `goto` → vét TRƯỚC.
+        await drainCheckAlerts()
         await openTreatmentEntry(page, PAT_NO, TRT_DT)
         await expect(page.getByText('合計:').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
         await drainSanteiDialogs()
         await drainKarteCmtDialogs()
+        await drainCheckAlerts()
     }
 
     async function pressFKey(fkey: string) {
         await drainSanteiDialogs()
         await drainKarteCmtDialogs()
+        await drainCheckAlerts()
         await page.keyboard.press(fkey)
     }
 
@@ -295,26 +335,112 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
             .toBeGreaterThan(0)
     }
 
-    /** Ô 回 của một dòng 処置 tháng hiện hành (loại dòng 日計 và dòng tháng cũ). */
+    /**
+     * Đặt con trỏ vào ô 日 của một dòng — MỘT click (hai click là mở 日付変更).
+     *
+     * Bắt buộc trước khi bấm F8/F11: chuỗi 会計 lấy 会計対象日 và 当日来院回数 từ DÒNG
+     * CON TRỎ, và cú click cũng kéo focus về lưới để phím F không rơi vào chỗ khác.
+     */
+    async function focusRowDay(key: string) {
+        await drainSanteiDialogs()
+        await drainKarteCmtDialogs()
+        await drainCheckAlerts()
+        await page.locator(`[data-grid-cell="${key}|${COL_DAY}"]`).click({ timeout: 15_000 })
+    }
+
+    /**
+     * Đặt con trỏ vào MỘT dòng bất kỳ của tháng hiện hành, dò lại key ngay lúc gọi.
+     *
+     * KHÔNG giữ rowKey qua một lần sửa lưới: id của dòng là uuid và lưới dựng lại
+     * sau khi commit ô 回 (自動算定/摘要コメント có thể chèn dòng), nên key cũ trỏ vào
+     * phần tử đã biến mất — đo thật, click treo đúng 15s rồi đỏ.
+     *
+     * Chuỗi 会計 chỉ cần con trỏ nằm ở MỘT dòng của tháng hiện hành để có
+     * 会計対象日; testcase không quan tâm đó là dòng nào.
+     */
+    async function focusAnyCurrentMonthRow(): Promise<boolean> {
+        const key = await pickEditableKaiRowKey()
+        if (key === null) return false
+        await focusRowDay(key)
+        return true
+    }
+
+    /**
+     * Bấm F8 cho tới khi chuỗi 会計 thật sự khởi động (precheck bay đi).
+     *
+     * Đo thật: hộp 「カルテ記載選択」 của 自動算定２ có thể bung MUỘN, sau lúc vét, và
+     * nó nuốt luôn phím F8 — lần chạy đầu đỏ, chạy lại thì xanh. Vòng lặp này vét lại
+     * rồi bấm lại, KHÔNG phải sleep trá hình: mỗi vòng vẫn chờ bằng điều kiện
+     * `calls.precheck.length > 0`.
+     */
+    async function pressF8UntilChainStarts(attempts = 2) {
+        for (let i = 1; i <= attempts; i++) {
+            if (!(await focusAnyCurrentMonthRow())) return
+            await page.keyboard.press('F8')
+            const started = await settleUntilPrecheck()
+            if (started) return
+            console.log(`F8 lần ${i}/${attempts} không khởi động được chuỗi 会計 — vét dialog rồi bấm lại`)
+        }
+    }
+
+    /** Trả lời các cổng rồi cho biết chuỗi đã chạm bước ĐỌC hay chưa. */
+    async function settleUntilPrecheck(): Promise<boolean> {
+        await settleAccountingDialogs()
+        return calls.precheck.length > 0
+    }
+
+    /**
+     * Ô 回 của một dòng 処置 tháng hiện hành (loại dòng 日計 và dòng tháng cũ).
+     *
+     * BỎ QUA dòng 初診/再診: 回数 của chúng vừa là đầu vào của `hfgRaiinCnt`, vừa
+     * dính luật 算定限度 1 ngày 2 lần — sửa lên là bung alert 診療チェック và chặn
+     * luôn lần nạp lưới kế tiếp (đo thật). Spec này chỉ cần MỘT sửa đổi chưa lưu
+     * bất kỳ, không cần đúng dòng 再診.
+     */
+    const VISIT_ROW_RE = /初診|再診/
+
     async function pickEditableKaiRowKey(): Promise<string | null> {
-        const keys = await page
-            .locator(`[data-grid-cell$="|${COL_KAI}"]:not([data-footer-cell]):not(:has(input))`)
-            .evaluateAll((els) =>
-                els.map((e) => (e.getAttribute('data-grid-cell') ?? '').replace(/\|\d+$/, '')),
-            )
-        for (const k of keys) {
-            if (k === '' || k.includes(':') || HISTORY_KEY_RE.test(k)) continue
-            const name = (
-                await page.locator(`[data-grid-cell="${k}|${COL_RYO}"]`).innerText()
-            ).trim()
-            if (name !== '') return k
+        // MỘT lần evaluateAll cho cả lưới, KHÔNG innerText từng dòng.
+        // Đo thật: bệnh nhân test có hàng trăm dòng; vòng lặp `innerText()` mỗi dòng
+        // là hàng trăm round-trip và đẩy testcase vượt trần 5 phút.
+        const rows = await page
+            .locator('[data-grid-cell]')
+            .evaluateAll((els, cols: { kai: number; ryo: number }) => {
+                const kai = new Set<string>()
+                const name = new Map<string, string>()
+                for (const e of els) {
+                    const attr = e.getAttribute('data-grid-cell') ?? ''
+                    const m = /^(.*)\|(\d+)$/.exec(attr)
+                    if (m === null) continue
+                    const key = m[1]!
+                    const col = Number(m[2])
+                    if (col === cols.kai) {
+                        // Loại ô của dòng 日計 và ô đang ở chế độ sửa.
+                        if (e.hasAttribute('data-footer-cell')) continue
+                        if (e.querySelector('input') !== null) continue
+                        kai.add(key)
+                    } else if (col === cols.ryo) {
+                        name.set(key, (e.textContent ?? '').trim())
+                    }
+                }
+                return [...kai].map((k) => ({ key: k, name: name.get(k) ?? '' }))
+            }, { kai: COL_KAI, ryo: COL_RYO })
+
+        for (const r of rows) {
+            if (r.key === '' || r.key.includes(':') || HISTORY_KEY_RE.test(r.key)) continue
+            if (r.name === '' || VISIT_ROW_RE.test(r.name)) continue
+            return r.key
         }
         return null
     }
 
     test.beforeAll(async ({ authedPage }) => {
         page = authedPage
-        disposeOverlays = await installOverlayHandlers(page, { santei: true })
+        // kartePicker: sửa ô 回 kích hoạt cascade 摘要コメント — mỗi 処置 một hộp
+        // 「カルテ記載選択」, đóng hộp này thì hộp kia mở. Vét bằng vòng lặp không kịp
+        // và hộp còn treo sẽ NUỐT phím F8 (đo thật, 2 lần chạy đỏ vì đúng lý do này).
+        // Spec không đo hộp đó nên dùng handler chung là đúng chỗ (Rule 19.2).
+        disposeOverlays = await installOverlayHandlers(page, { santei: true, kartePicker: true })
         step = makeStep(page)
 
         // ── GHI: chặn cứng, trả envelope giả để FE vẫn đi hết chuỗi ──────────
@@ -377,9 +503,12 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
     // ─────────────────────────────────────────────────────────────────────────
 
     test('TC-GRID-1 — F8 会計 gửi kèm lưới 当月 (`rows`) xuống bước ĐỌC lẫn bước GHI', async () => {
+        const hasRow = (await pickEditableKaiRowKey()) !== null
+        skipWithReason(!hasRow, 'lưới không có dòng 処置 nào của tháng hiện hành')
+        if (!hasRow) return
+
         resetCalls()
-        await pressFKey('F8')
-        await settleAccountingDialogs()
+        await pressF8UntilChainStarts()
         await waitPrecheck()
 
         const pre = calls.precheck[0]!
@@ -425,7 +554,7 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
             timeout: 10_000,
         })
         const oldCnt = Number((await editor.inputValue()).trim() || '0')
-        const newCnt = oldCnt === 2 ? 3 : 2
+        const newCnt = oldCnt === 2 ? 1 : 2
         await editor.fill(String(newCnt))
         await editor.press('Enter')
         await drainSanteiDialogs()
@@ -433,8 +562,7 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
         await step()
 
         resetCalls()
-        await pressFKey('F8')
-        await settleAccountingDialogs()
+        await pressF8UntilChainStarts()
         await waitPrecheck()
 
         const sent = (calls.precheck[0]!.rows ?? []).filter((r) => r.dspTrt === name)
@@ -460,9 +588,12 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
         // Nếu chỗ nào tự gọi lại `buildSavePayload()` thì số hiện trên dialog 入金指定
         // và số thực ghi vào 未精算 có thể lệch nhau mà không ai báo.
         await backToEntry()
+        const hasRow = (await pickEditableKaiRowKey()) !== null
+        skipWithReason(!hasRow, 'lưới không có dòng 処置 nào của tháng hiện hành')
+        if (!hasRow) return
+
         resetCalls()
-        await pressFKey('F8')
-        await settleAccountingDialogs()
+        await pressF8UntilChainStarts()
         await waitPrecheck()
 
         const pre = calls.precheck[0]!
@@ -496,16 +627,23 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
         // WinForm chạy được vì LetAccData2 đọc lưới. Nếu web đọc DB ở đường này thì
         // đúng đường này ra 0 đồng.
         await backToEntry()
+        const hasRow = (await pickEditableKaiRowKey()) !== null
+        skipWithReason(!hasRow, 'lưới không có dòng 処置 nào của tháng hiện hành')
+        if (!hasRow) return
         resetCalls()
 
-        const rowMenu = page.locator('[role="dialog"]').filter({ hasText: '3 会計データ作成' })
-        for (let i = 0; i < 3 && !(await rowMenu.isVisible().catch(() => false)); i++) {
-            await pressFKey('F11')
+        // Menu 選択 là `role="menu"` (KHÔNG phải dialog) — đo thật trên DOM.
+        const rowMenu = page.getByRole('menu').filter({ hasText: '1 メニュー' })
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            if (!(await focusAnyCurrentMonthRow())) break
+            await page.keyboard.press('F11')
+            if (await rowMenu.isVisible({ timeout: 10_000 }).catch(() => false)) break
         }
         await expect(rowMenu, 'bấm F11 3 lần mà menu 選択 vẫn không mở').toBeVisible({
-            timeout: 15_000,
+            timeout: 10_000,
         })
         await rowMenu.getByRole('button', { name: '3 会計データ作成' }).click()
+        await expect(rowMenu).toBeHidden({ timeout: 10_000 })
 
         await settleAccountingDialogs()
         await waitPrecheck()
@@ -539,14 +677,23 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
         const editor = page.locator(`[data-grid-cell="${rowKey}|${COL_KAI}"] input`)
         await expect(editor).toBeVisible({ timeout: 10_000 })
         const oldCnt = Number((await editor.inputValue()).trim() || '0')
-        const newCnt = oldCnt === 4 ? 5 : 4
+        const newCnt = oldCnt === 2 ? 1 : 2
         await editor.fill(String(newCnt))
         await editor.press('Enter')
         await drainSanteiDialogs()
         await drainKarteCmtDialogs()
 
         resetCalls()
-        await pressFKey('F8')
+        await focusAnyCurrentMonthRow()
+        await page.keyboard.press('F8')
+
+        // 会計前チェック (frm203002.cs:7705) đứng TRƯỚC hộp 保存しますか trong
+        // IDM_Acc_Click. Bệnh nhân test có rất nhiều lỗi 処置データチェック nên cổng này
+        // hầu như luôn bung; không trả lời nó thì hộp dirty không bao giờ tới và
+        // testcase tự skip vì lý do sai.
+        if (await appeared(checkGate(), 20_000)) {
+            await btn(checkGate(), 'OK').first().click()
+        }
 
         const sawDirty = await appeared(dirtyGate(), 20_000)
         skipWithReason(
