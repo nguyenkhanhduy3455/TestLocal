@@ -144,7 +144,30 @@ public sealed class AutoSanteiOps
 
         if (buiSlot >= 0)
         {
-            var bui = _flow.SetBuiOnRow(blank, buiSlot, milk: false, disCd, trace);
+            // ⚠️ PHẢI CÓ HAI DÒNG TRỐNG LIỀN NHAU: một để thành 部位病名行, một để nhận 処置.
+            //
+            // `ModMain.AutoBui` là thứ chép 部位/病名 từ 部位病名行 xuống dòng ngay dưới
+            // (frm203002.cs:8660), NHƯNG nó BỎ QUA khi dòng đích đã có sẵn bất cứ gì ở cột
+            // 8..49 — 「すでに入っていれば何もしない」 (modMain.cs:139-146).
+            //
+            // Đo được 2026-09-08 (TcAUTO2 lượt 4): chỉ chèn MỘT dòng trống thì dòng ngay dưới
+            // 部位病名行 là một 処置行 CÓ SẴN của bệnh nhân, AutoBui im lặng bỏ qua, và 抜歯 gõ
+            // vào đó không mang 部位 nào ⇒ app bung 「…算定可能な部位がありません。」 rồi ghi
+            // 回 = 0 ⇒ Chk_ChkAuto không bao giờ chạy. Ba lượt chạy đầu đều chết ở đây.
+            var second = _flow.InsertBlankRow(blank, trace);
+            if (second is null)
+                trace.Note("KHONG chen duoc dong trong thu hai — 部位 se khong chep xuong duoc (AutoBui bo qua)");
+
+            // Chỉ số đã xê dịch sau cú Insert thứ hai ⇒ đọc lại lưới, lấy dòng TRÊN của cặp trống.
+            var blanks = _grid.Snapshot()
+                              .Where(r => Txt.Int(r.Day) is not null
+                                          && SigaToothFlow.IsBlank(r.Ryo)
+                                          && SigaToothFlow.IsBlank(r.Ten))
+                              .ToList();
+            var upper = blanks.Count >= 2 ? blanks[^2] : second ?? blank;
+            trace.Note($"cap dong trong: {blanks.Count} dong trong tren luoi; dat 部位 vao 「{upper}」");
+
+            var bui = _flow.SetBuiOnRow(upper, buiSlot, milk: false, disCd, trace);
             trace.Note($"dat 部位: {bui}");
             if (!bui.ToothDialogOpened)
             {
