@@ -252,17 +252,32 @@ public sealed class ChkAutoDb
         var disSbCols = string.Join(", ", Enumerable.Range(1, 10).Select(i => $"DIS_SB{i}"));
         var disSbVals = string.Join(", ", Enumerable.Range(1, 10).Select(i => $"@ds{i}"));
 
-        // PAT_BR / INSU_CD phải hợp lệ với đăng ký của bệnh nhân ⇒ kế thừa từ một dòng
-        // THẬT, y như bản Playwright. SEQ là identity nên KHÔNG được liệt kê.
+        // ⚠️ KẾ THỪA TỪ MỘT DÒNG THẬT, ĐỪNG HARD-CODE — và kế thừa CẢ những cột trông như
+        // vô thưởng vô phạt.
+        //
+        // Đo được 2026-09-08: bản đầu chỉ kế thừa PAT_BR/INSU_CD còn lại đặt tay, nên
+        // `MED_ST_DT` (ngày bắt đầu hiệu lực của bảo hiểm) rơi vào NULL — mọi dòng THẬT đều
+        // có ngày. Kết quả: mở 診療入力 là app không dựng nổi lưới, `grdRegi` không bao giờ
+        // xuất hiện, cả năm testcase đỏ ngay ở OneTimeSetUp với 「Quá 4s mà không thấy
+        // grdRegi」 — nhìn y như app hỏng, trong khi lỗi nằm ở dòng seed.
+        //
+        // Vì thế: chỉ ĐÈ những cột mà testcase thật sự định nghĩa (ngày, vị trí, 部位, 病名,
+        // và các cột 処置 = 0 để thành 部位病名行); mọi cột khác lấy nguyên từ dòng mẫu.
+        // SEQ là identity nên KHÔNG được liệt kê.
+        //
+        // Dòng mẫu ưu tiên CÙNG NGÀY test (bảo hiểm khi đó chắc chắn còn hiệu lực), không
+        // có thì lấy dòng gần nhất.
         var sql = new StringBuilder()
-            .Append($"INSERT INTO TRNTRN (DEL_FLG, PAT_NO, PAT_BR, INSU_CD, TRT_DT, RAIIN_CNT, DISP_NO, ")
+            .Append("INSERT INTO TRNTRN (DEL_FLG, PAT_NO, PAT_BR, INSU_CD, TRT_DT, RAIIN_CNT, DISP_NO, ")
             .Append($"{buiCols}, {disCdCols}, {disSbCols}, ")
             .Append("TRT_CD, TRT_SB, TRT_CNT, TRT_PT, ISL, PRICE, JIHI_FLG, DR_NO, SYOSIN_FLG, ")
-            .Append("DSP_BUI, DSP_TRT, DSP_DIS) ")
-            .Append("SELECT TOP 1 0, PAT_NO, PAT_BR, INSU_CD, @dt, 1, @disp, ")
+            .Append("CHK_FLG, STAFF_NO, MED_ST_DT, DSP_BUI, DSP_TRT, DSP_DIS) ")
+            .Append("SELECT TOP 1 0, PAT_NO, PAT_BR, INSU_CD, @dt, RAIIN_CNT, @disp, ")
             .Append($"{buiVals}, {disCdVals}, {disSbVals}, ")
-            .Append("0, 0, 0, 0, 0, 0, 0, 1, 3, @dspBui, '', @dspDis ")
-            .Append($"FROM TRNTRN WHERE PAT_NO = @p AND DISP_NO < {SeedDispBase} ORDER BY TRT_DT DESC")
+            .Append("0, 0, 0, 0, 0, 0, 0, DR_NO, SYOSIN_FLG, ")
+            .Append("CHK_FLG, STAFF_NO, ISNULL(MED_ST_DT, @dt), @dspBui, '', @dspDis ")
+            .Append($"FROM TRNTRN WHERE PAT_NO = @p AND DISP_NO < {SeedDispBase} ")
+            .Append("ORDER BY CASE WHEN TRT_DT = @dt THEN 0 ELSE 1 END, TRT_DT DESC")
             .ToString();
 
         using var con = Open();
