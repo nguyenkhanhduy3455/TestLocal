@@ -128,6 +128,8 @@
     "//controlTrtCd": "Ma DOI CHUNG — cung duong nhap nhung KHONG co trong chkauto. 171/0 = 感染根管処置(単根), cung ho acc_unit 9 voi 170 抜髄 (ma CO chkauto) va khong nam trong switch cua IregCodChk nen khong ghi 歯式.",
     "controlTrtCd": 171,
     "controlTrtSb": 0,
+    "//disCd": "病名 dang ky o 病名選択. 100 = Ｃ, dung 病名 cua dong 「6 (1) Ｃ₂」 trong anh so sanh. BAT BUOC: dang ky 部位 ma KHONG co 病名 thi app bung 「算定可能な部位がありません」 roi ghi 回 = 0, ma 回 = 0 dong luon cua vao Chk_ChkAuto (frm203002.cs:5745).",
+    "disCd": 100,
     "//buiSlot": "O 部位 (0-based). 10 = 左上3 => cot se11 — dung lai dung o cua luong SigaToothStatus de hai luong khong tranh nhau rang.",
     "buiSlot": 10,
     "//multiTrtCd": "CHI PROBE, khong assert. 110/0 = 再診, chkauto(110,0) co TOI HAI ma di kem (108/9 va 108/12) nen la cho duy nhat do duoc vong lap 5 luot chay qua mot luot. Khong assert vi ca hai deu la 加算 gioi han 月1回 => 診療チェック loai hay khong la tuy thang test da co 再診 chua.",

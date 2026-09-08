@@ -302,6 +302,18 @@ public sealed class TestSettings
         [JsonPropertyName("controlTrtSb")] public int ControlTrtSb { get; set; }
 
         /// <summary>
+        /// 病名 đăng ký ở 病名選択 cho 部位病名行. Mặc định 100 = Ｃ — đúng 病名 của dòng
+        /// 「6 (1) Ｃ₂」 trong ảnh so sánh.
+        ///
+        /// <para><b>BẮT BUỘC phải có, không được để trống.</b> Đo được 2026-09-08: đăng ký
+        /// 部位 mà KHÔNG có 病名 thì dòng không trở thành 部位病名行 đúng nghĩa, và khi chốt
+        /// 抜歯 app bung 「…を算定していますが、算定可能な部位がありません。」 rồi ghi
+        /// <c>回 = 0</c>. Mà <c>回 = 0</c> đóng luôn cửa vào <c>Chk_ChkAuto</c>
+        /// (frm203002.cs:5745) ⇒ testcase đỏ như thể app thiếu chức năng.</para>
+        /// </summary>
+        [JsonPropertyName("disCd")] public int DisCd { get; set; } = 100;
+
+        /// <summary>
         /// Ô 部位 (0-based) đem thử. Mặc định 10 = 左上3 ⇒ cột <c>se11</c> — dùng lại đúng ô
         /// của luồng SigaToothStatus để hai luồng không tranh nhau răng.
         /// </summary>

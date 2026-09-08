@@ -80,6 +80,7 @@ public sealed class AutoSanteiChkAutoTests : UiTestBase
     private int ControlCd => Settings.AutoSantei.ControlTrtCd;
     private int ControlSb => Settings.AutoSantei.ControlTrtSb;
     private int BuiSlot => Settings.AutoSantei.BuiSlot;
+    private int DisCd => Settings.AutoSantei.DisCd;
 
     private static void Log(string line) => TestContext.Out.WriteLine(line);
 
@@ -219,7 +220,7 @@ public sealed class AutoSanteiChkAutoTests : UiTestBase
         Assert.That(chkRow, Is.Not.Null, "TcAUTO1 phải xanh trước — chkauto không có dòng cho mã đem thử.");
         Log($"{chkRow}");
 
-        var measure = _ops.EnterAndMeasure(TrtCd, TrtSb, BuiSlot, trace);
+        var measure = _ops.EnterAndMeasure(TrtCd, TrtSb, BuiSlot, trace, DisCd);
         Assert.That(measure, Is.Not.Null,
             "Không dựng được dòng để gõ mã (Insert / 部位選択 hỏng) ⇒ HARNESS hỏng, sửa trước. " +
             "Đọc _trace.log và ảnh chụp bước cuối trong artifacts\\screenshots.");
@@ -301,7 +302,7 @@ public sealed class AutoSanteiChkAutoTests : UiTestBase
         Assert.That(_chk.ReadChkAuto(ControlCd, ControlSb), Is.Null,
             $"{ControlCd}/{ControlSb} có trong chkauto ⇒ không đối chứng được. Xem TcAUTO1.");
 
-        var measure = _ops.EnterAndMeasure(ControlCd, ControlSb, BuiSlot, trace);
+        var measure = _ops.EnterAndMeasure(ControlCd, ControlSb, BuiSlot, trace, DisCd);
         Assert.That(measure, Is.Not.Null, "Không dựng được dòng để gõ mã ⇒ HARNESS hỏng, sửa trước.");
         Assert.That(measure!.Enter.Committed, Is.True,
             $"Không chốt được 枝番 {ControlSb} của mã đối chứng. {measure.Enter}");

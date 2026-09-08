@@ -173,7 +173,8 @@ public sealed class AutoSanteiProbeTests : UiTestBase
             var row = _chk.ReadChkAuto(trtCd, trtSb);
             Log($"=== KQ-6 === [{label}] {row?.ToString() ?? $"chkauto({trtCd},{trtSb}) KHÔNG có dòng nào"}");
 
-            var measure = _ops.EnterAndMeasure(trtCd, trtSb, buiSlot, trace);
+            var measure = _ops.EnterAndMeasure(trtCd, trtSb, buiSlot, trace,
+                                               buiSlot >= 0 ? Settings.AutoSantei.DisCd : null);
             if (measure is null)
             {
                 Log($"=== KQ-7 === [{label}] KHÔNG gõ được mã — xem _trace.log và ảnh chụp bước cuối.");

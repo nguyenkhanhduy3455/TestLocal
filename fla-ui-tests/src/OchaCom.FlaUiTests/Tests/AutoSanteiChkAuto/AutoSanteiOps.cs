@@ -107,7 +107,14 @@ public sealed class AutoSanteiOps
     /// chỗ đứng / Insert hỏng) — testcase tự quyết định đó là đỏ hay Ignore.
     /// </summary>
     /// <param name="buiSlot">Ô 部位 (0-based); &lt; 0 = KHÔNG đi qua 部位選択.</param>
-    public EntryMeasure? EnterAndMeasure(int trtCd, int trtSb, int buiSlot, TestTrace trace)
+    /// <param name="disCd">
+    /// 病名 đăng ký kèm 部位. <b>Đừng để null.</b> Không có 病名 thì dòng không thành
+    /// 部位病名行 đúng nghĩa, app bung 「算定可能な部位がありません」 và ghi 回 = 0 — mà
+    /// 回 = 0 đóng luôn cửa vào <c>Chk_ChkAuto</c> (đo 2026-09-08, xem
+    /// <see cref="EnsureTrtCount"/>).
+    /// </param>
+    public EntryMeasure? EnterAndMeasure(int trtCd, int trtSb, int buiSlot, TestTrace trace,
+                                         int? disCd = null)
     {
         if (!_flow.EnsureCodeMode())
         {
@@ -137,7 +144,7 @@ public sealed class AutoSanteiOps
 
         if (buiSlot >= 0)
         {
-            var bui = _flow.SetBuiOnRow(blank, buiSlot, milk: false, disCd: null, trace);
+            var bui = _flow.SetBuiOnRow(blank, buiSlot, milk: false, disCd, trace);
             trace.Note($"dat 部位: {bui}");
             if (!bui.ToothDialogOpened)
             {
