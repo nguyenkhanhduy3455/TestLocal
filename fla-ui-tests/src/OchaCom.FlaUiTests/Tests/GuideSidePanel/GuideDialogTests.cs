@@ -183,6 +183,10 @@ public sealed class GuideDialogTests : UiTestBase
         {
             if (_guide.DialogOpen()) _guide.CloseDialogWithF10();
 
+            // Bệnh nhân + 診療年月 đang hiển thị: nếu hai bên không cùng hai thứ này thì
+            // mọi phép so 部位/回数 đều vô nghĩa.
+            Dump($"ctx|screen|patNo={Screen.PatientNo()}|ym={Screen.YearMonth()}");
+
             // CurrentRow() bám phần tử ĐANG GIỮ CON TRỎ, mà sau F4 con trỏ nằm ở
             // txtGuid1Sel của side panel ⇒ luôn null. Vì thế in cả hai: dòng đang giữ
             // con trỏ (nếu có) VÀ vài dòng đầu của lưới — 部位 mà frm203017 nhận được là
@@ -193,8 +197,8 @@ public sealed class GuideDialogTests : UiTestBase
                 : $"ctx|focusRow|bui={Txt.N(row.At(Screens.RegiGrid.Col.Bui))}|" +
                   $"ryo={Txt.N(row.At(Screens.RegiGrid.Col.Ryo))}");
 
-            var bui = Screen.Regi.Column(Screens.RegiGrid.Col.Bui, limit: 5);
-            var ryo = Screen.Regi.Column(Screens.RegiGrid.Col.Ryo, limit: 5);
+            var bui = Screen.Regi.Column(Screens.RegiGrid.Col.Bui, limit: 20);
+            var ryo = Screen.Regi.Column(Screens.RegiGrid.Col.Ryo, limit: 20);
             for (var i = 0; i < bui.Count; i++)
                 Dump($"ctx|regi|{i}|bui={Txt.Vis(bui[i])}|ryo={Txt.N(ryo.ElementAtOrDefault(i) ?? "")}");
         }
