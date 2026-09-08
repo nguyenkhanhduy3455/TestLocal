@@ -159,7 +159,31 @@ public sealed class AutoSanteiOps
             pointBefore = _grid.AllPointValue();
             trace.Note($"moc truoc khi go ma: {before.Count} dong, 月計 = {pointBefore?.ToString() ?? "?"}");
 
-            enter = _flow.EnterTreatmentAtCursor(trtCd, trtSb, answerYes: null, trace);
+            // ⚠️ GÕ VÀO Ô 点 CỦA MỘT DÒNG CỤ THỂ, ĐỪNG 「gõ tại chỗ con trỏ」.
+            //
+            // Đăng ký 病名 THẬT (điều mà testcase này bắt buộc phải làm) đưa app vào nhánh
+            // 「病名入力あり」 của frmDis_KeyFunc_EndKey_Method: với pInpOpt[9] == 1 như máy
+            // test, nó bắn F4 rồi txtGuid1Sel.Focus() (frm203002.cs:8376-8384) — panel bên
+            // phải nhảy sang tab ガイド và TIÊU ĐIỂM RỜI KHỎI LƯỚI.
+            //
+            // Đo được 2026-09-08 (TcAUTO2 lượt 3): gõ 「179」 lúc đó là gõ vào ô 選択№ của
+            // ガイド, và cái bung ra là cửa sổ 「ガイド番号」 — cũng mang lưới dgvView nên
+            // SigaToothFlow.Picker() nhận nhầm nó là 処置選択, rồi chốt phải 310/2. Cả lượt
+            // chạy đo một đường HOÀN TOÀN KHÁC (lối ガイド) mà không có dấu hiệu gì.
+            //
+            // EnterTreatment → EnterCodeOnRow click thẳng ô 点 nên tiêu điểm quay lại lưới.
+            var buiLine = _flow.LastBuiLineRow();
+            var target = buiLine is null ? null : _flow.RowAfter(buiLine);
+            if (target is null)
+            {
+                trace.Note("khong tim ra dong ngay duoi 部位病名行 — lui ve go tai cho con tro");
+                enter = _flow.EnterTreatmentAtCursor(trtCd, trtSb, answerYes: null, trace);
+            }
+            else
+            {
+                trace.Note($"go ma vao o 点 cua dong ngay duoi 部位病名行: 「{target}」");
+                enter = _flow.EnterTreatment(target, trtCd, trtSb, answerYes: null, trace);
+            }
         }
         else
         {

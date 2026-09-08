@@ -754,7 +754,7 @@ public sealed class SigaToothFlow
     {
         if (!EnterCodeAtCursor(trtCd, trace))
             return new EnterResult(false, false, false, []);
-        return FinishTreatmentEntry(trtSb, answerYes, trace);
+        return FinishTreatmentEntry(trtCd, trtSb, answerYes, trace);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -856,16 +856,25 @@ public sealed class SigaToothFlow
     ///
     /// <para>Chốt theo 枝番 chứ KHÔNG theo chỉ số dòng: thứ tự 枝番 trong master không
     /// bảo đảm, và 179 có tận 10 枝番 mà chỉ vài cái đi vào nhánh <c>DelExtRec</c>.</para>
+    ///
+    /// <para>⚠️ <paramref name="trtCd"/> — <b>truyền vào bất cứ khi nào biết</b>. Lọc theo
+    /// MỘT MÌNH 枝番 chỉ an toàn khi lưới chỉ chứa đúng một <c>trt_cd</c>; và nó KHÔNG
+    /// luôn như vậy. Đo được 2026-09-08 (TcAUTO2, luồng AutoSanteiChkAuto): khi dòng có
+    /// 病名 thật, 処置選択 mở ra danh sách 16 dòng TRỘN NHIỀU MÃ
+    /// (310/2, 135/0, 7321/1, 200/0, … 179/2 nằm mãi ở dòng thứ 9), nên
+    /// 「dòng đầu tiên có 枝番 = 2」 là <b>310/2</b> — chốt nhầm hẳn sang mã khác mà không
+    /// có dấu hiệu gì. Với danh sách chỉ một mã thì tham số này không đổi kết quả.</para>
     /// </summary>
-    public bool CommitPick(Window picker, int trtSb, TestTrace? trace = null)
+    public bool CommitPick(Window picker, int trtSb, TestTrace? trace = null, int? trtCd = null)
     {
         var rows = PickerRows(picker);
         trace?.Note($"処置選択 co {rows.Count} dong: " + string.Join(" · ", rows.Take(12)));
 
-        var target = rows.FirstOrDefault(r => Txt.Int(r.Sub) == trtSb);
+        var target = rows.FirstOrDefault(r => Txt.Int(r.Sub) == trtSb
+                                              && (trtCd is null || Txt.Int(r.Code) == trtCd));
         if (target is null)
         {
-            trace?.Note($"KHONG thay dong 枝番 = {trtSb} trong 処置選択");
+            trace?.Note($"KHONG thay dong {(trtCd is null ? "" : trtCd + "/")}枝番 = {trtSb} trong 処置選択");
             return false;
         }
 
@@ -938,14 +947,14 @@ public sealed class SigaToothFlow
     {
         if (!EnterCodeOnRow(row, trtCd, trace))
             return new EnterResult(false, false, false, []);
-        return FinishTreatmentEntry(trtSb, answerYes, trace);
+        return FinishTreatmentEntry(trtCd, trtSb, answerYes, trace);
     }
 
     /// <summary>
     /// Nửa sau của một lượt nhập: chờ 処置選択, chốt 枝番, trả lời hộp thoại nghiệp vụ,
     /// đóng editor ô 回. Dùng chung cho cả hai lối vào (click ô hay gõ tại con trỏ).
     /// </summary>
-    private EnterResult FinishTreatmentEntry(int trtSb, bool? answerYes, TestTrace? trace)
+    private EnterResult FinishTreatmentEntry(int trtCd, int trtSb, bool? answerYes, TestTrace? trace)
     {
         var seen = new List<string>();
 
@@ -958,7 +967,7 @@ public sealed class SigaToothFlow
         }
 
         trace?.Shot("処置選択-mo");
-        var committed = CommitPick(picker, trtSb, trace);
+        var committed = CommitPick(picker, trtSb, trace, trtCd);
 
         // Hộp thoại nghiệp vụ của IregCodChk (185 抜歯同時, 困難者加算…) — trả lời rồi ghi lại.
         var dialog = Waits.TryFor(() => OpenDialogs().FirstOrDefault(), TimeSpan.FromSeconds(4));
