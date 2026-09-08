@@ -145,9 +145,36 @@ Mã **ĐỐI CHỨNG** `171/0` cố ý chọn ngoài switch của `IregCodChk` n
 Điền sau **mỗi** lượt chạy — ngày, bệnh nhân, 診療月, số đo **nguyên văn**. Để trống là lần
 sau đo lại từ đầu.
 
-| Ngày | Case | Bệnh nhân / 診療日 | Số đo |
+Bệnh nhân **10**, 診療日 **2026-08-03** (lưới mở tháng 2026-08), máy `ochacom-win`.
+
+| Ngày | Case | Kết quả | Số đo nguyên văn |
 |---|---|---|---|
-| | | | *(chưa chạy)* |
+| 2026-09-08 | probe `Tc0` | ✅ | `chkauto` 196 dòng / 25 dòng ≥2 mã · `chkauto(179,2) → 310/2` · `171/0` không có trong bảng |
+| 2026-09-08 | `TcAUTO1` | ✅ | master `MST_TRT266`; `179/2 = 抜歯手術(臼歯) 270点`; `310/2 = OA+ｵｰﾗ注…1.8mL 11点` |
+| 2026-09-08 | `TcAUTO2` lượt 1 | ❌ harness | `抜歯手術(臼歯) \| 270 \| 0` — 回 = 0 ⇒ `Chk_ChkAuto` không chạy |
+| 2026-09-08 | `TcAUTO2` lượt 2 | ❌ harness | gõ 1 vào ô 回 ⇒ `Chk_CmtAuto` chạy (`OA(コーパロン)浸麻(歯科用オーラ注Ct1.8ml) \| 0 \| 1`), `Chk_ChkAuto` vẫn bỏ qua |
+| 2026-09-08 | `TcAUTO2` lượt 3 | ❌ harness | đăng ký 病名 ⇒ app nhảy sang tab ガイド, gõ mã rơi vào 選択№, chốt nhầm 310/2 |
+| 2026-09-08 | `TcAUTO2` lượt 4 | ❌ harness | gõ đúng ô 点 nhưng dòng đích đã có dữ liệu ⇒ `AutoBui` bỏ qua |
+| 2026-09-08 | `TcAUTO2` lượt 5 | ⚠️ gần xong | **`Chk_ChkAuto` ĐÃ CHẠY**: `+ OA+オーラ注歯科用カートリッジ 料1.8mL` xuất hiện trên lưới. Nhưng ô 点 của nó đọc ra `(null)` và 月計 không đổi |
+
+### Việc còn lại (bắt đầu từ đây)
+
+Lượt 5 đã dựng được **đúng hành vi cần đo** — WinForm tự chèn `310/2` sau khi nhập `179/2`.
+Chỗ còn hở là **部位 chưa bám được vào dòng 抜歯**: app vẫn bung
+「26/8/14 179-2 抜歯手術(臼歯)を算定していますが、算定可能な部位がありません。」 và vì thế
+ghi `回 = 0`, kéo theo 点 của dòng tự chèn chưa được tính (đọc ra `(null)`) và 月計 đứng yên.
+
+Chạy lại probe `-Diagnostics -Case Tc1` và **mở ảnh** `bui-da-chon` / `byoumei-sub` để xem
+部位 + 病名 thực sự nằm ở dòng nào trên lưới trước khi sửa tiếp. Hai hướng đáng thử,
+**mỗi lượt một thứ** (F4):
+
+1. `ModMain.AutoBui` chạy trên dòng mà `fDis_Move_Cell` dời con trỏ tới (frm203002.cs:8660).
+   Kiểm xem dòng đó có đúng là dòng trống thứ hai mình vừa chèn không — nếu app dời sang
+   dòng khác thì phải đọc con trỏ THẬT (`TreatmentGridOps.FocusedCellName`) chứ đừng suy
+   ra từ `LastBuiLineRow`.
+2. Ô 部位 đem thử là `buiSlot = 10` (左上3). `ChkSiga` chỉ cho 抜歯 trên răng **現存**;
+   fixture đã `ResetSigaToVital` trước khi app mở, nhưng đáng kiểm lại `SIGA.se11` ngay
+   trước lượt chốt — mốc có thể đã bị chính lượt chạy trước ghi đè.
 
 ### Đo sẵn từ DB (2026-09-08, `SIM2000` trên `OCHASQLEXPRESS`)
 
