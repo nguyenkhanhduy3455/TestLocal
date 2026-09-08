@@ -110,7 +110,7 @@ list 通常 = **ガイド番号 101 「検査(Br)」**.
 | 6 | Tiêu đề cột 1 | 「 ｺｰﾄﾞ」 (nửa chiều rộng + dấu cách) | 「コード」 (đủ chiều rộng) | **LỆCH** |
 | 7 | Bề rộng cột | 65 / 40 / 370 / 70 / 70 px | 70 / 60 / 374 / 60 / 50 px | **LỆCH** ở 枝番 vs 回数 |
 | 8 | Dấu cách của CellFormatting | có ở MỌI ô (「135 」「 パノラマデジタル」) | không (canh lề bằng CSS) | **LỆCH cố ý** |
-| 9 | Số dòng 処置 | **12** | **11** | **LỆCH — xem 4.3** |
+| 9 | Số dòng 処置 | **12** | **11** | **LỆCH nhưng CHƯA kết luận** — hai bên khác 部位/dữ liệu, xem 4.3 |
 | 10 | Nội dung 11 dòng chung | — | trùng khít cả 5 cột | **KHỚP** |
 | 11 | Con trỏ khi vừa mở | ô 「回数」 dòng đầu | ô `<input>` 回数 dòng đầu | **KHỚP** |
 | 12 | ↑/↓ | đi giữa các ô 回数, clamp đầu list | y hệt | **KHỚP** |
@@ -134,16 +134,10 @@ list 通常 = **ガイド番号 101 「検査(Br)」**.
   Cái đáng giữ là **quan hệ**: 処置名称 rộng nhất (cả hai đều đúng), 枝番 hẹp nhất
   (WinForm đúng, web thì 回数 mới là hẹp nhất ⇒ `WinForm parity D-c` đỏ).
 
-### 4.3 Điểm LỆCH THẬT — web thiếu một dòng 処置
+### 4.3 Danh sách 処置 — 12 dòng (WinForm) so với 11 dòng (web)
 
-`pag_trt` của ガイド 101 có 14 dòng; WinForm hiển thị 12, web hiển thị 11. Dòng web đánh
-rơi:
-
-```
-186 | 0 | 歯槽骨整形手術(AEct) | 110 点 | 回数 1
-```
-
-Mười một dòng còn lại trùng khít cả 5 cột, đúng thứ tự (`pag_trt` order):
+Cùng ガイド 101, cùng bệnh nhân 12138. `pag_trt` có 14 dòng; WinForm hiển thị 12, web
+hiển thị 11. Mười một dòng chung **trùng khít cả 5 cột và đúng thứ tự** (`pag_trt` order):
 
 | # | ｺｰﾄﾞ | 枝番 | 処置名称 | 点数 | 回数 |
 |---|---|---|---|---|---|
@@ -160,20 +154,47 @@ Mười một dòng còn lại trùng khít cả 5 cột, đúng thứ tự (`pa
 | 10 | 117 | 4 | 薬剤情報提供料 | 4 | 0 |
 | 11 | 117 | 5 | 手帳記載加算 | 3 | 0 |
 
-Hai dòng cả hai bên cùng bỏ (`144/0`, `117/0`) là đúng: chúng bị loại bởi dedup nhóm
-`FLG2` / `trt_cnt` — hai bên nhất trí.
+Hai dòng cả hai bên cùng bỏ (`144/0`, `117/0`) là đúng — dedup nhóm `FLG2` / `trt_cnt`,
+hai bên nhất trí.
 
-**Điều kiện lúc đo:** request của web là
-`GuidCd=101 TrtDt=2026-09-08 PatNo=12138 Bui=(rỗng) DisCd=(rỗng)` — dòng đang focus trên
-lưới không có 部位 lẫn 病名. Fixture FlaUI in `DUMP|win|ctx|bui=…|ryo=…` để đối chiếu
-đúng tiền đề đó.
+#### ⚠️ CHƯA kết luận được đây là lỗi port — hai bên đang ở TIỀN ĐỀ KHÁC NHAU
 
-**Nghi can (chưa chốt):** `GuideTrtResolver` (`apps/api/src/Ochacom.Application/Guids/
-Resolution/GuideTrtResolver.cs`) có ba nhánh làm rơi một dòng khi 部位 rỗng —
-`Flg10 != 0` → `CalcCntService.GetCalcCnt(...) == 0` ⇒ `continue`; `Chk4Service.Chk4`
-false; `ToothConditionChecker.ChkSiga` false ⇒ `trtCnt` giữ `-1` ⇒ không thêm vào kết
-quả. WinForm với cùng 部位 rỗng vẫn cho 回数 = 1. **Việc tiếp theo:** chạy lại cả hai bên
-trên một dòng CÓ 部位 để biết đây là 「lệch chỉ khi 部位 rỗng」 hay 「lệch luôn」.
+Danh sách 処置 phụ thuộc **部位/病名 của dòng đang chọn** (frm203002.cs:6515 snapshot
+`getFocusBui`/`getFocusDis` vào `frm203017.ParamData`; bản web gửi `Bui`/`DisCd` lên BE).
+Số đo cùng buổi cho thấy hai bên KHÔNG cùng tiền đề:
+
+| | WinForm (SQL Server) | Web (Postgres) |
+|---|---|---|
+| Tháng lưới đang hiện | `R 08年07月`, 実日数 1日 272 点 | các dòng của **hôm nay 2026-09-08** (歯科再診料, 歯科疾患管理料… do AutoSantei sinh) |
+| Dòng có 部位 | có — `54321\|…\|(5)`, 病名 `C` | 12 dòng đầu đều **không có 部位** |
+| Tham số gửi lên khi mở dialog | (không quan sát được) | `GuidCd=101 TrtDt=2026-09-08 PatNo=12138 **Bui= DisCd=**` |
+
+`186 歯槽骨整形手術` đúng là loại 処置 **bị chặn khi không có 部位** — chính cái mà chú
+thích ở `treatment-entry-detail.tsx` (`bui={focusedRowParts.bui}`) cảnh báo. Nên nhiều khả
+năng web thiếu dòng này **vì 部位 rỗng**, chứ chưa chứng minh được `GuideTrtResolver` port
+sai.
+
+Hai thí nghiệm đã làm để thu hẹp, và kết quả:
+
+- **Web** (`TC-D13`): click ô 療法 của dòng CÓ 部位 rồi mở lại ガイド → vẫn `Bui=` rỗng,
+  vẫn 11 dòng. Probe quét 12 dòng đầu: **không dòng nào** làm FE gửi `Bui` khác rỗng.
+- **WinForm** (`TC-D15`): click dòng 部位 `54321` (病名 C) rồi F4 → list ガイド ĐỔI HẲN và
+  **5 ガイド đầu đều không có 処置 nào tính được** (E00024), nên không mở được dialog nào để
+  so. Testcase đỏ ở đây là **điều kiện dữ liệu**, không phải lỗi app.
+
+**Còn một khác biệt nền nữa:** dữ liệu 診療 của hai DB không trùng — Postgres có
+`2026-08-04 / 07-31 / 07-20 / 07-10` cho bệnh nhân 12138, còn lưới WinForm chỉ hiện một
+ngày trong 07月.
+
+#### Việc tiếp theo để chốt
+
+1. Ghim **cùng một 診療日 có 部位** cho hai bên: `testsettings.patient.trtDate` (WinForm) và
+   `TEST_TRT_DT` (Playwright) — ví dụ `2026-07-31`.
+2. Đưa con trỏ về **cùng một dòng 処置** ở hai bên rồi mới mở ガイド (TC-D15 / TC-D13 đã có
+   sẵn phần chọn dòng; chỉ cần nới `ScanLimit` và chọn ガイド theo **ガイド番号** thay vì
+   theo chỉ số dòng, vì list ガイド đổi theo 部位).
+3. Nếu web vẫn gửi `Bui=` rỗng khi con trỏ nằm trên dòng có 部位 → **đó mới là bug**, và nó
+   nằm ở `focusedRowParts.bui` chứ không ở `GuideTrtResolver`.
 
 ---
 

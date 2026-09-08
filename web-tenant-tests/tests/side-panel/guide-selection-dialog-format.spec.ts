@@ -647,6 +647,16 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
 
         const { guidCd } = await openPickableGuide()
         const rows = await readRows()
+        // In LẠI tham số request: bằng chứng rằng cú click ĐÃ đổi tiền đề (Bui khác rỗng),
+        // chứ không phải BE trả về cùng một danh sách vì FE vẫn gửi Bui cũ / đọc cache.
+        if (lastTrtQuery) {
+            const q = new URL(lastTrtQuery).searchParams
+            dump(
+                `rowbui|req|GuidCd=${q.get('GuidCd')}` +
+                    `|Bui=${q.getAll('Bui').filter((v) => v !== '0').join(',')}` +
+                    `|DisCd=${q.getAll('DisCd').filter((v) => v !== '0').join(',')}`,
+            )
+        }
         dump(`rowbui|guid=${guidCd}|count=${rows.length}`)
         rows.forEach((r, i) =>
             dump(`rowbui|${i}|${r.map((c) => c.normalize('NFKC')).join('|')}`),

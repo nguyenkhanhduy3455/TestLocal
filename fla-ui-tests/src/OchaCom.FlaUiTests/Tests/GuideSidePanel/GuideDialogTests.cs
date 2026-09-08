@@ -598,7 +598,15 @@ public sealed class GuideDialogTests : UiTestBase
         GuideTabFlow.SendKey(GuideTabFlow.Vk.F4);
         Thread.Sleep(1500);
 
-        var dialog = EnsureDialog();
+        // Quét SÂU hơn các testcase khác: đổi dòng đang chọn là đổi luôn LIST ガイド
+        // (getGuidNyuryokuInfo lọc theo 部位/病名), và ĐO ĐƯỢC 2026-09-08 là với dòng
+        // 部位 「54321」 病名 C thì 5 ガイド đầu đều không có 処置 nào tính được (E00024).
+        var picked = _dlg.OpenFirstPickableRow(12, Log);
+        if (picked < 0)
+            Assert.Ignore("không ガイド nào trong 12 dòng đầu có 処置 tính được với 部位 này — " +
+                          "điều kiện DỮ LIỆU, không phải lỗi app (frm203017.cs:1001)");
+
+        var dialog = _guide.Dialog()!;
         var trt = RequireRows(dialog);
         Dump($"rowbui|guid={Txt.N(_guide.DialogGuidNo(dialog))}|count={trt.Count}");
         for (var i = 0; i < trt.Count; i++)
