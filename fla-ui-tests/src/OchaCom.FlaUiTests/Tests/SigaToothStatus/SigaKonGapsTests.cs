@@ -20,7 +20,18 @@ namespace OchaCom.FlaUiTests.Tests.SigaToothStatus;
 ///  TcGAP6  ←  TC-5    「いいえ」 ở dirty gate KHÔNG lùi cái DelExtRec vừa ghi
 ///  TcGAP7  ←  TC-5b   「いいえ」 ở dirty gate PHẢI lùi cái SigaChg vừa ghi
 ///  TcGAP8  ←  TC-6    thiếu dòng SIGA thì app phải TẠO, không được im lặng bỏ qua
+///  TcGAP9  ←  TC-3(c) ĐỐI CHỨNG: ＥＭＲ(１根) 122/0 KHÔNG được ghi 根数
+///  TcGAP10 ←  TC-4    NỬA F9: SigaChg_Save case 185 dựng LẠI 欠損歯 từ cờ 抜歯同時
+///  TcGAP11 ←  TC-4b   NỬA F9: cờ = 0 ⇒ F9 KHÔNG đụng 歯式
+///  TcGAP12 ←  TC-3(b) ＥＭＲ(４根) trên RĂNG SỮA → nkon (đo cả cú ném của đường nhập)
+///  TcGAP13 ←  TC-6(c) dòng SIGA app vừa tạo phải NHẬN được lệnh ghi
 /// </code>
+///
+/// <para><b>TcGAP9-13 thêm 2026-09-08</b> để đóng năm chỗ bản WinForm chưa đo mà spec
+/// Playwright có khoá. Chỗ quan trọng nhất là TcGAP10/11: TcGAP4/TcGAP5 chỉ đo đường
+/// NHẬP (<c>frm203016.SigaChg</c>), trong khi bản web KHÔNG có đường đó — mọi thứ bên
+/// kia dồn vào <c>bulk-save</c>, tức đối ứng của <c>modSave.SigaChg_Save</c>. Không đo
+/// nửa F9 thì phần WinForm mà bản web phải khớp vẫn chưa hề được đo.</para>
 ///
 /// ═══════════════════════════════════════════════════════════════════════════════
 /// HAI NỬA BẤT ĐỐI XỨNG — ĐỌC KỸ TRƯỚC KHI SỬA TcGAP6 / TcGAP7
@@ -76,9 +87,15 @@ public sealed class SigaKonGapsTests : UiTestBase
 
     private int PermSlot => Settings.SigaTooth.PermBuiSlot;
     private int ControlSlot => Settings.SigaTooth.ControlBuiSlot;
+    private int MilkSlot => Settings.SigaTooth.MilkBuiSlot;
     private int PermSeCol => PermSlot + 1;
     private int PermEkonCol => PermSlot + 1;
     private int CtrlSeCol => ControlSlot + 1;
+    private int CtrlEkonCol => ControlSlot + 1;
+
+    /// <summary>Ô 部位 (0-based) → cột <c>sn{n}</c> / <c>nkon{n}</c> — modSave.cs:995 (i&lt;16 ⇒ i-2, else i-8).</summary>
+    private int MilkSnCol => MilkSlot < 16 ? MilkSlot - 2 : MilkSlot - 8;
+    private int MilkNkonCol => MilkSnCol;
 
     private static void Log(string line) => TestContext.Out.WriteLine(line);
 
@@ -202,7 +219,8 @@ public sealed class SigaKonGapsTests : UiTestBase
     /// <paramref name="answerYes"/> chỉ có nghĩa với mã 185 (hộp thoại 抜歯同時).
     /// </summary>
     private SigaToothFlow.EnterResult EnterOnTooth(int trtCd, int trtSb, int slot, bool? answerYes,
-                                                   TestTrace trace)
+                                                   TestTrace trace, bool milk = false,
+                                                   bool requireCommitted = true)
     {
         Assert.That(_flow.EnsureCodeMode(), Is.True,
             $"Không đưa được ô 点 về コードモード (đang là 「{_flow.InpMode()}」).");
@@ -217,7 +235,7 @@ public sealed class SigaKonGapsTests : UiTestBase
             "Insert không chèn được dòng trống (AddRow từ chối khi linekbn = 99). Lưới:\n  " +
             string.Join("\n  ", _flow.DescribeGrid()));
 
-        var set = _flow.SetBuiOnRow(blank!, slot, milk: false, disCd: null, trace);
+        var set = _flow.SetBuiOnRow(blank!, slot, milk, disCd: null, trace);
         Assert.That(set.ToothDialogOpened, Is.True, $"không mở được 部位選択. {set}");
         Assert.That(set.MarkedSlots, Is.EqualTo(new[] { slot }),
             $"部位選択 phải sáng ĐÚNG ô {slot} ({ToothSelectDialog.DescribeSlot(slot)}). {set}");
@@ -225,8 +243,44 @@ public sealed class SigaKonGapsTests : UiTestBase
         var enter = _flow.EnterTreatmentAtCursor(trtCd, trtSb, answerYes, trace);
         Assert.That(enter.PickerOpened, Is.True,
             $"Gõ 「{trtCd}」 ở コードモード phải mở 処置選択. {enter}");
-        Assert.That(enter.Committed, Is.True, $"không chốt được 枝番 {trtSb}. {enter}");
+        // requireCommitted = false CHỈ dùng cho TcGAP12: nhánh 乳歯 của case 122 làm app ném
+        // ngoại lệ ngay giữa lúc chốt, và cái CẦN ĐO ở đó chính là cú ném đó.
+        if (requireCommitted)
+            Assert.That(enter.Committed, Is.True, $"không chốt được 枝番 {trtSb}. {enter}");
         return enter;
+    }
+
+    /// <summary>
+    /// F9 登録 → trả lời 「はい」 → mở lại màn hình nếu app đóng nó.
+    ///
+    /// <para>In ra <c>OverwriteAsked</c> vì nó đổi hẳn ý nghĩa của mọi assert phía sau: nếu
+    /// 「上書きしますか？」 có bung và mình trả lời 「いいえ」 thì <c>Save_Data</c> DỪNG — 歯式
+    /// không đổi là vì KHÔNG LƯU, chứ không phải vì app thiếu chức năng.</para>
+    /// </summary>
+    private SaveFlow.Result SaveF9(TestTrace trace)
+    {
+        var save = SaveFlow.PressF9(App, Screen.Window, SaveFlow.SaveAnswer.Yes,
+                                    SaveFlow.OverwriteAnswer.No, trace);
+        Log($"F9: 「{save.SaveQuestionText}」 · 上書き hỏi? {save.OverwriteAsked} · " +
+            $"màn hình đóng? {save.ScreenClosedAfterwards}");
+        Assert.That(save.OverwriteAsked, Is.False,
+            "Bung 「上書きしますか？」 nghĩa là CompareTrntrnData thấy dữ liệu đã bị đổi bởi một " +
+            "phiên khác, và lượt trả lời 「いいえ」 ở đây làm Save_Data DỪNG GIỮA CHỪNG " +
+            "(modSave.cs:262-296). Mọi assert 歯式 phía sau khi đó chỉ nói 「không lưu」 chứ " +
+            "không nói gì về app. Chạy lại một mình, đừng đọc kết quả này.");
+        ReopenIfClosed();
+        return save;
+    }
+
+    /// <summary>
+    /// 部位 mà dòng <paramref name="trtCd"/> ĐÃ LƯU thực sự mang — đối chiếu trước khi kết
+    /// luận về 歯式 (xem <see cref="SigaKonDb.ReadTrnBui"/>).
+    /// </summary>
+    private TrnBuiRow? LastSavedRow(int trtCd)
+    {
+        var rows = _db.ReadTrnBui(PatNo, TrtDate, trtCd);
+        Log($"dòng {trtCd} đã lưu: " + (rows.Count == 0 ? "(không có)" : string.Join(" | ", rows)));
+        return rows.Count == 0 ? null : rows[^1];
     }
 
     private void ReopenIfClosed()
@@ -578,5 +632,252 @@ public sealed class SigaKonGapsTests : UiTestBase
             // Dù thế nào cũng phải có dòng để OneTimeTearDown còn khôi phục được.
             if (_db.EnsureSigaRow(PatNo)) Log("teardown: đã tạo lại dòng SIGA (app không tạo).");
         }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // TcGAP9 ← TC-3 vế (c) — ĐỐI CHỨNG của GAP A
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Test, Order(9)]
+    [Description("TcGAP9 (đối chứng) ← TC-3(c) — ＥＭＲ(１根) 122/0 KHÔNG được ghi 根数")]
+    public void TcGAP9_Emr_OneRoot_Writes_No_RootCount()
+    {
+        using var trace = TestTrace.Begin();
+
+        // Vế ngược của TcGAP3, và là vế duy nhất phân biệt 「ghi đúng điều kiện」 với
+        // 「ghi cho mọi ca ＥＭＲ」. Thiếu nó thì một bản port quét quá tay vẫn xanh.
+        _db.ResetKonToNull(PatNo, [CtrlEkonCol], []);
+        var before = ReadKon("trước khi nhập 122/0 lên răng đối chứng");
+        Assert.That(before.EkonCol(CtrlEkonCol), Is.Null,
+            $"Mốc xuất phát của ekon{CtrlEkonCol} phải là NULL — không phân biệt được NULL với 0 " +
+            "thì testcase này không kết luận được gì.");
+
+        EnterOnTooth(SigaToothFlow.EmrTrtCd, SigaToothFlow.EmrOneRootSb, ControlSlot, null, trace);
+
+        var after = ReadKon("sau khi chốt 122/0");
+        Log($"ekon{CtrlEkonCol} (ô đối chứng {ControlSlot}) = {KonSnapshot.S(after.EkonCol(CtrlEkonCol))}");
+
+        Assert.That(after.EkonCol(CtrlEkonCol), Is.Null,
+            $"WinForm chỉ ghi 根数 khi 枝番 == 3 (frm203016.cs:1024 「IregCodChk case 122」 → " +
+            $"SigaChg(122, 3); modSave.cs:772 「if (intN == 3)」). ＥＭＲ(１根) 122/{SigaToothFlow.EmrOneRootSb} " +
+            $"vì thế phải để ekon{CtrlEkonCol} nguyên NULL, đang là " +
+            $"{KonSnapshot.S(after.EkonCol(CtrlEkonCol))}.\n" +
+            "Có số nghĩa là đường ghi 根数 quét quá tay — mọi ca ＥＭＲ đều bị gán 4 根, kể cả răng " +
+            "một chân. Đây KHÔNG phải gap đang soi ở TcGAP3, mà là lỗi ngược lại.");
+
+        // Ô ĐEM THỬ của TcGAP3 không được dính chưởng.
+        Assert.That(after.DiffFrom(before), Is.Empty,
+            $"122/{SigaToothFlow.EmrOneRootSb} không được đụng BẤT KỲ ô 根数 nào. Đã lệch: " +
+            $"[{string.Join(", ", after.DiffFrom(before))}]");
+
+        var row = _flow.LastRowMatching("ＥＭＲ", "EMR");
+        if (row is not null) _flow.DeleteRow(row, trace);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // TcGAP10 / TcGAP11 ← TC-4 / TC-4b, NỬA F9 — GAP B ở đường SigaChg_Save
+    //
+    // TcGAP4/TcGAP5 đo đường NHẬP (frm203016.SigaChg, chạy ngay lúc chốt 処置).
+    // Hai testcase này đo đường F9 (modSave.SigaChg_Save case 185, :1031-1085) —
+    // và đó mới là đường DUY NHẤT bản web có: bên đó không ghi gì lúc nhập, mọi
+    // thứ dồn vào POST /tenant/treatment/bulk-save. Không đo nửa này thì phần
+    // WinForm mà bản web phải khớp vẫn chưa hề được đo.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Test, Order(10)]
+    [Description("TcGAP10 ← TC-4 nửa F9 — SigaChg_Save case 185 dựng LẠI 欠損歯 từ cờ 抜歯同時")]
+    public void TcGAP10_Cyst_Yes_Rewritten_By_F9()
+    {
+        using var trace = TestTrace.Begin();
+
+        _db.ResetSigaToVital(PatNo);
+        var enter = EnterOnTooth(SigaToothFlow.CystTrtCd, 0, PermSlot, answerYes: true, trace);
+        Assert.That(enter.Dialogs.Any(d => Txt.Has(d, SigaToothFlow.CystConfirmFragment)), Is.True,
+            $"Chốt 185 phải bung Q00200 (frm203016.cs:1047) — không bung thì 「はい」 chưa bao giờ " +
+            $"được trả lời và cờ col 74 vẫn là 0. Đã gặp: [{string.Join(" / ", enter.Dialogs)}]");
+
+        var afterEntry = ReadSiga("sau khi chốt 185 + はい (CHƯA F9)");
+        Assert.That(afterEntry.SeCol(PermSeCol), Is.EqualTo(SigaKonDb.SeMissing),
+            "đường NHẬP phải ghi 欠損歯 trước đã — đó là tiền đề của TcGAP4, đỏ ở đây thì sửa TcGAP4.");
+
+        // ⚠️ XOÁ DẤU VẾT CỦA ĐƯỜNG NHẬP, SAU LƯNG APP.
+        // Không có bước này thì se = 4 sau F9 có HAI cách giải thích — 「F9 ghi lại」 và
+        // 「giá trị cũ của đường nhập còn nằm đó」 — và testcase không phân biệt được.
+        // Ghi thẳng DB thì app không thấy: pSiga_old đã chốt từ lúc mở màn.
+        _db.WriteSiga(PatNo, se: new Dictionary<int, int> { [PermSeCol] = SigaKonDb.SeVital });
+        var wiped = ReadSiga("đã xoá dấu vết đường nhập, ngay TRƯỚC F9");
+        Assert.That(wiped.SeCol(PermSeCol), Is.EqualTo(SigaKonDb.SeVital), "harness: chưa xoá được dấu vết");
+
+        SaveF9(trace);
+
+        // Mốc chẩn đoán TRƯỚC khi kết luận (giống savedCystBui() của spec Playwright).
+        var saved = LastSavedRow(SigaToothFlow.CystTrtCd);
+        Assert.That(saved, Is.Not.Null,
+            "Sau F9 phải có một dòng 185 trong TRNTRN. Không có ⇒ dòng chưa từng được lưu và " +
+            "mọi khẳng định về 歯式 bên dưới là vô nghĩa (harness hỏng, không phải app).");
+        Assert.That(saved!.Slot(PermSlot), Is.Not.Zero,
+            $"Dòng 185 đã lưu phải mang 部位 ở ô {PermSlot} ({ToothSelectDialog.DescribeSlot(PermSlot)}), " +
+            $"đang là: {saved.MarkedSlots()}.\n" +
+            "bui toàn 0 ⇒ SigaChg_Save duyệt qua mà không thấy răng nào, và 「歯式 không đổi」 chỉ " +
+            "nói rằng harness không dựng nổi dữ liệu — HARNESS hỏng, sửa nó trước.");
+
+        var after = ReadSiga("sau F9");
+        Assert.That(after.SeCol(PermSeCol), Is.EqualTo(SigaKonDb.SeMissing),
+            $"F9 phải ghi LẠI se{PermSeCol} = {SigaKonDb.SeMissing} từ ĐẦU: Save_Data gọi Restore_SK " +
+            "(modSave.cs:583, lùi về pSiga_old = toàn 生活歯) rồi SigaChg_Save dựng lại từ TẬP 処置, " +
+            "và case 185 ghi 欠損歯 khi cờ 抜歯同時 khác 0 (modSave.cs:1031-1085).\n" +
+            $"Đang là {after.SeCol(PermSeCol)} — tức chỉ đường NHẬP có ghi, còn F9 thì không. Bản web " +
+            "KHÔNG có đường nhập, nên nếu WinForm cũng không ghi ở F9 thì mã 185 không có đường nào " +
+            "sống sót qua một lượt 登録, và cả TC-4 bên kia phải đọc lại.");
+
+        var row = _flow.LastRowMatching("嚢胞");
+        if (row is not null) _flow.DeleteRow(row, trace);
+        SaveF9(trace);
+    }
+
+    [Test, Order(11)]
+    [Description("TcGAP11 (đối chứng) ← TC-4b nửa F9 — 「いいえ」 ⇒ F9 KHÔNG đụng 歯式")]
+    public void TcGAP11_Cyst_No_Not_Rewritten_By_F9()
+    {
+        using var trace = TestTrace.Begin();
+
+        _db.ResetSigaToVital(PatNo);
+        var before = ReadSiga("mốc trước khi nhập 185 + いいえ");
+
+        EnterOnTooth(SigaToothFlow.CystTrtCd, 0, PermSlot, answerYes: false, trace);
+        var afterEntry = ReadSiga("sau khi chốt 185 + いいえ (CHƯA F9)");
+        Assert.That(afterEntry.DiffFrom(before), Is.Empty,
+            "đường NHẬP không được đụng 歯式 khi trả lời 「いいえ」 — tiền đề của TcGAP5.");
+
+        SaveF9(trace);
+
+        var saved = LastSavedRow(SigaToothFlow.CystTrtCd);
+        Assert.That(saved, Is.Not.Null, "sau F9 phải có dòng 185 trong TRNTRN");
+        Assert.That(saved!.Slot(PermSlot), Is.Not.Zero,
+            $"Dòng 185 phải mang 部位 ô {PermSlot} thì phép so mới có nghĩa — bui = 0 thì 「歯式 không " +
+            $"đổi」 là chuyện đương nhiên. Đang là: {saved.MarkedSlots()}");
+
+        var after = ReadSiga("sau F9");
+        Assert.That(after.DiffFrom(before), Is.Empty,
+            "Cờ 抜歯同時 (lưới col 74) = 0 ⇒ SigaChg_Save bỏ qua CẢ case 185 " +
+            "(modSave.cs:1033 「if (CInt(hFG1[74, j]) != 0)」) ⇒ SIGA phải Y NGUYÊN sau F9.\n" +
+            $"Đã lệch: [{string.Join(", ", after.DiffFrom(before))}].\n" +
+            "Có cột đổi nghĩa là mọi ca 歯根嚢胞摘出 KHÔNG kèm 抜歯 vẫn bị đánh dấu mất răng — và " +
+            "vì cờ đó KHÔNG có cột nào trong TRNTRN, người dùng không có cách nào sửa lại.");
+
+        var row = _flow.LastRowMatching("嚢胞");
+        if (row is not null) _flow.DeleteRow(row, trace);
+        SaveF9(trace);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // TcGAP12 ← TC-3 vế (b) — GAP A trên RĂNG SỮA
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Test, Order(12)]
+    [Description("TcGAP12 ← TC-3(b) — ＥＭＲ(４根) trên RĂNG SỮA: đo cả cú ném của đường nhập")]
+    public void TcGAP12_Emr_FourRoot_On_MilkTooth()
+    {
+        using var trace = TestTrace.Begin();
+
+        // ⚠️ ĐỌC TRƯỚC KHI SỬA TESTCASE NÀY.
+        // Spec Playwright TC-3 vế (b) đòi `nkon_4 = 4` cho ＥＭＲ(４根) trên răng sữa. Ở WinForm
+        // đường NHẬP không làm nổi việc đó: `SigaChg` case 122 nhánh 乳歯 gọi
+        // `makeSql("NKon", …, ref strSiga)` (frm203016.cs:1155-1160) — nhét tên cột của bảng
+        // KON vào câu `update SIGA` ⇒ SQL Server trả 「Invalid column name 'NKon…'」 và app bung
+        // hộp thoại .NET Continue/Quit (đo được 2026-09-04, probe Tc1e).
+        // Nhánh save-time thì ĐÚNG (`ref strKon`, modSave.cs:800/804).
+        // Vì thế testcase này KHÔNG đòi 「nhập xong là có nkon」 — nó đo và GHIM lại:
+        //   ① đường nhập ném (bug thật của WinForm, đã có hồ sơ);
+        //   ② F9 có dựng được 根数 cho răng sữa hay không — đây mới là đường bản web port.
+        _db.ResetKonToNull(PatNo, [], [MilkNkonCol]);
+        var before = ReadKon("trước khi nhập 122/3 lên răng sữa");
+        Log($"nkon{MilkNkonCol} trước = {KonSnapshot.S(before.NkonCol(MilkNkonCol))}");
+
+        var enter = EnterOnTooth(SigaToothFlow.EmrTrtCd, SigaToothFlow.EmrFourRootSb, MilkSlot,
+                                 null, trace, milk: true, requireCommitted: false);
+        var crashed = enter.Dialogs.Any(d => Txt.Has(d, SigaToothFlow.CrashDialogFragment));
+        Log($"chốt 122/3 trên răng sữa: {enter}");
+        Log($"→ app ném ngoại lệ? {crashed}");
+        trace.Shot("sau-khi-chot-122-3-rang-sua");
+
+        var afterEntry = _db.ReadKon(PatNo);
+        Log($"nkon{MilkNkonCol} sau khi nhập = {KonSnapshot.S(afterEntry?.NkonCol(MilkNkonCol))}");
+
+        // ① Cú ném là HÀNH VI ĐÃ ĐO của WinForm, không phải điều kiện tiên quyết — nên chỉ
+        //    ghi lại. Nó BIẾN MẤT thì cũng tốt (ai đó đã sửa `ref strSiga` → `ref strKon`),
+        //    và lúc đó dòng log này là chỗ để biết mốc đã đổi.
+        if (!crashed)
+            Log("⚠️ KHÔNG thấy hộp thoại 「Unhandled exception」 — khác lần đo 2026-09-04. " +
+                "Hoặc frm203016.cs:1155 đã được sửa, hoặc lượt nhập chưa tới được nhánh 乳歯. " +
+                $"Hộp thoại đã gặp: [{string.Join(" / ", enter.Dialogs)}]");
+
+        if (!enter.Committed)
+        {
+            // Không chốt được dòng thì không có gì để F9 dựng lại — dừng ở đây, và nói rõ
+            // rằng vế F9 CHƯA ĐO ĐƯỢC (khác hẳn 「đo được và app không ghi」).
+            Assert.That(crashed, Is.True,
+                $"Không chốt được 122/{SigaToothFlow.EmrFourRootSb} trên răng sữa mà cũng KHÔNG " +
+                $"thấy hộp thoại ném — tức hỏng vì lý do khác. {enter}");
+            Assert.Warn(
+                $"Đường NHẬP của ＥＭＲ(４根) trên răng sữa làm app NÉM (frm203016.cs:1155 dùng " +
+                "`ref strSiga` cho tên cột NKon), nên dòng 処置 không chốt được và vế F9 " +
+                $"(nkon{MilkNkonCol} = {SigaKonDb.EmrRootCount} theo modSave.cs:800/804) CHƯA ĐO ĐƯỢC " +
+                "từ giao diện.\n" +
+                "⇒ Với bản web: TC-3 vế 乳歯 đang đòi một hành vi mà WinForm KHÔNG chạy nổi qua " +
+                "giao diện. Cần khách quyết chép theo bên nào — hồ sơ chung với điểm lệch " +
+                "DelExtRec 乳歯 (README mục 「2026-09-04」).");
+            return;
+        }
+
+        SaveF9(trace);
+        var afterSave = ReadKon("sau F9");
+        Log($"nkon{MilkNkonCol} sau F9 = {KonSnapshot.S(afterSave.NkonCol(MilkNkonCol))}");
+
+        Assert.That(afterSave.NkonCol(MilkNkonCol), Is.EqualTo(SigaKonDb.EmrRootCount),
+            $"SigaChg_Save case 122/3 nhánh 乳歯 ghi 「NKon{{i-2}} = 4」 vào bảng KON " +
+            $"(modSave.cs:800/804 — nhánh này dùng `ref strKon`, ĐÚNG, khác hẳn đường nhập). " +
+            $"Ô 部位 {MilkSlot} ⇒ nkon{MilkNkonCol} phải là {SigaKonDb.EmrRootCount}, đang là " +
+            $"{KonSnapshot.S(afterSave.NkonCol(MilkNkonCol))}.");
+
+        var row = _flow.LastRowMatching("ＥＭＲ", "EMR");
+        if (row is not null) _flow.DeleteRow(row, trace);
+        SaveF9(trace);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // TcGAP13 ← TC-6 vế (c) — GAP D, nửa 「ghi được vào dòng vừa tạo」
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Test, Order(13)]
+    [Description("TcGAP13 ← TC-6(c) — dòng SIGA app vừa tạo phải NHẬN được 欠損歯 của 抜歯")]
+    public void TcGAP13_Recreated_Siga_Row_Accepts_Writes()
+    {
+        using var trace = TestTrace.Begin();
+
+        // TcGAP8 dừng ở 「app có tạo dòng không」. Vế còn thiếu — và là vế spec Playwright
+        // TC-6(c) khoá — là dòng vừa tạo có THẬT SỰ nhận được lệnh ghi hay không: một dòng
+        // tạo SAU khi handler đã bỏ qua thì cũng vô dụng y như không có dòng nào.
+        Assert.That(_db.HasSigaRow(PatNo), Is.True,
+            "Tiền đề: bệnh nhân phải có dòng SIGA (TcGAP8 chạy trước đã dựng lại). Không có ⇒ " +
+            "chạy TcGAP8 trước, đừng đọc testcase này.");
+        _db.ResetSigaToVital(PatNo);
+
+        EnterOnTooth(SigaToothFlow.ExtractionTrtCd, 1, PermSlot, null, trace);
+        var afterEntry = ReadSiga("sau khi chốt 179/1 trên dòng SIGA vừa dựng lại");
+        Assert.That(afterEntry.SeCol(PermSeCol), Is.EqualTo(SigaKonDb.SeMissing),
+            $"「update SIGA … where pat_no = {PatNo}」 phải TRÚNG dòng vừa tạo và ghi se{PermSeCol} = " +
+            $"{SigaKonDb.SeMissing}. Đang là {afterEntry.SeCol(PermSeCol)} — UPDATE trúng 0 dòng, " +
+            "tức 歯式 mất ÂM THẦM: không lỗi, không log, người dùng không biết gì.");
+
+        SaveF9(trace);
+        var afterSave = ReadSiga("sau F9");
+        Assert.That(afterSave.SeCol(PermSeCol), Is.EqualTo(SigaKonDb.SeMissing),
+            $"Và F9 phải giữ nguyên: tập 処置 đã lưu có dòng 179 trên răng đó nên SigaChg_Save dựng " +
+            $"lại đúng thế (modSave.cs:975-1030). Đang là {afterSave.SeCol(PermSeCol)}.");
+
+        var row = _flow.LastRowMatching("抜歯");
+        if (row is not null) _flow.DeleteRow(row, trace);
+        SaveF9(trace);
     }
 }

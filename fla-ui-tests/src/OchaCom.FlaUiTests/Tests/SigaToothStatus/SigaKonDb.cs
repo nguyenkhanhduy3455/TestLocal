@@ -294,6 +294,49 @@ public sealed class SigaKonDb
 
     // ── TRNTRN: đọc để biết mình để lại gì ────────────────────────────────────
 
+    /// <summary>
+    /// 32 ô 部位 của những dòng ĐÃ LƯU mang <paramref name="trtCd"/>, mới nhất đứng cuối.
+    ///
+    /// <para>Dùng để tách bạch hai lời giải thích cho 「歯式 không đổi」: <b>app không ghi</b>
+    /// (điều đang đo) hay <b>dòng lên DB với 部位 toàn 0</b> (harness hỏng — khi đó 歯式 không
+    /// đổi là chuyện đương nhiên và assert chẳng chứng minh gì). Spec Playwright gọi cùng
+    /// phép đo này là <c>savedCystBui()</c>.</para>
+    ///
+    /// <para>Tên cột legacy là <c>bui1..bui32</c> — KHÔNG gạch dưới (Trntrn.cs:36-67), khác
+    /// hẳn <c>bui_1</c> của bản Postgres.</para>
+    /// </summary>
+    public IReadOnlyList<TrnBuiRow> ReadTrnBui(int patNo, DateTime month, int trtCd)
+    {
+        var (from, to) = MonthRange(month);
+        var cols = string.Join(",", Enumerable.Range(1, 32).Select(i => $"bui{i}"));
+        using var con = Open();
+        using var cmd = Command(con,
+            $"""
+             SELECT disp_no, trt_sb, dsp_trt, {cols}
+               FROM TRNTRN
+              WHERE pat_no = @p AND trt_dt >= @f AND trt_dt < @t AND trt_cd = @c
+              ORDER BY disp_no
+             """);
+        cmd.Parameters.Add("@p", SqlDbType.Int).Value = patNo;
+        cmd.Parameters.Add("@f", SqlDbType.DateTime).Value = from;
+        cmd.Parameters.Add("@t", SqlDbType.DateTime).Value = to;
+        cmd.Parameters.Add("@c", SqlDbType.Int).Value = trtCd;
+
+        var rows = new List<TrnBuiRow>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            var bui = new int[32];
+            for (var i = 0; i < 32; i++) bui[i] = reader.IsDBNull(3 + i) ? 0 : Convert.ToInt32(reader.GetValue(3 + i));
+            rows.Add(new TrnBuiRow(Convert.ToInt32(reader["disp_no"]),
+                                   trtCd,
+                                   Convert.ToInt32(reader["trt_sb"]),
+                                   Txt.N(reader["dsp_trt"]?.ToString()),
+                                   bui));
+        }
+        return rows;
+    }
+
     /// <summary>Số dòng 処置 của (bệnh nhân, THÁNG của ngày truyền vào).</summary>
     public int CountTrnRowsInMonth(int patNo, DateTime month) =>
         Convert.ToInt32(ScalarInMonth(patNo, month, "SELECT COUNT(*) FROM TRNTRN"));
@@ -598,4 +641,19 @@ public sealed record MstTrtRow(int TrtCd, int TrtSb, string TrtNm, string CctNm,
     public string[] DisplayNames => new[] { CctNm, TrtNm }.Where(s => s.Length > 0).ToArray();
 
     public override string ToString() => $"{TrtCd}/{TrtSb} 「{TrtNm}」 / 「{CctNm}」 {Score1}点";
+}
+
+/// <summary>Một dòng 処置 đã lưu, kèm đủ 32 ô 部位 — xem <see cref="SigaKonDb.ReadTrnBui"/>.</summary>
+public sealed record TrnBuiRow(int DispNo, int TrtCd, int TrtSb, string DspTrt, IReadOnlyList<int> Bui)
+{
+    /// <summary>Giá trị ô 部位 thứ <paramref name="slot"/> (0-based, như mọi chỗ khác của luồng này).</summary>
+    public int Slot(int slot) => slot >= 0 && slot < Bui.Count ? Bui[slot] : 0;
+
+    /// <summary>Các ô khác 0 — dạng 「ô 10 = 1」, để in ra log cho người đọc.</summary>
+    public string MarkedSlots() =>
+        string.Join(", ", Bui.Select((v, i) => (v, i)).Where(t => t.v != 0).Select(t => $"ô {t.i} = {t.v}")) is { Length: > 0 } s
+            ? s : "(không ô nào)";
+
+    public override string ToString() =>
+        $"disp_no={DispNo} {TrtCd}/{TrtSb} 「{DspTrt}」 bui: {MarkedSlots()}";
 }
