@@ -119,6 +119,27 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
     const dump = (line: string) => console.log(`DUMP|web|${line}`)
 
     /**
+     * Màu của một phần tử, quy về RGB thật.
+     *
+     * `getComputedStyle().color` trả về NGUYÊN không gian màu đã khai: Tailwind v4 dùng
+     * `oklch()` nên `text-blue-600` đọc ra 「oklch(0.546 0.245 262.881)」 — không so được
+     * với số RGB mà PixelProbe đọc từ màn hình WinForm. Canvas thì parse được mọi cú pháp
+     * màu của CSS và trả về pixel, nên vẽ 1×1 rồi đọc lại chính là phép quy đổi.
+     */
+    async function inkRgb(loc: Locator): Promise<[number, number, number]> {
+        return loc.evaluate((el) => {
+            const css = getComputedStyle(el).color
+            const canvas = document.createElement('canvas')
+            canvas.width = canvas.height = 1
+            const ctx = canvas.getContext('2d')!
+            ctx.fillStyle = css
+            ctx.fillRect(0, 0, 1, 1)
+            const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+            return [r, g, b] as [number, number, number]
+        })
+    }
+
+    /**
      * Chờ KẾT QUẢ THẬT của một cú chốt ガイド.
      *
      * Không được mốc vào `picker` không thôi: dialog bung ra ngay khi query còn chạy
@@ -469,23 +490,38 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
         let checked = 0
         for (let i = 0; i < rows.length; i++) {
             const cd = Number(rows[i]![0])
-            const color = await cellsOf(dialogRows().nth(i), 'trtNm')
-                .locator('span')
-                .first()
-                .evaluate((el) => getComputedStyle(el).color)
-                .catch(() => '')
-            dump(`color|${i}|cd=${cd}|ink=${color}`)
+            const span = cellsOf(dialogRows().nth(i), 'trtNm').locator('span').first()
+            const [r, g, b] = (await inkRgb(span).catch(() => [-1, -1, -1])) as [
+                number,
+                number,
+                number,
+            ]
+            dump(`color|${i}|cd=${cd}|ink=RGB(${r},${g},${b})`)
 
             const isComment =
                 (cd >= RECEIPT_CODE_MIN && cd <= RECEIPT_CODE_MAX) ||
                 (cd >= KARTE_CODE_MIN && cd <= KARTE_CODE_MAX)
-            if (!isComment) continue
-            checked++
             // frm203017.cs:1053-1059 — magenta 0xff00ff (レセプト印字) hoặc Blue (カルテ印字).
+            const isMagenta = r > 200 && g < 90 && b > 200
+            const isBlue = b - r > 60 && b - g > 60
+            if (!isComment) {
+                // Mã 処置 thường KHÔNG được tô: WinForm chỉ đụng ForeColor trong nhánh
+                // isCodeRange(receipt|karte). Màu mặc định của web là một tông xám rất
+                // tối (không phải #000 thuần) nên đo bằng 「không magenta, không xanh」
+                // chứ không bằng 「ba kênh bằng nhau」.
+                expect(
+                    isMagenta || isBlue,
+                    `dòng ${i} mã ${cd} KHÔNG phải コメント nên phải để màu mặc định, ` +
+                        `đọc ra RGB(${r},${g},${b})`,
+                ).toBe(false)
+                continue
+            }
+            checked++
             expect(
-                color,
-                `dòng ${i} mã ${cd} là コメント nên phải magenta hoặc xanh dương, đọc ra ${color}`,
-            ).toMatch(/rgb\(255,\s*0,\s*255\)|rgb\(37,\s*99,\s*235\)|rgb\(0,\s*0,\s*255\)/)
+                isMagenta || isBlue,
+                `dòng ${i} mã ${cd} là コメント nên phải magenta (レセプト印字) hoặc xanh dương ` +
+                    `(カルテ印字), đọc ra RGB(${r},${g},${b})`,
+            ).toBe(true)
         }
         if (checked === 0) console.log('ガイド này không có dòng mã コメント → BỎ QUA phần màu chữ')
         await step()
@@ -518,7 +554,12 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
 
     test('TC-D12 — đóng bằng F10 rồi mở lại: dialog là bản MỚI, 回数 gõ dở không sống sót', async () => {
         // frm203017.Instance (:113-124) dựng form MỚI khi bản cũ đã Dispose — Rule 23.4.
-        if ((await picker.count()) === 0) await openPickableGuide()
+        //
+        // Mở LẠI từ đầu chứ không dùng dialog testcase trước để lại: TC-D9 đã gõ 「34」
+        // vào chính ô này, lấy nó làm 「giá trị gốc」 thì testcase so số gõ dở với số gõ
+        // dở và đỏ oan (đã vấp đúng thế 2026-09-08).
+        await dismissPicker()
+        await openPickableGuide()
 
         const input = cellsOf(dialogRows().first(), 'cnt').locator('input')
         const original = await input.inputValue()
