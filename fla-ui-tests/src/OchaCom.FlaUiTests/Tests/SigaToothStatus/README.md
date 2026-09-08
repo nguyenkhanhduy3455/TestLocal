@@ -12,6 +12,10 @@ Nửa **WinForm** của ba spec Playwright. Cùng một yêu cầu nghiệp vụ
 
 > ✅ **Chạy thật 2026-09-03 trên bệnh nhân 10, 診療月 2026-08: 21/21 XANH.**
 > `TcDEL` 7/7 (12,4 phút) · `TcGAP` 8/8 (chạy theo lô) · `TcPM` 6/6 (2,8 phút).
+>
+> ➕ **2026-09-08 — thêm `TcGAP9-13`, chạy theo lô: 4 XANH + 1 WARNING.**
+> `TcGAP9` ✅ · `TcGAP10` ✅ · `TcGAP11` ✅ · `TcGAP13` ✅ · `TcGAP12` ⚠️ (đo được, WinForm
+> ném — điểm lệch thật với bản web). Chi tiết ở mục 7, phần 2026-09-08.
 
 Chạy: `.\run-change-tooth-status.ps1` — xem `-Diagnostics` ở mục 6.
 
@@ -462,6 +466,41 @@ thì **không có đường nào qua giao diện** để tới được con số
 khi kịp tới F9. Vế F9 (`modSave.cs:800/804`, vốn ĐÚNG) vì thế vẫn chưa đo được từ UI.
 Testcase kết bằng `Assert.Warn` chứ không `Assert.That`: đây là 「chưa đo được」, khác hẳn
 「đo được và app không ghi」. VSTest hiện outcome đó ra bảng là `Skipped`.
+
+#### TcGAP13 — ✅ XANH (4,2 phút)
+
+```
+SIGA sau khi chốt 179/1 trên dòng vừa dựng lại : se11 = 4
+SIGA sau F9                                     : se11 = 4
+```
+⇒ dòng SIGA do app tạo lại **nhận được** lệnh ghi thật, không phải một dòng trống cho có.
+Khớp web TC-6 vế (c) (`sau F9 dòng siga ĐÃ CÓ, se_11 = 4`).
+
+#### Hai cái bẫy nữa của chính bộ test, gặp cùng ngày
+
+**① Hộp 「病名が選択されていません」 làm TREO VÔ HẠN — và không phải lỗi app.**
+`Uia.Click` gọi `InvokePattern.Invoke()`, một cú gọi **đồng bộ**. Với `MessageBox` modal
+nằm TRONG form modal 病名選択 nó có thể không bao giờ trả về: luồng test đứng ngay tại dòng
+click nên **mọi deadline bên dưới thành vô dụng**. Log dừng đúng ở dòng 「→ tra loi はい」
+rồi im tới khi wrapper cắt — nhìn y như app không phản hồi, trong khi ảnh màn hình cho thấy
+app hoàn toàn khoẻ, chỉ đang đợi ai đó bấm nút. Nay bấm bằng
+`MsgBoxWin32.ClickButton` (`PostMessage(BM_CLICK)`, trả về ngay).
+
+Kèm theo là một lỗi thật của bộ test: bản cũ để 「OK」 làm fallback **CHUNG** cho cả hai
+nhánh, nên trả lời 「いいえ」 lại bấm trúng OK — **đáp ngược ý**, không dấu hiệu gì. Nút thật
+của câu này là **OK/Cancel** (nhãn theo ngôn ngữ Windows), nên mỗi nhánh nay có đủ bộ đồng
+nghĩa RIÊNG: `はい/Yes/OK` và `いいえ/No/Cancel`.
+
+**② 抜歯 có 算定限度 1回/ngày — dòng thứ hai làm F9 không bao giờ tới.**
+Ngày test còn sót một dòng `179/1` thì lượt nhập của testcase là dòng THỨ HAI, và F9 bung
+「…を算定していますが、同日の算定限度(1回)を超えています。」 **CHẮN TRƯỚC** hộp
+「保存しますか」 ⇒ `SaveFlow` chờ hết giờ rồi ném `TimeoutException`; đọc log thì y như 登録
+hỏng. `TcGAP13` nay dọn dòng 抜歯 có sẵn **qua giao diện** trước khi nhập.
+
+> ⚠️ Và rác đó **TỰ DUY TRÌ**: hàng rào `preexisting > 0` của `CleanupTestRows` thấy nó
+> ngay ở `OneTimeSetUp` nên từ chối dọn — càng chạy càng kẹt. Hàng rào ấy đúng (không phân
+> biệt được rác với dữ liệu thật), nên cách thoát là **dọn qua giao diện trong chính
+> testcase**, đừng trông vào teardown.
 
 > 🪤 **Bẫy mới, đã trả giá một lượt chạy 15 phút (2026-09-08).** Cú ném xảy ra **SAU** khi
 > 処置選択 đã nhận double-click, nên `enter.Committed` vẫn về `true` **trong khi 処置選択 CÒN
