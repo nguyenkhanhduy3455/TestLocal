@@ -89,6 +89,9 @@ rồi diff — đó là bảng parity ở mục 4. Cả hai bên đều NFKC tr�
 | **TC-D13** | chỉ F9 確定 + F10 戻る | `TC-D11` |
 | **TC-D14** | đóng bằng 戻る rồi mở lại: 回数 về mặc định | `TC-D12` |
 | **TC-D15** | danh sách khi con trỏ ở dòng CÓ 部位 (dựng cùng tiền đề để so) | `TC-D13` |
+| **TC-D16** | **QUÉT 8 ガイド** — cái nào có 処置, cái nào rỗng, trọn danh sách từng cái | `TC-D14` |
+| *(WinForm là đáp án)* | tên 薬剤 kèm 用法 | `WinForm parity D-d` |
+| *(WinForm là đáp án)* | 回数 của dòng nhóm 窩洞形態 lúc vừa mở | `WinForm parity D-e` |
 | *(không có)* | ô 回数 chỉ nhận chữ số | `TC-D9` |
 | *(không có)* | 回数 rộng hơn 枝番 | `WinForm parity D-c` |
 
@@ -96,111 +99,96 @@ rồi diff — đó là bảng parity ở mục 4. Cả hai bên đều NFKC tr�
 
 ## 4. Parity đo được — 2026-09-08
 
-**Trạng thái lượt chạy:** FlaUI `TC-D1..TC-D14` **14/14 XANH** trên máy thật; `TC-D15`
-**Ignore** (điều kiện dữ liệu, xem 4.3). Playwright: **12 TC định dạng XANH**, ba testcase
-「WinForm parity D-a/D-b/D-c」 **ĐỎ ĐÚNG** — web lệch thật, xem 4.1.
+### 4.0 Điều kiện đo (phải khớp thì số mới có nghĩa)
 
-Cùng điều kiện hai bên: **bệnh nhân 12138**, **ngày 2026-09-08**, ガイド ở **dòng 1** của
-list 通常 = **ガイド番号 101 「検査(Br)」**.
+| | Giá trị |
+|---|---|
+| Bệnh nhân | **10** — máy Windows ghim trong `testsettings.local.json` (12138 có 2864 dòng TRNTRN, app treo hơn một phút) |
+| 診療日 | **2026-07-20** |
+| Dòng đang chọn | 部位 **5 răng** 「54321」 (bui idx 3..7), 病名 **100 「C」** |
+| Dữ liệu hai DB | **TRÙNG KHÍT** — đã đối chiếu `TRNTRN` (SQL Server SIM2000) với `trn_trn` (Postgres `t_tenant1`): cùng ngày, cùng `disp_no 9001`, cùng bui, cùng 病名. KHÔNG cần seed |
 
-### 4.1 Bảng so
+```powershell
+.\run-open-guide-dialog.ps1 -Case TcD16 -TrtDate 2026-07-20 -PatNo 10
+```
+```bash
+TEST_PAT_NO=10 TEST_TRT_DT=2026-07-20 npx playwright test tests/side-panel/guide-selection-dialog-format.spec.ts
+```
 
-| # | Điểm đo | WinForm (frm203017) | Web (GuideSelectionDialog) | Kết luận |
+> ⚠️ Đổi bệnh nhân hoặc đổi ngày là đổi 部位 ⇒ đổi 算定回数 ⇒ mọi con số 回数 dưới đây vô
+> nghĩa. Đã trả giá đúng một vòng vì chuyện này: lượt đo đầu chạy WinForm trên bệnh nhân
+> **10** còn Playwright trên **12138**, ra 「web thiếu dòng 186 歯槽骨整形手術」 và 「回数
+> lệch khắp nơi」 — **cả hai đều ẢO**, chỉ vì khác bệnh nhân. Hai fixture nay in
+> `DUMP|win|ctx|screen|patNo=…` và `DUMP|web|scanreq|…|Bui=…` để lần sau bắt được ngay.
+
+### 4.1 DỮ LIỆU — 7 ガイド so được, 5 trùng khít 100%
+
+`TcD16` (WinForm) và `TC-D14` (web) quét cùng một list. Bảy ガイド đọc được đều **trùng
+tên, trùng ガイド番号, trùng số dòng**:
+
+| # | ガイド | 番号 | số dòng 処置 | từng ô |
 |---|---|---|---|---|
-| 1 | Tiêu đề | 「ガイド処置選択」 | 「ガイド処置選択」 | **KHỚP** |
-| 2 | Cụm header | 「ガイド番号」 + `101` + 「検査(Br)」 | y hệt | **KHỚP** |
-| 3 | Kích thước cửa sổ | 700×740 px | 648×618 px | **LỆCH** (cosmetic) |
-| 4 | Số cột hiển thị | 5 | 5 | **KHỚP** |
-| 5 | Thứ tự cột | ｺｰﾄﾞ・枝番・処置名称・点数・回数 | y hệt | **KHỚP** |
-| 6 | Tiêu đề cột 1 | 「 ｺｰﾄﾞ」 (nửa chiều rộng + dấu cách) | 「コード」 (đủ chiều rộng) | **LỆCH** |
-| 7 | Bề rộng cột | 65 / 40 / 370 / 70 / 70 px | 70 / 60 / 374 / 60 / 50 px | **LỆCH** ở 枝番 vs 回数 |
-| 8 | Dấu cách của CellFormatting | có ở MỌI ô (「135 」「 パノラマデジタル」) | không (canh lề bằng CSS) | **LỆCH cố ý** |
-| 9 | Số dòng 処置 | **12** | **11** | **LỆCH nhưng CHƯA kết luận** — hai bên khác 部位/dữ liệu, xem 4.3 |
-| 10 | Nội dung 11 dòng chung | — | trùng khít cả 5 cột | **KHỚP** |
-| 11 | Con trỏ khi vừa mở | ô 「回数」 dòng đầu | ô `<input>` 回数 dòng đầu | **KHỚP** |
-| 12 | ↑/↓ | đi giữa các ô 回数, clamp đầu list | y hệt | **KHỚP** |
-| 13 | Sắp xếp 4 cột đầu | có, lần hai đảo chiều | có, lần hai đảo chiều | **KHỚP** |
-| 14 | Sắp xếp 「回数」 | KHÔNG (NotSortable) | KHÔNG (`enableSorting: false`) | **KHỚP** |
-| 15 | Đổi 回数 bằng chuột | **CLICK ĐƠN** (1→0→1→0) | **DOUBLE-CLICK** (click đơn không đổi gì) | **LỆCH** |
-| 16 | Nền dòng | đổi theo NHÓM `acc_unit >> 4`: dòng 0-1 trắng, 2-5 RGB(234,246,253), 6 trắng, 7-9 xanh, 10-11 trắng | đổi theo CHẴN/LẺ từng dòng | **LỆCH** |
-| 17 | Chữ mã コメント | 7321 → RGB(0,0,255) | 7321 → RGB(21,93,252) | **KHỚP về ý nghĩa**, khác sắc độ |
-| 18 | Chữ mã 処置 thường | đen | RGB(23,58,64) (xám rất tối) | **KHỚP về ý nghĩa** |
-| 19 | Nút F | `btnF9`「F9 確定」 + `btnF10`「F10 戻る」, không nút nào khác | `F9 確定` + `F10 戻る` | **KHỚP** |
-| 20 | Đóng rồi mở lại | 回数 về giá trị CalcCnt | 回数 về giá trị CalcCnt, sort sạch | **KHỚP** |
+| 0 | 抜歯 | 511 | 16 = 16 | **TRÙNG KHÍT** (kể cả 回数: 抜歯手術(前歯)=3, (臼歯)=2 — đúng 3 前歯 + 2 臼歯 của 部位 「54321」) |
+| 1 | 異種充填 | 611 | 9 = 9 | **LỆCH 2 dòng** — xem (a) |
+| 2 | コーピング set | 821 | 8 = 8 | **TRÙNG KHÍT** |
+| 3 | 抜歯 | 10650 | 13 = 13 | **LỆCH 2 dòng** — xem (b) |
+| 4 | コーピング KP・imp | 630 | 3 = 3 | **TRÙNG KHÍT** |
+| 5 | HJK set | 715 | 6 = 6 | **TRÙNG KHÍT** |
+| 6 | 支台築造印象 | 720 | 1 = 1 | **TRÙNG KHÍT** |
 
-### 4.2 Ba điểm LỆCH chỉ là hình thức
+Trùng khít nghĩa là **cả 5 cột ｺｰﾄﾞ/枝番/処置名称/点数/回数 và đúng thứ tự**.
 
-- **#6** — 「 ｺｰﾄﾞ」 nửa chiều rộng: testcase FlaUI so **NGUYÊN VĂN** (không NFKC) là cố ý.
-  Đi qua `Txt.N` thì chuỗi WinForm thành đúng chuỗi web đang hiển thị và điểm lệch biến
-  mất khỏi test — đúng cái bẫy 「hàm đọc UI làm phẳng chuỗi ⇒ xanh giả」.
-- **#8** — dấu cách của `CellFormatting` là cách WinForm tạo padding khi không có CSS.
-  Đừng bắt bản web nhét dấu cách vào dữ liệu.
-- **#3, #7** — kích thước và bề rộng cột: WinForm dùng px của Designer, web dùng CSS grid.
-  Cái đáng giữ là **quan hệ**: 処置名称 rộng nhất (cả hai đều đúng), 枝番 hẹp nhất
-  (WinForm đúng, web thì 回数 mới là hẹp nhất ⇒ `WinForm parity D-c` đỏ).
+**(a) 回数 của các dòng thuộc nhóm 窩洞形態 — testcase `WinForm parity D-e`**
 
-### 4.3 Danh sách 処置 — 12 dòng (WinForm) so với 11 dòng (web)
-
-Cùng ガイド 101, cùng bệnh nhân 12138. `pag_trt` có 14 dòng; WinForm hiển thị 12, web
-hiển thị 11. Mười một dòng chung **trùng khít cả 5 cột và đúng thứ tự** (`pag_trt` order):
-
-| # | ｺｰﾄﾞ | 枝番 | 処置名称 | 点数 | 回数 |
-|---|---|---|---|---|---|
-| 1 | 135 | 3 | パノラマデジタル | 402 | 1 |
-| 2 | 135 | 0 | ﾃﾞｼﾞﾀﾙ(標) | 58 | 0 |
-| 3 | 7321 | 1 | OA（ｺｰﾊﾟﾛﾝ）浸麻（歯科用ｵｰﾗ注Ct1.8ml） | 0 | 0 |
-| 4 | 200 | 0 | 伝達麻酔 | 42 | 0 |
-| 5 | 7321 | 0 | OA（ｺｰﾊﾟﾛﾝ）浸麻（歯科用2%ｵｸﾀﾌﾟﾚｼﾝCt1.8ml） | 0 | 0 |
-| 6 | 310 | 3 | OA＋歯科用ｷｼﾛｶｲﾝｶｰﾄﾘｯｼﾞ 1.8mL | 11 | 0 |
-| — | **186** | **0** | **歯槽骨整形手術(AEct)** | **110** | **1** | ← **chỉ WinForm có** |
-| 7 | 301 | 2 | 処方料 | 42 | 0 |
-| 8 | 302 | 0 | 調剤料(内服薬･屯服薬) | 11 | 0 |
-| 9 | 302 | 2 | 調剤料(外用薬) | 8 | 0 |
-| 10 | 117 | 4 | 薬剤情報提供料 | 4 | 0 |
-| 11 | 117 | 5 | 手帳記載加算 | 3 | 0 |
-
-Hai dòng cả hai bên cùng bỏ (`144/0`, `117/0`) là đúng — dedup nhóm `FLG2` / `trt_cnt`,
-hai bên nhất trí.
-
-#### ⚠️ CHƯA kết luận được đây là lỗi port — hai bên đang ở TIỀN ĐỀ KHÁC NHAU
-
-Danh sách 処置 phụ thuộc **部位/病名 của dòng đang chọn** (frm203002.cs:6515 snapshot
-`getFocusBui`/`getFocusDis` vào `frm203017.ParamData`; bản web gửi `Bui`/`DisCd` lên BE).
-Số đo cùng buổi cho thấy hai bên KHÔNG cùng tiền đề:
-
-| | WinForm (SQL Server) | Web (Postgres) |
+| dòng | WinForm | web |
 |---|---|---|
-| Tháng lưới đang hiện | `R 08年07月`, 実日数 1日 272 点 | các dòng của **hôm nay 2026-09-08** (歯科再診料, 歯科疾患管理料… do AutoSantei sinh) |
-| Dòng có 部位 | có — `54321\|…\|(5)`, 病名 `C` | 12 dòng đầu đều **không có 部位** |
-| Tham số gửi lên khi mở dialog | (không quan sát được) | `GuidCd=101 TrtDt=2026-09-08 PatNo=12138 **Bui= DisCd=**` |
+| `326/1 充填1(単純) 106点` | 回数 **5** | 回数 **0** |
+| `342/0 グラスアイオノマー充填(標準型・単純) 3点` | 回数 **5** | 回数 **0** |
 
-`186 歯槽骨整形手術` đúng là loại 処置 **bị chặn khi không có 部位** — chính cái mà chú
-thích ở `treatment-entry-detail.tsx` (`bui={focusedRowParts.bui}`) cảnh báo. Nên nhiều khả
-năng web thiếu dòng này **vì 部位 rỗng**, chứ chưa chứng minh được `GuideTrtResolver` port
-sai.
+WinForm để nguyên 算定回数 (CalcCnt = 5 răng của 部位). Bản web ép các dòng nhóm 複雑/単純
+về 0 và chỉ điền khi người dùng chọn mặt răng ở khối 窩洞形態 (`cavityRowCnt`,
+`guide-selection-dialog.tsx`). Vừa mở dialog là hai bên hiện hai con số khác nhau.
 
-Hai thí nghiệm đã làm để thu hẹp, và kết quả:
+**(b) Tên 薬剤 thiếu hậu tố 用法 — testcase `WinForm parity D-d`**
 
-- **Web** (`TC-D13`): click ô 療法 của dòng CÓ 部位 rồi mở lại ガイド → vẫn `Bui=` rỗng,
-  vẫn 11 dòng. Probe quét 12 dòng đầu: **không dòng nào** làm FE gửi `Bui` khác rỗng.
-- **WinForm** (`TC-D15`): click dòng 部位 `54321` (病名 C) rồi F4 → list ガイド ĐỔI HẲN và
-  **cả 12 ガイド đầu đều không có 処置 nào tính được** (mỗi cái tự đóng kèm E00024), nên
-  không mở được dialog nào để so. Testcase `Ignore` với đúng lý do đó — đây là **điều kiện
-  dữ liệu**, không phải lỗi app.
+| dòng | WinForm | web |
+|---|---|---|
+| `601/0` | 「ボルタレン錠25mg1T **疼痛時 服用**」 | 「ボルタレン錠25mg1T」 |
+| `602/0` | 「メイアクトMS錠100mg4T **1日4回朝昼夕食後と就寝前 服用**」 | 「メイアクトMS錠100mg4T」 |
 
-**Còn một khác biệt nền nữa:** dữ liệu 診療 của hai DB không trùng — Postgres có
-`2026-08-04 / 07-31 / 07-20 / 07-10` cho bệnh nhân 12138, còn lưới WinForm chỉ hiện một
-ngày trong 07月.
+`frm203017.getViewData` nối 用法 vào `trt_nm` (`newRow["trt_nm"] += " " + usage;`). Bản web
+khai thẳng trong doc-comment rằng 「drug-usage name suffix」 nằm ngoài Phase 1 — **đã biết
+và cố ý**, nhưng vẫn là lệch với người ngồi trước màn hình.
 
-#### Việc tiếp theo để chốt
+> WinForm chỉ phơi ra UIA **7 ガイド đang nhìn thấy** (luật F10), còn web báo tổng **86**.
+> Muốn so sâu hơn thì cuộn lưới rồi quét tiếp, hoặc chọn theo TÊN như `openGuideByName`
+> của spec Playwright.
 
-1. Ghim **cùng một 診療日 có 部位** cho hai bên: `testsettings.patient.trtDate` (WinForm) và
-   `TEST_TRT_DT` (Playwright) — ví dụ `2026-07-31`.
-2. Đưa con trỏ về **cùng một dòng 処置** ở hai bên rồi mới mở ガイド (TC-D15 / TC-D13 đã có
-   sẵn phần chọn dòng; chỉ cần nới `ScanLimit` và chọn ガイド theo **ガイド番号** thay vì
-   theo chỉ số dòng, vì list ガイド đổi theo 部位).
-3. Nếu web vẫn gửi `Bui=` rỗng khi con trỏ nằm trên dòng có 部位 → **đó mới là bug**, và nó
-   nằm ở `focusedRowParts.bui` chứ không ở `GuideTrtResolver`.
+### 4.2 THAO TÁC — hai điểm lệch
+
+| Thao tác | WinForm | web | Testcase |
+|---|---|---|---|
+| Đổi 回数 bằng chuột | **CLICK ĐƠN** lên ô bất kỳ của dòng (`dgvView_CellClick`, :363) — đo được 1→0→1→0 | **DOUBLE-CLICK**; click đơn không đổi gì | `WinForm parity D-a` |
+| Nền dòng | đổi theo **NHÓM** `acc_unit >> 4` (đo được: dòng 0-1 trắng, 2-5 RGB(234,246,253), 6 trắng, 7-9 xanh, 10-11 trắng) | đổi theo **CHẴN/LẺ** từng dòng | `WinForm parity D-b` |
+
+Còn lại **khớp**: con trỏ vào ô 回数 dòng đầu khi mở, ↑/↓ đi giữa các ô 回数 + clamp ở dòng
+đầu, sắp xếp 4 cột đầu (lần hai đảo chiều) và 「回数」 KHÔNG sắp xếp được, ô 回数 chỉ nhận
+chữ số, đóng bằng F10 rồi mở lại là form MỚI (回数 về CalcCnt, sort sạch), thanh F chỉ có
+F9 確定 + F10 戻る, Escape = 確定.
+
+### 4.3 HÌNH THỨC — ghi nhận, KHÔNG tính là lệch
+
+| Điểm | WinForm | web |
+|---|---|---|
+| Tiêu đề cột 1 | 「 ｺｰﾄﾞ」 nửa chiều rộng + dấu cách đứng trước | 「コード」 đủ chiều rộng |
+| Dấu cách trong ô | `CellFormatting` chèn vào MỌI ô (「135 」「 パノラマデジタル」) | canh lề bằng CSS |
+| Kích thước cửa sổ | 700×740 px | 648×618 px |
+| Bề rộng cột | 65/40/370/70/70 px | 70/60/374/60/50 px |
+| Màu chữ コメント | magenta `0xff00ff` / `Color.Blue` — đo được 7321 → RGB(0,0,255) | cùng Ý NGHĨA, khác sắc độ: RGB(21,93,252) |
+
+**Bề rộng cột và kích thước cửa sổ KHÔNG phải tiêu chí parity** (hai hệ đơn vị khác nhau,
+người nhập liệu không thao tác trên bề rộng) — spec chỉ in dòng `DUMP|…|colw|…`, không
+assert. Tiêu đề cột thì `TcD2` vẫn so NGUYÊN VĂN, nhưng đó là để chốt WinForm viết gì.
 
 ---
 
@@ -210,6 +198,7 @@ ngày trong 07月.
 |---|---|
 | Nhánh F9 確定 đẩy 処置 vào lưới | Nhánh GHI. Nằm sau một cờ riêng, chưa làm |
 | ガイド rỗng 処置 → Q00100 / E00024 | Đã đo ở luồng cũ (`README.md` mục 3, parity 5) |
-| 窩洞形態 (`tabGuide`) | ガイド đo được không bật khối đó (`DUMP|win|cavity|shown=False`); cần ガイド trộn 複雑+単純, ví dụ 10020 |
+| Khối 窩洞形態 (`tabGuide`) hiện ra thế nào | ガイド 611 「異種充填」 CÓ bật khối đó (điểm lệch 4.1a), nhưng bản thân khối (tab từng răng + 3 hình 窩洞形態) chưa đo — mới chỉ đo 回数 của các dòng thuộc nhóm |
+| Hơn 7 ガイド | UIA chỉ phơi ra dòng đang nhìn thấy (F10); phải cuộn lưới ガイド rồi quét tiếp |
 | Sửa 点数 (chỉ mở khi 点数=0 và 自費) | Cần một dòng 自費 có 点数=0 trong list |
 | ←/→ trong lưới | WinForm chặn cả hai ở dòng đo được (点数≠0). Web: ←/→ chạy trong ô `<input>`, không dời ô — không so trực tiếp được |
