@@ -88,12 +88,17 @@ rồi diff — đó là bảng parity ở mục 4. Cả hai bên đều NFKC tr�
 | **TC-D12** | nền dòng đổi theo NHÓM, không theo chẵn/lẻ | `WinForm parity D-b` |
 | **TC-D13** | chỉ F9 確定 + F10 戻る | `TC-D11` |
 | **TC-D14** | đóng bằng 戻る rồi mở lại: 回数 về mặc định | `TC-D12` |
+| **TC-D15** | danh sách khi con trỏ ở dòng CÓ 部位 (dựng cùng tiền đề để so) | `TC-D13` |
 | *(không có)* | ô 回数 chỉ nhận chữ số | `TC-D9` |
 | *(không có)* | 回数 rộng hơn 枝番 | `WinForm parity D-c` |
 
 ---
 
 ## 4. Parity đo được — 2026-09-08
+
+**Trạng thái lượt chạy:** FlaUI `TC-D1..TC-D14` **14/14 XANH** trên máy thật; `TC-D15`
+**Ignore** (điều kiện dữ liệu, xem 4.3). Playwright: **12 TC định dạng XANH**, ba testcase
+「WinForm parity D-a/D-b/D-c」 **ĐỎ ĐÚNG** — web lệch thật, xem 4.1.
 
 Cùng điều kiện hai bên: **bệnh nhân 12138**, **ngày 2026-09-08**, ガイド ở **dòng 1** của
 list 通常 = **ガイド番号 101 「検査(Br)」**.
@@ -179,8 +184,9 @@ Hai thí nghiệm đã làm để thu hẹp, và kết quả:
 - **Web** (`TC-D13`): click ô 療法 của dòng CÓ 部位 rồi mở lại ガイド → vẫn `Bui=` rỗng,
   vẫn 11 dòng. Probe quét 12 dòng đầu: **không dòng nào** làm FE gửi `Bui` khác rỗng.
 - **WinForm** (`TC-D15`): click dòng 部位 `54321` (病名 C) rồi F4 → list ガイド ĐỔI HẲN và
-  **5 ガイド đầu đều không có 処置 nào tính được** (E00024), nên không mở được dialog nào để
-  so. Testcase đỏ ở đây là **điều kiện dữ liệu**, không phải lỗi app.
+  **cả 12 ガイド đầu đều không có 処置 nào tính được** (mỗi cái tự đóng kèm E00024), nên
+  không mở được dialog nào để so. Testcase `Ignore` với đúng lý do đó — đây là **điều kiện
+  dữ liệu**, không phải lỗi app.
 
 **Còn một khác biệt nền nữa:** dữ liệu 診療 của hai DB không trùng — Postgres có
 `2026-08-04 / 07-31 / 07-20 / 07-10` cho bệnh nhân 12138, còn lưới WinForm chỉ hiện một
