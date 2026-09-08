@@ -1,5 +1,9 @@
 # Dò hành vi trước, viết assert sau
 
+> 📗 File này là **luật F1** của [`FLA-UI-GUIDELINE.md`](./FLA-UI-GUIDELINE.md), giữ lại
+> phần vì-sao và khuôn mẫu probe. Các luật còn lại (F2–F24: timeout ngắn, chạy từ xa,
+> lưới, hộp thoại, dữ liệu) nay nằm ở file đó.
+
 Cách làm việc bắt buộc khi viết test UI cho app WinForm (`fla-ui-tests`), chốt ngày
 **2026-08-25** sau một buổi làm sai cách và mất khoảng một giờ vì nó.
 

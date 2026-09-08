@@ -17,9 +17,15 @@ helper dùng chung ở `tests/_shared/`. Spec mới import `test`/`expect` từ
 KHÔNG tự `goto('/login')` trừ khi có lý do ghi rõ trong doc-comment.
 
 Trước khi viết test UI cho app WinForm (`fla-ui-tests/`): đọc
-[`fla-ui-tests/PROBE-GUIDELINE.md`](./fla-ui-tests/PROBE-GUIDELINE.md). Luật số một —
-chưa biết app thật hành xử ra sao thì **chụp màn hình → đọc ảnh → rồi mới viết
-assert**, KHÔNG viết assert theo phỏng đoán rồi chạy cả fixture để xem nó đỏ ở đâu.
-Ảnh chụp lúc lỗi đã có sẵn trong `artifacts/screenshots/` — mở ra xem trước khi chạy lại.
+[`fla-ui-tests/FLA-UI-GUIDELINE.md`](./fla-ui-tests/FLA-UI-GUIDELINE.md) — toàn bộ luật
+F1–F24 của bên WinForm gom về một chỗ (`PROBE-GUIDELINE.md` giữ nguyên phần vì-sao và
+khuôn mẫu probe). Ba luật bao trùm:
+
+1. **F1 — chụp màn hình → đọc ảnh → rồi mới viết assert.** KHÔNG viết assert theo phỏng
+   đoán rồi chạy cả fixture để xem nó đỏ ở đâu. Ảnh chụp lúc lỗi đã có sẵn trong
+   `artifacts/screenshots/` — mở ra xem trước khi chạy lại.
+2. **F2 — timeout NGẮN.** Hết giờ thì **chụp ảnh → phân tích → rồi mới chạy lại**; đừng
+   ngồi đợi hết trần 15 phút, và đừng chạy lại y nguyên để "xem có chập chờn không".
+3. **F3 — assert bám WinForm** và dẫn được `file:dòng`.
 
 Trước khi debug một test fail: chạy triage ở README mục 7 — kiểm app sống (502?), kiểm rate-limit, đọc dòng `Error:` đầu tiên, mở `test-results/<tên-test>/error-context.md`.

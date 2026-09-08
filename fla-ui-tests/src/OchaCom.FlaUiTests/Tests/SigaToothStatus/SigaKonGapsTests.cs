@@ -871,6 +871,28 @@ public sealed class SigaKonGapsTests : UiTestBase
         Assert.That(_db.HasSigaRow(PatNo), Is.True,
             "Tiền đề: bệnh nhân phải có dòng SIGA (TcGAP8 chạy trước đã dựng lại). Không có ⇒ " +
             "chạy TcGAP8 trước, đừng đọc testcase này.");
+
+        // ⚠️ DỌN DÒNG 抜歯 CÓ SẴN TRÊN LƯỚI TRƯỚC ĐÃ — nếu không, F9 KHÔNG BAO GIỜ TỚI.
+        //
+        // 抜歯 có 算定限度 1回/ngày. Ngày test đã mang sẵn một dòng 179 thì lượt nhập của
+        // testcase này là dòng THỨ HAI, và F9 bung cảnh báo
+        // 「…を算定していますが、同日の算定限度(1回)を超えています。」 CHẮN TRƯỚC hộp
+        // 「保存しますか」 ⇒ SaveFlow chờ hết giờ rồi ném TimeoutException, đọc log thì y như
+        // 登録 hỏng.
+        //
+        // Đo được 2026-09-08: ngày test còn sót `disp_no=13 179/1` từ một lượt chạy cũ bị
+        // kill giữa chừng. Và rác đó TỰ DUY TRÌ: hàng rào `preexisting > 0` của
+        // CleanupTestRows thấy nó ngay ở OneTimeSetUp nên từ chối dọn — càng chạy càng kẹt.
+        // Vì thế dọn ở đây, qua GIAO DIỆN (đúng đường người dùng), thay vì tin vào teardown.
+        for (var i = 0; i < 3; i++)
+        {
+            var stale = _flow.LastRowMatching("抜歯");
+            if (stale is null) break;
+            Log($"dọn dòng 抜歯 có sẵn trên lưới (tránh 算定限度 1回/ngày): {stale}");
+            _flow.DeleteRow(stale, trace);
+        }
+
+        // Reset SAU khi xoá: DeleteRow gọi DelExtRec ⇒ nó cũng ghi SIGA.
         _db.ResetSigaToVital(PatNo);
 
         EnterOnTooth(SigaToothFlow.ExtractionTrtCd, 1, PermSlot, null, trace);

@@ -1,5 +1,9 @@
 # fla-ui-tests — test tự động cho app WinForm お茶コン
 
+> 📗 **Luật viết & chạy: [`FLA-UI-GUIDELINE.md`](./FLA-UI-GUIDELINE.md) (F1–F24).**
+> Đọc trước khi viết testcase mới hoặc trước khi đi sửa một lượt chạy treo.
+> [`PROBE-GUIDELINE.md`](./PROBE-GUIDELINE.md) là phần vì-sao + khuôn mẫu probe của F1.
+
 Bộ test UI cho **app desktop** (`src/OCHACOM`, WinForms .NET Framework 3.5), viết bằng
 **FlaUI + NUnit**, project chạy trên **.NET 8 (`net8.0-windows`)**.
 

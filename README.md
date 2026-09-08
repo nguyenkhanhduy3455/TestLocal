@@ -11,6 +11,8 @@
 |---|---|
 | Hiểu tổng thể | File này, mục 1–2 |
 | Viết một spec Playwright mới | Mục 5 → `web-tenant-tests/GUIDELINE.md` (Rule 1–11) → `web-tenant-tests/TEST-PLAYPWRIGHT-GUIDELINE.md` (Rule 12–23) |
+| Viết / sửa test WinForm (FlaUI) | **`fla-ui-tests/FLA-UI-GUIDELINE.md` (F1–F24)** → `fla-ui-tests/README.md` → README của luồng trong `Tests/<luồng>/` |
+| Một lượt chạy FlaUI đang treo | `fla-ui-tests/FLA-UI-GUIDELINE.md` **F2** — chụp ảnh → phân tích → rồi mới chạy lại, đừng đợi hết trần 15 phút |
 | Mới học Playwright | `web-tenant-tests/tutorial.md` |
 | Test đang fail | Mục 7 (triage) → `test-results/<tên-test>/error-context.md` |
 | Cần seed/dọn dữ liệu ở tầng DB | Mục 3.5 → doc-comment đầu `web-tenant-tests/tests/db.ts` |
@@ -412,9 +414,15 @@ Lợi ích thật: khi source đổi, đọc doc-comment là biết ngay assert 
 
 ---
 
-## 6. Bảng tra luật (Rule 1–23)
+## 6. Bảng tra luật (Rule 1–23 · web) và (F1–F24 · WinForm)
 
-Tóm tắt một dòng. Chi tiết + ví dụ code ở hai file guideline.
+Tóm tắt một dòng. Chi tiết + ví dụ code ở các file guideline.
+
+> **Rule 1–23** dưới đây là luật của bên **Playwright/web** (`web-tenant-tests/`).
+> Bên **WinForm** (`fla-ui-tests/`) có bộ luật riêng **F1–F24**, đánh số khác để không lẫn:
+> [`fla-ui-tests/FLA-UI-GUIDELINE.md`](./fla-ui-tests/FLA-UI-GUIDELINE.md). Ba luật bao
+> trùm ở đó: **F1** probe trước assert sau · **F2** timeout NGẮN, hết giờ thì chụp ảnh →
+> phân tích → rồi mới chạy lại · **F3** assert bám WinForm kèm `file:dòng`.
 
 **`GUIDELINE.md` — luật bắt buộc**
 
