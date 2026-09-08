@@ -90,20 +90,6 @@ public sealed class GuideDialogTests : UiTestBase
         }
         catch (Exception e) { TestContext.Out.WriteLine("khởi động: " + e.Message); }
 
-        // TIỀN ĐỀ của mọi phép so danh sách với bản web: frm203017 nhận 部位/病名 của
-        // DÒNG ĐANG CÓ CON TRỎ trên grdRegi (frm203002.cs:6515 snapshot getFocusBui /
-        // getFocusDis). Hai bên chỉ so được với nhau khi hai tiền đề đó bằng nhau — bản
-        // web in cùng thông tin ra dòng `DUMP|web|req|…`. Đọc TRƯỚC khi mở dialog: lúc
-        // modal đang chặn luồng UI của frm203002 thì mọi phép đọc grdRegi đều treo.
-        try
-        {
-            var row = Screen.Regi.CurrentRow();
-            Dump(row is null
-                ? "ctx|focusRow=(không đọc được dòng đang chọn)"
-                : $"ctx|bui={Txt.N(row.At(Screens.RegiGrid.Col.Bui))}|" +
-                  $"ryo={Txt.N(row.At(Screens.RegiGrid.Col.Ryo))}");
-        }
-        catch (Exception e) { Dump($"ctx|lỗi đọc grdRegi: {e.Message}"); }
     }
 
     [OneTimeTearDown]
@@ -166,6 +152,36 @@ public sealed class GuideDialogTests : UiTestBase
     {
         var cells = _dlg.Cells(row);
         return col < cells.Count ? Uia.ValueOf(cells[col]) : "";
+    }
+
+    /// <summary>
+    /// In 部位/療法 của dòng đang có con trỏ trên <c>grdRegi</c>.
+    ///
+    /// <para>Đây là TIỀN ĐỀ của mọi phép so danh sách với bản web: frm203017 nhận 部位/病名
+    /// của DÒNG ĐANG CHỌN (<c>hfgGuid1_CellDoubleClick</c> snapshot <c>getFocusBui</c>/
+    /// <c>getFocusDis</c>, frm203002.cs:6515), và bản web gửi đúng hai thứ đó lên BE
+    /// (dòng <c>DUMP|web|req|…|Bui=…|DisCd=…</c>). Hai danh sách chỉ so được với nhau khi
+    /// hai tiền đề bằng nhau — thiếu dòng này thì mọi kết luận 「web thiếu dòng X」 đều
+    /// treo lơ lửng.</para>
+    ///
+    /// <para>⚠️ Phải ĐÓNG dialog trước khi đọc: frm203017 là modal, luồng UI của
+    /// frm203002 đang bị chặn nên mọi phép đọc <c>grdRegi</c> sẽ treo tới hết deadline.
+    /// Và phải đặt trong TESTCASE chứ không phải <c>OneTimeSetUp</c> — output của
+    /// OneTimeSetUp KHÔNG vào <c>.trx</c>, runner lọc KQ từ đó nên dòng in ra biến mất
+    /// (đã vấp 2026-09-08).</para>
+    /// </summary>
+    private void DumpFocusRowContext()
+    {
+        try
+        {
+            if (_guide.DialogOpen()) _guide.CloseDialogWithF10();
+            var row = Screen.Regi.CurrentRow();
+            Dump(row is null
+                ? "ctx|focusRow=(không đọc được dòng đang chọn trên grdRegi)"
+                : $"ctx|bui={Txt.N(row.At(Screens.RegiGrid.Col.Bui))}|" +
+                  $"ryo={Txt.N(row.At(Screens.RegiGrid.Col.Ryo))}");
+        }
+        catch (Exception e) { Dump($"ctx|lỗi đọc grdRegi: {e.Message}"); }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -261,6 +277,8 @@ public sealed class GuideDialogTests : UiTestBase
     [Description("TC-D4 — danh sách 処置: mọi ô số parse được, 処置名称 không rỗng; in trọn để đối chiếu")]
     public void TcD4_RowsAreWellFormed()
     {
+        DumpFocusRowContext();
+
         var dialog = EnsureDialog();
         var rows = RequireRows(dialog);
         Log($"dialog có {rows.Count} dòng 処置");
