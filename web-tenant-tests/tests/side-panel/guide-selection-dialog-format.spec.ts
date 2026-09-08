@@ -80,6 +80,22 @@ const SCAN_LIMIT = 5
 /** Số ガイド quét trong TC-D14 — testcase đối chiếu dữ liệu với fixture FlaUI TcD16. */
 const SCAN_LIMIT_DEEP = Number(process.env.TEST_GUIDE_SCAN ?? '8')
 
+/**
+ * Tiền đề của hai testcase parity cuối file.
+ *
+ * Con số trong hai cái đó là số ĐO ĐƯỢC trên WinForm ngày 2026-09-08 với ĐÚNG bệnh nhân
+ * và ĐÚNG ngày này (bệnh nhân 10 · 2026-07-20 · 部位 5 răng 「54321」 · 病名 100 「C」).
+ * Đổi bệnh nhân/ngày là đổi 部位 ⇒ đổi 算定回数 ⇒ số cũ vô nghĩa, nên hai testcase đó tự
+ * `skip` thay vì đỏ oan.
+ *
+ * ⚠️ Máy Windows để `patient.patNo = 10` trong `testsettings.local.json` (12138 có 2864
+ * dòng TRNTRN, app treo hơn một phút), nên muốn so với FlaUI thì bên này PHẢI trỏ vào
+ * cùng bệnh nhân đó:
+ *   TEST_PAT_NO=10 TEST_TRT_DT=2026-07-20 npx playwright test …
+ */
+const PARITY_PAT_NO = '10'
+const PARITY_TRT_DT = '2026-07-20'
+
 /** 5 cột hiển thị của frm203017 `_viewItem`, theo đúng thứ tự trái→phải. */
 const COL_IDS = ['trtCd', 'trtSb', 'trtNm', 'score', 'cnt'] as const
 /** Nhãn cột bản web. WinForm là 「 ｺｰﾄﾞ」 nửa chiều rộng — xem TC-D2. */
@@ -210,6 +226,30 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
             await dismissNoTrtAlert()
         }
         throw new Error(`không ガイド nào trong ${total} dòng đầu mở được ガイド処置選択`)
+    }
+
+    /**
+     * Mở ĐÚNG một ガイド theo tên, và kiểm luôn ガイド番号 đọc được.
+     *
+     * Chọn theo TÊN chứ không theo chỉ số dòng: list ガイド đổi theo 部位/病名 của dòng
+     * đang chọn, nên 「dòng thứ n」 không phải một mốc ổn định để so hai bên.
+     */
+    async function openGuideByName(name: string, expectGuidCd: number) {
+        await enterGuideRegular()
+        const total = Math.min(await guideRows.count(), SCAN_LIMIT_DEEP)
+        for (let i = 0; i < total; i++) {
+            const nm = (await guideRows.nth(i).locator('div').nth(1).innerText()).trim()
+            if (nm.normalize('NFKC') !== name) continue
+            await guideRows.nth(i).click()
+            if ((await waitPickResult()) === 'empty') {
+                await dismissNoTrtAlert()
+                continue
+            }
+            const raw = await picker.locator('span[class*="font-mono"]').first().innerText()
+            if (Number(raw.trim()) === expectGuidCd) return
+            await dismissPicker()
+        }
+        throw new Error(`không thấy ガイド 「${name}」 (番号 ${expectGuidCd}) trong ${total} dòng đầu`)
     }
 
     /** Toàn bộ dòng của lưới dialog, đọc thành mảng chuỗi theo đúng thứ tự cột. */
@@ -719,6 +759,60 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
     // WinForm parity — chỗ web ĐANG LỆCH bản gốc. Đỏ ở đây = web lệch, KHÔNG phải
     // test viết sai. Mỗi cái tự dựng trạng thái nên chạy lẻ được.
     // ═════════════════════════════════════════════════════════════════════════
+
+    test('WinForm parity D-d: tên 薬剤 phải kèm 用法 (「ボルタレン錠25mg1T 疼痛時 服用」)', async () => {
+        // frm203017.getViewData: với dòng 薬剤 có 用法, WinForm NỐI 用法 vào 処置名称
+        // (`newRow["trt_nm"] += " " + usage;`). Bản web bỏ qua — chú thích đầu
+        // guide-selection-dialog.tsx khai đây là 「drug-usage name suffix — skipped」 của
+        // Phase 1. ĐO ĐƯỢC 2026-09-08, cùng bệnh nhân/ngày:
+        //   WinForm 「ボルタレン錠25mg1T 疼痛時 服用」 · 「メイアクトMS錠100mg4T 1日4回朝昼夕食後と就寝前 服用」
+        //   web     「ボルタレン錠25mg1T」          · 「メイアクトMS錠100mg4T」
+        test.skip(
+            PAT_NO !== PARITY_PAT_NO || TRT_DT !== PARITY_TRT_DT,
+            `số đo ghim theo bệnh nhân ${PARITY_PAT_NO} ngày ${PARITY_TRT_DT} — chạy bằng ` +
+                `TEST_PAT_NO=${PARITY_PAT_NO} TEST_TRT_DT=${PARITY_TRT_DT}`,
+        )
+        await dismissPicker()
+        await openGuideByName('抜歯', 10650)
+
+        const rows = await readRows()
+        const drug = rows.find((r) => r[0] === '601')
+        expect(drug, 'ガイド 10650 phải có dòng 薬剤 601/0 (ボルタレン)').toBeTruthy()
+        dump(`drugnm|601|${drug![2]!.normalize('NFKC')}`)
+        expect(
+            drug![2]!.normalize('NFKC'),
+            '処置名称 của dòng 薬剤 phải có hậu tố 用法 như WinForm (getViewData nối ' +
+                '`" " + usage` vào trt_nm)',
+        ).toBe('ボルタレン錠25mg1T 疼痛時 服用')
+        await step()
+        await dismissPicker()
+    })
+
+    test('WinForm parity D-e: dòng nhóm 窩洞形態 vừa mở phải mang 回数 = 算定回数, không phải 0', async () => {
+        // ガイド 611 「異種充填」 bật khối 窩洞形態. WinForm vẫn để 回数 = CalcCnt (đo được
+        // 5 = số răng của 部位) cho các dòng thuộc nhóm 複雑/単純; bản web ép chúng về 0
+        // và chỉ điền khi người dùng chọn mặt răng (`cavityRowCnt` trong
+        // guide-selection-dialog.tsx). Người nhập liệu nhìn thấy hai màn hình khác nhau
+        // ngay lúc mở.
+        test.skip(
+            PAT_NO !== PARITY_PAT_NO || TRT_DT !== PARITY_TRT_DT,
+            `số đo ghim theo bệnh nhân ${PARITY_PAT_NO} ngày ${PARITY_TRT_DT}`,
+        )
+        await dismissPicker()
+        await openGuideByName('異種充填', 611)
+
+        const rows = await readRows()
+        const filling = rows.find((r) => r[0] === '326' && r[1] === '1')
+        expect(filling, 'ガイド 611 phải có dòng 326/1 充填1(単純)').toBeTruthy()
+        dump(`cavitycnt|326-1|${filling![4]}`)
+        expect(
+            filling![4],
+            '回数 của dòng 充填1(単純) — WinForm hiện 5 (CalcCnt theo 部位 5 răng), ' +
+                'web đang hiện 0 vì chờ chọn mặt răng',
+        ).toBe('5')
+        await step()
+        await dismissPicker()
+    })
 
     test('WinForm parity D-a: CLICK ĐƠN lên một dòng phải làm 回数 +1', async () => {
         // frm203017.cs:363 dgvView_CellClick là sự kiện CLICK ĐƠN: click vào ô nào của
