@@ -123,10 +123,17 @@ schtasks /run /tn "FlaUI-Tests-Run"
    `CMTAUTO(179,2).CMT_NM` = 「…**ｵｸﾀﾌﾟﾚｼﾝ**Ct1.8ml」 còn `MST_CMT2(7321,1)` =
    「…**ｵｰﾗ注**Ct1.8ml」, và lưới in cái thứ hai. Nếu bản web port `cmt_nm` từ `CMTAUTO` thì
    nó sẽ hiển thị chuỗi khác WinForm — **kiểm chỗ này trước khi tin TC2/TC3 xanh**.
-2. **Ô 回 sau 確定.** Web điền sẵn `1` (spec assert `toHaveValue('1')`); WinForm để editor
-   **RỖNG**, nên Enter ghi `回 = 0` và cả nhánh `Chk_ChkAuto` không chạy. Harness bên này
-   gõ `1` vào (`AutoSanteiOps.EnsureTrtCount`) để đo được phần còn lại — nhưng bản thân
-   sự khác nhau đó là một lệch parity thật, đáng mở hồ sơ riêng.
+2. **回数 lấy từ đâu.** ⚠️ *Bản đầu của mục này ghi sai — đã sửa 2026-09-08.*
+   WinForm **có** tự điền ô 回: `frm203016.cs:1531` ghi `grdRegi[4] = selRec.intCnt`, giá trị
+   từ `GetTrtmasCod` (modMain.cs:645-651) — 薬剤 → `g_cnt`, 一般処置 →
+   `CalcCnt.getCalcCnt(unit, pbui, dis_cd)`. Với `179/2` trên một răng ⇒ **1**, và lượt chạy
+   xanh đã đo đúng thế (`抜歯手術(臼歯) | 270 | 1`, harness không gõ gì).
+   Cái `回 = 0` gặp ở bốn lượt đầu là **triệu chứng 部位 chưa bám**, không phải hành vi app:
+   `getCalcCnt` đếm răng trong `bui[]` và trả 0 khi rỗng (CalcCnt.cs:32-54).
+
+   **Lệch THẬT nằm chỗ khác:** web chốt `pick.trtCnt > 0 ? pick.trtCnt : 1` — một **hằng số**,
+   trong khi WinForm là `CalcCnt` trên 部位. Hai bên trùng nhau khi 部位 chỉ một răng (đúng ca
+   đang đo), và **lệch khi nhiều răng**. Đáng mở hồ sơ riêng; luồng này chưa phủ.
 3. **Cách lọc slot `chk_auto`.** `findChkAutoSlots` bên web chỉ lọc `cd !== 0`; bên này tách
    thêm dải 摘要 700..899 ra `CommentPairs` vì `Chk_ChkAuto` xét nhánh đó TRƯỚC
    (modMain.cs:862). Master hiện tại không có slot nào rơi vào dải ấy nên hai bên đang
@@ -181,15 +188,21 @@ Bệnh nhân **10**, 診療日 **2026-08-03**, máy `ochacom-win`.
 ### ✅ 2026-09-08 — TC0..TC4 XANH CẢ NĂM, tái hiện đúng ảnh báo lỗi
 
 ```
-月計点数  413 → 694   (Δ 281 = 270 + 11)
-
 + [15] 3 | OA(コーパロン)浸麻(歯科用オーラ注Ct1.8ml) |   0 | 1   ← CMTAUTO, disp_no -1 ⇒ TRÊN
 + [16] 3 | 抜歯手術(臼歯)                            | 270 | 1   ← mã gõ vào
 + [17] 3 | OA+オーラ注歯科用カートリッジ 料1.8mL        |  11 | 1   ← chkauto 310/2 ⇒ DƯỚI
+
+lbAllPoint (合計 = 月計 CẢ THÁNG)  413 → 694   ⇒  Δ 281 = 270 + 11
 ```
 
-Khớp từng dòng với ảnh so sánh trong báo cáo, và **11 点** chính là phần bản web đang
-thiếu (443 / 432).
+**Ba dòng trên khớp từng dòng với ảnh báo lỗi**, và `11 点` chính là phần bản web đang thiếu.
+
+> ⚠️ **Đừng đọc 413 → 694 như số của MỘT NGÀY.** `lbAllPoint` là 合計点数 của **cả tháng**
+> (`modAcc.Calc_MDPoint` trả `strMP`; xem `TreatmentGridOps.AllPoint`). Kiểm lại từ DB:
+> tháng 2026-08 của bệnh nhân 10 = `339` (ngày 03, 初診 272 + các 加算) + `74` (ngày 14)
+> = **413**. Con số so được với ảnh là **Δ 281**, không phải giá trị nền.
+> Còn `日計 443 / 432` trong ảnh là tổng của MỘT NGÀY ở một phiên khác — cùng cơ chế,
+> khác phạm vi; đừng đặt cạnh nhau như hai số so trực tiếp.
 
 | Ngày | Case | Kết quả |
 |---|---|---|
@@ -203,7 +216,7 @@ thiếu (443 / 432).
 
 | # | Triệu chứng | Nguyên nhân thật |
 |---|---|---|
-| 1 | `回 = 0` ⇒ `Chk_ChkAuto` không chạy | Chốt xong app mở editor ô 回 **RỖNG**; Enter ghi 0. `frm203002.cs:5745` chỉ vào nhánh khi `trtCnt >= 1`. |
+| 1 | `回 = 0` ⇒ `Chk_ChkAuto` không chạy | **KHÔNG phải app để trống ô 回** (WinForm tự điền từ `CalcCnt`, xem mục 3b-2). `getCalcCnt` trả 0 vì `pbui` rỗng ⇒ triệu chứng của bẫy #2 bên dưới. Nhật ký 「editor đang mở với 「」」 là ảo giác của UIA (`EditorText` đọc `ValuePattern` của phần tử focus), không phải ô trống. |
 | 2 | 「算定可能な部位がありません」 | Dựng 部位病名行 bằng 部位選択 mà không kèm 病名, và `AutoBui` bỏ qua dòng đích đã có dữ liệu (`modMain.cs:139-146`). ⇒ chuyển sang **seed** đúng như spec Playwright. |
 | 3 | 「Quá 4s mà không thấy `grdRegi`」, 5/5 đỏ ở `OneTimeSetUp` | Dòng seed để `MED_ST_DT` = NULL trong khi mọi dòng thật đều có ngày ⇒ app không dựng nổi lưới. Kế thừa cột đó từ dòng mẫu. |
 | 4 | Nhập 処置 vào **nhầm ngày** | `grdRegi` mở CẢ THÁNG; `SeededBuiRow`/`LastBuiLineRow` quét cả tháng nên vớ phải 部位病名行 của ngày khác. ⇒ khoá mọi thao tác theo `patient.trtDate`. |
