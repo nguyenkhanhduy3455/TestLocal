@@ -175,11 +175,21 @@ public sealed class GuideDialogTests : UiTestBase
         try
         {
             if (_guide.DialogOpen()) _guide.CloseDialogWithF10();
+
+            // CurrentRow() bám phần tử ĐANG GIỮ CON TRỎ, mà sau F4 con trỏ nằm ở
+            // txtGuid1Sel của side panel ⇒ luôn null. Vì thế in cả hai: dòng đang giữ
+            // con trỏ (nếu có) VÀ vài dòng đầu của lưới — 部位 mà frm203017 nhận được là
+            // của dòng đang chọn LÚC BẤM F4, thực tế gần như luôn là dòng đầu.
             var row = Screen.Regi.CurrentRow();
             Dump(row is null
-                ? "ctx|focusRow=(không đọc được dòng đang chọn trên grdRegi)"
-                : $"ctx|bui={Txt.N(row.At(Screens.RegiGrid.Col.Bui))}|" +
+                ? "ctx|focusRow=(con trỏ không nằm trên grdRegi — sau F4 nó ở txtGuid1Sel)"
+                : $"ctx|focusRow|bui={Txt.N(row.At(Screens.RegiGrid.Col.Bui))}|" +
                   $"ryo={Txt.N(row.At(Screens.RegiGrid.Col.Ryo))}");
+
+            var bui = Screen.Regi.Column(Screens.RegiGrid.Col.Bui, limit: 5);
+            var ryo = Screen.Regi.Column(Screens.RegiGrid.Col.Ryo, limit: 5);
+            for (var i = 0; i < bui.Count; i++)
+                Dump($"ctx|regi|{i}|bui={Txt.Vis(bui[i])}|ryo={Txt.N(ryo.ElementAtOrDefault(i) ?? "")}");
         }
         catch (Exception e) { Dump($"ctx|lỗi đọc grdRegi: {e.Message}"); }
     }
