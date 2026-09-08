@@ -145,9 +145,25 @@ Số liệu đo được trên máy thật nằm ở mục 7 (điền sau mỗi 
 
 # 2) Rồi mới chạy testcase — CŨNG NÊN chạy từng nhóm
 .\run-change-tooth-status.ps1 -AllowSave -Case TcDEL
-.\run-change-tooth-status.ps1 -AllowSave -Case TcGAP
 .\run-change-tooth-status.ps1 -AllowSave -Case TcPM
+
+# TcGAP1..13: KHÔNG chạy cả nhóm một lượt — 13 testcase vượt xa trần 15 phút.
+# Chia lô như dưới đây (mỗi lô ≤ 2 vòng giao diện). TcGAP7 BẮT BUỘC chạy một mình.
+.\run-change-tooth-status.ps1 -AllowSave -Filter "TcGAP1_|TcGAP2|TcGAP3"
+.\run-change-tooth-status.ps1 -AllowSave -Case TcGAP4
+.\run-change-tooth-status.ps1 -AllowSave -Case TcGAP5
+.\run-change-tooth-status.ps1 -AllowSave -Case TcGAP6
+.\run-change-tooth-status.ps1 -AllowSave -Case TcGAP7      # PHẢI một mình — xem doc của chính nó
+.\run-change-tooth-status.ps1 -AllowSave -Case TcGAP8
+.\run-change-tooth-status.ps1 -AllowSave -Case TcGAP9
+.\run-change-tooth-status.ps1 -AllowSave -Case TcGAP10
+.\run-change-tooth-status.ps1 -AllowSave -Case TcGAP11
+.\run-change-tooth-status.ps1 -AllowSave -Case TcGAP12
+.\run-change-tooth-status.ps1 -AllowSave -Case TcGAP13
 ```
+
+> ⚠️ `-Case TcGAP1` khớp cả `TcGAP1`, `TcGAP10`…`TcGAP13` (so khớp CHUỖI, không phải
+> khớp trọn tên). Muốn đúng một mình `TcGAP1` thì dùng `-Filter "TcGAP1_"`.
 
 ### ⏱️ Trần 15 phút của wrapper — giới hạn CỨNG, phải thiết kế quanh nó
 
@@ -378,6 +394,43 @@ tên cột của bảng **KON** vào câu `update **Siga**`. Nhánh 永久歯 ng
 > 「dẹp hộp thoại」 thông thường quay vô hạn — nó đốt trọn một lượt chạy 15 phút trước khi
 > được nhận diện. `SigaToothFlow` nay bắt `CrashDialogFragment`, bấm `Continue` và **dừng
 > vòng lặp ngay**.
+
+### 2026-09-08 — TcGAP9-13: đóng năm chỗ WinForm chưa đo mà spec web có khoá
+
+Rà lại `SigaKonGapsTests` với `siga-kon-remaining-gaps.spec.ts` thì `TcGAP1-8` **hụt năm
+vế**. Chỗ nặng nhất: `TcGAP4`/`TcGAP5` chỉ đo đường **NHẬP** (`frm203016.SigaChg`), mà bản
+web KHÔNG có đường đó — mọi thứ bên kia dồn vào `bulk-save`, tức đối ứng của
+`modSave.SigaChg_Save`. Nghĩa là phần WinForm mà bản web phải khớp **chưa hề được đo**.
+
+| mới | ứng với | vế còn thiếu |
+|---|---|---|
+| `TcGAP9`  | TC-3(c) | ＥＭＲ(１根) 122/0 **không được** ghi 根数 (đối chứng của TcGAP3) |
+| `TcGAP10` | TC-4  nửa F9 | `SigaChg_Save` case 185 dựng LẠI 欠損歯 từ cờ 抜歯同時 |
+| `TcGAP11` | TC-4b nửa F9 | cờ = 0 ⇒ F9 KHÔNG đụng 歯式 |
+| `TcGAP12` | TC-3(b) | ＥＭＲ(４根) trên RĂNG SỮA → `nkon` |
+| `TcGAP13` | TC-6(c) | dòng SIGA app vừa tạo có NHẬN được lệnh ghi không |
+
+**Mẹo đo của TcGAP10/11 — đọc trước khi sửa.** Sau khi nhập 185 + 「はい」, testcase ghi
+thẳng `se11 = 0` vào DB **sau lưng app** rồi mới bấm F9. Không có bước đó thì `se11 = 4`
+sau F9 có HAI cách giải thích — 「F9 ghi lại」 và 「giá trị cũ của đường nhập còn nằm đó」 —
+và testcase không phân biệt được. Ghi thẳng DB thì app không thấy: `pSiga_old` đã chốt từ
+lúc mở màn.
+
+#### TcGAP10 — ✅ XANH (7,45 phút, bệnh nhân 10, 診療月 2026-08)
+
+```
+dòng 185 đã lưu: disp_no=14  185/0 「歯根嚢胞摘出手術(歯冠大)」  bui: ô 10 = 1
+SIGA sau F9    : se11 = 4    se19 = 0        上書き? KHÔNG hỏi
+```
+
+⇒ **`SigaChg_Save` case 185 CÓ chạy thật.** Xoá sạch dấu vết đường nhập rồi F9, WinForm vẫn
+dựng lại `se11 = 4` từ cờ 抜歯同時 của dòng đã lưu. Đây là mốc mà TC-4 bên web đo được ở
+`bulk-save`, nay đã có số WinForm để đối chiếu.
+
+Hộp thoại Q00200 đo lại lần nữa: 「歯根嚢胞摘出手術と同時に抜歯手術を行いましたか？」, nút
+**`Yes` / `No`** (nhãn theo ngôn ngữ Windows, KHÔNG phải はい/いいえ — xem mục 「Hai hộp thoại」).
+
+---
 
 ### ⏱️ Thời gian thực đo được
 

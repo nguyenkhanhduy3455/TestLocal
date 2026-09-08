@@ -359,6 +359,8 @@ const SN_MISSING = 9
 const BULK_SAVE_PATH = '/tenant/treatment/bulk-save'
 /** Endpoint `Restore_SK` — 「いいえ」 ở dirty gate (`TenantSigaEndpoints.cs`). */
 const RESTORE_PATH = '/tenant/siga/restore'
+/** Endpoint `DelExtRec` — xoá dòng 抜歯 ghi 歯式 NGAY, không đợi F9 (`siga-api.ts:62`). */
+const EXT_REVERT_PATH = '/tenant/siga/extraction-revert'
 
 /** Câu hỏi WinForm bung ra khi chốt 185 (frm203016.cs:1047). */
 const CYST_CONFIRM_RE = /歯根嚢胞摘出手術と同時に抜歯手術を行いましたか/
@@ -529,6 +531,20 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
      * Xoá một dòng theo từ khoá: click ô 療法 để đặt focusedCell rồi `Delete`
      * (treatment-entry-detail.tsx:4091-4106 — WinForm grdRegi_KeyDown:3576-3587).
      * Bấm Yes nếu confirm 「同一部位の処置を全て削除します」 bung ra (BẪY 6).
+     *
+     * ⚠️ CHỜ ĐÚNG `POST /tenant/siga/extraction-revert` RỒI MỚI TRẢ VỀ, và arm mốc chờ
+     * TRƯỚC khi bấm Delete. Không phải để chắc chắn — mà vì BẮT BUỘC:
+     * `runToothStatusChange` ném request đi kiểu fire-and-forget (`void`, chỉ nhét vào
+     * `pendingToothStatusWritesRef` cho `drain` sau này — treatment-entry-detail.tsx:600-620),
+     * nên dòng biến khỏi lưới KHÔNG có nghĩa là DB đã đổi. Ai đọc `siga` ngay sau `Delete`
+     * là đang đua với chính request đó.
+     *
+     * ĐÃ ĐỎ THẬT 2026-09-08: TC-5 báo 「DelExtRec không chạy, se_11 vẫn là 4」 ở một lượt,
+     * rồi lượt sau xanh với y nguyên mã app — đọc trước khi request kịp về. Spec anh em
+     * `tooth-extraction-siga-restore.spec.ts:326-360` vốn đã bọc sẵn mốc chờ này; bản sao
+     * ở đây thì chưa, nên nay port sang cho khớp.
+     *
+     * Trả về response (hoặc `null` nếu không có request nào — dòng bị xoá không phải 抜歯).
      */
     async function deleteRowByText(...keys: readonly string[]) {
         await ensureBottomMounted()
@@ -538,6 +554,13 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
             `không thấy dòng 「${keys.join(' + ')}」 trên lưới để xoá — seed hỏng hoặc màn hình ` +
                 `đang mở tháng khác (TEST_TRT_DT = ${TRT_DT})`,
         ).toBeDefined()
+
+        const reverted = page
+            .waitForResponse(
+                (r) => r.url().includes(EXT_REVERT_PATH) && r.request().method() === 'POST',
+                { timeout: 30_000 },
+            )
+            .catch(() => null)
 
         await page.locator(`[data-grid-cell="${row!.key}|2"]`).click()
         await page.keyboard.press('Delete')
@@ -549,6 +572,13 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
             ryoCells(page).filter({ hasText: keys[0]! }),
             `bấm Delete rồi mà dòng 「${keys.join(' + ')}」 vẫn còn trên lưới`,
         ).toHaveCount(0, { timeout: 15_000 })
+
+        const res = await reverted
+        console.log(
+            `xoá 「${keys.join(' + ')}」 → POST ${EXT_REVERT_PATH}: ` +
+                (res ? `${res.status()}` : 'KHÔNG có request nào'),
+        )
+        return res
     }
 
     /**
@@ -1094,7 +1124,16 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
         await step()
 
         // Xoá dòng 抜歯 — DelExtRec ghi 健全歯 NGAY (không đợi F9, không bật cờ).
-        await deleteRowByText(NM.extDiscard)
+        const revertRes = await deleteRowByText(NM.extDiscard)
+        expect(
+            revertRes,
+            `Xoá dòng 179/${EXT_SB} phải phát POST ${EXT_REVERT_PATH} NGAY lúc xoá — DelExtRec ` +
+                'chạy trong chính vòng xoá của WinForm (frm203002.cs:3949 → :6185), không đợi F9. ' +
+                'Không có request nào ⇒ đường ghi lúc xoá chưa được nối, và vế 歯式 ngay dưới ' +
+                'chỉ đang đọc lại giá trị cũ.',
+        ).not.toBeNull()
+        expect(revertRes!.status(), `POST ${EXT_REVERT_PATH} phải thành công`).toBeLessThan(400)
+
         const sAfterDelete = await mustReadSiga()
         expect(
             seOf(sAfterDelete, PERM_SE_COL),

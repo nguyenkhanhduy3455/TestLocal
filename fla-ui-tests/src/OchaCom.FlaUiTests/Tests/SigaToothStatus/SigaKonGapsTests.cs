@@ -812,18 +812,28 @@ public sealed class SigaKonGapsTests : UiTestBase
                 "Hoặc frm203016.cs:1155 đã được sửa, hoặc lượt nhập chưa tới được nhánh 乳歯. " +
                 $"Hộp thoại đã gặp: [{string.Join(" / ", enter.Dialogs)}]");
 
-        if (!enter.Committed)
+        // ⛔ CÓ NÉM THÌ DỪNG HẲN, ĐỪNG ĐI TIẾP VÀO F9 — kể cả khi `enter.Committed` về true.
+        //
+        // Đo được 2026-09-08: cú ném xảy ra SAU khi 処置選択 đã nhận double-click, nên
+        // `Committed` vẫn là true trong khi 処置選択 CÒN ĐANG MỞ (hộp thoại ném chồng lên
+        // nó). Bấm F9 lúc đó rơi vào nút 「F9 確定」 của CHÍNH 処置選択 chứ không phải
+        // 「F9 登録」 của màn 診療入力 — đúng cái bẫy 「phím F rơi vào NHẦM FORM」 — và lượt
+        // chạy treo tới khi wrapper cắt. Bản đầu của testcase này gác bằng `!enter.Committed`
+        // nên gác trượt.
+        if (crashed || !enter.Committed)
         {
-            // Không chốt được dòng thì không có gì để F9 dựng lại — dừng ở đây, và nói rõ
-            // rằng vế F9 CHƯA ĐO ĐƯỢC (khác hẳn 「đo được và app không ghi」).
+            // Dẹp hộp thoại ném + 処置選択 còn treo, để fixture sau không thừa hưởng đống đổ nát.
+            var leftovers = _flow.DismissAll(trace: trace);
+            Log("dọn hộp thoại còn treo sau cú ném: " + string.Join(" / ", leftovers));
+
             Assert.That(crashed, Is.True,
                 $"Không chốt được 122/{SigaToothFlow.EmrFourRootSb} trên răng sữa mà cũng KHÔNG " +
                 $"thấy hộp thoại ném — tức hỏng vì lý do khác. {enter}");
             Assert.Warn(
-                $"Đường NHẬP của ＥＭＲ(４根) trên răng sữa làm app NÉM (frm203016.cs:1155 dùng " +
-                "`ref strSiga` cho tên cột NKon), nên dòng 処置 không chốt được và vế F9 " +
-                $"(nkon{MilkNkonCol} = {SigaKonDb.EmrRootCount} theo modSave.cs:800/804) CHƯA ĐO ĐƯỢC " +
-                "từ giao diện.\n" +
+                $"Đường NHẬP của ＥＭＲ(４根) trên răng sữa làm app NÉM 「Invalid column name 'NKon…'」 " +
+                "(frm203016.cs:1155 dùng `ref strSiga` cho tên cột NKon), nên phiên không đi tiếp " +
+                $"được và vế F9 (nkon{MilkNkonCol} = {SigaKonDb.EmrRootCount} theo modSave.cs:800/804) " +
+                "CHƯA ĐO ĐƯỢC từ giao diện.\n" +
                 "⇒ Với bản web: TC-3 vế 乳歯 đang đòi một hành vi mà WinForm KHÔNG chạy nổi qua " +
                 "giao diện. Cần khách quyết chép theo bên nào — hồ sơ chung với điểm lệch " +
                 "DelExtRec 乳歯 (README mục 「2026-09-04」).");
