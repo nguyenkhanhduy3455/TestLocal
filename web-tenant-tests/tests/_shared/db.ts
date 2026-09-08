@@ -1718,3 +1718,105 @@ export async function receiptTypeInputsFor(
         return out
     })
 }
+
+// ─── ガイド (pag_trt) — slot 薬剤 và nguyên liệu dựng ô 療法・処置 ────────────────
+//
+// Dùng cho spec parity 「ガイド確定 phải dựng ô 薬剤 nhiều dòng」. WinForm chốt một
+// dòng ガイド 薬剤 qua frm203016.frm203016_Hide_Let_Trt_Data → ModSave.getDrugName →
+// EditControl.editDrugName (COMMON/Lib/EditControl.cs:1031-1150), tức ô 療法・処置
+// KHÔNG phải `mst_trt.trt_nm` mà là combineDrugNms:
+//
+//     dòng 1..n  : <dg_nm đã 全角→半角> + đệm + <cnt_n> + <đơn vị viết tắt>
+//     dòng cuối  : <usage_nm> + ' ' + <usage_suppl_inf>          (khi có 用法)
+//                  + ' ' + <回数> + '日分' (med_kbn 21) / '回分' (med_kbn 22)
+//
+// Hàm này trả ĐỦ nguyên liệu để spec TỰ TÍNH kỳ vọng đó. KHÔNG hardcode chuỗi
+// 「疼痛時　服用　2回分」 vào spec: master của tenant khác mang 用法 khác, hardcode
+// sẽ xanh giả ở chỗ này và đỏ oan ở chỗ kia (Rule 18).
+
+/** Một slot 薬剤 (600–699) của một ガイド, kèm dữ liệu 用法 của nó. */
+export interface GuideDrugSlot {
+    trtCd: number
+    trtSb: number
+    /**
+     * `pag_trt.flg4` — chế độ 既定回数 của slot (frm203017.cs getViewData, cổng
+     * FLG4): 0/1 → 1 lần, 2 → lấy `flg6`, 9 → 0.
+     */
+    flg4: number
+    /** `pag_trt.flg6` — 回数 dùng khi `flg4 = 2`. */
+    flg6: number
+    /**
+     * `mst_trt.trt_nm` — chuỗi TRẦN mà lưới in ra khi bước dựng combineDrugNms bị
+     * bỏ qua. Spec dùng nó để nói rõ trong thông báo lỗi là web đang dừng ở đâu.
+     */
+    trtNm: string
+    /** `mst_drug_rx.med_kbn` — '21' → 日分, '22' → 回分, khác → không có 用量. */
+    medKbn: string
+    /** `mst_drug_rx.usage_nm` — dòng 用法. Rỗng = 薬剤 này vốn KHÔNG có 用法. */
+    usageNm: string
+    /** `mst_drug_rx.usage_suppl_inf` — phần bổ sung ghép ngay sau `usage_nm`. */
+    usageSupplInf: string
+    /** `mst_drug.dg_nm` của thành phần đầu — gốc của dòng 薬剤名. */
+    dgNm: string
+}
+
+/**
+ * Các slot 薬剤 của ガイド `guidCd`, đọc theo bản master hiệu lực cho `onDate`
+ * (yyyy-mm-dd). Mảng rỗng = ガイド đó không có slot 薬剤 nào ⇒ spec phải skip
+ * chứ không được pass im lặng.
+ */
+export async function findGuideDrugSlots(
+    onDate: string,
+    guidCd: number,
+): Promise<GuideDrugSlot[]> {
+    return withDb(async (c) => {
+        const ver = await c.query<{ version_id: string }>(
+            `SELECT version_id
+               FROM view_mst_trt_ver_active
+              WHERE table_name LIKE 'MST_TRT%'
+                AND start_date <= $1::timestamptz
+                AND end_date   >= $1::timestamptz
+              ORDER BY start_date DESC
+              LIMIT 1`,
+            [`${onDate}T00:00:00+09:00`],
+        )
+        const versionId = ver.rows[0]?.version_id
+        if (!versionId) return []
+
+        const r = await c.query<Record<string, unknown>>(
+            `SELECT pt.trt_cd, pt.trt_sb,
+                    coalesce(pt.flg4, 0) AS flg4,
+                    coalesce(pt.flg6, 0) AS flg6,
+                    mt.trt_nm,
+                    coalesce(rx.med_kbn, '')         AS med_kbn,
+                    coalesce(rx.usage_nm, '')        AS usage_nm,
+                    coalesce(rx.usage_suppl_inf, '') AS usage_suppl_inf,
+                    coalesce(dg.dg_nm, '')           AS dg_nm
+               FROM view_pag_trt_active pt
+               JOIN view_mst_trt_active mt
+                 ON  mt.trt_cd = pt.trt_cd AND mt.trt_sb = pt.trt_sb
+                 AND mt.version_id = $1 AND mt.active_flg = 1
+               LEFT JOIN view_mst_drug_rx_active rx
+                 ON  rx.trt_cd = pt.trt_cd AND rx.trt_sb = pt.trt_sb
+                 AND $2::date BETWEEN rx.app_st_dt AND rx.app_ed_dt
+               LEFT JOIN view_mst_drug_active dg
+                 ON  dg.dg_cd = rx.dg_cd1
+                 AND $2::date BETWEEN dg.app_st_dt AND dg.app_ed_dt
+              WHERE pt.guid_cd = $3
+                AND pt.trt_cd BETWEEN 600 AND 699
+              ORDER BY pt.trt_cd, pt.trt_sb`,
+            [versionId, onDate, guidCd],
+        )
+        return r.rows.map((row) => ({
+            trtCd: Number(row['trt_cd'] ?? 0),
+            trtSb: Number(row['trt_sb'] ?? 0),
+            flg4: Number(row['flg4'] ?? 0),
+            flg6: Number(row['flg6'] ?? 0),
+            trtNm: String(row['trt_nm'] ?? '').trim(),
+            medKbn: String(row['med_kbn'] ?? '').trim(),
+            usageNm: String(row['usage_nm'] ?? '').trim(),
+            usageSupplInf: String(row['usage_suppl_inf'] ?? '').trim(),
+            dgNm: String(row['dg_nm'] ?? '').trim(),
+        }))
+    })
+}
