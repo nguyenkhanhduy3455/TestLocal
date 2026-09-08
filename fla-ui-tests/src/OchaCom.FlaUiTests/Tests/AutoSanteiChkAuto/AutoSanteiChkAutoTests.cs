@@ -293,7 +293,7 @@ public sealed class AutoSanteiChkAutoTests : UiTestBase
             Assert.Ignore("các slot chkauto không có dòng master hiệu lực trong tháng test — " +
                           "WinForm cũng bỏ qua chúng, không kết luận được gì.");
 
-        var seeded = _ops.SeededBuiRow(DisMark);
+        var seeded = _ops.SeededBuiRow(TrtDate.Day, ToothSelectDialog.DescribeSlot(BuiSlot), DisMark);
         Assert.That(seeded, Is.Not.Null,
             $"Không thấy 部位病名行 vừa seed (病名 「{DisMark}」, ngày {TrtDate:yyyy-MM-dd}) trên lưới ⇒ " +
             "HARNESS hỏng, sửa trước. Lưới đang có:\n  " + string.Join("\n  ", _flow.DescribeGrid(40)));

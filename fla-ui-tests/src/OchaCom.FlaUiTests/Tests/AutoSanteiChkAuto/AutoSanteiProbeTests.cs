@@ -164,7 +164,7 @@ public sealed class AutoSanteiProbeTests : UiTestBase
             var row = _chk.ReadChkAuto(TrtCd, TrtSb);
             Log($"=== KQ-7 === {row?.ToString() ?? $"chkauto({TrtCd},{TrtSb}) KHÔNG có dòng nào"}");
 
-            var seeded = _ops.SeededBuiRow(DisMark);
+            var seeded = _ops.SeededBuiRow(TrtDate.Day, ToothSelectDialog.DescribeSlot(BuiSlot), DisMark);
             Log($"=== KQ-8 === 部位病名行 seed tren luoi: {seeded?.ToString() ?? "KHÔNG THẤY"}");
             if (seeded is null)
             {

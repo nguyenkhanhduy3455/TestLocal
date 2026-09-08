@@ -96,14 +96,26 @@ public sealed class AutoSanteiOps
     }
 
     /// <summary>
-    /// 部位病名行 đã seed — nhận ra bằng ô 点 mang 「-」 VÀ ô 部位/療法 chứa
-    /// <paramref name="disMark"/> (tên 病名 mà seed ghi vào <c>DSP_DIS</c>).
+    /// Dòng đã seed, tìm trong ĐÚNG NGÀY test.
+    ///
+    /// <para>⚠️ <b>Phải khoá theo ngày.</b> Lưới <c>grdRegi</c> mở CẢ THÁNG, và tháng test
+    /// thường có sẵn 部位病名行 của những ngày khác mang cùng 病名 「Ｃ」. Đo được
+    /// 2026-09-08: bản đầu chỉ dò 「ô 点 = 「-」 và có chứa Ｃ」 rồi lấy dòng CUỐI ⇒ vớ đúng
+    /// một dòng của ngày <b>14</b> (dòng コメント còn lại từ dữ liệu thật) và cả lượt chạy
+    /// nhập 処置 vào nhầm ngày.</para>
+    ///
+    /// <para>Nhận theo <c>DSP_BUI</c> mà seed ghi (vd 「右上6」) — đó là chuỗi CHỈ dòng seed
+    /// mới có; nếu không thấy thì lui về 病名 <paramref name="disMark"/>, vẫn trong ngày đó.</para>
     /// </summary>
-    public RegiRow? SeededBuiRow(string disMark, int limit = 80) =>
-        _grid.Snapshot(limit).LastOrDefault(
-            r => Txt.Int(r.Day) is not null
-                 && (Txt.N(r.Ten) is "-" or "－")
-                 && (Txt.Has(r.Bui, disMark) || Txt.Has(r.Ryo, disMark)));
+    /// <param name="day">Ngày trong tháng của <c>patient.trtDate</c> — cột 日 của lưới.</param>
+    public RegiRow? SeededBuiRow(int day, string buiMark, string disMark, int limit = 120)
+    {
+        var sameDay = _grid.Snapshot(limit)
+                           .Where(r => Txt.Int(r.Day) == day)
+                           .ToList();
+        return sameDay.FirstOrDefault(r => Txt.Has(r.Bui, buiMark) || Txt.Has(r.Ryo, buiMark))
+               ?? sameDay.FirstOrDefault(r => Txt.Has(r.Bui, disMark) || Txt.Has(r.Ryo, disMark));
+    }
 
     /// <summary>
     /// Chốt <paramref name="trtCd"/>/<paramref name="trtSb"/> ngay trên 部位病名行 đã seed,
@@ -141,9 +153,10 @@ public sealed class AutoSanteiOps
                            string.Join("\n  ", _flow.DescribeGrid()));
                 return null;
             }
-            // Insert đẩy mọi thứ xuống ⇒ đọc lại lưới rồi lấy lại dòng ngay dưới 部位病名行.
-            var line = _flow.LastBuiLineRow();
-            target = line is null ? blank : _flow.RowAfter(line) ?? blank;
+            // Insert đẩy mọi thứ xuống ⇒ đọc lại lưới. KHÔNG dùng `LastBuiLineRow()` ở đây:
+            // nó quét CẢ THÁNG và sẽ trả về 部位病名行 của một ngày khác (đo 2026-09-08).
+            // Dòng trống mà `InsertBlankRow` vừa trả về đã là đúng chỗ rồi.
+            target = blank;
         }
 
         var before = _grid.Snapshot();
