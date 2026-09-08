@@ -1862,6 +1862,7 @@ export async function findChkAutoSlots(trtCd: number, trtSb: number): Promise<Ch
 export interface CmtAutoRow {
     cmtCd: number
     cmtSb: number
+    /** Tên hiển thị — `mst_cmt2.cmt_nm` (KHÔNG phải `cmt_auto.cmt_nm`, xem dưới). */
     cmtNm: string
     /**
      * `disp_no` quyết định CHỖ chèn (frm203002.cs:10085-10111):
@@ -1877,14 +1878,27 @@ export interface CmtAutoRow {
     noChk: number
 }
 
-/** Các カルテコメント `cmt_auto` gắn với (trtCd, trtSb), theo thứ tự `disp_no`. */
+/**
+ * Các カルテコメント `cmt_auto` gắn với (trtCd, trtSb), theo thứ tự `disp_no`.
+ *
+ * ⚠️ Tên hiển thị lấy từ `mst_cmt2.cmt_nm`, KHÔNG phải `cmt_auto.cmt_nm`. WinForm
+ * `CmtAuto.getCmtAuto` (COMMON/DBAccess/CmtAuto.cs:42) INNER JOIN `mst_cmt2` rồi in
+ * cột của master; `cmt_auto.cmt_nm` chỉ là bản chép mồi và ĐÃ trôi khỏi master trên
+ * DB dev — 179/2 có `cmt_auto.cmt_nm` = 「…ｵｸﾀﾌﾟﾚｼﾝCt1.8ml」 trong khi lưới in
+ * 「…ｵｰﾗ注Ct1.8ml」. Lấy nhầm cột là spec đỏ oan trong khi app đúng.
+ *
+ * INNER JOIN cũng loại luôn dòng có master đã bị gỡ, đúng như legacy.
+ */
 export async function findCmtAutos(trtCd: number, trtSb: number): Promise<CmtAutoRow[]> {
     return withDb(async (c) => {
         const r = await c.query<Record<string, unknown>>(
-            `SELECT cmt_cd, cmt_sb, cmt_nm, disp_no, no_chk
-               FROM cmt_auto
-              WHERE trt_cd = $1 AND trt_sb = $2 AND deleted_at IS NULL
-              ORDER BY disp_no`,
+            `SELECT a.cmt_cd, a.cmt_sb, b.cmt_nm, a.disp_no, a.no_chk
+               FROM cmt_auto a
+               JOIN mst_cmt2 b
+                 ON b.cmt_cd = a.cmt_cd AND b.cmt_sb = a.cmt_sb
+                AND b.deleted_at IS NULL
+              WHERE a.trt_cd = $1 AND a.trt_sb = $2 AND a.deleted_at IS NULL
+              ORDER BY a.disp_no`,
             [trtCd, trtSb],
         )
         return r.rows.map((row) => ({
