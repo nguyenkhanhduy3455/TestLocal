@@ -143,7 +143,7 @@ public sealed class DrugPathBFlow
             seen.AddRange(_entry.Base.DismissAll(trace: trace));
         }
 
-        var row = _entry.WaitForAddedDrugRow(before, c.TrtNm, TimeSpan.FromSeconds(15), trace);
+        var row = _entry.WaitForAddedDrugRow(before, c.RowNeedle, TimeSpan.FromSeconds(15), trace);
         var raw = row is null ? "" : RawRyo(row);
 
         var result = new PathBResult(open.CodeTyped, appeared, row, raw, seen);
@@ -311,7 +311,7 @@ public sealed class DrugPathBFlow
             Thread.Sleep(500);
         }
 
-        var landed = _entry.WaitForAddedDrugRow(before, c.TrtNm, TimeSpan.FromSeconds(25), trace);
+        var landed = _entry.WaitForAddedDrugRow(before, c.RowNeedle, TimeSpan.FromSeconds(25), trace);
         var raw = landed is null ? "" : RawRyo(landed);
 
         var result = new MedicineResult(true, true, confirmed, selected, landed, raw, seen);

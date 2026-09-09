@@ -157,11 +157,26 @@ public sealed class DrugPathBDb
     /// (MstTrt.cs:957-958). Không thoả ⇒ trả null ⇒ path B mất luôn dòng tên.
     /// </param>
     /// <param name="SbCount">Số 枝番 — &gt; 1 thì 処置選択 sẽ hiện (modMain.cs:485).</param>
+    /// <param name="DgNm">
+    /// <c>MST_DRUG.dg_nm</c> của thành phần đầu (<c>dg_cd1</c> của dòng rx phủ ngày test).
+    /// Rỗng ⇒ mã này ở path B.
+    ///
+    /// <para><b>Đây mới là chuỗi in ra lưới ở path A</b>, không phải <c>TrtNm</c>: master
+    /// ghi 「カロナール錠200mg　１T」 còn <c>mst_drug</c> ghi 「カロナール錠２００　２００ｍｇ」,
+    /// và lưới hiện 「カロナール錠200 200mg 1T」. Dò dòng bằng <c>TrtNm</c> ở path A là
+    /// trượt — đo được 2026-09-09 (KQ-10). Dùng <see cref="RowNeedle"/>.</para>
+    /// </param>
     public sealed record PathBCandidate(int TrtCd, int TrtSb, string TrtNm, int Score1,
                                         int GCnt, int ActiveFlg, int SbCount,
-                                        string Usage, IReadOnlyList<RxRow> RxRows)
+                                        string Usage, string DgNm, IReadOnlyList<RxRow> RxRows)
     {
         public bool HasUsage => Usage.Length > 0;
+
+        /// <summary>
+        /// Chuỗi đem dò dòng trên <c>grdRegi</c>: path A thì là tên <c>mst_drug</c>,
+        /// path B thì là <c>trt_nm</c> của master (EditControl.cs:1048 vs :1139).
+        /// </summary>
+        public string RowNeedle => DgNm.Length > 0 ? DgNm : TrtNm;
 
         /// <summary>Có dòng 処置変換 phủ ngày test không — có ⇒ đang ở path A, phải seed.</summary>
         public RxRow? RxCovering(DateTime d) => RxRows.FirstOrDefault(r => r.Covers(d));
@@ -185,7 +200,8 @@ public sealed class DrugPathBDb
         public override string ToString() =>
             $"{TrtCd}/{TrtSb} 「{TrtNm}」 score1={Score1} g_cnt={GCnt} active={ActiveFlg} " +
             $"枝番×{SbCount} · 用法={(HasUsage ? $"「{Usage}」" : "KHÔNG CÓ")} · " +
-            $"{RxRows.Count} dòng mst_drug_rx";
+            $"{RxRows.Count} dòng mst_drug_rx" +
+            (DgNm.Length > 0 ? $" · mst_drug 「{DgNm}」 (path A)" : "");
     }
 
     /// <summary>
@@ -200,18 +216,26 @@ public sealed class DrugPathBDb
         var table = ActiveTrtTable(date);
         using var con = Open();
 
+        var appDt = date.ToString("yyyyMMdd");
         using var cmd = Cmd(con, $"""
             SELECT t.TRT_NM, t.SCORE1, t.G_CNT, t.ACTIVE_FLG,
                    (SELECT COUNT(*) FROM {table} s WHERE s.TRT_CD = t.TRT_CD) AS SB_COUNT,
                    ISNULL((SELECT TOP 1 m.USAGE FROM MST_MED m
-                            WHERE m.TRT_CD = t.TRT_CD AND m.TRT_SB = t.TRT_SB), '') AS USAGE
+                            WHERE m.TRT_CD = t.TRT_CD AND m.TRT_SB = t.TRT_SB), '') AS USAGE,
+                   ISNULL((SELECT TOP 1 d.DG_NM
+                             FROM MST_DRUG_RX rx
+                             JOIN MST_DRUG d ON d.DG_CD = rx.dg_cd1
+                              AND @app BETWEEN d.APP_ST_DT AND d.APP_ED_DT
+                            WHERE rx.trt_cd = t.TRT_CD AND rx.trt_sb = t.TRT_SB
+                              AND @app BETWEEN rx.app_st_dt AND rx.app_ed_dt), '') AS DG_NM
               FROM {table} t
              WHERE t.TRT_CD = @cd AND t.TRT_SB = @sb
             """);
         cmd.Parameters.Add("@cd", SqlDbType.SmallInt).Value = trtCd;
         cmd.Parameters.Add("@sb", SqlDbType.TinyInt).Value = trtSb;
+        cmd.Parameters.Add("@app", SqlDbType.VarChar, 8).Value = appDt;
 
-        string trtNm; int score1, gCnt, activeFlg, sbCount; string usage;
+        string trtNm; int score1, gCnt, activeFlg, sbCount; string usage, dgNm;
         using (var r = cmd.ExecuteReader())
         {
             if (!r.Read()) return null;
@@ -221,10 +245,11 @@ public sealed class DrugPathBDb
             activeFlg = Convert.ToInt32(r.GetValue(3));
             sbCount = Convert.ToInt32(r.GetValue(4));
             usage = Str(r, 5);
+            dgNm = Str(r, 6);
         }
 
         return new PathBCandidate(trtCd, trtSb, trtNm, score1, gCnt, activeFlg, sbCount,
-                                  usage, ReadRx(con, trtCd, trtSb));
+                                  usage, dgNm, ReadRx(con, trtCd, trtSb));
     }
 
     private IReadOnlyList<RxRow> ReadRx(SqlConnection con, int trtCd, int trtSb)
