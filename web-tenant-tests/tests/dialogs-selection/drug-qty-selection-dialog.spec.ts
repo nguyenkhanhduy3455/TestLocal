@@ -88,6 +88,10 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *    dọn trước khi gõ mã kế tiếp, nếu không modal nuốt click vào ô 点 của 日計.
  * 4. Tên thuốc trên lưới đã qua ZenToHan (半角) còn master là 全角 ⇒ KHÔNG dò dòng
  *    theo tên. Spec chụp tập rowKey TRƯỚC và SAU cú chốt rồi lấy phần chênh.
+ * 5. Dòng KHÔNG rơi xuống ngay lúc hộp thoại đóng: `commitDrugPick` còn resolve lại
+ *    tên thuốc kèm `freeWd` (một round-trip nữa) rồi mới đặt. Phải poll —
+ *    `waitForAddedRow`. Đọc một phát là đỏ oan: lần chạy đầu đã vấp đúng vậy, ảnh
+ *    chụp lúc fail cho thấy dòng 「…4T」 11点 nằm sẵn trên lưới.
  *
  * ═══ CHẠY ═══
  *     TEST_DB=1 npx playwright test tests/dialogs-selection/drug-qty-selection-dialog.spec.ts
@@ -196,6 +200,32 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
                 text: e.textContent ?? '',
             })),
         )
+    }
+
+    /**
+     * Chờ ĐÚNG dòng vừa được chốt rơi xuống lưới, trả về rowKey của nó.
+     *
+     * KHÔNG được đọc lưới một phát ngay sau khi dialog đóng: `commitDrugPick` còn
+     * phải resolve lại tên thuốc kèm `freeWd` (một round-trip nữa) rồi mới đặt
+     * dòng. Đọc ngay thì thấy lưới CŨ và test đỏ với thông báo 「không thấy dòng」
+     * trong khi app hoàn toàn đúng — đã vấp thật ở lần chạy đầu: ảnh chụp lúc fail
+     * cho thấy dòng 「…4T」 11点 nằm sẵn trên lưới.
+     */
+    async function waitForAddedRow(before: ReadonlySet<string>): Promise<string> {
+        let key = ''
+        await expect
+            .poll(
+                async () => {
+                    key = (await ryoRows()).find((r) => !before.has(r.key))?.key ?? ''
+                    return key
+                },
+                {
+                    timeout: 30_000,
+                    message: 'không thấy dòng 薬剤 mới trên lưới sau khi chốt',
+                },
+            )
+            .not.toBe('')
+        return key
     }
 
     /** 点数 của dòng theo rowKey (cột 3). */
@@ -557,9 +587,8 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
         await page.keyboard.press('Escape')
         await expect(dialog).toBeHidden({ timeout: 15_000 })
 
-        const added = (await ryoRows()).find((r) => !before.has(r.key))
-        expect(added, 'không thấy dòng 薬剤 mới trên lưới sau khi 確定').toBeTruthy()
-        expect(await pointOfRow(added!.key), '点 của dòng 薬剤 sau 確定').toBe(expected)
+        const added = await waitForAddedRow(before)
+        expect(await pointOfRow(added), '点 của dòng 薬剤 sau 確定').toBe(expected)
 
         await drainAfterCommit()
         await step()
@@ -576,16 +605,9 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
         await enterDrugCode(CONTROL_TRT_CD)
 
         // Dòng phải rơi thẳng xuống lưới, KHÔNG qua hộp thoại nào.
-        await expect
-            .poll(async () => (await ryoRows()).find((r) => !before.has(r.key))?.key ?? '', {
-                timeout: 30_000,
-                message: `dòng 薬剤 ${CONTROL_TRT_CD} không rơi xuống lưới`,
-            })
-            .not.toBe('')
+        const added = await waitForAddedRow(before)
         await expect(dialog, '薬剤使用量選択 bung ra cho mã f2 = 0 — cổng f2 hỏng').toBeHidden()
-
-        const added = (await ryoRows()).find((r) => !before.has(r.key))!
-        expect(await pointOfRow(added.key), '点 của mã đối chứng phải là score1').toBe(
+        expect(await pointOfRow(added), '点 của mã đối chứng phải là score1').toBe(
             master.controlScore1,
         )
 
@@ -607,9 +629,8 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
         const before = new Set((await ryoRows()).map((r) => r.key))
         await dismissDialog()
 
-        const added = (await ryoRows()).find((r) => !before.has(r.key))
-        expect(added, 'không thấy dòng 薬剤 mới trên lưới sau khi 戻る').toBeTruthy()
-        expect(await pointOfRow(added!.key), '点 phải là mst_trt.score1').toBe(master.score1)
+        const added = await waitForAddedRow(before)
+        expect(await pointOfRow(added), '点 phải là mst_trt.score1').toBe(master.score1)
 
         await drainAfterCommit()
         await step()
