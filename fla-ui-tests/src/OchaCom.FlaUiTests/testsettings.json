@@ -281,6 +281,41 @@
     "pathBUsage": "ﾃｽﾄ用法　毎食後　服用"
   },
 
+  "drugRowReload": {
+    "//": [
+      "Luong Tests/DrugRowReload — G3: DUNG LAI dong thuoc khi LOAD luoi.",
+      "ModSave.GetTrnRs (modSave.cs:2627-2637) va ban cua luoi qua khu (:4961-4974)",
+      "KHONG hien trn_trn.dsp_trt cho dong 600-699 — chung DUNG LAI tu master + freewd",
+      "roi khoa o (ReadOnly). Ma ngoai dai do thi hien nguyen van dsp_trt.",
+      "",
+      "Ban web doc thang dspTrt (treatment-table-mapper.ts:160,234) — KHONG co nhanh",
+      "isDrugCode nao o luong load (isDrugCode chi ton tai o treatment-entry-shared.ts:426,",
+      "tuc duong NHAP). => Lech khi master doi, hoac khi freewd khac mac dinh.",
+      "",
+      "KHAC G1/G2: luong nay KHONG NHAP GI CA. Du lieu phai nam san trong TRNTRN TRUOC",
+      "khi man hinh mo, roi chi DOC."
+    ],
+    "//allowSeed": "⚠️ LUONG GHI NANG NHAT CUA CA BO: chen dong vao TRNTRN (処置行 THAT cua benh nhan). Khong co duong nao khac — thu dang do la duong LOAD. Luot chay CHI CHEN dong mang DISP_NO rieng roi XOA, khong bao gio sua/xoa dong co san. Mac dinh false => fixture tu Ignore TRUOC khi mo app.",
+    "allowSeed": false,
+    "//dispNo": "DISP_NO danh rieng cho luong nay. Tranh dai da co chu: 9001 (seed 再初診), 9101-9103 (UnpaidRaiinCnt). Dong doi chung dung dispNo + 1.",
+    "dispNo": 9201,
+    "//trtCd": "Ma 薬剤 cua dong seed. 628/0 「カロナール錠200mg　１T」 — co mst_drug_rx (path A => nhanh khoa o moi chay) va selected_treat_kb = 0 (khong keo theo 長期収載品, xem G2).",
+    "trtCd": 628,
+    "trtSb": 0,
+    "//controlTrtCd": "Ma DOI CHUNG — KHONG thuoc 600-699 nen roi vao nhanh else (hFG1[2] = dsp_trt). 110 = 再診. No tach doi cau hoi: 「dsp_trt bia bi bo qua」 la hanh vi RIENG cua dong 薬剤, hay app khong bao gio hien dsp_trt?",
+    "controlTrtCd": 110,
+    "controlTrtSb": 0,
+    "//freeWd": "freewd cua dong seed — phai KHAC 使用量 mac dinh cua master (628 co cnt1 = 1) thi moi thay duoc phep dung lai co doc no khong.",
+    "freeWd": "7",
+    "//markerDspTrt": "dsp_trt da luu — co y la chuoi BIA, khong master nao dung ra duoc. Hien ra => app doc dsp_trt; bien mat => app dung lai. Do la toan bo phep do.",
+    "markerDspTrt": "ｾﾞﾃｽﾄDSPTRTﾏｰｶｰ",
+    "//markerPoint": "点数 cua dong seed — MOC DE DO DONG tren luoi. Do theo 点 chu khong theo ten la BAT BUOC: cai dang do CHINH LA chuoi ten, lay ten lam moc tim thi thanh vong luan quan.",
+    "markerPoint": 777,
+    "controlPoint": 778,
+    "//trtCnt": "回数 cua ca hai dong seed. Vao hau to 用量 「n回分」 cua path A.",
+    "trtCnt": 2
+  },
+
   "locators": {
     "//": "AutomationId = Control.Name bên WinForm. Nếu máy Windows soi Inspect thấy khác thì sửa ở đây, KHÔNG phải sửa code.",
     "kobetuTabItem": "個別",
