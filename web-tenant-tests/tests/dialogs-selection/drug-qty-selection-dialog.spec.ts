@@ -781,10 +781,31 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
         ).not.toContain(slot.medCnt)
 
         expect(await pointOfRow(added), '点 = 点数 của dialog lúc 確定').toBe(expectedPoint)
+
+        // ⚠️ ĐIỂM LỆCH PARITY ĐÃ ĐO ĐƯỢC (2026-09-09) — kỳ vọng dưới đây là chân lý
+        // WinForm, và bản web hiện KHÔNG khớp khi `g_cnt = 0`.
+        //
+        //   WinForm  modMain.cs:410-413  rsNewTrt["cnt"] = editStringToInt(g_cnt)  ⇒ 回 = 0
+        //   Web      treatment-entry-detail.tsx `commitDrugPick`
+        //            trtCnt: resolved.defaultCnt > 0 ? resolved.defaultCnt : 1      ⇒ 回 = 1
+        //
+        // Đo trên máy thật, mã 690/0 (g_cnt = 0):
+        //   WinForm  「OA(1~2歯)  スキャンドネストカートリッジ3% 1.8mL 10A | 168 | 0」
+        //            (trace TcG8, editor ô 回 mở sẵn với 「0」)
+        //   Web      cùng dòng nhưng 回 = 1
+        // Với 605/0 (g_cnt = 3) hai bên trùng nhau, nên chỉ mã g_cnt = 0 mới lộ ra.
+        //
+        // Hệ quả không nhỏ: 回 = 0 thì dòng KHÔNG cộng gì vào 月計点数; 回 = 1 thì cộng
+        // trọn 点数. Đó là chênh lệch tiền, không phải chênh lệch hiển thị.
+        //
+        // ⛔ ĐỪNG "sửa" assert này cho hợp trực giác. Sửa thì phải sửa ở bản web (bỏ
+        // `> 0 ? … : 1`), hoặc ghi nhận đây là chỗ CỐ Ý lệch kèm lý do.
         expect(
             await countOfRow(added),
-            '回 giữ nguyên g_cnt của master — 数量 và 回数 là HAI thứ khác nhau',
-        ).toBe(master.gCnt > 0 ? master.gCnt : 1)
+            '回 phải bằng g_cnt của master (WinForm modMain.cs:410-413) — 数量 và 回数 là ' +
+                'HAI thứ khác nhau. Đỏ với giá trị 1 trong khi g_cnt = 0 là ĐIỂM LỆCH đã ' +
+                'biết: commitDrugPick ép `defaultCnt > 0 ? defaultCnt : 1`.',
+        ).toBe(master.gCnt)
 
         await drainAfterCommit()
         await step()

@@ -7,10 +7,11 @@ Nửa **WinForm** của điểm parity G1.
 > `POST /tenant/treatment/drug-qty`). Mô tả 「web chưa có」 bên dưới giữ lại làm
 > bối cảnh của lúc probe; cột 「Web」 ở mục 1 đã cập nhật theo bản port.
 
-> **Trạng thái: THÔNG LUỒNG + PROBE (WinForm) — 4/4 lô ĐÃ CHẠY XANH trên máy thật.**
+> **Trạng thái: ĐỦ BỘ — probe 4/4 + fixture assert 8/8 đã chạy XANH trên máy thật,
+> và đã đối chiếu parity với vế Playwright (§9). Một điểm lệch thật: §9.2.**
 > Vế Playwright đã có — xem mục 4. Số đo nguyên văn ở **mục 7**, tổng kết ở **mục 8**.
 > Luật F1: **probe trước, assert sau.** Probe đã trả lời xong 11/11 câu và bắt được
-> **bốn lỗi harness**, nên giờ mới đủ căn cứ viết `DrugAmountTests` (assert).
+> **sáu lỗi harness** (§10), nên fixture assert mới có căn cứ để viết.
 
 ---
 
@@ -376,8 +377,96 @@ hiện ra dưới dạng 「app sai」:
 | 3 | ↓ không rời được ô khi lưới một dòng ⇒ chưa `CellValidating` | 「gõ 数量 không ăn」 |
 | 4 | `F2` bị `formBase_KeyDown` nuốt | như trên |
 
+---
+
+## 9. Parity WinForm ⇄ Web — đã chạy cả hai vế
+
+`DrugAmountTests` (WinForm) và `drug-qty-selection-dialog.spec.ts` (Playwright) đối xứng
+1-1 và **cố ý đo cùng một mã**. Master hai bên trùng khít (kiểm 2026-09-09):
+`605/0` score1 9 · f3 1 · g_cnt 3 · 薬価 28.60/錠 · cnt 3 — `606/0` score1 12 —
+cả hai DB đều có **0** dòng `f2 = 1`.
+
+### 9.1 Kết quả chạy · 2026-09-09
+
+| # | Testcase | WinForm 605 | Web 605 | WinForm 690 | Web 690 |
+|---|---|:---:|:---:|:---:|:---:|
+| 1 | bung ra với đúng thành phần + tổng khớp master | ✅ | ✅ | ✅ | ✅ |
+| 2 | click vào dòng ⇒ 使用量 +1, tổng/点数 tính lại | ✅ | ✅ | ✅ | ✅ |
+| 3 | dòng 薬価固定 (`cost_type 3`) không đổi khi click | ⊘ | ⊘ | ✅ | ✅ |
+| 4 | Escape là 確定 ⇒ dòng nhận 点数 vừa tính | ✅ | ✅ | ✅ | ✅ |
+| 5 | mã đối chứng `f2 = 0` KHÔNG mở hộp thoại | ✅ | ✅ | ✅ | ✅ |
+| 6 | F10 戻る giữ nguyên 点数 mặc định | ✅ | ✅ | ✅ | ✅ |
+| 7 | gõ thẳng 使用量 ⇒ `CellValidating` tính lại | ✅ | ✅ | ✅ | ✅ |
+| 8 | 確定 ⇒ ô 療法・処置 dựng lại với 数量 mới | ✅ | ✅ | ✅ | ❌ ¹ |
+
+⊘ = skip có lý do (mã 605 không có thành phần `cost_type 3`).
+**WinForm: 7/7 + 8/8 XANH. Web: 7/7 XANH với 605, 5/6 với 690 — một điểm lệch thật.**
+
+### 9.2 ¹ ĐIỂM LỆCH: `回数` khi `g_cnt = 0`
+
+```
+WinForm  modMain.cs:410-413  rsNewTrt["cnt"] = editStringToInt(g_cnt)     ⇒ 回 = 0
+Web      commitDrugPick      trtCnt: resolved.defaultCnt > 0 ? … : 1      ⇒ 回 = 1
+```
+
+Đo trên máy thật với `690/0` (`g_cnt = 0`), sau khi gõ 使用量 = 10 rồi 確定:
+
+```
+WinForm  「OA(1~2歯)   スキャンドネストカートリッジ3% 1.8mL 10A」 | 点 168 | 回 0
+         (trace TcG8: 「editor dang mo voi 「0」 — Enter de dong」)
+Web      cùng dòng, cùng 点 168, nhưng 回 = 1
+```
+
+Với `605/0` (`g_cnt = 3`) hai bên đều ra `回 = 3` ⇒ **chỉ mã `g_cnt = 0` mới lộ ra**, và
+dữ liệu dev chỉ có `690` như thế trong cả dải 600–699.
+
+**Hệ quả là tiền, không phải hiển thị:** `回 = 0` thì dòng không cộng gì vào 月計点数;
+`回 = 1` thì cộng trọn 168 điểm.
+
+Spec Playwright nay assert **chân lý WinForm** (`toBe(master.gCnt)`) và **đỏ đúng chỗ đó**
+— để hở thì lệch này im lặng đi qua. Quyết định thuộc về người sửa app: bỏ
+`> 0 ? … : 1` bên web, hay ghi nhận đây là chỗ cố ý lệch kèm lý do.
+
+### 9.3 Những chỗ hai bên KHỚP mà đáng ghi
+
+- **Gộp 「OA+…」 chỉ khi `free_wd` rỗng.** 戻る ⇒ 「OA+スキャンドネスト…」 (một dòng);
+  確定 ⇒ hai dòng riêng. `editDrugName` (EditControl.cs:1091-1099) và
+  `DrugNameEditor.Build` (cùng cờ `!hasFreeWd`) khớp nhau.
+- **単位 rút gọn** 「錠」→「T」, 「管」→「A」 — cả hai cùng bảng.
+- **Ô 回 mở sẵn editor sau 確定** ở cả hai bên (WinForm mở editor ô 回; web
+  `setEditingCell(RegiCol.kai)`).
+- **`点数` ở 使用量 mặc định trùng `score1`** cho toàn bộ 63 mã — tiền đề của cả cặp.
+
+### 9.4 月計点数 — cố ý KHÔNG assert ở cả hai vế
+
+Mốc 「Δ月計 = 点 × 回」 chỉ đúng khi lượt chốt là thay đổi duy nhất giữa hai lần đọc.
+Cả hai bộ đều chạy nhiều testcase trong một phiên, mỗi lượt để lại một dòng mà ô 回 còn
+đang mở editor, và `Calc_MDPoint` chốt chúng vào 月計 ở thời điểm khác. Đo được: TcG8
+thấy Δ = 264 trong khi dòng của chính nó đáng 87. Số sạch lấy từ probe (phiên riêng):
+**413 → 500, Δ = 87 = 29 × 3**.
+
+---
+
+## 10. Sáu lỗi HARNESS mà probe/parity bắt được
+
+Không lỗi nào thuộc về app. Cả sáu đều "sai mà trông vẫn hợp lý" — viết assert trước rồi
+chạy thì cả sáu đều hiện ra dưới dạng 「app sai」.
+
+| # | Lỗi | Nếu không bắt được thì testcase sẽ nói gì |
+|---|---|---|
+| 1 | Ô 薬価 khớp nhầm cột 薬剤名称 (ba cột cùng chứa 「薬」) | 「薬価 đọc ra tên thuốc」 |
+| 2 | 単位 trên lưới bị rút gọn 「錠」→「T」 | 「free_wd không tới nơi」 |
+| 3 | ↓ không rời được ô khi lưới một dòng ⇒ chưa `CellValidating` | 「gõ 数量 không ăn」 |
+| 4 | `F2` bị `formBase_KeyDown` nuốt | như trên |
+| 5 | Dò dòng theo TÊN ⇒ vớ dòng của lượt TRƯỚC | 「nhánh ghi đè 点数 không chạy」 |
+| 6 | Bộ lọc dòng vứt mất thành phần có 使用量 RỖNG | 「click vào dòng 薬価固定 vẫn làm số nhảy」 |
+
+Bên Playwright vấp hai lỗi cùng họ: dò dòng theo tên (giải bằng `waitForAddedRow`) và đọc
+ô 回 bằng `innerText` trong khi ô đang là `<input>` (⇒ `Number('') = 0`, trông y như
+「app ghi 回 = 0」).
+
 ### Bước tiếp theo
 
-Viết `DrugAmountTests` (assert) — giờ đã đủ căn cứ, mọi con số ở mục 7 đều đo được và
-lặp lại được. Kỳ vọng **không hardcode**: lấy từ `DrugAmountDb.ExpectedPoint` /
-`ExpectedCostText` / `ExpectedFreeWd` như probe đang làm.
+- Quyết định về điểm lệch §9.2 (`回数` khi `g_cnt = 0`).
+- Nhánh `cost_type '3'` chỉ chạy được với mã 690; nếu master thật có nhiều mã như vậy
+  thì nên chạy thêm vài mã để chắc.
