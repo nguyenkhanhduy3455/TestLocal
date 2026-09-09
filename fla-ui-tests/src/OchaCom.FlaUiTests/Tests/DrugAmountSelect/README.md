@@ -7,8 +7,9 @@ Nửa **WinForm** của điểm parity G1.
 > `POST /tenant/treatment/drug-qty`). Mô tả 「web chưa có」 bên dưới giữ lại làm
 > bối cảnh của lúc probe; cột 「Web」 ở mục 1 đã cập nhật theo bản port.
 
-> **Trạng thái: ĐỦ BỘ — probe 4/4 + fixture assert 8/8 đã chạy XANH trên máy thật,
-> và đã đối chiếu parity với vế Playwright (§9). Một điểm lệch thật: §9.2.**
+> **Trạng thái: ĐỦ BỘ, parity SẠCH.** Probe 4/4 + fixture assert 8/8 (WinForm) và
+> 8/8 (Playwright) đã chạy XANH trên máy thật. Điểm lệch tìm được ở §9.2 **đã được
+> sửa** (`ochacom-saas` 6c50e538b) và cả hai vế chạy lại đều khớp.
 > Vế Playwright đã có — xem mục 4. Số đo nguyên văn ở **mục 7**, tổng kết ở **mục 8**.
 > Luật F1: **probe trước, assert sau.** Probe đã trả lời xong 11/11 câu và bắt được
 > **sáu lỗi harness** (§10), nên fixture assert mới có căn cứ để viết.
@@ -397,12 +398,25 @@ cả hai DB đều có **0** dòng `f2 = 1`.
 | 5 | mã đối chứng `f2 = 0` KHÔNG mở hộp thoại | ✅ | ✅ | ✅ | ✅ |
 | 6 | F10 戻る giữ nguyên 点数 mặc định | ✅ | ✅ | ✅ | ✅ |
 | 7 | gõ thẳng 使用量 ⇒ `CellValidating` tính lại | ✅ | ✅ | ✅ | ✅ |
-| 8 | 確定 ⇒ ô 療法・処置 dựng lại với 数量 mới | ✅ | ✅ | ✅ | ❌ ¹ |
+| 8 | 確定 ⇒ ô 療法・処置 dựng lại với 数量 mới ¹ | ✅ | ✅ | ✅ | ❌→✅ |
 
 ⊘ = skip có lý do (mã 605 không có thành phần `cost_type 3`).
-**WinForm: 7/7 + 8/8 XANH. Web: 7/7 XANH với 605, 5/6 với 690 — một điểm lệch thật.**
+¹ Ô 療法・処置 của testcase này **luôn khớp** ở cả hai vế. ❌ ban đầu nằm ở assert
+**回数** vốn ở chung testcase — với `690` (`med_kbn = 54`, `usage_nm` rỗng) thì
+`trt_cnt` không hề xuất hiện trong ô 療法・処置, nên nhãn của dòng bảng này từng gây
+hiểu nhầm.
 
-### 9.2 ¹ ĐIỂM LỆCH: `回数` khi `g_cnt = 0`
+**Sau khi sửa (2026-09-09): WinForm 7/7 + 8/8 · Web 7/7 + 8/8 — hai vế khớp hoàn toàn.**
+
+### 9.2 ĐIỂM LỆCH ĐÃ TÌM RA VÀ ĐÃ SỬA: `回数` khi `g_cnt = 0`
+
+> **Trạng thái: ĐÃ SỬA** — `ochacom-saas` commit `6c50e538b`
+> 「薬剤行の 回数 に無い下限を敷かない」. Mục này giữ lại làm hồ sơ.
+
+⚠️ **Đây KHÔNG phải nợ của 薬剤使用量選択.** `modMain.cs:412` gán `cnt = g_cnt` cho
+**mọi** pick thuốc, và `commitDrugPick` là đường mọi pick thuốc của web — nên pick `690`
+lúc `f2 = 0` (không hộp thoại nào) đã lệch sẵn từ trước. Hộp thoại chỉ làm nó lộ ra.
+Đó là **nợ của đường pick thuốc**, và bản sửa vì thế nằm ở `commitDrugPick`.
 
 ```
 WinForm  modMain.cs:410-413  rsNewTrt["cnt"] = editStringToInt(g_cnt)     ⇒ 回 = 0
@@ -423,9 +437,35 @@ dữ liệu dev chỉ có `690` như thế trong cả dải 600–699.
 **Hệ quả là tiền, không phải hiển thị:** `回 = 0` thì dòng không cộng gì vào 月計点数;
 `回 = 1` thì cộng trọn 168 điểm.
 
-Spec Playwright nay assert **chân lý WinForm** (`toBe(master.gCnt)`) và **đỏ đúng chỗ đó**
-— để hở thì lệch này im lặng đi qua. Quyết định thuộc về người sửa app: bỏ
-`> 0 ? … : 1` bên web, hay ghi nhận đây là chỗ cố ý lệch kèm lý do.
+**Có HAI chỗ kẹp, không phải một** — bỏ một chỗ là chưa đủ, vì chỗ thứ hai đọc lại
+`drugPick.trtCnt` mà chỗ thứ nhất đã kẹp:
+
+```
+treatment-entry-detail.tsx :5106  trtCnt: resolved.defaultCnt > 0 ? … : 1   (đường 日計 footer)
+treatment-entry-detail.tsx :5121  const cnt = drugPick.trtCnt > 0 ? … : 1   (đường ghi đè dòng có sẵn)
+```
+
+Cả hai đã bỏ ở `6c50e538b`. Chạy lại 2026-09-09:
+
+| Lượt | Trước sửa | Sau sửa |
+|---|---|---|
+| Web · 690 (qua hộp thoại) | ❌ `Expected 0, Received 1` | ✅ 8/8 |
+| Web · 605 (hồi quy) | ✅ | ✅ 7/7 (1 skip) |
+| Web · control = 690, `f2 = 0` | *(chưa có assert)* | ✅ 7/7 (1 skip) |
+| WinForm · control = 690, `f2 = 0` | *(chưa có assert)* | ✅ |
+
+**Bán kính hồi quy = 0:** `690` là mã `g_cnt = 0` **duy nhất** trong 600–699, và không
+spec nào khác pick nó. (Cả master có 1580 dòng `g_cnt = 0`, nhưng chỉ nhánh 600–699 mới
+đọc `g_cnt` — mã khác đi qua `CalcCnt.getCalcCnt`, modMain.cs:359/:415.)
+
+**Lỗ hổng đã bịt:** testcase 「mã đối chứng (`f2 = 0`)」 ở **cả hai vế** nay assert
+`回 = g_cnt`. Đó chính là đường mà điểm lệch này đi lọt, và trước đây nó chỉ chạy với
+`606` (`g_cnt = 3`) nên không thể bắt được. Chạy nhánh đó bằng
+`TEST_DRUG_CONTROL_TRT_CD=690` (web) và `-ControlTrtCd 690` (WinForm).
+
+**Còn để lại cho phòng khám:** `690` có `score1 = 19` mà `g_cnt = 0` — nghĩa là nếu
+không ai gõ đè 回数 thì dòng đó vĩnh viễn 0 điểm. Là cố ý hay bỏ sót dữ liệu thì phải
+hỏi phòng khám; đó là câu hỏi về master, không phải về code, và không chặn bản sửa trên.
 
 ### 9.3 Những chỗ hai bên KHỚP mà đáng ghi
 
