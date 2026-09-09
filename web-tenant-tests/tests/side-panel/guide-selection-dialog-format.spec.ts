@@ -1,5 +1,12 @@
 import { type Locator, type Page } from '@playwright/test'
 
+import {
+    dbEnabled,
+    deleteTestPatient,
+    SEED_PAT_NO_BASE,
+    seedTestPatient,
+    seedTreatmentRows,
+} from '../_shared/db'
 import { patNo, trtDt } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
@@ -88,38 +95,74 @@ import { makeStep } from '../_shared/step'
  * FlaUI in ra. Chạy hai bên rồi diff hai tập DUMP là ra bảng parity — đó là lý do
  * các dòng đó tồn tại, đừng xoá khi dọn log.
  *
+ * ─── DỮ LIỆU: SPEC TỰ DỰNG, KHÔNG MƯỢN ─────────────────────────────────────
+ * `beforeAll` dựng hẳn một bệnh nhân riêng trong dải `SEED_PAT_NO_BASE`
+ * (person + insurance + siga + kon) rồi seed đúng MỘT 部位病名行
+ * 「５４３２１」 + 病名 Ｃ; `afterAll` xoá sạch cả bệnh nhân đó.
+ *
+ * Vì sao không mượn bệnh nhân có sẵn: bản cũ bám bệnh nhân 10 / 2026-07-20 và
+ * trông chờ ở đó CÓ SẴN một 部位病名行 như vậy. Dòng đó thực ra nằm ở
+ * `disp_no = 9001` — tức VÙNG SEED — nên `deleteTreatmentRows` của
+ * `guide-drug-usage-line.spec.ts` (cũng bệnh nhân 10) xoá mất, và spec này đỏ vì
+ * một spec khác chứ không phải vì code. Bệnh nhân riêng cắt đứt hẳn dây đó.
+ *
+ * ⇒ Spec CÓ GHI DB (chỉ dữ liệu của chính nó) nên cần `TEST_DB=1`; không có cờ
+ *   thì cả file skip. KHÔNG testcase nào bấm F9 確定 / Escape, tức không đụng
+ *   luồng lưu của app.
+ *
  * ─── CHẠY ───────────────────────────────────────────────────────────────────
- *   npx playwright test tests/side-panel/guide-selection-dialog-format.spec.ts
+ *   TEST_DB=1 npx playwright test tests/side-panel/guide-selection-dialog-format.spec.ts
  * Chạy TUẦN TỰ, dùng chung một page (Rule 19): thứ tự testcase có ý nghĩa, chạy lẻ
  * một testcase ở giữa vẫn được vì mỗi cái tự mở lại dialog của mình.
- * KHÔNG testcase nào GHI: không bấm F9 確定, không Escape.
  */
 
-const PAT_NO = patNo('12138')
-/** Để trống = hôm nay, đúng tháng hiện hành (WinForm chặn thao tác trên tháng khác). */
-const TRT_DT = trtDt('')
+/**
+ * Bệnh nhân của spec này — TỰ DỰNG trong dải `SEED_PAT_NO_BASE` (990000+), xem
+ * khối 「DỮ LIỆU: SPEC TỰ DỰNG」 ở đầu file. Không spec nào khác biết số này nên
+ * tiền đề không thể bị ai xoá. `TEST_PAT_NO` vẫn ghi đè được để soi tay.
+ */
+const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 17))
+
+/**
+ * 診療日 CỐ ĐỊNH, không lấy "hôm nay".
+ *
+ * Số 算定回数 mà mấy testcase parity assert là số ĐO ĐƯỢC trên WinForm với đúng
+ * 部位 này; ngày nào cũng cho cùng kết quả miễn là 処置マスタ của ngày đó không đổi
+ * version. Ghim ngày để hai lần chạy cách nhau một tháng vẫn ra một con số.
+ */
+const TRT_DT = trtDt('2026-07-20')
+
+/**
+ * 部位 của 部位病名行 seed: 5 răng 「５４３２１」 = 右上5,4,3,2,1.
+ *
+ * Bố cục 32 ô (`tooth-bui.ts:25`): 0-7 是 右上 8→1, nên 右上5..1 là ô 3..7.
+ * ĐÚNG 部位 mà bản WinForm được đo (2026-09-08) đang đứng, nên mọi con số
+ * 算定回数 dưới đây giữ nguyên ý nghĩa:
+ *   - 抜歯手術(前歯) 179/1 → 3 (răng 1,2,3)
+ *   - 抜歯手術(臼歯) 179/2 → 2 (răng 4,5)
+ *   - 充填 / 窩洞形態 → 5 (cả 5 răng)
+ */
+const BUI_SLOTS = [3, 4, 5, 6, 7] as const
+/** Chuỗi 部位 hiển thị — chỉ để nhìn và để `TC-D13` tìm được dòng, không assert. */
+const DSP_BUI = '５４３２１'
+
+/**
+ * 病名 Ｃ (`dis_cd` 100 / `dis_sb` 1 = Ｃ₁).
+ *
+ * KHÔNG tuỳ tiện: list ガイド lọc theo 病名 của dòng đang sáng
+ * (`MasterGuideQueries.cs:90` — `GUID_CD IN (SELECT GUID_CD FROM
+ * view_pac_tbl_active WHERE DIS_CD = ANY(@disCodes) OR DIS_CD = 9999)`).
+ * `pac_tbl` nối 100 → 10650「抜歯」 và 611「異種充填」, hai ガイド mà các testcase
+ * parity mở đích danh.
+ */
+const DIS_CD_C = 100
+const DIS_SB_C1 = 1
 
 /** Số dòng ガイド tối đa sẽ thử click để tìm dòng mở được dialog (ガイド rỗng 処置 tự đóng). */
 const SCAN_LIMIT = 5
 
 /** Số ガイド quét trong TC-D14 — testcase đối chiếu dữ liệu với fixture FlaUI TcD16. */
 const SCAN_LIMIT_DEEP = Number(process.env.TEST_GUIDE_SCAN ?? '8')
-
-/**
- * Tiền đề của hai testcase parity cuối file.
- *
- * Con số trong hai cái đó là số ĐO ĐƯỢC trên WinForm ngày 2026-09-08 với ĐÚNG bệnh nhân
- * và ĐÚNG ngày này (bệnh nhân 10 · 2026-07-20 · 部位 5 răng 「54321」 · 病名 100 「C」).
- * Đổi bệnh nhân/ngày là đổi 部位 ⇒ đổi 算定回数 ⇒ số cũ vô nghĩa, nên hai testcase đó tự
- * `skip` thay vì đỏ oan.
- *
- * ⚠️ Máy Windows để `patient.patNo = 10` trong `testsettings.local.json` (12138 có 2864
- * dòng TRNTRN, app treo hơn một phút), nên muốn so với FlaUI thì bên này PHẢI trỏ vào
- * cùng bệnh nhân đó:
- *   TEST_PAT_NO=10 TEST_TRT_DT=2026-07-20 npx playwright test …
- */
-const PARITY_PAT_NO = '10'
-const PARITY_TRT_DT = '2026-07-20'
 
 /** 5 cột hiển thị của frm203017 `_viewItem`, theo đúng thứ tự trái→phải. */
 const COL_IDS = ['trtCd', 'trtSb', 'trtNm', 'score', 'cnt'] as const
@@ -161,6 +204,13 @@ interface GuideTrtWire {
     grpIdx: number | string
     usageNm?: string
 }
+
+// GUIDELINE Rule 18 — skip phải nói rõ lý do; "không chạy" khác hẳn "chạy và pass".
+test.skip(
+    !dbEnabled,
+    'Cần TEST_DB=1: spec tự dựng bệnh nhân test (person/insurance/siga/kon) + 部位病名行 ' +
+        'thay vì mượn dữ liệu có sẵn.',
+)
 
 test.describe.configure({ mode: 'serial' })
 
@@ -357,6 +407,28 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
     }
 
     test.beforeAll(async ({ authedPage }) => {
+        // ⚠️ Dựng dữ liệu TRƯỚC khi mở màn: list ガイド lọc theo 病名 của dòng đang
+        // sáng, mà dòng đó phải có sẵn từ lúc lưới dựng.
+        await seedTestPatient({ patNo: Number(PAT_NO) })
+        await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
+            {
+                // trt_cd 0 = dòng 部位病名行 thuần (không phải 処置行) — đúng thứ
+                // WinForm gọi là 部位病名行 và là dòng frm203017 chụp 部位/病名 từ đó.
+                trtCd: 0,
+                trtSb: 0,
+                trtPt: 0,
+                trtCnt: 0,
+                dspTrt: '',
+                bui: Array.from({ length: 32 }, (_, i) =>
+                    (BUI_SLOTS as readonly number[]).includes(i) ? 1 : 0,
+                ),
+                dspBui: DSP_BUI,
+                disCd: [DIS_CD_C],
+                disSb: [DIS_SB_C1],
+                dspDis: 'Ｃ',
+            },
+        ])
+
         page = authedPage
         step = makeStep(page)
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
@@ -420,6 +492,11 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
         await disposeOverlays?.()
         await page.removeLocatorHandler(karteCmtDialog).catch(() => {})
         await releaseSharedPage(page)
+        // Dọn HẲN bệnh nhân test — person/insurance/siga/kon + mọi 処置行 của nó.
+        // Bọc catch: lỗi dọn dẹp không được che mất lỗi thật của testcase.
+        await deleteTestPatient(Number(PAT_NO)).catch((e) =>
+            console.log(`dọn bệnh nhân test ${PAT_NO} hỏng: ${(e as Error).message}`),
+        )
     })
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -874,13 +951,9 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
         // nào chưa chạy lại `pnpm ddl:testdata` thì `usageNm` rỗng và testcase này đỏ
         // — đó là thiếu DỮ LIỆU, không phải lỗi code.
         //
-        // ĐO ĐƯỢC trên WinForm 2026-09-08, cùng bệnh nhân/ngày:
+        // ĐO ĐƯỢC trên WinForm 2026-09-08 (bệnh nhân 10 · 2026-07-20 · cùng 部位/病名
+        // mà `beforeAll` seed lại ở đây):
         //   「ボルタレン錠25mg1T 疼痛時 服用」 · 「メイアクトMS錠100mg4T 1日4回朝昼夕食後と就寝前 服用」
-        test.skip(
-            PAT_NO !== PARITY_PAT_NO || TRT_DT !== PARITY_TRT_DT,
-            `số đo ghim theo bệnh nhân ${PARITY_PAT_NO} ngày ${PARITY_TRT_DT} — chạy bằng ` +
-                `TEST_PAT_NO=${PARITY_PAT_NO} TEST_TRT_DT=${PARITY_TRT_DT}`,
-        )
         await dismissPicker()
         await openGuideByName('抜歯', 10650)
 
@@ -906,13 +979,9 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
 
     test('WinForm parity D-e: dòng nhóm 窩洞形態 vừa mở phải mang 回数 = 算定回数, không phải 0', async () => {
         // ガイド 611 「異種充填」 bật khối 窩洞形態. getViewData ghi THẲNG 算定回数 vào ô
-        // (đo được 5 = số răng của 部位); chỉ `ucToothGuide_Changed` (frm203017.cs:1676)
+        // (5 = đúng 5 răng của 部位 mà `beforeAll` seed); chỉ `ucToothGuide_Changed` (frm203017.cs:1676)
         // mới reset đám dòng đó về 0 — và nó CHỈ chạy khi người dùng chạm mặt răng.
         // Bản web cũ ép chúng về 0 ngay lúc mở ⇒ hai màn hình khác nhau từ đầu.
-        test.skip(
-            PAT_NO !== PARITY_PAT_NO || TRT_DT !== PARITY_TRT_DT,
-            `số đo ghim theo bệnh nhân ${PARITY_PAT_NO} ngày ${PARITY_TRT_DT}`,
-        )
         await dismissPicker()
         await openGuideByName('異種充填', 611)
 
@@ -938,10 +1007,6 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
         // Không ghim con số derive được (nó phụ thuộc mặt răng click trúng và
         // `cavityGroupCounts`): chỉ cần chứng minh 「trước khi chạm = 算定回数, sau khi
         // chạm = giá trị TÍNH LẠI」. Ghim số ở đây là chép lại thuật toán của app.
-        test.skip(
-            PAT_NO !== PARITY_PAT_NO || TRT_DT !== PARITY_TRT_DT,
-            `cần ガイド 611 của bệnh nhân ${PARITY_PAT_NO} ngày ${PARITY_TRT_DT}`,
-        )
         await dismissPicker()
         await openGuideByName('異種充填', 611)
 

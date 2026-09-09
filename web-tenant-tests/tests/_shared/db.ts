@@ -329,6 +329,106 @@ export async function deleteChiryoKanriR2(patNo: number): Promise<number> {
 /** Mốc disp_no dành riêng cho dữ liệu test — dọn theo mốc này để không đụng data thật. */
 export const SEED_DISP_BASE = 9000
 
+// ─── Bệnh nhân do test TỰ DỰNG ───────────────────────────────────────────────
+//
+// Mượn bệnh nhân có sẵn là nguồn cơn của test đỏ giả: nhiều spec cùng dùng
+// 10 / 12138, mà `deleteTreatmentRows` xoá cả vùng `disp_no >= SEED_DISP_BASE`
+// của (bệnh nhân, ngày) — spec này seed tiền đề, spec kia chạy sau xoá mất, và
+// cái đỏ lại là spec chẳng liên quan. Dựng hẳn một bệnh nhân riêng cắt đứt
+// chuyện đó: không spec nào khác biết tới số này.
+//
+// Dữ liệu thật của dev DB đang ở `pat_no` cỡ 5 chữ số (max ~18000), nên dải
+// 990000+ chắc chắn trống.
+
+/** Mốc pat_no dành riêng cho bệnh nhân do test tự dựng. */
+export const SEED_PAT_NO_BASE = 990000
+
+export interface SeedPatientInput {
+    /** Phải >= SEED_PAT_NO_BASE — chặn cứng để không bao giờ ghi đè bệnh nhân thật. */
+    patNo: number
+    /** 生年月日 ISO. Mặc định 1980-01-01: người lớn, tránh mọi 加算 theo tuổi. */
+    birthDt?: string
+    /** 性別 1=男 2=女. */
+    sex?: number
+    patNm?: string
+    patKn?: string
+    /**
+     * 保険 (`insurance.rec_cd`). Mặc định 3112 = 社保本人 — loại phổ biến nhất
+     * trong dev DB, và là loại KHÔNG kèm 公費 nên `getTensu` chạy nhánh thẳng.
+     */
+    recCd?: number
+}
+
+/** Chặn mọi thao tác ghi/xoá bệnh nhân ra ngoài dải test. */
+function assertSeedPatNo(patNo: number, fn: string): void {
+    if (!Number.isInteger(patNo) || patNo < SEED_PAT_NO_BASE) {
+        throw new Error(
+            `${fn}: pat_no ${patNo} nằm ngoài dải test (>= ${SEED_PAT_NO_BASE}). ` +
+                'Helper này XOÁ HẲN person/insurance/siga/kon nên tuyệt đối không ' +
+                'được trỏ vào bệnh nhân thật.',
+        )
+    }
+}
+
+/**
+ * Dựng một bệnh nhân test từ số 0 — `person` + `insurance` + `siga` + `kon`.
+ *
+ * Idempotent: xoá sạch bệnh nhân đó (kể cả 処置行 sót lại của lần chạy trước bị
+ * ngắt) rồi dựng lại, nên chạy bao nhiêu lần cũng ra đúng một trạng thái.
+ *
+ * `siga` / `kon` để toàn 0 = 32 răng vĩnh viễn còn nguyên, chưa xử lý — trạng
+ * thái trung tính nhất để `ToothConditionChecker.ChkSiga` không loại dòng nào và
+ * `CalcCntService` đếm đúng số răng của 部位.
+ *
+ * Thời hạn bảo hiểm để rộng (1900→9999) để spec chọn 診療日 nào cũng hợp lệ.
+ */
+export async function seedTestPatient(input: SeedPatientInput): Promise<void> {
+    const { patNo } = input
+    assertSeedPatNo(patNo, 'seedTestPatient')
+    const birthDt = input.birthDt ?? '1980-01-01'
+    const sex = input.sex ?? 1
+    const patNm = input.patNm ?? 'E2Eテスト患者'
+    const patKn = input.patKn ?? 'いーつーいーてすとかんじゃ'
+    const recCd = input.recCd ?? 3112
+
+    await deleteTestPatient(patNo)
+    await withDb(async (c) => {
+        await c.query(
+            `INSERT INTO person (pat_no, pat_sex, pat_birth_dt, pat_typ_1, pat_typ_2, fs_visi_dt)
+             VALUES ($1, $2, $3::date, -1, -1, $3::date)`,
+            [patNo, sex, birthDt],
+        )
+        await c.query(
+            `INSERT INTO insurance (
+                 pat_no, pat_br, medinsinf_no, pubexpinf_no,
+                 pat_nm, pat_kn, birthdate, sex_1,
+                 br_dt, med_st_dt, med_ed_dt, rec_cd,
+                 old_flg, dis_flg, ins_kbn, combi_kbn
+             )
+             VALUES ($1, 1, 0, 0, $2, $3, $4::date, $5,
+                     $4::date, DATE '1900-01-01', DATE '9999-12-31', $6,
+                     0, 0, 1, 1)`,
+            [patNo, patNm, patKn, birthDt, sex, recCd],
+        )
+        await c.query('INSERT INTO siga (pat_no) VALUES ($1)', [patNo])
+        await c.query('INSERT INTO kon (pat_no) VALUES ($1)', [patNo])
+    })
+}
+
+/** Xoá HẲN bệnh nhân test và mọi thứ bám theo nó. Chỉ nhận pat_no trong dải test. */
+export async function deleteTestPatient(patNo: number): Promise<void> {
+    assertSeedPatNo(patNo, 'deleteTestPatient')
+    await withDb(async (c) => {
+        // trn_trn trước: dọn cả dòng ngoài vùng seed, vì bệnh nhân này do test tạo
+        // ra nên KHÔNG có dòng nào là dữ liệu thật.
+        await c.query('DELETE FROM trn_trn WHERE pat_no = $1', [patNo])
+        await c.query('DELETE FROM siga WHERE pat_no = $1', [patNo])
+        await c.query('DELETE FROM kon WHERE pat_no = $1', [patNo])
+        await c.query('DELETE FROM insurance WHERE pat_no = $1', [patNo])
+        await c.query('DELETE FROM person WHERE pat_no = $1', [patNo])
+    })
+}
+
 export interface SeedTrtRow {
     /** 処置コード (>0 để lưới coi là 処置行 / isTreatment). */
     trtCd: number
@@ -409,9 +509,21 @@ const DIS_CD_COLS = Array.from({ length: 10 }, (_, i) => `dis_cd_${i + 1}`)
 const DIS_SB_COLS = Array.from({ length: 10 }, (_, i) => `dis_sb_${i + 1}`)
 
 /**
+ * (pat_br, insu_cd) mặc định cho bệnh nhân CHƯA có dòng 処置 thật nào.
+ *
+ * Bệnh nhân do test tự dựng (`seedTestPatient`) không có dòng `disp_no <
+ * SEED_DISP_BASE` để kế thừa, nên phải có giá trị nền. 1 là 枝番 đầu của
+ * `insurance`, còn 3112 (社保本人) là `insu_cd` phổ biến nhất trong dev DB —
+ * hai cột này chỉ để dòng seed hợp lệ khi hiển thị, không testcase nào assert.
+ */
+const SEED_FALLBACK_PAT_BR = 1
+const SEED_FALLBACK_INSU_CD = 3112
+
+/**
  * Seed các 処置行 test cho (patNo, trtDt) trong vùng disp_no >= SEED_DISP_BASE.
  * Idempotent: xoá vùng test của ngày đó trước khi chèn. (pat_br, insu_cd) được kế
- * thừa từ một dòng THẬT của bệnh nhân để hợp lệ hiển thị/khoá ngoại.
+ * thừa từ một dòng THẬT của bệnh nhân để hợp lệ hiển thị/khoá ngoại; bệnh nhân
+ * chưa có dòng thật nào thì rơi về SEED_FALLBACK_* (xem `seedTestPatient`).
  */
 export async function seedTreatmentRows(
     patNo: number,
@@ -432,6 +544,18 @@ export async function seedTreatmentRows(
             `DELETE FROM trn_trn WHERE pat_no = $1 AND trt_dt = $2 AND disp_no >= ${SEED_DISP_BASE}`,
             [patNo, trtDt],
         )
+        // Khoá bảo hiểm của bệnh nhân, đọc MỘT LẦN. Trước đây INSERT…SELECT lấy
+        // thẳng từ dòng thật, nên bệnh nhân chưa có dòng nào (do test tự dựng) thì
+        // SELECT rỗng và INSERT chèn 0 dòng — seed im lặng không làm gì.
+        const src = await c.query<{ pat_br: number; insu_cd: number }>(
+            `SELECT pat_br, insu_cd FROM trn_trn
+              WHERE pat_no = $1 AND disp_no < ${SEED_DISP_BASE}
+              ORDER BY trt_dt DESC
+              LIMIT 1`,
+            [patNo],
+        )
+        const patBr = src.rows[0]?.pat_br ?? SEED_FALLBACK_PAT_BR
+        const insuCd = src.rows[0]?.insu_cd ?? SEED_FALLBACK_INSU_CD
         for (let i = 0; i < rows.length; i++) {
             const r = rows[i]!
             const bui = Array.from({ length: 32 }, (_, k) => r.bui?.[k] ?? 0)
@@ -443,13 +567,9 @@ export async function seedTreatmentRows(
                      trt_cd, trt_sb, trt_cnt, trt_pt, isl, price, jihi_flg, dr_no, syosin_flg,
                      dsp_trt, dsp_bui, freewd, dsp_dis
                  )
-                 SELECT pat_no, pat_br, insu_cd, $2::date, $3, ${disVals}, ${buiVals},
-                        $4, $5, $6, $7, 0, $7, $8, 1, 3,
-                        $9::text, $42::text, $43::text, $44::text
-                 FROM trn_trn
-                 WHERE pat_no = $1 AND disp_no < ${SEED_DISP_BASE}
-                 ORDER BY trt_dt DESC
-                 LIMIT 1`,
+                 VALUES ($1, $65, $66, $2::date, $3, ${disVals}, ${buiVals},
+                         $4, $5, $6, $7, 0, $7, $8, 1, 3,
+                         $9::text, $42::text, $43::text, $44::text)`,
                 [
                     patNo,
                     trtDt,
@@ -468,6 +588,8 @@ export async function seedTreatmentRows(
                     r.dspDis ?? '',
                     ...disCd,
                     ...disSb,
+                    patBr,
+                    insuCd,
                 ],
             )
         }
