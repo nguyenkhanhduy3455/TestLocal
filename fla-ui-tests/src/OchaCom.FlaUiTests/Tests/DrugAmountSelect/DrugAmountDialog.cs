@@ -153,35 +153,48 @@ public sealed class DrugAmountDialog
             var row = new DgvRow(element);
             if (row.Cells.Count < 3) continue;
 
-            // Dòng tiêu đề lọt lưới thì mọi ô đều là chính tiêu đề — 使用量 không parse
-            // ra số, và ô 薬価 cũng vậy. Lọc theo NỘI DUNG, đúng cách CommitPick làm.
-            var count = row.ByHeader(HeaderCount) ?? row.At(2);
-            var cost = row.ByHeader(ColName) ?? row.At(1);
-            if (!float.TryParse(Txt.N(count), out _) && !float.TryParse(Txt.N(cost), out _))
+            var cost = CostCell(row);
+            var sum = row.ByHeader(HeaderCost) ?? row.At(4);
+
+            // Dòng tiêu đề lọt vào danh sách dữ liệu (F11) — lọc theo NỘI DUNG.
+            //
+            // ⚠️ Lọc bằng ô 使用量 là SAI: thành phần 薬価固定 hoàn toàn có thể có 使用量
+            // RỖNG (mst_drug_rx.cnt để trống — 690/0 slot 「ＯＡ（１～２歯）」 là một ca
+            // thật). Và lọc bằng 「ô nào chứa 薬」 cũng sai: cột 薬剤名称 cũng chứa 「薬」,
+            // nên với dòng OA thì cả hai phép thử đều trượt và DÒNG BỊ VỨT — click theo
+            // chỉ số sau đó rơi vào dòng KHÁC mà không có dấu hiệu gì.
+            // Đo được 2026-09-09 (TcG3 với mã 690): lưới đọc ra 1 dòng thay vì 2.
+            //
+            // Mốc đúng là 薬価 hoặc 薬価計 — hai cột LUÔN là số ở dòng dữ liệu, và ở dòng
+            // tiêu đề thì chúng mang chính chuỗi tiêu đề.
+            if (!float.TryParse(Txt.N(cost), out _) && !float.TryParse(Txt.N(sum), out _))
                 continue;
 
             rows.Add(new DrugRow(
                 index++, element,
                 row.ByHeader(HeaderDrugName) ?? row.At(0),
-                CostCell(row),
-                count,
+                cost,
+                row.ByHeader(HeaderCount) ?? row.At(2),
                 row.ByHeader(HeaderUnit) ?? row.At(3),
-                row.ByHeader(HeaderCost) ?? row.At(4),
+                sum,
                 row.Cells));
         }
         return rows;
+    }
 
-        // Ba cột chứa 「薬」 — lấy ô KHÔNG chứa 「剤」 và KHÔNG chứa 「計」.
-        static string CostCell(DgvRow row)
+    /// <summary>
+    /// Ô 薬価 của một dòng. Ba cột chứa 「薬」 (薬剤名称 / 薬価 / 薬価計) nên phải loại
+    /// cả 「剤」 lẫn 「計」 — xem ghi chú ở <see cref="ColName"/>.
+    /// </summary>
+    private static string CostCell(DgvRow row)
+    {
+        for (var i = 0; i < row.CellDescriptions.Count; i++)
         {
-            for (var i = 0; i < row.CellDescriptions.Count; i++)
-            {
-                var d = row.CellDescriptions[i];
-                if (Txt.Has(d, ColName) && !Txt.Has(d, HeaderDrugName) && !Txt.Has(d, HeaderCost))
-                    return row.At(i);
-            }
-            return row.At(1);
+            var d = row.CellDescriptions[i];
+            if (Txt.Has(d, ColName) && !Txt.Has(d, HeaderDrugName) && !Txt.Has(d, HeaderCost))
+                return row.At(i);
         }
+        return row.At(1);
     }
 
     /// <summary>薬価合計 — <c>txtCostSum</c>, app ghi <c>sum.ToString("0.00")</c> (:551).</summary>
