@@ -351,6 +351,20 @@ public sealed class DrugAmountTests : UiTestBase
             $"Không qua hộp thoại ⇒ 点 giữ nguyên score1 của master ({control.Score1}) — " +
             $"selRec.intPoint không bị ghi đè (frm203016.cs:1450 nằm trong nhánh F2 == 1). " +
             $"Dòng đọc ra: 「{row}」");
+
+        // 回数 trên ĐƯỜNG KHÔNG QUA HỘP THOẠI — chỗ mà điểm lệch 回数 đã đi lọt.
+        //
+        // `modMain.cs:412` gán `cnt = g_cnt` cho MỌI pick thuốc, rồi đi thẳng
+        // frm203016.cs:1390 → :1531 `grdRegi[4] = selRec.intCnt` mà không có sàn nào.
+        // Bản web trước 2026-09-09 kẹp `defaultCnt > 0 ? … : 1` nên đã lệch từ trước,
+        // ngay cả khi F2 = 0 và chẳng hộp thoại nào bung ra — 薬剤使用量選択 chỉ làm nó
+        // lộ ra. Không có assert này thì nhánh đó vẫn không ai canh.
+        //
+        // Chạy với `-ControlTrtCd 690` (g_cnt = 0) để thật sự đo được nó.
+        Assert.That(Txt.Int(row.Kai), Is.EqualTo(control.GCnt),
+            $"回 của mã đối chứng phải là g_cnt của master ({control.GCnt}) — kể cả khi " +
+            $"KHÔNG qua hộp thoại. Dòng đọc ra: 「{row}」. Cặp Playwright assert đúng " +
+            "cùng một điều ở testcase 「mã đối chứng (f2 = 0)…」.");
     }
 
     // ═════════════════════════════════════════════════════════════════════════

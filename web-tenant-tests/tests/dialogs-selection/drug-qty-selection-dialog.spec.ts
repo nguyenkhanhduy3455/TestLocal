@@ -163,6 +163,8 @@ interface DrugMaster {
     controlF2: number
     /** `score1` của mã đối chứng — 点 mà dòng của nó phải mang. */
     controlScore1: number
+    /** `g_cnt` của mã đối chứng — 回 mà dòng của nó phải mang, KHÔNG qua dialog. */
+    controlGCnt: number
 }
 
 /** 薬価計 một dòng — frm203020.setTable. */
@@ -425,6 +427,7 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
                 prevF2: 0,
                 controlF2: 0,
                 controlScore1: 0,
+                controlGCnt: 0,
             }
             const ver = await c.query<{ version_id: string }>(
                 `SELECT version_id FROM view_mst_trt_ver_active
@@ -443,8 +446,8 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
             )
             if (!trt.rows[0]) return empty
 
-            const control = await c.query<{ f2: number; score1: number }>(
-                `SELECT f2::int AS f2, score1::int AS score1
+            const control = await c.query<{ f2: number; score1: number; g_cnt: number }>(
+                `SELECT f2::int AS f2, score1::int AS score1, g_cnt::int AS g_cnt
                    FROM view_mst_trt_active
                   WHERE version_id = $1 AND trt_cd = $2 AND trt_sb = $3 LIMIT 1`,
                 [versionId, CONTROL_TRT_CD, CONTROL_TRT_SB],
@@ -502,6 +505,7 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
                 prevF2: trt.rows[0].f2,
                 controlF2: control.rows[0]?.f2 ?? -1,
                 controlScore1: control.rows[0]?.score1 ?? 0,
+                controlGCnt: control.rows[0]?.g_cnt ?? 0,
             }
         })
 
@@ -827,6 +831,21 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
         expect(await pointOfRow(added), '点 của mã đối chứng phải là score1').toBe(
             master.controlScore1,
         )
+
+        // 回数 trên ĐƯỜNG KHÔNG QUA DIALOG.
+        //
+        // Đây là chỗ mà điểm lệch `回数` (sửa 2026-09-09, commit 6c50e538b) đã đi lọt:
+        // `modMain.cs:412` gán `cnt = g_cnt` cho MỌI pick thuốc, còn `commitDrugPick`
+        // là đường mọi pick thuốc của web — nên bản web kẹp `> 0 ? … : 1` đã lệch từ
+        // trước, ngay cả khi `f2 = 0` và chẳng có hộp thoại nào. 薬剤使用量選択 chỉ làm
+        // nó lộ ra. Không có assert này thì nhánh đó vẫn không ai canh.
+        //
+        // Chạy với TEST_DRUG_CONTROL_TRT_CD=690 (g_cnt = 0) để thật sự đo được nó.
+        expect(
+            await countOfRow(added),
+            '回 của mã đối chứng phải là g_cnt của master — kể cả khi KHÔNG qua dialog ' +
+                '(modMain.cs:412 → frm203016.cs:1531, không có sàn nào)',
+        ).toBe(master.controlGCnt)
 
         await drainAfterCommit()
         await step()

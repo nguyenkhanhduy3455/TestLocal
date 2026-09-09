@@ -75,6 +75,9 @@ param(
     [switch]$AllowSave,
     [int]$TrtCd = 0,
     [int]$TrtSb = -1,
+    # Ma DOI CHUNG (F2 giu 0). Dat 690 de do nhanh 回数 khi g_cnt = 0 tren duong
+    # KHONG qua hop thoai — chinh cho ma diem lech 回数 da di lot.
+    [int]$ControlTrtCd = 0,
     # Ghim 診療日 (yyyy-MM-dd). BAT BUOC khi doi chieu voi ban web: bang master ap dung
     # (MST_TRT266...) chon theo ngay, ma 薬価 va 使用量 mac dinh deu doc tu ban do.
     [string]$TrtDate = "",
@@ -101,6 +104,10 @@ if ($TrtCd -gt 0) {
     Write-Host "OCHA_DRUG_AMOUNT_TRT_CD = $TrtCd" -ForegroundColor Cyan
 }
 if ($TrtSb -ge 0) { $env:OCHA_DRUG_AMOUNT_TRT_SB = "$TrtSb" }
+if ($ControlTrtCd -gt 0) {
+    $env:OCHA_DRUG_AMOUNT_CONTROL_TRT_CD = "$ControlTrtCd"
+    Write-Host "OCHA_DRUG_AMOUNT_CONTROL_TRT_CD = $ControlTrtCd" -ForegroundColor Cyan
+}
 
 if ($Seed) {
     $env:OCHA_DRUG_AMOUNT_ALLOW_SEED = "1"
