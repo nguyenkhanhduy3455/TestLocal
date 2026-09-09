@@ -1,5 +1,7 @@
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Definitions;
+using FlaUI.Core.Input;
+using FlaUI.Core.WindowsAPI;
 using OchaCom.FlaUiTests.App;
 using OchaCom.FlaUiTests.Infrastructure;
 
@@ -48,8 +50,11 @@ public sealed class MedicineSelectDialog
         _ => "dgvOther",
     };
 
-    /// <summary>Nhãn nút chuyển tab, nguyên văn từ Designer (:290, :325, :359, :393).</summary>
-    public static string TabButtonCaption(int grp) => grp switch
+    /// <summary>
+    /// Nhãn tab, nguyên văn từ Designer (:290, :325, :359, :393) —
+    /// 「内服（F1)」「屯服（F2)」「外用（F3)」「その他（F4)」. Ở đây chỉ lấy phần chữ đầu để dò.
+    /// </summary>
+    public static string TabCaption(int grp) => grp switch
     {
         1 => "内服",
         2 => "屯服",
@@ -154,26 +159,66 @@ public sealed class MedicineSelectDialog
     }
 
     /// <summary>
-    /// Chuyển sang tab của <paramref name="grp"/> bằng cách <b>bấm nút</b>, không gõ phím F.
+    /// Chuyển sang tab của <paramref name="grp"/> bằng cách <b>click TAB HEADER</b>.
     ///
-    /// <para>F1–F4 ở đây là nút của CHÍNH form này, nhưng phím F rơi vào form đang giữ
-    /// tiêu điểm (F15) — mà 診療入力 phía dưới cũng có F1「病検」/F3「チェック」. Bấm nút
-    /// thì không có chỗ cho nhầm lẫn.</para>
+    /// <para>Không có nút F1–F4 để bấm: <c>_btnInfo</c> của form này khai cả bốn là
+    /// <c>OCHA_OFF</c> (frm203013.cs:44-48), chỉ 「F9 確定」/「F10 戻る」 hiện ra. Đường lui
+    /// là gõ phím F — <c>formBase_KeyDown</c> vẫn ánh xạ chúng sang
+    /// <c>btnF1..F4_Click</c> dù nút vô hình (:149-162 → :199-220).</para>
+    ///
+    /// <para>Sau khi chuyển, <b>chờ đúng cái lưới của tab đó xuất hiện</b>: WinForms chỉ
+    /// tạo handle cho control của một <c>TabPage</c> khi trang ấy hiện lần đầu, nên
+    /// trước đó UIA không thấy gì bên trong. Đo được 2026-09-09 (Tc5): đọc
+    /// <c>dgvTon</c> khi chưa chuyển tab trả về <b>0 dòng</b>.</para>
     /// </summary>
     public bool SelectTab(int grp, TestTrace? trace = null)
     {
-        var caption = TabButtonCaption(grp);
-        var btn = Buttons().FirstOrDefault(b => Txt.Has(Uia.NameOf(b), caption));
-        if (btn is null)
+        var caption = TabCaption(grp);
+
+        // ⚠️ KHÔNG có nút F1–F4 để bấm: `_btnInfo` của form này khai cả bốn là
+        // `OCHA_OFF` (frm203013.cs:44-48) — chỉ 「F9 確定」/「F10 戻る」 hiện ra. Chuyển tab
+        // là click chính TAB HEADER. Đo được 2026-09-09 (Tc5): nút đọc được trên hộp
+        // thoại chỉ có [<, >, Line up, Page down, Line down, F9 確定, F10 戻る].
+        var tab = Uia.Descendants(_window).FirstOrDefault(
+            e => Uia.ControlTypeOf(e) == ControlType.TabItem && Txt.Has(Uia.NameOf(e), caption));
+
+        if (tab is not null)
         {
-            trace?.Note($"KHONG thay nut tab 「{caption}」. Nut doc duoc: [{string.Join(", ", ButtonNames())}]");
-            return false;
+            trace?.Do($"click tab 「{Txt.N(Uia.NameOf(tab))}」 (grp {grp})", () => Uia.MouseClick(tab));
+        }
+        else
+        {
+            // Đường lui: phím F. `formBase_KeyDown` vẫn ánh xạ F1–F4 sang btnF1..F4_Click
+            // dù nút vô hình (frm203013.cs:149-162 → :199-220 đặt tabMain.SelectedIndex).
+            var key = grp switch { 1 => VirtualKeyShort.F1, 2 => VirtualKeyShort.F2,
+                                   3 => VirtualKeyShort.F3, _ => VirtualKeyShort.F4 };
+            trace?.Note($"khong thay TabItem 「{caption}」 — lui ve go phim {key}. " +
+                        $"Tab doc duoc: [{string.Join(", ", TabNames())}]");
+            trace?.Do($"go phim {key} de chuyen tab", () => Keyboard.Press(key));
         }
 
-        // GradientButton là nút tự vẽ — không có InvokePattern, phải click chuột thật (F13).
-        trace?.Do($"chuyen sang tab 「{caption}」 (grp {grp})", () => Uia.MouseClick(btn));
-        Thread.Sleep(600);
-        return true;
+        // Lưới của một TabPage CHƯA từng hiện thì WinForms chưa tạo handle cho nó ⇒ UIA
+        // không thấy control nào bên trong. Chờ đúng cái lưới của tab này xuất hiện chứ
+        // đừng ngủ một khoảng đoán chừng.
+        var id = SourceGridId(grp);
+        var ok = Waits.TryUntil(() => Uia.ById(_window, id) is not null, TimeSpan.FromSeconds(8));
+        if (!ok) trace?.Note($"sau khi chuyen tab van KHONG thay luoi 「{id}」");
+        Thread.Sleep(400);
+        return ok;
+    }
+
+    /// <summary>Nhãn các tab đọc được — in ra khi không dò được tab cần tới.</summary>
+    public IReadOnlyList<string> TabNames()
+    {
+        try
+        {
+            return Uia.Descendants(_window)
+                      .Where(e => Uia.ControlTypeOf(e) == ControlType.TabItem)
+                      .Select(e => Txt.N(Uia.NameOf(e)))
+                      .Where(n => n.Length > 0)
+                      .ToList();
+        }
+        catch { return []; }
     }
 
     /// <summary>

@@ -264,7 +264,8 @@ public sealed class DrugPathBFlow
         if (dialog is null) return new MedicineResult(false, false, false, [], null, "", []);
 
         if (!dialog.SelectTab(grp, trace))
-            trace?.Note($"khong chuyen duoc sang tab grp {grp} — van thu doc luoi hien tai");
+            trace?.Note($"khong chuyen duoc sang tab grp {grp} — van thu doc luoi hien tai. " +
+                        $"Tab doc duoc: [{string.Join(", ", dialog.TabNames())}]");
 
         var row = dialog.FindRow(grp, c.TrtCd, c.TrtSb);
         if (row is null)
