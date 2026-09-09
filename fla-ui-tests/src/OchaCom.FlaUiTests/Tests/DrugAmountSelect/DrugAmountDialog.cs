@@ -172,15 +172,27 @@ public sealed class DrugAmountDialog
 
             rows.Add(new DrugRow(
                 index++, element,
-                row.ByHeader(HeaderDrugName) ?? row.At(0),
-                cost,
-                row.ByHeader(HeaderCount) ?? row.At(2),
-                row.ByHeader(HeaderUnit) ?? row.At(3),
-                sum,
+                Cell(row.ByHeader(HeaderDrugName) ?? row.At(0)),
+                Cell(cost),
+                Cell(row.ByHeader(HeaderCount) ?? row.At(2)),
+                Cell(row.ByHeader(HeaderUnit) ?? row.At(3)),
+                Cell(sum),
                 row.Cells));
         }
         return rows;
     }
+
+    /// <summary>
+    /// Giá trị một ô, đã quy 「(null)」 về chuỗi rỗng.
+    ///
+    /// <para><c>Uia.ValueOf</c> lui về <c>NameOf</c> khi ô không có giá trị, và cầu MSAA
+    /// của <c>DataGridView</c> trả về đúng chữ <c>「(null)」</c> cho ô TRỐNG (đã ghi ở
+    /// <c>SigaToothFlow.IsBlank</c>). Ô trống là chuyện thật ở hộp thoại này: thành phần
+    /// 薬価固定 có 単位 rỗng và 使用量 rỗng (690/0 slot 「ＯＡ（１～２歯）」). Không quy về
+    /// rỗng thì mọi phép so với master đọc ra 「(null)」 ≠ 「」 — đỏ oan.
+    /// Đo được 2026-09-09 (TcG1 với mã 690).</para>
+    /// </summary>
+    private static string Cell(string? raw) => Txt.N(raw) is "(null)" ? "" : Txt.N(raw);
 
     /// <summary>
     /// Ô 薬価 của một dòng. Ba cột chứa 「薬」 (薬剤名称 / 薬価 / 薬価計) nên phải loại
