@@ -1,7 +1,11 @@
 # G1 — 薬剤使用量選択 (frm203020)
 
-Nửa **WinForm** của điểm parity G1. Bản web **chưa port** màn này: 0 hit trong
-`ochacom-saas`.
+Nửa **WinForm** của điểm parity G1.
+
+> **Cập nhật 2026-09-09** — bản web ĐÃ port màn này (`ochacom-saas` nhánh
+> `feat/inp-drug-qty-select`: `drug-qty-selection-dialog.tsx` +
+> `POST /tenant/treatment/drug-qty`). Mô tả 「web chưa có」 bên dưới giữ lại làm
+> bối cảnh của lúc probe; cột 「Web」 ở mục 1 đã cập nhật theo bản port.
 
 > **Trạng thái: THÔNG LUỒNG + PROBE (WinForm). Chưa có testcase assert.**
 > Vế Playwright đã có — xem mục 4.
@@ -40,9 +44,9 @@ Ba thứ đi kèm mà bản web **chưa có**:
 
 | # | Thứ | WinForm | Web |
 |---|---|---|---|
-| a | `free_wd` (cột 72 → `trn_trn.freewd`) | chuỗi 使用量 ngăn bằng dấu phẩy | có cột, nhưng **chỉ dùng cho 面入力 và 困難者加算** — không có nhánh thuốc. `DrugNameEditor.cs:25` ghi rõ 「The 数量変更 (free_wd) override is not wired」 |
-| b | 点数 tính từ 薬価 | `getPoint(薬価合計, 1)` — frm203020.cs:492-518 | lấy thẳng `mst_trt.score1` — `ResolveDrugHandler.cs:33` |
-| c | Lưới nội bộ 薬剤名/薬価/使用量/単位/薬価計 + 薬価合計 + 点数 | có | không có màn hình nào tương ứng |
+| a | `free_wd` (cột 72 → `trn_trn.freewd`) | chuỗi 使用量 ngăn bằng dấu phẩy | ~~không có nhánh thuốc~~ → **đã port**: `commitDrugPick` đặt `freewd` từ 確定, và `GET /drug-rx?freeWd=` dựng lại tên thuốc theo 使用量 mới (`DrugNameEditor.Build(..., freeWd)`) |
+| b | 点数 tính từ 薬価 | `getPoint(薬価合計, 1)` — frm203020.cs:492-518 | ~~lấy thẳng `mst_trt.score1`~~ → **đã port**: `DrugQtyCalculator.Point` (BE). `score1` giờ chỉ là giá trị khi KHÔNG qua hộp thoại |
+| c | Lưới nội bộ 薬剤名/薬価/使用量/単位/薬価計 + 薬価合計 + 点数 | có | **đã port**: `drug-qty-selection-dialog.tsx`; mọi con số do BE trả (`POST /tenant/treatment/drug-qty`), FE không giữ bản sao công thức |
 
 ---
 
