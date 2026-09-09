@@ -7,11 +7,10 @@ Nửa **WinForm** của điểm parity G1.
 > `POST /tenant/treatment/drug-qty`). Mô tả 「web chưa có」 bên dưới giữ lại làm
 > bối cảnh của lúc probe; cột 「Web」 ở mục 1 đã cập nhật theo bản port.
 
-> **Trạng thái: THÔNG LUỒNG + PROBE (WinForm). Chưa có testcase assert.**
-> Vế Playwright đã có — xem mục 4.
-> Chưa ai mở được hộp thoại này trên máy thật (xem mục 2), nên mọi assert viết bây giờ
-> đều là phỏng đoán. Luật F1: **probe trước, assert sau.** `DrugAmountTests` sẽ được viết
-> sau khi có file `select-drug-amount-KQ.txt` đầu tiên.
+> **Trạng thái: THÔNG LUỒNG + PROBE (WinForm) — 4/4 lô ĐÃ CHẠY XANH trên máy thật.**
+> Vế Playwright đã có — xem mục 4. Số đo nguyên văn ở **mục 7**, tổng kết ở **mục 8**.
+> Luật F1: **probe trước, assert sau.** Probe đã trả lời xong 11/11 câu và bắt được
+> **bốn lỗi harness**, nên giờ mới đủ căn cứ viết `DrugAmountTests` (assert).
 
 ---
 
@@ -156,8 +155,13 @@ không phải 病名選択」 ⇒ nó sẽ trả về **nhầm** chính 薬剤�
 ### 5.3 Click để "chọn dòng" **đã đổi dữ liệu**
 
 `CellClick` cộng 使用量 thêm 1 với **mọi** ô của dòng (frm203020.cs:303-330), không riêng
-ô 使用量. Không có cách nào chọn một dòng mà không làm số nhảy.
-`DrugAmountDialog.TypeCount` vì thế **ghi đè** (F2 → Ctrl+A → gõ) chứ không gõ nối thêm.
+ô 使用量. Không có cách nào chọn một dòng mà không làm số nhảy — **đo được**: KQ-7.
+
+Không cần tránh: `DataGridView` mặc định `EditOnKeystrokeOrF2`, nên `TypeCount` **gõ
+thẳng chữ số** và phím đầu tiên vừa mở editor vừa **thay** nội dung cũ. Rồi **Tab** để
+rời ô cho `CellValidating` chạy — ↓ vô dụng khi lưới chỉ một dòng, `F2` bị chính hộp
+thoại nuốt (`base.btnF2_Click`, :138-140). Cả hai đều là lỗi harness đã trả giá, xem
+mục 7 lô `Tc2`.
 
 ### 5.4 ⛔ Escape ở hộp thoại này là **確定**, không phải huỷ
 
@@ -315,6 +319,65 @@ Kết luận nghiệp vụ rút ra từ KQ-9 (đây là **đặc tả** cho vế
 | 月計点数 | +87 = 29 điểm × 3 回 |
 | `回数` | vẫn là `g_cnt` = 3 — 数量 và 回数 là **hai thứ khác nhau** |
 
-### *(Tc3 — chưa chạy)*
+### 2026-09-09 11:30 — `Tc2` chạy lại sau khi sửa · **XANH, khớp oracle từng số**
 
-Cần điền: KQ-10 (mở lại lần 2 trong cùng phiên — bẫy `dataLineSource`), KQ-11 (mã đối chứng).
+```
+KQ-8  gõ 使用量 = 「10」 rồi Tab:
+      使用量=[4] 薬価合計=「114.40」 点数=「11」  →  使用量=[10] 薬価合計=「286.00」 点数=「29」
+      oracle nói 「286.00」/「29」/free_wd「10」                     ⇒ TRÙNG KHÍT
+KQ-9  確定 với 点数=「29」 ⇒ lưới nhận 「…10T…」 | 29 | 3 · 月計 413 → 500 (Δ 87)
+```
+
+### 2026-09-09 11:35 — `Tc3_ProbeReopenAndControl` trên máy thật · **XANH**
+
+```
+KQ-10 lượt mở thứ HAI trong cùng phiên app: 処置選択 KHÔNG hiện · 薬剤使用量選択 = MỞ
+      薬価合計=「85.80」 点数=「9」 · [0] 「オゼックス錠150 150mg」 薬価 28.60 × 3錠 = 85.8
+KQ-11 ĐỐI CHỨNG 606/0 (F2 = 0): 薬剤使用量選択 = KHÔNG mở, không hộp thoại lạ nào
+      ⇒ cửa mở hộp thoại ĐÚNG là F2.
+```
+
+**KQ-10 — nghi vấn ở mục 5.5 KHÔNG xảy ra** (trong điều kiện này): mở lại lần thứ hai
+trong cùng phiên app vẫn được. Nhưng lượt chạy này **không hề đi qua đường 処方箋
+`ID210002`**, mà đó mới là chỗ duy nhất gán `dataLineSource` (frm203002.cs:8804). Nên
+kết luận đúng là: *「mở lại nhiều lần thì không sao」*, **chưa phải** *「`dataLineSource`
+vô hại」*. Vẫn giữ nguyên khuyến cáo ở mục 5.5.
+
+**KQ-11 là mảnh ghép làm mọi số ở trên thành kết luận.** Không có nó thì 「hộp thoại mở
+ra」 có thể là do bất cứ thứ gì; có nó rồi thì cùng một đường đi, cùng một loại mã, chỉ
+khác đúng cột `F2` — một bên mở, một bên không.
+
+Dòng này cũng xác nhận **lỗi harness #1 đã sửa**: ô 薬価 giờ đọc ra `28.60`, không còn
+đọc ra tên thuốc.
+
+---
+
+## 8. Tổng kết — 4/4 lô XANH, oracle khớp từng số
+
+| Lô | Kết quả | Điều chốt được |
+|---|---|---|
+| `Tc0` | XANH | `getPoint == SCORE1` ở 数量 mặc định, **63/63 mã**; seed/trả lại `F2` chạy đúng |
+| `Tc1` | XANH | 処置選択 không hiện; hộp thoại 5 cột; 薬価合計「85.80」/点数「9」 == oracle; 戻る không ghi gì |
+| `Tc2` | XANH | click +1 · gõ tay · 確定 đẩy `free_wd` → lưới in 「10T」, 点 **29**, 月計 +87 |
+| `Tc3` | XANH | mở lại lần 2 vẫn được; **đối chứng `F2 = 0` KHÔNG mở** |
+
+**Kiểm sau cùng từ Mac:** `SELECT COUNT(*) FROM MST_TRT266 WHERE F2 = 1` → **0**;
+`605/0` và `606/0` đều `F2 = 0`; `TRNTRN` của bệnh nhân 10 **không có dòng 605/606 nào**
+(không lượt nào bấm F9 登録).
+
+**Bốn lỗi HARNESS bị probe bắt được — không lỗi nào thuộc về app.** Cả bốn đều thuộc
+loại "sai mà trông vẫn hợp lý", tức là nếu viết assert trước rồi chạy thì cả bốn đều
+hiện ra dưới dạng 「app sai」:
+
+| # | Lỗi | Nếu không bắt được thì testcase sẽ nói gì |
+|---|---|---|
+| 1 | Ô 薬価 khớp nhầm cột 薬剤名称 (ba cột cùng chứa 「薬」) | 「薬価 đọc ra tên thuốc」 |
+| 2 | 単位 trên lưới bị rút gọn 「錠」→「T」 | 「free_wd không tới nơi」 |
+| 3 | ↓ không rời được ô khi lưới một dòng ⇒ chưa `CellValidating` | 「gõ 数量 không ăn」 |
+| 4 | `F2` bị `formBase_KeyDown` nuốt | như trên |
+
+### Bước tiếp theo
+
+Viết `DrugAmountTests` (assert) — giờ đã đủ căn cứ, mọi con số ở mục 7 đều đo được và
+lặp lại được. Kỳ vọng **không hardcode**: lấy từ `DrugAmountDb.ExpectedPoint` /
+`ExpectedCostText` / `ExpectedFreeWd` như probe đang làm.
