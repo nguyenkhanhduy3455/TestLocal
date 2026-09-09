@@ -101,6 +101,43 @@ chứ không ghi đè. Fixture cũng tự `Cleanup` một lượt **trước khi
 
 ---
 
+## 4. Hai LỐI VÀO, một ô 療法・処置
+
+`editDrugName` được gọi từ hai chỗ, và **cả hai** phải cho ra cùng một ô:
+
+| Lối | Thao tác | Đường đi |
+|---|---|---|
+| **Gõ mã** | コードモード → gõ mã vào ô 点 → Enter | `GetTrtmasCod` → `frm203016_Hide_Let_Trt_Data` → `getDrugName` |
+| **薬剤選択** | Shift+F6 → tab theo `grp` → double-click → 「F9 確定」 | `frmMed_LetData` (frm203002.cs:8791) → **cùng** `frm203016_Hide_Let_Trt_Data` → `getDrugName` |
+
+Lối thứ hai đáng chú ý ở chỗ `frm203013.setData` trả `outList` mang `trt_nm` — nhưng đó
+chỉ là **giá trị trung gian**: `frmMed_LetData` không tự ghi dòng, nó dựng `tblTrtSel`
+rồi gọi chung đường chốt của 処置選択. Nên giá trị đọng lại trên lưới là kết quả
+`getDrugName`, **không** phải `trt_nm` mà form kia đưa sang.
+
+⛔ **Escape và End trên `frm203013` cũng đều là 確定** (frm203013.cs:166-174) — cùng họ
+với frm203017/frm203020. Đóng bằng 「F10 戻る」.
+
+### 4.1 Mở 薬剤選択: dùng dải phím Shift, đừng gửi tổ hợp phím
+
+`frm203002.btnF6_Click` rẽ theo `ShiftFlg` (:826-838): tắt thì ra コメント, **bật mới ra
+薬剤**. Mà `ShiftFlg` chỉ được đặt trong `BaseForm.editButtonPanel` — do `btnShift`, hoặc
+do `Keys.ShiftKey` ở KeyDown/KeyUp (BaseForm.cs:613/:646). Flow bấm `btnShift` rồi bấm nút
+mang chữ 「薬剤」: phím F rơi vào form đang giữ tiêu điểm (F15), và thứ tự KeyDown của một
+tổ hợp là chuyện của bộ gõ — sai nhịp một cái là mở nhầm コメント mà không có dấu hiệu gì.
+
+### 4.2 Chuyển tab: click TAB HEADER, và chờ lưới hiện ra
+
+**Không có nút F1–F4 để bấm**: `_btnInfo` của `frm203013` khai cả bốn là `OCHA_OFF`
+(:44-48) — chỉ 「F9 確定」/「F10 戻る」 hiện ra.
+
+Và **lưới của một tab chưa từng hiện thì UIA không thấy gì bên trong**: WinForms chỉ tạo
+handle cho control của `TabPage` khi trang ấy hiện lần đầu. Đo được 2026-09-09 (Tc5):
+đọc `dgvTon` trước khi chuyển tab trả về **0 dòng** — trông y như 「mã seed không có
+trong master」. `SelectTab` vì thế chờ đúng cái lưới của tab đó xuất hiện.
+
+---
+
 ## 5. Ba cái bẫy
 
 ### 5.1 ⚠️ Ô 療法・処置 phải đọc NGUYÊN VĂN
@@ -133,11 +170,19 @@ rồi lấy phần chênh (`DrugAmountFlow.WaitForAddedDrugRow`).
 ## 6. Chạy
 
 ```powershell
-# LUÔN từng -Case một (F7)
-.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc0_ProbeMasterData        # chỉ DB
-.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc1_ProbePathBRow          # 1 vòng
-.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc2_ProbeWithoutUsage      # 1 vòng
-.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc3_ProbeCloneSourceIsPathA # 1 vòng
+# Lối GÕ MÃ
+.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc0_ProbeMasterData          # chỉ DB
+.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc1_ProbePathBRow            # 698
+.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc2_ProbeWithoutUsage        # 699
+.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc3_ProbeCloneSourceIsPathA  # 600, path A
+
+# Lối 薬剤選択 (Shift+F6)
+.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc4_ProbeMedicineSelectPathA    # 600
+.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc5_ProbeMedicineSelectPathB    # 698
+.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc6_ProbeMedicineSelectNoUsage  # 699
+
+# Hoặc cả fixture một lượt (~8 phút, vẫn trong trần 15 phút)
+.\run-resolve-drug-path-b.ps1 -Probe -Seed
 ```
 
 Không bật `-Seed` ⇒ fixture tự Ignore **trước khi mở app**, kèm lý do.
@@ -154,16 +199,32 @@ dòng nào bị *sửa* nên không cần khôi phục gì.
 
 ---
 
-## 7. Cặp Playwright
+## 7. Cặp Playwright — đối xứng 1-1
 
-`../web-tenant-tests/tests/treatment-grid/drug-path-b-mst-med.spec.ts` — đã có, và **dùng
-đúng ba mã ở mục 3** (clone 602 → 698/699, cùng tên, cùng 用法), nên số đo hai bên so thẳng
-được với nhau.
+Bên web tách theo **lối vào**, hai file:
 
-Điều cần khẳng định trước tiên vẫn là **KQ-3**: *WinForm có thật sự chèn dòng không*. Nếu
-hoá ra nó cũng không chèn thì điểm parity G2 nhỏ hơn nhiều so với giả định — bản web chỉ
-còn thiếu **câu thông báo**, không thiếu **dòng dữ liệu**. Chưa chạy vế WinForm lần nào
-thì chưa được kết luận theo hướng nào.
+| WinForm (ở đây) | Playwright |
+|---|---|
+| `Tc1_ProbePathBRow` (gõ mã, 698) | `treatment-grid/drug-path-b-mst-med.spec.ts` — 「mã 薬剤 không có mst_drug_rx → …」 |
+| `Tc2_ProbeWithoutUsage` (gõ mã, 699) | cùng file — 「…không có mst_drug_rx lẫn mst_med → chỉ còn 処置名称」 |
+| `Tc3_ProbeCloneSourceIsPathA` (gõ mã, 600) | *(bổ sung 2026-09-09 — xem §7.1)* |
+| `Tc4_ProbeMedicineSelectPathA` (Shift+F6, 600) | `dialogs-selection/medicine-selection-drug-name.spec.ts` — TC-1 |
+| `Tc5_ProbeMedicineSelectPathB` (Shift+F6, 698) | cùng file — TC-2 |
+| `Tc6_ProbeMedicineSelectNoUsage` (Shift+F6, 699) | cùng file — TC-3 |
+
+Cả ba mã (`600` clone → `698`/`699`), tên và 用法 **trùng từng ký tự** với hằng số của
+`medicine-selection-drug-name.spec.ts`, nên số đo so thẳng được.
+
+> ⚠️ `drug-path-b-mst-med.spec.ts` mặc định clone từ **602** (`TEST_CLONE_TRT_CD`), còn vế
+> WinForm và spec kia dùng **600**. Khác nguồn clone chỉ đổi `点`/`回` của mã seed, không
+> đổi chuỗi đang đo — nhưng muốn so cả hai con số đó thì chạy nó với
+> `TEST_CLONE_TRT_CD=600`.
+
+### 7.1 Chỗ vế web còn thiếu
+
+Spec lối **gõ mã** không có testcase **path A đối chứng** (vế WinForm là `Tc3`). Thiếu nó
+thì 「thấy hai dòng path B」 chưa loại được khả năng 「mã thuốc nào gõ vào cũng ra hai
+dòng」. Đã bổ sung — xem §9.
 
 ---
 

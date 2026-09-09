@@ -5,8 +5,10 @@ import {
     deleteMstMedRows,
     deleteMstTrtRows,
     deleteTreatmentRows,
+    findDrugRx,
     seedMstMedRows,
     seedMstTrtRows,
+    type DrugRxRow,
 } from '../_shared/db'
 import { openTreatmentEntry, ryoCells } from '../_shared/entry'
 import { TODAY_ISO, patNo, trtDt } from '../_shared/env'
@@ -141,6 +143,9 @@ test.describe('診療入力 — 薬剤 path B (mst_trt 名称 + mst_med 用法)'
     let disposeOverlays: (() => Promise<void>) | undefined
 
     /** id các dòng master đã seed — dọn theo id, KHÔNG theo (trt_cd, trt_sb). */
+    /** Dòng `mst_drug_rx` của mã nguồn clone — dựng kỳ vọng cho testcase ĐỐI CHỨNG path A. */
+    let cloneRx: DrugRxRow | undefined
+
     let seededTrtIds: string[] = []
     let seededMedIds: string[] = []
 
@@ -292,6 +297,10 @@ test.describe('診療入力 — 薬剤 path B (mst_trt 名称 + mst_med 用法)'
             { trtCd: PATH_B_CD, trtSb: SEED_TRT_SB, usageNm: PATH_B_USAGE },
         ])
 
+        // Dòng nguồn clone VẪN còn mst_drug_rx ⇒ dựng được kỳ vọng path A cho testcase
+        // ĐỐI CHỨNG ở cuối file.
+        cloneRx = (await findDrugRx(CLONE_TRT_CD, CLONE_TRT_SB, TRT_DT)) ?? undefined
+
         await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)
         await openTreatmentEntry(page, PAT_NO, TRT_DT)
         await drainAutoSantei()
@@ -372,5 +381,76 @@ test.describe('診療入力 — 薬剤 path B (mst_trt 名称 + mst_med 用法)'
             norm(cell),
             'dòng 用法 của mã KHÁC bị lọt sang — GetUsagesAsync đang không lọc theo (trt_cd, trt_sb)?',
         ).not.toContain(norm(PATH_B_USAGE))
+    })
+
+    /**
+     * ĐỐI CHỨNG của chính phép seed. Bổ sung 2026-09-09 cho khớp vế WinForm
+     * (`DrugPathBProbeTests.Tc3_ProbeCloneSourceIsPathA`).
+     *
+     * Không có testcase này thì hai testcase trên chưa loại được khả năng 「mã 薬剤 nào
+     * gõ vào cũng ra một-hai dòng như vậy」: mã seed là mã DUY NHẤT được đo, nên mọi
+     * quan sát về nó đều có thể là hành vi chung chứ không phải hành vi của path B.
+     *
+     * Dòng NGUỒN CLONE vẫn còn `mst_drug_rx` ⇒ nó đi path A ⇒ ô 療法・処置 phải khác
+     * hẳn: tên dựng từ `mst_drug` (KHÔNG phải `mst_trt.trt_nm`), và **có** hậu tố 用量
+     * — đúng cái path B không bao giờ có.
+     *
+     * Số đo WinForm cùng mã, cùng ngày (Tc3, 2026-09-09):
+     *     path A (600)  「ﾎﾞﾙﾀﾚﾝ錠25mg 2T」 ⏎ 「疼痛時　服用  2回分」
+     *     path B (698)  「ﾃｽﾄ院内調剤薬PB」 ⏎ 「ﾃｽﾄ用法　毎食後　服用」
+     */
+    test('ĐỐI CHỨNG — mã CÒN mst_drug_rx đi path A: tên từ mst_drug và CÓ hậu tố 用量', async () => {
+        skipWithReason(
+            !cloneRx,
+            `không đọc được mst_drug_rx của ${CLONE_TRT_CD}-${CLONE_TRT_SB} — không dựng ` +
+                'được kỳ vọng path A',
+        )
+
+        // ⚠️ KHÔNG dùng `commitSeededCode` ở đây: nó dò dòng bằng `hasText: nm`, tức so
+        //    chuỗi THÔ. Với mã seed thì được (tên nửa-chiều-rộng ở cả hai nơi), nhưng
+        //    tên path A đến từ `mst_drug` ở dạng 全角 (「ボルタレン錠２５ｍｇ」) trong khi
+        //    lưới in 半角 (「ボルタレン錠25mg 2T」) — BẪY 4, dò kiểu đó trượt sạch.
+        //    Lấy PHẦN CHÊNH của lưới thay vì dò theo tên.
+        const before = new Set(await ryoTexts())
+        await enterTen(String(CLONE_TRT_CD))
+
+        const unsupported = page.getByText(UNSUPPORTED_MSG)
+        const noTrt = page.getByText(NO_TRT_MSG)
+        let cell = ''
+        await expect
+            .poll(
+                async () => {
+                    if ((await unsupported.count()) || (await noTrt.count())) return 'BLOCKED'
+                    cell = (await ryoTexts()).find((c) => !before.has(c) && norm(c) !== '') ?? ''
+                    return cell
+                },
+                {
+                    timeout: 30_000,
+                    message: `mã ${CLONE_TRT_CD} không rơi xuống lưới (path A đối chứng)`,
+                },
+            )
+            .not.toBe('')
+        expect(cell, `mã ${CLONE_TRT_CD} bị chặn bởi alert thay vì rơi xuống lưới`).not.toBe('BLOCKED')
+        await step()
+
+        const flat = norm(cell)
+
+        // (1) Tên đến từ mst_drug, KHÔNG phải mst_trt.trt_nm. Hai chuỗi này khác nhau
+        //     thật: master ghi 「ﾎﾞﾙﾀﾚﾝ錠25mg２T」 còn mst_drug ghi 「ボルタレン錠２５ｍｇ」.
+        expect(
+            flat,
+            `path A phải dựng tên từ mst_drug 「${cloneRx!.dgNm}」: ${JSON.stringify(cell)}`,
+        ).toContain(norm(cloneRx!.dgNm))
+
+        // (2) CÓ hậu tố 用量 — đây là chỗ path A và path B tách hẳn nhau
+        //     (editDrugName:1119-1135 nằm TRONG nhánh A).
+        expect(
+            flat,
+            'path A phải gắn hậu tố 用量 「n日分」/「n回分」 — không có nghĩa là nhánh A đang ' +
+                `không chạy, và khi đó hai testcase path B ở trên chẳng chứng minh gì: ${JSON.stringify(cell)}`,
+        ).toMatch(/\d+\s*(日分|回分)/)
+
+        // (3) Và KHÔNG mang chuỗi của path B — nếu lẫn thì phép seed đã rò sang mã khác.
+        expect(flat, 'ô của path A lại mang 用法 seed của path B').not.toContain(norm(PATH_B_USAGE))
     })
 })
