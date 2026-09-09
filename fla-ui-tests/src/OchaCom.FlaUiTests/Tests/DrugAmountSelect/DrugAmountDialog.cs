@@ -319,6 +319,43 @@ public sealed class DrugAmountDialog
     /// <summary>戻る — huỷ, KHÔNG ghi gì ngược về lưới (<c>setPacData</c> chỉ chạy ở nhánh 確定).</summary>
     public bool Cancel(TestTrace? trace = null) => PressFButton("戻る", trace);
 
+    /// <summary>
+    /// 確定 <b>bằng phím Escape</b> — <c>formBase_KeyDown</c> ánh xạ
+    /// <c>Escape → btnF9_Click</c> (frm203020.cs:153-155), y hệt <c>End</c> (:150-152).
+    ///
+    /// <para>⚠️ <b>Chỉ dùng khi ĐANG ĐO CHÍNH hành vi đó.</b> Mọi chỗ khác phải đóng bằng
+    /// 「F10 戻る」. Escape rơi nhầm xuống <c>frm203002</c> là bung dirty gate
+    /// 「処置データは、変更されています。保存しますか？」 — và 「はい」 của câu đó ghi lại
+    /// TOÀN BỘ 処置行 của tháng.</para>
+    ///
+    /// <para>Vì thế hàm kéo hộp thoại lên foreground trước khi gửi phím, và sau đó
+    /// <b>kiểm lại</b>: dirty gate xuất hiện ⇒ trả về false kèm ghi chú, để testcase đỏ
+    /// với thông điệp 「HARNESS hỏng」 chứ không phải 「app sai」.</para>
+    /// </summary>
+    public bool ConfirmByEscape(TestTrace? trace = null)
+    {
+        try { Uia.ForceForeground(_window.Properties.NativeWindowHandle.ValueOrDefault); }
+        catch { /* không kéo lên được thì vẫn thử — modal thường đã là foreground */ }
+        Thread.Sleep(200);
+
+        trace?.Do("gui phim Escape vao 薬剤使用量選択 (= 確定, frm203020.cs:153-155)",
+                  () => Keyboard.Press(VirtualKeyShort.ESCAPE));
+
+        var closed = Waits.TryUntil(() => !IsOpen(), TimeSpan.FromSeconds(10));
+
+        // Gác: Escape rơi nhầm form thì dirty gate bung ra. Trả lời 「いいえ」 NGAY.
+        var gate = MsgBoxWin32.All(_app.ProcessId)
+                              .FirstOrDefault(d => Txt.Has(d.Text, "保存しますか"));
+        if (gate is not null)
+        {
+            trace?.Note($"⛔ Escape roi NHAM FORM — dirty gate bung ra: 「{gate.Text}」. " +
+                        "Tra loi 「いいえ」 va coi day la loi HARNESS, khong phai loi app.");
+            MsgBoxWin32.ClickButton(gate.Hwnd, "いいえ", "No", "Cancel");
+            return false;
+        }
+        return closed;
+    }
+
     private bool PressFButton(string caption, TestTrace? trace)
     {
         AutomationElement? btn;

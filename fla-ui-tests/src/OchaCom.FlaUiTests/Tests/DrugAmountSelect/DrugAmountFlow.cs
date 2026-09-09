@@ -426,6 +426,16 @@ public sealed class DrugAmountFlow
                      .ToList();
     }
 
+    /// <summary>
+    /// Chờ dòng thuốc rơi xuống lưới. Cần cho đường KHÔNG qua hộp thoại (mã đối chứng
+    /// <c>F2 = 0</c>): ở đó không có cửa sổ nào để chờ đóng, nên phải chờ chính cái dòng.
+    ///
+    /// <para>Deadline vừa phải: <c>frmTrtSel_Let_Trt_Data</c> còn chạy <c>getDrugName</c>
+    /// (một câu SQL) rồi <c>SingleChk</c> trước khi lưới vẽ lại.</para>
+    /// </summary>
+    public RegiRow? WaitForDrugRow(string nameFragment, TimeSpan? timeout = null) =>
+        Waits.TryFor(() => FindDrugRow(nameFragment), timeout ?? TimeSpan.FromSeconds(20));
+
     /// <summary>Đóng hộp thoại + 処置選択 mà KHÔNG chốt gì — dùng ở dọn dẹp giữa các testcase.</summary>
     public void CancelAll(TestTrace? trace = null)
     {

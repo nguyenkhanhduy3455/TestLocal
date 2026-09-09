@@ -50,15 +50,25 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *   `trtPt` / `freewd` và dựng lại tên thuốc với `freeWd`.
  *
  * ═══ NỬA WINFORM CỦA CHÍNH ĐIỂM PARITY NÀY ═══
- * `fla-ui-tests/src/OchaCom.FlaUiTests/Tests/DrugAmountSelect/` (commit b16bc17) đã
- * thông luồng + probe màn WinForm, và §4 của README ở đó để trống ô Playwright với
- * ghi chú 「viết sau, khi bên web có màn hình để so」. File này lấp đúng ba ô đó:
+ * `fla-ui-tests/src/OchaCom.FlaUiTests/Tests/DrugAmountSelect/` — probe
+ * (`DrugAmountProbeTests`, 4/4 lô đã chạy xanh trên máy thật) và fixture assert
+ * `DrugAmountTests`, ĐỐI XỨNG 1-1 với file này:
  *
- *     WinForm                      | file này
- *     ---------------------------- | -----------------------------------------
- *     Tc1_ProbeOpenAndShape        | 「bung ra với đúng thành phần…」
- *     Tc2_ProbeChangeAmount        | 「click vào dòng làm 使用量 +1…」 + 「Escape là 確定…」
- *     Tc3_ProbeReopenAndControl    | 「mã đối chứng…」 + 「F10 戻る…」
+ *     WinForm — DrugAmountTests         | file này
+ *     --------------------------------- | -------------------------------------------------
+ *     TcG1_DialogShowsMasterComponents   | 「bung ra với đúng thành phần…」
+ *     TcG2_ClickRowIncrementsQty         | 「click vào dòng làm 使用量 +1…」
+ *     TcG3_FixedCostRowIgnoresClick      | 「dòng 薬価固定 (cost_type 3)…」
+ *     TcG4_EscapeIsConfirm               | 「Escape là 確定…」
+ *     TcG5_ControlCodeDoesNotOpenDialog  | 「mã đối chứng (f2 = 0)…」
+ *     TcG6_BackKeepsMasterScore          | 「F10 戻る giữ nguyên 点数 mặc định…」
+ *     TcG7_TypedQtyRecalculates          | 「gõ thẳng 使用量 vào ô…」
+ *     TcG8_FreeWdRebuildsRowText         | 「確定 ⇒ ô 療法・処置 dựng lại…」
+ *
+ * Hai testcase cuối được BỔ SUNG vào file này 2026-09-09 cho khớp vế WinForm: nhánh
+ * `CellValidating` (gõ thẳng 使用量) và vòng `free_wd` quay lại ô 療法・処置 — nửa
+ * CÒN LẠI của điểm parity, vì 点数 đúng mà tên thuốc vẫn in 数量 cũ thì mới đúng
+ * một nửa. Bảng đối chiếu số đo hai bên: §9 README của thư mục WinForm.
  *
  * Vì thế mã mặc định ở đây CỐ Ý trùng mã của luồng WinForm (605/0) — hai vế phải đo
  * đúng một thứ thì mới đối chiếu được. Số đo WinForm ghi trong README đó:
@@ -143,6 +153,8 @@ interface DrugMaster {
     slots: DrugSlot[]
     /** `mst_trt.score1` — 点数 mặc định khi KHÔNG qua dialog. */
     score1: number
+    /** `mst_trt.g_cnt` — 回数 mặc định. 数量 và 回数 là HAI thứ khác nhau. */
+    gCnt: number
     /** `mst_trt.f3`. */
     f3: number
     /** Giá trị `f2` gốc, để trả lại ở afterAll. */
@@ -157,6 +169,33 @@ interface DrugMaster {
 function rowCost(slot: DrugSlot, medCnt: string): number {
     if (slot.costType === FIXED_COST_TYPE) return slot.dgCost
     return slot.dgCost * (Number.parseFloat(medCnt) || 0)
+}
+
+/**
+ * 単位 RÚT GỌN — `EditControl.editDrugUnitToShortUnit` (EditControl.cs:1160-1190),
+ * port ở `DrugNameEditor.EditDrugUnitToShortUnit`.
+ *
+ * Ô 療法・処置 in 単位 rút gọn chứ KHÔNG phải `unit_nm` của master: 「錠」 hiện ra là
+ * 「T」. Dò 数量 trên lưới bằng 単位 gốc là trượt sạch, và testcase sẽ kết luận
+ * 「free_wd không tới nơi」 — đổ oan hoàn toàn. (Nửa WinForm đã trả giá đúng chỗ này,
+ * 2026-09-09.)
+ */
+function shortUnit(unitNm: string): string {
+    if (!unitNm) return ''
+    switch (unitNm) {
+        case 'カートリッジ':
+            return 'Ct'
+        case 'カプセル':
+            return 'C'
+        case '錠':
+            return 'T'
+        case '管':
+            return 'A'
+        case '瓶':
+            return 'V'
+        default:
+            return unitNm.normalize('NFKC')
+    }
 }
 
 /** 点数 từ 薬価合計 — frm203020.getPoint. */
@@ -232,6 +271,70 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
     async function pointOfRow(key: string): Promise<number> {
         const raw = await page.locator(`[data-grid-cell="${key}|3"]`).innerText()
         return Number(raw.trim())
+    }
+
+    /**
+     * 回数 của dòng theo rowKey (cột 4).
+     *
+     * ⚠️ Ô này thường ĐANG Ở EDIT-MODE khi ta đọc: sau 確定, `commitDrugPick` đặt
+     * `setEditingCell({ col: RegiCol.kai })` để cú Enter kế tiếp chốt 回数 — đúng như
+     * WinForm mở editor ô 回 sau khi chốt 処置選択. Lúc đó ô là một `<input>` và
+     * `innerText` trả về CHUỖI RỖNG ⇒ `Number('')` = 0, trông y như 「app ghi 回 = 0」.
+     * Đã đỏ oan đúng vậy 2026-09-09. Đọc `inputValue()` khi có input.
+     */
+    async function countOfRow(key: string): Promise<number> {
+        const cell = page.locator(`[data-grid-cell="${key}|4"]`)
+        const input = cell.locator('input')
+        const raw = (await input.count())
+            ? await input.first().inputValue()
+            : await cell.innerText()
+        return Number(raw.trim())
+    }
+
+    /** Nguyên văn ô 療法・処置 (cột 2) — chuỗi mà `combineDrugNms` dựng. */
+    async function ryoTextOf(key: string): Promise<string> {
+        return (await page.locator(`[data-grid-cell="${key}|2"]`).innerText()).trim()
+    }
+
+    /**
+     * Mọi cụm 「số + 単位」 đọc được trong ô 療法・処置, theo thứ tự.
+     *
+     * Nhận CẢ HAI dạng đơn vị (rút gọn và đầy đủ) — xem {@link shortUnit}.
+     */
+    function amountsInRowText(text: string, unitNm: string): string[] {
+        const units = [...new Set([shortUnit(unitNm), unitNm].filter(Boolean))]
+        if (units.length === 0) return []
+        const esc = units.map((u) => u.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+        return [...text.matchAll(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(?:${esc})`, 'g'))].map(
+            (m) => m[1] ?? '',
+        )
+    }
+
+    /**
+     * Gõ THẲNG một 使用量 vào ô của dòng `idx` rồi Enter — nhánh `CellValidating`
+     * (frm203020.cs:269-301).
+     *
+     * ⚠️ KHÔNG click để chọn dòng: `CellClick` cộng 使用量 +1 với BẤT KỲ ô nào
+     * (:303-330), nên click để "đặt con trỏ" đã làm hỏng phép đo. Dời con trỏ bằng
+     * ↓ (`moveSelection`, không đụng 使用量), rồi gõ chữ số đầu tiên — lưới vào
+     * edit-mode và THAY nội dung cũ, đúng như `EditOnKeystrokeOrF2` của
+     * `DataGridView`.
+     */
+    async function typeQty(idx: number, value: string) {
+        const grid = dialog.locator('div[tabindex="0"]').first()
+        await grid.focus()
+        for (let i = 0; i < idx; i++) await page.keyboard.press('ArrowDown')
+
+        await page.keyboard.press(value[0] ?? '0')
+        const input = dialog.getByTestId('drug-qty-med-cnt').nth(idx).locator('input')
+        await expect(input, 'gõ chữ số không mở được editor ô 使用量').toBeVisible({
+            timeout: 10_000,
+        })
+        await input.fill(value)
+        await input.press('Enter')
+        await expect(input, 'Enter chưa đóng editor (CellValidating chưa chạy)').toBeHidden({
+            timeout: 10_000,
+        })
     }
 
     /** Số ở một ô của dialog (bỏ khoảng trắng đệm mà CellFormatting thêm vào). */
@@ -317,6 +420,7 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
             const empty = {
                 slots: [],
                 score1: 0,
+                gCnt: 0,
                 f3: 0,
                 prevF2: 0,
                 controlF2: 0,
@@ -331,8 +435,8 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
             const versionId = ver.rows[0]?.version_id
             if (!versionId) return empty
 
-            const trt = await c.query<{ f2: number; f3: number; score1: number }>(
-                `SELECT f2::int AS f2, f3::int AS f3, score1::int AS score1
+            const trt = await c.query<{ f2: number; f3: number; score1: number; g_cnt: number }>(
+                `SELECT f2::int AS f2, f3::int AS f3, score1::int AS score1, g_cnt::int AS g_cnt
                    FROM view_mst_trt_active
                   WHERE version_id = $1 AND trt_cd = $2 AND trt_sb = $3 LIMIT 1`,
                 [versionId, TRT_CD, TRT_SB],
@@ -393,6 +497,7 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
                     costType: r.cost_type,
                 })),
                 score1: trt.rows[0].score1,
+                gCnt: trt.rows[0].g_cnt,
                 f3: trt.rows[0].f3,
                 prevF2: trt.rows[0].f2,
                 controlF2: control.rows[0]?.f2 ?? -1,
@@ -473,6 +578,10 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
             expect(await row.getByTestId('drug-qty-med-cnt').innerText(), `dòng ${i}: 使用量`).toBe(
                 slot.medCnt,
             )
+            expect(
+                await num(row.getByTestId('drug-qty-dg-cost')),
+                `dòng ${i}: 薬価 phải là mst_drug.cost`,
+            ).toBeCloseTo(slot.dgCost, 2)
             expect(await row.getByTestId('drug-qty-unit-nm').innerText(), `dòng ${i}: 単位`).toBe(
                 slot.unitNm,
             )
@@ -589,6 +698,93 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
 
         const added = await waitForAddedRow(before)
         expect(await pointOfRow(added), '点 của dòng 薬剤 sau 確定').toBe(expected)
+
+        await drainAfterCommit()
+        await step()
+    })
+
+    test('gõ thẳng 使用量 vào ô: 薬価計/薬価合計/点数 tính lại (CellValidating)', async () => {
+        skipWithReason(scalableIdx < 0, 'không có dòng nào nhân theo 使用量 để gõ')
+
+        await openDialog()
+        const row = dialog.getByTestId('drug-qty-row').nth(scalableIdx)
+        const slot = master.slots[scalableIdx]!
+
+        // Con số phải KHÁC cả 使用量 mặc định lẫn 「mặc định + 1」, nếu không thì không
+        // phân biệt được nhánh gõ với nhánh click.
+        const base = Number.parseFloat(slot.medCnt) || 0
+        const typed = String(base + 7)
+
+        await typeQty(scalableIdx, typed)
+
+        await expect(
+            row.getByTestId('drug-qty-med-cnt'),
+            'gõ chữ số phải GHI ĐÈ 使用量 (EditOnKeystrokeOrF2), không nối thêm',
+        ).toHaveText(typed)
+
+        const sum = master.slots.reduce(
+            (acc, sl, i) => acc + rowCost(sl, i === scalableIdx ? typed : sl.medCnt),
+            0,
+        )
+        expect(
+            await num(row.getByTestId('drug-qty-cost')),
+            '薬価計 dòng vừa gõ — CellValidating đặt lại ô rồi gọi getSum (frm203020.cs:296-297)',
+        ).toBeCloseTo(rowCost(slot, typed), 2)
+        expect(await num(dialog.getByTestId('drug-qty-cost-sum')), '薬価合計').toBeCloseTo(
+            sum,
+            2,
+        )
+        expect(await num(dialog.getByTestId('drug-qty-point')), '点数 tính lại từ 薬価合計 mới').toBe(
+            pointOf(sum, master.f3),
+        )
+
+        await dismissDialog()
+        await step()
+    })
+
+    test('確定 ⇒ ô 療法・処置 dựng lại với 数量 MỚI và 単位 rút gọn (free_wd)', async () => {
+        skipWithReason(scalableIdx < 0, 'không có dòng nào nhân theo 使用量 để đổi')
+
+        await openDialog()
+        const slot = master.slots[scalableIdx]!
+        const base = Number.parseFloat(slot.medCnt) || 0
+        const typed = String(base + 7)
+
+        await typeQty(scalableIdx, typed)
+
+        const sum = master.slots.reduce(
+            (acc, sl, i) => acc + rowCost(sl, i === scalableIdx ? typed : sl.medCnt),
+            0,
+        )
+        const expectedPoint = pointOf(sum, master.f3)
+
+        const before = new Set((await ryoRows()).map((r) => r.key))
+        await dialog.getByRole('button', { name: /F9\s*確定/ }).click()
+        await expect(dialog).toBeHidden({ timeout: 15_000 })
+
+        const added = await waitForAddedRow(before)
+        const text = await ryoTextOf(added)
+        const amounts = amountsInRowText(text, slot.unitNm)
+
+        // Đây là nửa CÒN LẠI của điểm parity: 点数 đã đúng thì cũng phải thấy 数量 mới
+        // trong chính ô 療法・処置 — tức `freewd` đã đi trọn vòng
+        // (frm203016.cs:1451 → :1462 → EditControl.cs:1049-1055).
+        expect(
+            amounts,
+            `ô 療法・処置 phải in ra 数量 MỚI. Đọc ra 「${text}」; 単位 「${slot.unitNm}」 ` +
+                `hiện ra là 「${shortUnit(slot.unitNm)}」`,
+        ).toContain(typed)
+        expect(
+            amounts,
+            `ô 療法・処置 KHÔNG được còn 数量 GỐC 「${slot.medCnt}」 — còn nghĩa là freewd ` +
+                'chưa tới editDrugName',
+        ).not.toContain(slot.medCnt)
+
+        expect(await pointOfRow(added), '点 = 点数 của dialog lúc 確定').toBe(expectedPoint)
+        expect(
+            await countOfRow(added),
+            '回 giữ nguyên g_cnt của master — 数量 và 回数 là HAI thứ khác nhau',
+        ).toBe(master.gCnt > 0 ? master.gCnt : 1)
 
         await drainAfterCommit()
         await step()
