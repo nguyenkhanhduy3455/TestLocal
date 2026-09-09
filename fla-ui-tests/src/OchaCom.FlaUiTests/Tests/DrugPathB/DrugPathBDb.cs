@@ -35,21 +35,23 @@ namespace OchaCom.FlaUiTests.Tests.DrugPathB;
 /// MỒ CÔI — không có 処置 tương ứng trong master, nên gõ mã đó chỉ ra
 /// 「該当処置はありません」 chứ không tới được path B.)
 ///
-/// ⇒ Luồng phải <b>giấu tạm</b> dòng <c>MST_DRUG_RX</c> của mã đem thử: chụp — in ra —
-/// trả lại (F20), nằm sau cờ riêng <c>drugPathB.allowSeed</c> (mặc định TẮT).
-/// <b>Thứ bị sửa là bảng 処置変換 dùng chung cả phòng khám</b>, không phải dữ liệu bệnh
-/// nhân test — nên KHÔNG dùng chung <c>parity.allowSave</c> hay
-/// <c>drugAmount.allowSeed</c>.
+/// ⇒ Luồng phải <b>TẠO</b> mã 薬剤 riêng: clone một dòng master có sẵn ra mã mới rồi
+/// chèn <c>MST_MED</c> cho nó. Mã mới thì <b>đương nhiên</b> không có
+/// <c>MST_DRUG_RX</c> ⇒ rơi thẳng vào path B, không phải ép gì cả.
 ///
-/// <para>Lớp này CHỈ đụng <c>MST_DRUG_RX</c>. <c>MST_MED</c> và bảng master
-/// (<c>MST_TRT…</c>) chỉ được ĐỌC.</para>
+/// <para><b>Lượt chạy chỉ THÊM dòng rồi XOÁ — không sửa dòng nào đang có.</b> Một dòng
+/// thêm vào không thể làm hỏng dữ liệu sẵn có, còn dọn dẹp chỉ là <c>DELETE</c> theo
+/// đúng khoá vừa tạo. Vẫn nằm sau cờ riêng <c>drugPathB.allowSeed</c> (mặc định TẮT) vì
+/// bảng bị thêm vào là <b>master dùng chung cả phòng khám</b> — và KHÔNG dùng chung
+/// <c>drugAmount.allowSeed</c>, bên đó SỬA <c>mst_trt.F2</c> của một dòng thật.</para>
+///
+/// <para>Đây cũng là chiến lược của vế Playwright
+/// (<c>../web-tenant-tests/tests/treatment-grid/drug-path-b-mst-med.spec.ts</c>:
+/// <c>seedMstTrtRows</c> clone 602 ra 698/699). Hai bên seed <b>cùng mã, cùng tên, cùng
+/// 用法</b> — điều kiện để số đo so thẳng được với nhau.</para>
 /// </summary>
 public sealed class DrugPathBDb
 {
-    /// <summary>Khoảng ngày đem "cất" dòng 処置変換 vào — xa hẳn mọi ngày test.</summary>
-    public const string ParkedStDt = "29990101";
-    public const string ParkedEdDt = "29991231";
-
     private readonly string _connectionString;
     private readonly int _commandTimeout;
 
@@ -279,6 +281,18 @@ public sealed class DrugPathBDb
         return list;
     }
 
+    /// <summary><c>grp</c> của một mã — 薬剤選択 xếp nó vào tab nào (1 内服 · 2 屯服 · 3 外用).</summary>
+    public int GrpOf(DateTime date, int trtCd, int trtSb)
+    {
+        var table = ActiveTrtTable(date);
+        using var con = Open();
+        using var cmd = Cmd(con, $"SELECT GRP FROM {table} WHERE TRT_CD = @cd AND TRT_SB = @sb");
+        cmd.Parameters.Add("@cd", SqlDbType.SmallInt).Value = trtCd;
+        cmd.Parameters.Add("@sb", SqlDbType.TinyInt).Value = trtSb;
+        var v = cmd.ExecuteScalar();
+        return v is null || v == DBNull.Value ? 0 : Convert.ToInt32(v);
+    }
+
     public int CountMstMed()
     {
         using var con = Open();
@@ -286,195 +300,222 @@ public sealed class DrugPathBDb
         return Convert.ToInt32(cmd.ExecuteScalar());
     }
 
+
     // ─────────────────────────────────────────────────────────────────────────
-    // ② Seed — hai đường vào path B, và chúng KHÁC nhau
+    // ② Seed — TẠO MÃ MỚI, không đụng dòng nào có sẵn
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Hai cách ép một mã rơi vào path B. Điều kiện rẽ nhánh ở EditControl.cs:1048.</summary>
-    public enum SeedMode
+    /// <summary>Một mã 薬剤 cần dựng cho lượt chạy.</summary>
+    /// <param name="TrtCd">Mã mới — phải CHƯA có trong master (hàng rào kiểm trước).</param>
+    /// <param name="TrtNm">
+    /// 処置名称 — chính là <b>dòng thứ nhất</b> mà path B in ra. Cố ý KHÔNG chứa
+    /// 「日分」/「回分」 để câu hỏi 「path B có gắn hậu tố 用量 không」 không bị chính dữ
+    /// liệu seed làm nhiễu.
+    /// </param>
+    /// <param name="Usage">
+    /// <c>MST_MED.usage</c> — <b>dòng thứ hai</b>. Chuỗi rỗng ⇒ KHÔNG chèn dòng
+    /// <c>MST_MED</c> nào ⇒ path B chỉ ra một dòng (đó là mã ĐỐI CHỨNG).
+    /// </param>
+    public sealed record SeedSpec(int TrtCd, int TrtSb, string TrtNm, string Usage)
     {
-        /// <summary>
-        /// <b>Giấu dòng 処置変換 khỏi ngày test</b> — dời <c>app_st_dt</c>/<c>app_ed_dt</c> ra
-        /// <see cref="ParkedStDt"/>–<see cref="ParkedEdDt"/>.
-        ///
-        /// <para>⇒ <c>getMstDrugRXListJoinMstDrug</c> trả về <b>null</b>
-        /// (MstDrugRX.cs:214-219) ⇒ path B với <c>drugRxData = null</c>. Đây là hình dạng
-        /// THẬT của ca 「phòng khám tự đăng ký thuốc riêng」: có dòng master, không có dòng
-        /// 処置変換.</para>
-        ///
-        /// <para>⚠️ Hai cột này nằm trong KHOÁ CHÍNH của <c>MST_DRUG_RX</c>
-        /// (trt_cd, trt_sb, app_st_dt, app_ed_dt). Update vẫn hợp lệ vì khoá đích không
-        /// đụng dòng nào — nhưng vì thế mà phải có hàng rào <see cref="ParkedRowExists"/>.</para>
-        /// </summary>
-        HideByDate,
-
-        /// <summary>
-        /// <b>Bỏ trống <c>dg_cd1..3</c></b> ⇒ phép nối sang <c>mst_drug</c> không ra tên ⇒
-        /// <c>dg_nm[0] == ""</c> ⇒ vẫn vào path B, nhưng <c>drugRxData</c> <b>KHÁC null</b>.
-        ///
-        /// <para>Đây là <b>ĐỐI CHỨNG của chính cách seed</b>: nếu hai chế độ cho ra cùng ô
-        /// 療法・処置 thì kết luận 「path B in ra thế này」 không phụ thuộc cách ta ép nó
-        /// vào path B. Nếu khác nhau thì chính chỗ khác đó là thứ phải soi — nhánh
-        /// <c>drugInfStr.drugRxData != null</c> ở frm203016.cs:1470 chỉ chạy ở chế độ này.</para>
-        ///
-        /// <para>Không đụng cột khoá.</para>
-        /// </summary>
-        BlankDgCd,
-    }
-
-    /// <summary>Ảnh chụp mọi dòng <c>MST_DRUG_RX</c> của các mã luồng này đụng tới.</summary>
-    public sealed record RxSnapshot(IReadOnlyList<RxRow> Rows)
-    {
-        public override string ToString() =>
-            Rows.Count == 0 ? "(không có dòng nào)" : string.Join(" · ", Rows);
-    }
-
-    /// <summary>
-    /// Chụp TRƯỚC mọi lệnh ghi (F20). Chụp sau là chụp phải chính cái mốc mình vừa đặt.
-    /// </summary>
-    public RxSnapshot TakeSnapshot(params (int TrtCd, int TrtSb)[] keys)
-    {
-        using var con = Open();
-        var rows = new List<RxRow>();
-        foreach (var (cd, sb) in keys) rows.AddRange(ReadRx(con, cd, sb));
-        return new RxSnapshot(rows);
-    }
-
-    /// <summary>
-    /// HÀNG RÀO — đã có sẵn dòng nằm ở khoảng 「cất tạm」 chưa.
-    ///
-    /// <para>Có ⇒ một lượt chạy trước đã chết giữa chừng và chưa trả lại. Seed tiếp là
-    /// chồng lên rác cũ, còn teardown thì sẽ "khôi phục" về đúng cái rác đó. Fixture
-    /// phải DỪNG và bắt người chạy dọn tay.</para>
-    /// </summary>
-    public bool ParkedRowExists(int trtCd, int trtSb)
-    {
-        using var con = Open();
-        using var cmd = Cmd(con,
-            """
-            SELECT COUNT(*) FROM MST_DRUG_RX
-             WHERE trt_cd = @cd AND trt_sb = @sb AND app_st_dt = @st AND app_ed_dt = @ed
-            """);
-        cmd.Parameters.Add("@cd", SqlDbType.SmallInt).Value = trtCd;
-        cmd.Parameters.Add("@sb", SqlDbType.TinyInt).Value = trtSb;
-        cmd.Parameters.Add("@st", SqlDbType.VarChar, 8).Value = ParkedStDt;
-        cmd.Parameters.Add("@ed", SqlDbType.VarChar, 8).Value = ParkedEdDt;
-        return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+        public bool WantsUsage => Usage.Length > 0;
     }
 
     /// <param name="Blocker">Khác null ⇒ KHÔNG seed được; testcase phải Ignore kèm lý do này.</param>
-    public sealed record Seed(SeedMode Mode, int TrtCd, int TrtSb, RxRow? Hidden, string? Blocker)
+    public sealed record SeedResult(string Table, IReadOnlyList<SeedSpec> Created, string? Blocker)
     {
         public override string ToString() =>
             Blocker is not null
                 ? $"KHÔNG seed được: {Blocker}"
-                : $"{Mode} trên {TrtCd}/{TrtSb} — dòng bị đụng: {Hidden?.ToString() ?? "(không có)"}";
-    }
-
-    /// <summary>Ép <paramref name="c"/> rơi vào path B cho ngày <paramref name="date"/>.</summary>
-    public Seed SeedPathB(PathBCandidate c, DateTime date, SeedMode mode)
-    {
-        var covering = c.RxCovering(date);
-        if (covering is null)
-            return new Seed(mode, c.TrtCd, c.TrtSb, null,
-                $"{c.TrtCd}/{c.TrtSb} vốn KHÔNG có dòng 処置変換 phủ ngày {date:yyyy-MM-dd} — " +
-                "nó đã ở path B sẵn, không cần seed (và cũng nghĩa là dữ liệu đã đổi so với " +
-                "lúc đo 2026-09-09).");
-
-        if (mode == SeedMode.HideByDate && ParkedRowExists(c.TrtCd, c.TrtSb))
-            return new Seed(mode, c.TrtCd, c.TrtSb, covering,
-                $"đã có sẵn dòng {c.TrtCd}/{c.TrtSb} ở khoảng cất tạm " +
-                $"{ParkedStDt}–{ParkedEdDt} — một lượt chạy trước chết giữa chừng. DỌN TAY: " +
-                $"UPDATE MST_DRUG_RX SET app_st_dt='<gốc>', app_ed_dt='<gốc>' WHERE trt_cd={c.TrtCd} " +
-                $"AND trt_sb={c.TrtSb} AND app_st_dt='{ParkedStDt}';");
-
-        using var con = Open();
-        var sql = mode == SeedMode.HideByDate
-            ? """
-              UPDATE MST_DRUG_RX SET app_st_dt = @newSt, app_ed_dt = @newEd
-               WHERE trt_cd = @cd AND trt_sb = @sb AND app_st_dt = @st AND app_ed_dt = @ed
-              """
-            : """
-              UPDATE MST_DRUG_RX SET dg_cd1 = '', dg_cd2 = '', dg_cd3 = ''
-               WHERE trt_cd = @cd AND trt_sb = @sb AND app_st_dt = @st AND app_ed_dt = @ed
-              """;
-
-        using var cmd = Cmd(con, sql);
-        cmd.Parameters.Add("@cd", SqlDbType.SmallInt).Value = c.TrtCd;
-        cmd.Parameters.Add("@sb", SqlDbType.TinyInt).Value = c.TrtSb;
-        cmd.Parameters.Add("@st", SqlDbType.VarChar, 8).Value = covering.AppStDt;
-        cmd.Parameters.Add("@ed", SqlDbType.VarChar, 8).Value = covering.AppEdDt;
-        if (mode == SeedMode.HideByDate)
-        {
-            cmd.Parameters.Add("@newSt", SqlDbType.VarChar, 8).Value = ParkedStDt;
-            cmd.Parameters.Add("@newEd", SqlDbType.VarChar, 8).Value = ParkedEdDt;
-        }
-
-        var n = cmd.ExecuteNonQuery();
-        return n == 1
-            ? new Seed(mode, c.TrtCd, c.TrtSb, covering, null)
-            : new Seed(mode, c.TrtCd, c.TrtSb, covering, $"UPDATE đụng {n} dòng (mong đợi 1)");
+                : $"{Table}: đã tạo " + string.Join(" · ",
+                      Created.Select(c => $"{c.TrtCd}/{c.TrtSb} 「{c.TrtNm}」" +
+                                          (c.WantsUsage ? $" + 用法「{c.Usage}」" : " (không 用法)")));
     }
 
     /// <summary>
-    /// Trả <c>MST_DRUG_RX</c> về đúng ảnh chụp: đưa dòng đã cất tạm về lại khoảng ngày cũ
-    /// và đặt lại <c>dg_cd1..3</c> cho MỌI dòng trong ảnh.
+    /// Dựng các mã đem thử bằng cách <b>CLONE</b> một dòng 薬剤 có sẵn rồi đổi
+    /// <c>TRT_CD</c>/<c>TRT_NM</c>, và chèn <c>MST_MED</c> cho mã nào cần 用法.
     ///
-    /// <para>Không chỉ "hoàn tác cái vừa làm": lượt chạy có thể chết sau chế độ seed thứ
-    /// hai, hoặc chết giữa hai chế độ. So với ảnh chụp là cách duy nhất chắc chắn.</para>
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// VÌ SAO CLONE CHỨ KHÔNG SỬA DÒNG CÓ SẴN
+    /// ═══════════════════════════════════════════════════════════════════════
+    /// Mã mới thì <b>đương nhiên</b> không có dòng <c>MST_DRUG_RX</c> ⇒ rơi thẳng vào
+    /// path B, không phải ép gì cả. Và quan trọng hơn: lượt chạy <b>KHÔNG SỬA</b> dòng
+    /// nào đang có — nó chỉ THÊM rồi XOÁ. Một dòng thêm vào không thể làm hỏng dữ liệu
+    /// sẵn có, còn dọn dẹp thì chỉ là <c>DELETE</c> theo đúng khoá mình vừa tạo.
+    ///
+    /// <para>Đây cũng là chiến lược của vế Playwright
+    /// (<c>drug-path-b-mst-med.spec.ts</c>: <c>seedMstTrtRows</c> clone từ 602 ra
+    /// 698/699), nên hai bên seed <b>cùng mã, cùng tên, cùng 用法</b> — điều kiện để số
+    /// đo so thẳng được với nhau.</para>
+    ///
+    /// <para>Clone lấy đủ ~70 cột NOT NULL của bảng master bằng cách dựng danh sách cột
+    /// từ <c>sys.columns</c> — viết tay 70 tên cột là chỗ chắc chắn sẽ sai khi master
+    /// đổi phiên bản.</para>
     /// </summary>
-    public string Restore(RxSnapshot snap)
+    /// <param name="cloneFrom">
+    /// Dòng nguồn. Phải là một 薬剤 600–699 <b>đang dùng được</b>: <c>active_flg = 1</c>,
+    /// <c>F2 = 0</c> (không mở 薬剤使用量選択 — đó là luồng G1, không phải luồng này).
+    /// </param>
+    public SeedResult SeedCodes(DateTime date, (int TrtCd, int TrtSb) cloneFrom,
+                                IReadOnlyList<SeedSpec> specs)
     {
-        if (snap.Rows.Count == 0) return "ảnh chụp rỗng — không có gì để trả lại.";
+        var table = ActiveTrtTable(date);
 
-        var done = new List<string>();
+        // HÀNG RÀO (F22): mã đích đã tồn tại ⇒ hoặc master thật có mã đó, hoặc một lượt
+        // chạy trước chết giữa chừng. Cả hai trường hợp đều KHÔNG được ghi đè.
+        var clash = ExistingCodes(table, specs.Select(x => (x.TrtCd, x.TrtSb)).ToList());
+        if (clash.Count > 0)
+            return new SeedResult(table, [], 
+                $"mã đích đã có sẵn trong {table}: {string.Join(", ", clash)}. " +
+                "Hoặc master thật dùng mã đó (đổi drugPathB.pathBTrtCd/noMedTrtCd), hoặc một " +
+                $"lượt chạy trước chưa dọn (DELETE FROM {table} WHERE TRT_CD IN (…); " +
+                "DELETE FROM MST_MED WHERE TRT_CD IN (…)).");
+
+        var cols = ColumnsOf(table);
+        if (cols.Count == 0) return new SeedResult(table, [], $"không đọc được cột của {table}");
+
+        var created = new List<SeedSpec>();
         using var con = Open();
         using var tx = con.BeginTransaction();
         try
         {
-            foreach (var row in snap.Rows)
+            foreach (var spec in specs)
             {
-                // ① Dòng đang bị cất tạm → đưa khoảng ngày về chỗ cũ.
-                using (var back = Cmd(con,
-                    """
-                    UPDATE MST_DRUG_RX SET app_st_dt = @st, app_ed_dt = @ed
-                     WHERE trt_cd = @cd AND trt_sb = @sb
-                       AND app_st_dt = @pst AND app_ed_dt = @ped
-                    """, tx))
+                // TRT_CD / TRT_SB / TRT_NM / CCT_NM lấy từ tham số, phần còn lại chép nguyên.
+                var select = string.Join(", ", cols.Select(c => c.ToUpperInvariant() switch
                 {
-                    back.Parameters.Add("@st", SqlDbType.VarChar, 8).Value = row.AppStDt;
-                    back.Parameters.Add("@ed", SqlDbType.VarChar, 8).Value = row.AppEdDt;
-                    back.Parameters.Add("@cd", SqlDbType.SmallInt).Value = row.TrtCd;
-                    back.Parameters.Add("@sb", SqlDbType.TinyInt).Value = row.TrtSb;
-                    back.Parameters.Add("@pst", SqlDbType.VarChar, 8).Value = ParkedStDt;
-                    back.Parameters.Add("@ped", SqlDbType.VarChar, 8).Value = ParkedEdDt;
-                    if (back.ExecuteNonQuery() > 0) done.Add($"{row.TrtCd}/{row.TrtSb} ngày → {row.AppStDt}–{row.AppEdDt}");
+                    "TRT_CD" => "@cd",
+                    "TRT_SB" => "@sb",
+                    "TRT_NM" => "@nm",
+                    "CCT_NM" => "@nm",
+                    _ => "src." + c,
+                }));
+
+                using var ins = Cmd(con,
+                    $"INSERT INTO {table} ({string.Join(", ", cols)}) " +
+                    $"SELECT {select} FROM {table} src " +
+                    "WHERE src.TRT_CD = @fromCd AND src.TRT_SB = @fromSb", tx);
+                ins.Parameters.Add("@cd", SqlDbType.SmallInt).Value = spec.TrtCd;
+                ins.Parameters.Add("@sb", SqlDbType.TinyInt).Value = spec.TrtSb;
+                ins.Parameters.Add("@nm", SqlDbType.NVarChar, 80).Value = spec.TrtNm;
+                ins.Parameters.Add("@fromCd", SqlDbType.SmallInt).Value = cloneFrom.TrtCd;
+                ins.Parameters.Add("@fromSb", SqlDbType.TinyInt).Value = cloneFrom.TrtSb;
+
+                if (ins.ExecuteNonQuery() != 1)
+                {
+                    tx.Rollback();
+                    return new SeedResult(table, [],
+                        $"clone {cloneFrom.TrtCd}/{cloneFrom.TrtSb} → {spec.TrtCd}/{spec.TrtSb} " +
+                        "không chèn được đúng 1 dòng — dòng nguồn có tồn tại trong " + table + " không?");
                 }
 
-                // ② dg_cd về đúng ảnh chụp (no-op nếu chưa từng bị bỏ trống).
-                using var cd = Cmd(con,
-                    """
-                    UPDATE MST_DRUG_RX SET dg_cd1 = @c1, dg_cd2 = @c2, dg_cd3 = @c3
-                     WHERE trt_cd = @cd AND trt_sb = @sb AND app_st_dt = @st AND app_ed_dt = @ed
-                    """, tx);
-                cd.Parameters.Add("@c1", SqlDbType.VarChar, 12).Value = row.DgCd1;
-                cd.Parameters.Add("@c2", SqlDbType.VarChar, 12).Value = row.DgCd2;
-                cd.Parameters.Add("@c3", SqlDbType.VarChar, 12).Value = row.DgCd3;
-                cd.Parameters.Add("@cd", SqlDbType.SmallInt).Value = row.TrtCd;
-                cd.Parameters.Add("@sb", SqlDbType.TinyInt).Value = row.TrtSb;
-                cd.Parameters.Add("@st", SqlDbType.VarChar, 8).Value = row.AppStDt;
-                cd.Parameters.Add("@ed", SqlDbType.VarChar, 8).Value = row.AppEdDt;
-                cd.ExecuteNonQuery();
+                if (spec.WantsUsage)
+                {
+                    // MST_MED: mọi cột NOT NULL, F1..F10 là varchar ⇒ phải đưa chuỗi rỗng.
+                    using var med = Cmd(con,
+                        """
+                        INSERT INTO MST_MED (TRT_CD, TRT_SB, GRP, USAGE,
+                                             F1, F2, F3, F4, F5, F6, F7, F8, F9, F10)
+                        VALUES (@cd, @sb, @grp, @usage, '', '', '', '', '', '', '', '', '', '')
+                        """, tx);
+                    med.Parameters.Add("@cd", SqlDbType.SmallInt).Value = spec.TrtCd;
+                    med.Parameters.Add("@sb", SqlDbType.TinyInt).Value = spec.TrtSb;
+                    med.Parameters.Add("@grp", SqlDbType.SmallInt).Value = 1;
+                    med.Parameters.Add("@usage", SqlDbType.VarChar, 100).Value = spec.Usage;
+                    med.ExecuteNonQuery();
+                }
+
+                created.Add(spec);
             }
             tx.Commit();
         }
         catch (Exception e)
         {
             try { tx.Rollback(); } catch { /* */ }
-            return $"⛔ KHÔNG trả lại được MST_DRUG_RX — SỬA TAY theo ảnh chụp: {snap}. Lỗi: {e.Message}";
+            return new SeedResult(table, [], e.Message);
         }
-        return $"đã trả lại MST_DRUG_RX ({snap.Rows.Count} dòng trong ảnh)" +
-               (done.Count > 0 ? ": " + string.Join(" · ", done) : " — không dòng nào còn bị cất tạm.");
+        return new SeedResult(table, created, null);
+    }
+
+    /// <summary>
+    /// Xoá HẲN các mã đã seed khỏi bảng master và <c>MST_MED</c>.
+    ///
+    /// <para>Xoá theo <b>khoá mình vừa tạo</b>, không theo ảnh chụp: lượt chạy này chỉ
+    /// THÊM dòng, nên dọn là xoá đúng những dòng đó. Gọi được nhiều lần (idempotent) —
+    /// cần thế vì nó chạy cả ở <c>TearDown</c> lẫn <c>OneTimeTearDown</c>.</para>
+    /// </summary>
+    public string Cleanup(DateTime date, IReadOnlyList<(int TrtCd, int TrtSb)> keys)
+    {
+        if (keys.Count == 0) return "không có mã nào để dọn.";
+        var table = ActiveTrtTable(date);
+
+        var done = new List<string>();
+        using var con = Open();
+        using var tx = con.BeginTransaction();
+        try
+        {
+            foreach (var (cd, sb) in keys)
+            {
+                var n = 0;
+                using (var d1 = Cmd(con, $"DELETE FROM {table} WHERE TRT_CD = @cd AND TRT_SB = @sb", tx))
+                {
+                    d1.Parameters.Add("@cd", SqlDbType.SmallInt).Value = cd;
+                    d1.Parameters.Add("@sb", SqlDbType.TinyInt).Value = sb;
+                    n += d1.ExecuteNonQuery();
+                }
+                using (var d2 = Cmd(con, "DELETE FROM MST_MED WHERE TRT_CD = @cd AND TRT_SB = @sb", tx))
+                {
+                    d2.Parameters.Add("@cd", SqlDbType.SmallInt).Value = cd;
+                    d2.Parameters.Add("@sb", SqlDbType.TinyInt).Value = sb;
+                    n += d2.ExecuteNonQuery();
+                }
+                if (n > 0) done.Add($"{cd}/{sb} ({n} dòng)");
+            }
+            tx.Commit();
+        }
+        catch (Exception e)
+        {
+            try { tx.Rollback(); } catch { /* */ }
+            return $"⛔ KHÔNG dọn được — SỬA TAY: DELETE FROM {table} WHERE TRT_CD IN " +
+                   $"({string.Join(",", keys.Select(k => k.TrtCd))}); và tương tự cho MST_MED. " +
+                   $"Lỗi: {e.Message}";
+        }
+        return done.Count == 0
+            ? "không còn dòng seed nào (đã dọn từ trước)."
+            : "đã dọn: " + string.Join(" · ", done);
+    }
+
+    /// <summary>Những mã trong danh sách ĐÃ có sẵn trong bảng master — hàng rào trước khi seed.</summary>
+    public IReadOnlyList<string> ExistingCodes(string table, IReadOnlyList<(int TrtCd, int TrtSb)> keys)
+    {
+        var found = new List<string>();
+        using var con = Open();
+        foreach (var (cd, sb) in keys)
+        {
+            using var cmd = Cmd(con, $"SELECT COUNT(*) FROM {table} WHERE TRT_CD = @cd AND TRT_SB = @sb");
+            cmd.Parameters.Add("@cd", SqlDbType.SmallInt).Value = cd;
+            cmd.Parameters.Add("@sb", SqlDbType.TinyInt).Value = sb;
+            if (Convert.ToInt32(cmd.ExecuteScalar()) > 0) found.Add($"{cd}/{sb}");
+        }
+        return found;
+    }
+
+    /// <summary>Tên các cột của bảng master, đúng thứ tự khai báo.</summary>
+    private IReadOnlyList<string> ColumnsOf(string table)
+    {
+        using var con = Open();
+        using var cmd = Cmd(con,
+            """
+            SELECT c.name FROM sys.columns c
+             WHERE c.object_id = OBJECT_ID(@t) AND c.is_computed = 0
+             ORDER BY c.column_id
+            """);
+        cmd.Parameters.Add("@t", SqlDbType.NVarChar, 128).Value = table;
+        var cols = new List<string>();
+        using var r = cmd.ExecuteReader();
+        while (r.Read()) cols.Add(r.GetString(0));
+        return cols;
     }
 
     private static string Str(SqlDataReader r, int i) =>

@@ -259,16 +259,26 @@
       "",
       "⚠️ Du lieu dev KHONG co ca nao roi vao path B: ca 63/63 ma 600-699 deu co 処置変換",
       "phu ngay test (do 2026-09-09). MST_MED co 53 dong; 620/0 va 647/1 la dong MO COI",
-      "(khong co 処置 trong master) nen go ma do chi ra 「該当処置はありません」."
+      "(khong co 処置 trong master) nen go ma do chi ra 「該当処置はありません」.",
+      "",
+      "Cap Playwright: ../web-tenant-tests/tests/treatment-grid/drug-path-b-mst-med.spec.ts",
+      "Hai ve seed CUNG ma, CUNG ten, CUNG 用法 — dieu kien de so do so thang duoc."
     ],
-    "//allowSeed": "Cho phep GIAU TAM dong MST_DRUG_RX cua ma dem thu (doi app_st_dt/app_ed_dt ra 29990101-29991231, hoac bo trong dg_cd1..3). Co RIENG, khong dung chung drugAmount.allowSeed: ben do sua mst_trt.F2 — bang khac, rui ro khac. Fixture chup MOI dong rx cua cac ma dung toi truoc khi ghi, IN RA STDOUT, va tra lai o OneTimeTearDown. Mac dinh false => fixture tu Ignore TRUOC khi mo app.",
+    "//allowSeed": "Cho phep TAO cac ma seed trong bang master + MST_MED. Luot chay CHI THEM dong roi XOA, khong sua dong nao co san — ma moi thi duong nhien khong co MST_DRUG_RX nen roi thang vao path B. Van co co RIENG vi bang bi them vao la master dung chung ca phong kham. Mac dinh false => fixture tu Ignore TRUOC khi mo app.",
     "allowSeed": false,
-    "//trtCd": "Ma dem thu — phai CO dong MST_MED de do duoc CA HAI dong cua path B. 605/0 「ｵｾﾞｯｸｽ150ｍｇ３T」, usage = 「１日３回朝昼夕食後　服用」. Co y TRUNG ma cua luong G1: cung mot ma, path A ra 「オゼックス錠150 150mg 3T … 3日分」 con path B ra 「ｵｾﾞｯｸｽ150ｍｇ３T」 + 「１日３回朝昼夕食後　服用」.",
-    "trtCd": 605,
+    "//cloneTrtCd": "Dong 薬剤 dung lam NGUON CLONE, dong thoi la DOI CHUNG path A. 600/0 「ﾎﾞﾙﾀﾚﾝ錠25mg２T」 (active_flg = 1, F2 = 0, score1 = 1, g_cnt = 2). grp = 2 moi la ly do chon no: ma seed thua huong grp cua dong nguon nen nam o tab 屯服 cua 薬剤選択 — tab chi 9 dong, khong phai cuon de voi toi (F10: UIA chi phoi ra dong DANG NHIN THAY). Trung TEST_CLONE_TRT_CD cua medicine-selection-drug-name.spec.ts.",
+    "cloneTrtCd": 600,
+    "cloneTrtSb": 0,
+    "//pathBTrtCd": "Ma seed CO dong MST_MED => path B du HAI dong. Trung ve Playwright.",
+    "pathBTrtCd": 698,
+    "//noMedTrtCd": "Ma seed KHONG co dong MST_MED => path B chi con dong 処置名称.",
+    "noMedTrtCd": 699,
     "trtSb": 0,
-    "//controlTrtCd": "Ma DOI CHUNG — cung ep vao path B nhung KHONG co dong MST_MED. 630/0 「ムコスタ錠１００ｍｇ」. No tach doi cau hoi: dong 1 tu getMstTrtDataYaku, dong 2 tu MST_MED. Dev co 12 ma 600-699 khong nam trong MST_MED.",
-    "controlTrtCd": 630,
-    "controlTrtSb": 0
+    "//pathBTrtNm": "処置名称 cua ma seed — DONG THU NHAT path B in ra. Co y DOC NHAT va KHONG chua 「日分」/「回分」 de cau hoi 「path B co gan hau to 用量 khong」 khong bi chinh du lieu seed lam nhieu. Trung tung ky tu voi ve Playwright.",
+    "pathBTrtNm": "ﾃｽﾄ院内調剤薬PB",
+    "noMedTrtNm": "ﾃｽﾄ院内調剤薬NM",
+    "//pathBUsage": "MST_MED.usage cua ma seed — DONG THU HAI. Trung ve Playwright.",
+    "pathBUsage": "ﾃｽﾄ用法　毎食後　服用"
   },
 
   "locators": {

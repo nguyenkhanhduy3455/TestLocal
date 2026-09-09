@@ -31,9 +31,9 @@
     ─── GHI DB ────────────────────────────────────────────────────────────────
     ⚠️ CO GHI, va ghi vao BANG 処置変換 DUNG CHUNG CA PHONG KHAM (MST_DRUG_RX).
     Hai che do:
-      HideByDate  doi app_st_dt/app_ed_dt cua dong phu ngay test ra 29990101-29991231
-                  => getMstDrugRXListJoinMstDrug tra NULL  (hinh dang THAT cua path B)
-      BlankDgCd   bo trong dg_cd1..3 => dg_nm[0] rong      (cua thu hai vao path B)
+      Tao ma moi 698 (co MST_MED) va 699 (khong) bang cach CLONE dong 602,
+      roi XOA han o teardown. Ma moi thi duong nhien khong co MST_DRUG_RX.
+      LUOT CHAY CHI THEM DONG ROI XOA — khong sua dong nao co san.
 
     Fixture chup MOI dong rx cua cac ma dung toi TRUOC khi ghi, IN RA STDOUT, go seed
     sau MOI testcase, va tra lai o OneTimeTearDown. Chet giua chung? Tim dong

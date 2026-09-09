@@ -11,25 +11,23 @@ namespace OchaCom.FlaUiTests.Tests.DrugPathB;
 /// 処置変換 phủ ngày test), nên <b>chưa ai nhìn thấy nhánh này chạy</b>. Mọi assert viết
 /// bây giờ đều là phỏng đoán.</para>
 ///
-/// ─── 9 câu hỏi ──────────────────────────────────────────────────────────────
+/// ─── 8 câu hỏi ──────────────────────────────────────────────────────────────
 /// <list type="number">
 /// <item><b>KQ-1</b> Hàng rào: bao nhiêu mã đang ở path B TRƯỚC seed (mong đợi 0);
-///   <c>MST_MED</c> có bao nhiêu dòng và bao nhiêu dòng mồ côi.</item>
-/// <item><b>KQ-2</b> Ứng viên + oracle: path B <i>lẽ ra</i> in ra mấy dòng, là những dòng nào.</item>
-/// <item><b>KQ-3</b> Gõ mã đã seed: có hộp thoại nào bung ra không? Có
-///   「該当処置はありません」 không? <b>Dòng có rơi xuống lưới không</b> — đây là câu
-///   quyết định của cả cặp parity, vì bản web KHÔNG chèn dòng nào.</item>
+///   <c>MST_MED</c> có gì; mã seed có đụng mã thật nào không.</item>
+/// <item><b>KQ-2</b> Oracle: path B <i>lẽ ra</i> in ra mấy dòng, là những dòng nào.</item>
+/// <item><b>KQ-3</b> Gõ mã seed CÓ 用法: <b>dòng có rơi xuống lưới không</b> — câu quyết
+///   định của cả cặp parity, vì bản web dừng ở alert và KHÔNG chèn gì.</item>
 /// <item><b>KQ-4</b> Ô 療法・処置 NGUYÊN VĂN: mấy dòng, từng dòng là gì, có dấu đệm
 ///   <c>REGIRYO_PADLEFT</c> không, có hậu tố 用量 (<c>n日分</c>) không.</item>
-/// <item><b>KQ-5</b> 点 và 回 của dòng — có phải <c>score1</c> và <c>g_cnt</c> không.</item>
-/// <item><b>KQ-6</b> ĐỐI CHỨNG không có <c>MST_MED</c> ⇒ mất dòng 用法, còn đúng một dòng?</item>
-/// <item><b>KQ-7</b> Hai chế độ seed (<c>HideByDate</c> vs <c>BlankDgCd</c>) có cho ra
-///   CÙNG một ô 療法・処置 không — nếu khác thì kết luận về path B phụ thuộc cách ta ép
-///   nó vào path B, và phải soi tiếp.</item>
-/// <item><b>KQ-8</b> ĐỐI CHỨNG của chính phép seed: bỏ seed ⇒ path A ⇒ ô 療法・処置 phải
-///   KHÁC HẲN. Không có câu này thì 「thấy hai dòng」 chưa chứng minh được là do path B.</item>
-/// <item><b>KQ-9</b> Path B có ghi <c>free_wd</c> hay đụng gì tới ô 回 không (nhánh này
-///   không đi qua 薬剤使用量選択).</item>
+/// <item><b>KQ-5</b> 点 và 回 của dòng — có phải <c>score1</c>/<c>g_cnt</c> chép từ dòng
+///   nguồn clone không.</item>
+/// <item><b>KQ-6</b> Mã seed KHÔNG có <c>MST_MED</c> ⇒ mất dòng 用法, còn đúng một dòng?</item>
+/// <item><b>KQ-7</b> ĐỐI CHỨNG của chính phép seed: gõ <b>dòng nguồn clone</b> (vẫn có
+///   <c>MST_DRUG_RX</c>) ⇒ path A ⇒ ô 療法・処置 phải KHÁC HẲN. Không có câu này thì
+///   「thấy hai dòng」 chưa chứng minh được là do path B.</item>
+/// <item><b>KQ-8</b> Có hộp thoại nào bung ra trên đường không — nhất là
+///   「該当処置はありません」, thứ KHÁC HẲN với 「path B ra rỗng」.</item>
 /// </list>
 ///
 /// <para>Chạy: <c>.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc0_ProbeMasterData</c>
@@ -42,12 +40,16 @@ namespace OchaCom.FlaUiTests.Tests.DrugPathB;
 public sealed class DrugPathBProbeTests : UiTestBase
 {
     private DrugPathBDb? _db;
-    private DrugPathBDb.RxSnapshot? _rxBefore;
-    private DrugPathBDb.PathBCandidate? _subject;
-    private DrugPathBDb.PathBCandidate? _control;
+    private DrugPathBDb.SeedResult? _seed;
+    private DrugPathBDb.PathBCandidate? _withUsage;
+    private DrugPathBDb.PathBCandidate? _noUsage;
+    private DrugPathBDb.PathBCandidate? _cloneSource;
     private DrugPathBFlow _flow = null!;
 
     private TestSettings.DrugPathBSection Cfg => Settings.DrugPathB;
+
+    private IReadOnlyList<(int TrtCd, int TrtSb)> SeedKeys =>
+        [(Cfg.PathBTrtCd, Cfg.TrtSb), (Cfg.NoMedTrtCd, Cfg.TrtSb)];
 
     /// <summary>
     /// Tắt watcher: probe này ĐO CHÍNH các hộp thoại quanh lượt nhập. Để watcher trả lời
@@ -65,62 +67,59 @@ public sealed class DrugPathBProbeTests : UiTestBase
     }
 
     /// <summary>
-    /// CHỤP ảnh <c>MST_DRUG_RX</c> trước khi app mở — và <b>chỉ chụp</b>.
+    /// Dựng hai mã seed TRƯỚC khi app mở.
     ///
-    /// <para>Khác luồng G1: ở đây seed được đặt/gỡ TRONG từng testcase, vì mỗi câu hỏi
-    /// cần một chế độ seed khác nhau (và KQ-8 cần lượt KHÔNG seed). Làm được là vì
-    /// <c>frmTrtSel_Let_Trt_Data</c> mở connection MỚI mỗi lượt chốt (frm203016.cs:1459)
-    /// nên app đọc lại DB mỗi lần — không dính bẫy F21 (「đường ghi lúc nhập đọc bộ nhớ
-    /// phiên chạy」).</para>
+    /// <para>Phải là ở đây chứ không phải trong testcase: <c>GetTrtmasCod</c> tra master
+    /// ngay ở cú gõ mã đầu tiên, và ta muốn mã tra được ngay lần gõ đầu — y như vế
+    /// Playwright seed trong <c>beforeAll</c>.</para>
     ///
-    /// <para>Ảnh chụp vẫn phải lấy Ở ĐÂY, trước mọi lệnh ghi (F20).</para>
+    /// <para>Lượt chạy <b>chỉ THÊM dòng</b>: mã mới thì đương nhiên không có
+    /// <c>MST_DRUG_RX</c> ⇒ rơi thẳng vào path B, không phải sửa dòng nào có sẵn. Dọn là
+    /// <c>DELETE</c> theo đúng khoá vừa tạo.</para>
     /// </summary>
     protected override void PrepareDataBeforeApp()
     {
         _db = DrugPathBDb.CreateOrNull(Settings);
         if (_db is null)
         {
-            TestContext.Out.WriteLine("KHÔNG chuẩn bị được: db.enabled = false hoặc thiếu chuỗi kết nối.");
+            TestContext.Out.WriteLine("KHÔNG seed được: db.enabled = false hoặc thiếu chuỗi kết nối.");
             return;
         }
 
         if (_db.ProbeError() is { } err)
         {
-            TestContext.Out.WriteLine($"KHÔNG chuẩn bị được: không kết nối được SQL Server — {err}");
+            TestContext.Out.WriteLine($"KHÔNG seed được: không kết nối được SQL Server — {err}");
             _db = null;
             return;
         }
 
-        _subject = _db.Candidate(TrtDate, Cfg.TrtCd, Cfg.TrtSb);
-        _control = _db.Candidate(TrtDate, Cfg.ControlTrtCd, Cfg.ControlTrtSb);
+        // Dọn trước: một lượt chạy trước chết giữa chừng thì hàng rào của SeedCodes sẽ
+        // chặn, mà chặn xong fixture cũng không chạy được gì. Dọn cho sạch rồi seed lại.
+        TestContext.Out.WriteLine("DỌN TRƯỚC — " + _db.Cleanup(TrtDate, SeedKeys));
 
-        if (_subject is null)
-        {
-            TestContext.Out.WriteLine(
-                $"KHÔNG có mã {Cfg.TrtCd}/{Cfg.TrtSb} trong master ngày {TrtDate:yyyy-MM-dd}.");
-            return;
-        }
+        _seed = _db.SeedCodes(TrtDate, (Cfg.CloneTrtCd, Cfg.CloneTrtSb),
+        [
+            new DrugPathBDb.SeedSpec(Cfg.PathBTrtCd, Cfg.TrtSb, Cfg.PathBTrtNm, Cfg.PathBUsage),
+            new DrugPathBDb.SeedSpec(Cfg.NoMedTrtCd, Cfg.TrtSb, Cfg.NoMedTrtNm, ""),
+        ]);
+        TestContext.Out.WriteLine("SEED — " + _seed);
+        if (_seed.Blocker is not null) return;
 
-        var keys = _control is null
-            ? new[] { (_subject.TrtCd, _subject.TrtSb) }
-            : [(_subject.TrtCd, _subject.TrtSb), (_control.TrtCd, _control.TrtSb)];
-        _rxBefore = _db.TakeSnapshot(keys);
-
-        TestContext.Out.WriteLine("ẢNH CHỤP MST_DRUG_RX (chép lại nếu lượt chạy chết giữa chừng):");
-        foreach (var r in _rxBefore.Rows) TestContext.Out.WriteLine("    " + r);
-        TestContext.Out.WriteLine($"HÀNG RÀO — {_db.CountPathBCodes(TrtDate)} mã 600–699 đang ở " +
-                                  "path B trước khi seed (0 = đúng như dữ liệu dev).");
+        _withUsage = _db.Candidate(TrtDate, Cfg.PathBTrtCd, Cfg.TrtSb);
+        _noUsage = _db.Candidate(TrtDate, Cfg.NoMedTrtCd, Cfg.TrtSb);
+        _cloneSource = _db.Candidate(TrtDate, Cfg.CloneTrtCd, Cfg.CloneTrtSb);
     }
 
     [OneTimeTearDown]
-    public void RestoreRx()
+    public void CleanupSeed()
     {
-        if (_db is null || _rxBefore is null) return;
-        try { TestContext.Out.WriteLine("ĐÃ TRẢ LẠI — " + _db.Restore(_rxBefore)); }
+        if (_db is null) return;
+        try { TestContext.Out.WriteLine("ĐÃ DỌN — " + _db.Cleanup(TrtDate, SeedKeys)); }
         catch (Exception e)
         {
             TestContext.Error.WriteLine(
-                $"!! KHÔNG TRẢ LẠI ĐƯỢC MST_DRUG_RX: {e.Message}. SỬA TAY theo ảnh chụp ở đầu log.");
+                $"!! KHÔNG DỌN ĐƯỢC mã seed: {e.Message}. SỬA TAY: xoá TRT_CD IN " +
+                $"({Cfg.PathBTrtCd},{Cfg.NoMedTrtCd}) khỏi bảng master và MST_MED.");
         }
     }
 
@@ -131,12 +130,6 @@ public sealed class DrugPathBProbeTests : UiTestBase
     public void ProbeTearDown()
     {
         try { _flow?.CancelAll(); } catch { /* app có thể đã chết */ }
-        // Gỡ seed sau MỖI testcase: câu hỏi kế có thể cần chế độ khác, hoặc cần path A.
-        if (_db is not null && _rxBefore is not null)
-        {
-            try { TestContext.Out.WriteLine("  gỡ seed: " + _db.Restore(_rxBefore)); }
-            catch (Exception e) { TestContext.Out.WriteLine($"  gỡ seed HỎNG: {e.Message}"); }
-        }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -144,7 +137,7 @@ public sealed class DrugPathBProbeTests : UiTestBase
     // ═════════════════════════════════════════════════════════════════════════
 
     [Test]
-    [Description("PROBE dữ liệu — hàng rào path B, MST_MED có gì, oracle của hai mã")]
+    [Description("PROBE dữ liệu — hàng rào path B, MST_MED có gì, oracle của hai mã seed")]
     [CancelAfter(180_000)]
     public void Tc0_ProbeMasterData()
     {
@@ -153,32 +146,34 @@ public sealed class DrugPathBProbeTests : UiTestBase
         Say(() =>
         {
             Kq(1, $"{_db.CountPathBCodes(TrtDate)} mã 600–699 đang ở path B (không có 処置変換 " +
-                  $"phủ {TrtDate:yyyy-MM-dd}). MST_MED có {_db.CountMstMed()} dòng.");
+                  $"phủ {TrtDate:yyyy-MM-dd}) — đã tính cả hai mã seed. MST_MED có " +
+                  $"{_db.CountMstMed()} dòng.");
             var orphan = _db.OrphanMstMed(TrtDate);
-            Kq(1, $"        {orphan.Count} dòng MST_MED MỒ CÔI (có 用法 nhưng master không có 処置): " +
-                  string.Join(" · ", orphan));
-            Kq(1, "        ⇒ gõ mã mồ côi chỉ ra 「該当処置はありません」 (modMain.cs:487), " +
-                  "KHÔNG tới được path B — nên không dùng chúng làm ứng viên.");
+            Kq(1, $"        {orphan.Count} dòng MST_MED MỒ CÔI: " + string.Join(" · ", orphan));
+            Kq(1, "        ⇒ mã mồ côi KHÔNG dùng làm ứng viên được: gõ nó chỉ ra " +
+                  "「該当処置はありません」 (modMain.cs:487), chưa tới được editDrugName.");
+            Kq(1, "SEED — " + (_seed?.ToString() ?? "(chưa seed)"));
         });
 
         Say(() =>
         {
-            Kq(2, "ĐỐI TƯỢNG  = " + (_subject?.ToString() ?? "KHÔNG TÌM RA"));
-            Kq(2, "ĐỐI CHỨNG = " + (_control?.ToString() ?? "KHÔNG TÌM RA"));
-            if (_subject is null) return;
+            Kq(2, "MÃ CÓ 用法      = " + (_withUsage?.ToString() ?? "KHÔNG TÌM RA"));
+            Kq(2, "MÃ KHÔNG 用法  = " + (_noUsage?.ToString() ?? "KHÔNG TÌM RA"));
+            Kq(2, "NGUỒN CLONE    = " + (_cloneSource?.ToString() ?? "KHÔNG TÌM RA"));
 
-            foreach (var r in _subject.RxRows)
-                Kq(2, $"        rx: {r} · phủ ngày test = {r.Covers(TrtDate)}");
+            foreach (var c in new[] { _withUsage, _noUsage })
+            {
+                if (c is null) continue;
+                Kq(2, $"        {c.TrtCd}/{c.TrtSb}: {c.RxRows.Count} dòng mst_drug_rx " +
+                      $"(0 = đúng, mã mới thì không có) · oracle ⇒ {c.ExpectedLines.Count} dòng: " +
+                      string.Join(" ⏎ ", c.ExpectedLines.Select(l => $"「{l}」")));
+                Kq(2, $"          getMstTrtDataYaku trả bản ghi = {c.YakuRowVisible} " +
+                      $"(active_flg = {c.ActiveFlg})");
+            }
 
-            Kq(2, $"        oracle path B ⇒ {_subject.ExpectedLines.Count} dòng: " +
-                  string.Join(" ⏎ ", _subject.ExpectedLines.Select(l => $"「{l}」")));
-            Kq(2, $"        (getMstTrtDataYaku trả bản ghi = {_subject.YakuRowVisible}: " +
-                  $"active_flg = {_subject.ActiveFlg}, trt_nm kết thúc bằng '!' = " +
-                  $"{_subject.TrtNm.EndsWith("!", StringComparison.Ordinal)})");
-
-            if (_control is not null)
-                Kq(2, $"        ĐỐI CHỨNG oracle ⇒ {_control.ExpectedLines.Count} dòng: " +
-                      string.Join(" ⏎ ", _control.ExpectedLines.Select(l => $"「{l}」")));
+            if (_cloneSource is not null)
+                Kq(2, $"        NGUỒN CLONE {_cloneSource.TrtCd}/{_cloneSource.TrtSb} vẫn có " +
+                      $"{_cloneSource.RxRows.Count} dòng rx ⇒ nó ở path A, dùng làm đối chứng (KQ-7).");
 
             Kq(2, "        ⇒ ĐÂY là điểm parity: WinForm chèn dòng với chừng ấy nội dung, " +
                   "còn bản web dừng ở 「この薬剤コードは現在未対応です。」 và KHÔNG chèn gì " +
@@ -187,7 +182,7 @@ public sealed class DrugPathBProbeTests : UiTestBase
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // Tc1 — MỘT vòng: seed HideByDate rồi gõ mã.
+    // Tc1 — MỘT vòng: mã seed CÓ 用法.
     // ═════════════════════════════════════════════════════════════════════════
 
     [Test]
@@ -196,22 +191,22 @@ public sealed class DrugPathBProbeTests : UiTestBase
     public void Tc1_ProbePathBRow()
     {
         using var trace = TestTrace.Begin();
-        if (!Ready(3)) return;
+        if (!Ready(3, _withUsage)) return;
 
-        var seed = _db!.SeedPathB(_subject!, TrtDate, DrugPathBDb.SeedMode.HideByDate);
-        Kq(3, "SEED — " + seed);
-        if (seed.Blocker is not null) return;
-
-        var r = _flow.EnterCode(_subject!, TrtDate.Day, trace);
+        var r = _flow.EnterCode(_withUsage!, TrtDate.Day, trace);
 
         Say(() =>
         {
-            Kq(3, $"gõ mã {_subject!.TrtCd} sau khi giấu 処置変換: {r}");
+            Kq(3, $"gõ mã seed {_withUsage!.TrtCd} (không có 処置変換): {r}");
             Kq(3, r.Row is null
                 ? "        ⚠️ KHÔNG có dòng nào rơi xuống lưới — nếu đúng vậy thì WinForm " +
-                  "cũng từ chối, và điểm parity G2 nhỏ hơn nhiều so với giả định."
+                  "cũng từ chối, và điểm parity G2 nhỏ hơn nhiều so với giả định: bản web " +
+                  "chỉ còn thiếu CÂU THÔNG BÁO chứ không thiếu DÒNG DỮ LIỆU."
                 : "        CÓ dòng rơi xuống lưới ⇒ đúng như đọc từ EditControl.cs:1137-1148, " +
                   "và bản web thì không chèn gì.");
+            Kq(8, r.Dialogs.Count == 0
+                ? "không hộp thoại nào bung ra trên đường."
+                : "hộp thoại gặp phải (NGUYÊN VĂN): " + string.Join(" / ", r.Dialogs.Select(d => $"「{d}」")));
         });
 
         Say(() =>
@@ -219,105 +214,167 @@ public sealed class DrugPathBProbeTests : UiTestBase
             Kq(4, $"ô 療法・処置 NGUYÊN VĂN (còn \\r\\n): 「{Txt.Vis(r.RawRyo)}」");
             Kq(4, $"        tách ra {r.Lines.Count} dòng:");
             for (var i = 0; i < r.Lines.Count; i++) Kq(4, $"          [{i}] 「{r.Lines[i]}」");
-            Kq(4, $"        oracle nói {_subject!.ExpectedLines.Count} dòng: " +
-                  string.Join(" ⏎ ", _subject.ExpectedLines.Select(l => $"「{l}」")));
-            Kq(4, "        ⚠️ bản ĐÃ LÀM PHẲNG mà lưới trả qua Txt.N: 「" +
-                  Txt.N(r.RawRyo) + "」 — đếm dòng trên bản này là xanh giả (F23).");
+            Kq(4, $"        oracle nói {_withUsage!.ExpectedLines.Count} dòng: " +
+                  string.Join(" ⏎ ", _withUsage.ExpectedLines.Select(l => $"「{l}」")));
+            Kq(4, "        ⚠️ bản ĐÃ LÀM PHẲNG mà lưới trả qua Txt.N: 「" + Txt.N(r.RawRyo) +
+                  "」 — đếm dòng trên bản này là xanh giả (F23).");
+            Kq(4, "        hậu tố 用量: " +
+                  (Txt.N(r.RawRyo).Contains("日分") || Txt.N(r.RawRyo).Contains("回分")
+                      ? "CÓ — bất ngờ, cụm sinh 「n日分」 nằm trong nhánh A (EditControl.cs:1118-1133)"
+                      : "KHÔNG — đúng như đọc từ source"));
         });
 
-        Say(() =>
-        {
-            Kq(5, $"点 = 「{r.Row?.Ten ?? "?"}」 (score1 của master = {_subject!.Score1}) · " +
-                  $"回 = 「{r.Row?.Kai ?? "?"}」 (g_cnt = {_subject.GCnt})");
-            Kq(9, "path B KHÔNG đi qua 薬剤使用量選択 nên free_wd phải rỗng — cột 72 là ô ẩn, " +
-                  "không đọc được từ giao diện; chỉ khẳng định được sau F9 登録 (chưa bật).");
-        });
+        Say(() => Kq(5, $"点 = 「{r.Row?.Ten ?? "?"}」 (score1 chép từ dòng clone = {_withUsage!.Score1}) · " +
+                        $"回 = 「{r.Row?.Kai ?? "?"}」 (g_cnt = {_withUsage.GCnt})"));
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // Tc2 — MỘT vòng: đối chứng KHÔNG có MST_MED.
+    // Tc2 — MỘT vòng: mã seed KHÔNG có MST_MED.
     // ═════════════════════════════════════════════════════════════════════════
 
     [Test]
-    [Description("PROBE đối chứng — mã KHÔNG có dòng MST_MED thì path B mất dòng 用法")]
+    [Description("PROBE — mã KHÔNG có dòng MST_MED thì path B mất dòng 用法")]
     [CancelAfter(600_000)]
-    public void Tc2_ProbeControlWithoutUsage()
+    public void Tc2_ProbeWithoutUsage()
     {
         using var trace = TestTrace.Begin();
-        if (!Ready(6)) return;
-        if (_control is null) { Kq(6, "không có mã đối chứng — bỏ qua."); return; }
+        if (!Ready(6, _noUsage)) return;
 
-        if (_control.HasUsage)
-            Kq(6, $"⚠️ {_control.TrtCd}/{_control.TrtSb} LẠI CÓ dòng MST_MED 「{_control.Usage}」 — " +
-                  "nó không làm đối chứng được. Đặt drugPathB.controlTrtCd sang mã khác " +
-                  "(dev có 12 mã 600–699 vắng mặt trong MST_MED).");
+        if (_noUsage!.HasUsage)
+            Kq(6, $"⚠️ {_noUsage.TrtCd}/{_noUsage.TrtSb} LẠI CÓ dòng MST_MED 「{_noUsage.Usage}」 — " +
+                  "seed sai, nó không làm đối chứng được.");
 
-        var seed = _db!.SeedPathB(_control, TrtDate, DrugPathBDb.SeedMode.HideByDate);
-        Kq(6, "SEED (đối chứng) — " + seed);
-        if (seed.Blocker is not null) return;
-
-        var r = _flow.EnterCode(_control, TrtDate.Day, trace);
+        var r = _flow.EnterCode(_noUsage, TrtDate.Day, trace);
 
         Say(() =>
         {
-            Kq(6, $"ĐỐI CHỨNG {_control.TrtCd}/{_control.TrtSb} (không có MST_MED): {r}");
+            Kq(6, $"mã KHÔNG có MST_MED {_noUsage.TrtCd}/{_noUsage.TrtSb}: {r}");
             Kq(6, $"        nguyên văn: 「{Txt.Vis(r.RawRyo)}」 ⇒ {r.Lines.Count} dòng");
             Kq(6, r.Lines.Count == 1
                 ? "        đúng như mong đợi: chỉ còn dòng 処置名 ⇒ dòng thứ hai của Tc1 " +
-                  "ĐÚNG LÀ đến từ MST_MED."
+                  "ĐÚNG LÀ đến từ MST_MED (SyoPac.cs:242-266)."
                 : $"        ⚠️ ra {r.Lines.Count} dòng — đọc lại EditControl.cs:1142-1148 trước " +
                   "khi kết luận nguồn của dòng 用法.");
         });
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // Tc3 — HAI vòng: chế độ seed thứ hai, rồi lượt KHÔNG seed (path A).
+    // Tc3 — MỘT vòng: đối chứng của chính phép seed (dòng nguồn clone → path A).
     // ═════════════════════════════════════════════════════════════════════════
 
     [Test]
-    [Description("PROBE — hai chế độ seed có cho cùng kết quả; và bỏ seed thì path A khác hẳn")]
+    [Description("PROBE đối chứng — dòng NGUỒN CLONE vẫn ở path A, ô 療法・処置 phải khác hẳn")]
     [CancelAfter(600_000)]
-    public void Tc3_ProbeSeedModesAndPathA()
+    public void Tc3_ProbeCloneSourceIsPathA()
     {
         using var trace = TestTrace.Begin();
-        if (!Ready(7)) return;
+        if (!Ready(7, _cloneSource)) return;
 
-        // ── KQ-7: BlankDgCd — vào path B bằng cửa thứ hai ───────────────────
+        // Không có câu này thì 「thấy hai dòng ở Tc1」 chưa chứng minh được là DO path B:
+        // biết đâu mọi mã thuốc đều in ra hai dòng như vậy. Dòng nguồn clone có ĐỦ
+        // 処置変換 nên nó phải đi path A và ra một chuỗi khác hẳn.
+        var r = _flow.EnterCode(_cloneSource!, TrtDate.Day, trace);
+
         Say(() =>
         {
-            var seed = _db!.SeedPathB(_subject!, TrtDate, DrugPathBDb.SeedMode.BlankDgCd);
-            Kq(7, "SEED (BlankDgCd) — " + seed);
-            if (seed.Blocker is not null) return;
-
-            var r = _flow.EnterCode(_subject!, TrtDate.Day, trace);
-            Kq(7, $"chế độ BlankDgCd: {r}");
-            Kq(7, $"        nguyên văn: 「{Txt.Vis(r.RawRyo)}」");
-            Kq(7, "        so với Tc1 (HideByDate): giống ⇒ kết luận về path B không phụ thuộc " +
-                  "cách ép; khác ⇒ soi nhánh drugInfStr.drugRxData != null (frm203016.cs:1470), " +
-                  "chỉ chạy ở chế độ này.");
-            _flow.CancelAll(trace);
+            Kq(7, $"NGUỒN CLONE {_cloneSource!.TrtCd}/{_cloneSource.TrtSb} " +
+                  $"({_cloneSource.RxRows.Count} dòng rx ⇒ path A): {r}");
+            Kq(7, $"        nguyên văn: 「{Txt.Vis(r.RawRyo)}」 ⇒ {r.Lines.Count} dòng");
+            Kq(7, "        ⇒ khác hẳn Tc1 thì phép seed THẬT SỰ đổi nhánh. Giống nhau nghĩa là " +
+                  "mọi thứ đo được ở Tc1/Tc2 chẳng chứng minh gì cả.");
+            Kq(7, "        (path A dựng tên từ mst_drug + 数量 + 単位 + 用法 + 用量 — " +
+                  "EditControl.cs:1048-1135; path B chỉ có trt_nm + MST_MED.usage)");
         });
+    }
 
-        // ── KQ-8: ĐỐI CHỨNG của chính phép seed — bỏ seed ⇒ path A ──────────
+    // ═════════════════════════════════════════════════════════════════════════
+    // Tc4–Tc6 — LỐI VÀO THỨ HAI: 薬剤選択 (Shift+F6). Mỗi testcase MỘT vòng.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Test]
+    [Description("PROBE 薬剤選択 path A — chọn mã CÒN mst_drug_rx rồi 確定 (đối chứng)")]
+    [CancelAfter(600_000)]
+    public void Tc4_ProbeMedicineSelectPathA()
+    {
+        using var trace = TestTrace.Begin();
+        if (!Ready(10, _cloneSource)) return;
+
+        var r = _flow.PickViaMedicineSelect(_cloneSource!, Grp(_cloneSource!), trace);
+
         Say(() =>
         {
-            Kq(8, "gỡ seed: " + _db!.Restore(_rxBefore!));
-            var r = _flow.EnterCode(_subject!, TrtDate.Day, trace);
-            Kq(8, $"KHÔNG seed (path A): {r}");
-            Kq(8, $"        nguyên văn: 「{Txt.Vis(r.RawRyo)}」");
-            Kq(8, "        ⇒ khác hẳn hai lượt trên thì phép seed THẬT SỰ đổi nhánh. Giống nhau " +
-                  "nghĩa là mọi thứ đo được ở Tc1/Tc2 chẳng chứng minh gì cả.");
-            _flow.CancelAll(trace);
+            Kq(10, $"薬剤選択 · path A ({_cloneSource!.TrtCd}/{_cloneSource.TrtSb}, " +
+                   $"{_cloneSource.RxRows.Count} dòng rx): {r}");
+            Kq(10, $"        nguyên văn: 「{Txt.Vis(r.RawRyo)}」 ⇒ {r.Lines.Count} dòng");
+            Kq(10, "        (path A dựng tên từ mst_drug + 数量 + 単位 + 用法 + 用量 — " +
+                   "EditControl.cs:1048-1135)");
+            Kq(10, r.Opened
+                ? "        Shift+F6 mở được 薬剤選択."
+                : "        ⚠️ KHÔNG mở được 薬剤選択 — kiểm nút btnShift và nút 「薬剤」 " +
+                  "trên dải phím Shift TRƯỚC khi đổ cho app.");
+        });
+    }
+
+    [Test]
+    [Description("PROBE 薬剤選択 path B — mã seed CÓ mst_med: 処置名称 + 用法")]
+    [CancelAfter(600_000)]
+    public void Tc5_ProbeMedicineSelectPathB()
+    {
+        using var trace = TestTrace.Begin();
+        if (!Ready(11, _withUsage)) return;
+
+        var r = _flow.PickViaMedicineSelect(_withUsage!, Grp(_withUsage!), trace);
+
+        Say(() =>
+        {
+            Kq(11, $"薬剤選択 · path B ({_withUsage!.TrtCd}/{_withUsage.TrtSb}): {r}");
+            Kq(11, $"        nguyên văn: 「{Txt.Vis(r.RawRyo)}」 ⇒ {r.Lines.Count} dòng");
+            for (var i = 0; i < r.Lines.Count; i++) Kq(11, $"          [{i}] 「{r.Lines[i]}」");
+            Kq(11, $"        oracle nói {_withUsage.ExpectedLines.Count} dòng: " +
+                   string.Join(" ⏎ ", _withUsage.ExpectedLines.Select(l => $"「{l}」")));
+            Kq(11, "        ⇒ giống Tc1 (lối gõ mã) nghĩa là HAI LỐI VÀO cho cùng một ô " +
+                   "療法・処置 — đúng như đọc từ frm203002.cs:8791 (frmMed_LetData đi chung " +
+                   "đường chốt của 処置選択).");
+        });
+    }
+
+    [Test]
+    [Description("PROBE 薬剤選択 — mã seed KHÔNG có mst_med: chỉ còn dòng 処置名称")]
+    [CancelAfter(600_000)]
+    public void Tc6_ProbeMedicineSelectNoUsage()
+    {
+        using var trace = TestTrace.Begin();
+        if (!Ready(12, _noUsage)) return;
+
+        var r = _flow.PickViaMedicineSelect(_noUsage!, Grp(_noUsage!), trace);
+
+        Say(() =>
+        {
+            Kq(12, $"薬剤選択 · path B không 用法 ({_noUsage!.TrtCd}/{_noUsage.TrtSb}): {r}");
+            Kq(12, $"        nguyên văn: 「{Txt.Vis(r.RawRyo)}」 ⇒ {r.Lines.Count} dòng");
+            Kq(12, r.Lines.Count == 1
+                ? "        đúng như mong đợi: chỉ còn dòng 処置名 ⇒ dòng thứ hai của Tc5 " +
+                  "ĐÚNG LÀ đến từ MST_MED."
+                : $"        ⚠️ ra {r.Lines.Count} dòng — đọc lại EditControl.cs:1142-1148.");
         });
     }
 
     // ─────────────────────────────────────────────────────────────────────────
 
-    private bool Ready(int kq)
+    /// <summary>
+    /// <c>grp</c> của mã — quyết định 薬剤選択 mở ở tab nào (1 内服 · 2 屯服 · 3 外用).
+    ///
+    /// <para>Mã seed thừa hưởng <c>grp</c> của dòng nguồn clone, và cấu hình mặc định
+    /// clone từ 600/0 (<c>grp = 2</c>) nên cả ba mã đều nằm ở tab 屯服.</para>
+    /// </summary>
+    private int Grp(DrugPathBDb.PathBCandidate c) =>
+        _db?.GrpOf(TrtDate, c.TrtCd, c.TrtSb) ?? 2;
+
+    private bool Ready(int kq, DrugPathBDb.PathBCandidate? c)
     {
         if (_db is null) { Kq(kq, "không đọc được DB — bỏ qua."); return false; }
-        if (_subject is null) { Kq(kq, "không có ứng viên — bỏ qua."); return false; }
-        if (_rxBefore is null) { Kq(kq, "chưa chụp được ảnh MST_DRUG_RX — KHÔNG seed."); return false; }
+        if (_seed?.Blocker is not null) { Kq(kq, "seed hỏng: " + _seed.Blocker); return false; }
+        if (c is null) { Kq(kq, "không tìm ra mã cần dùng trong master — bỏ qua."); return false; }
         return true;
     }
 

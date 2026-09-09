@@ -8,14 +8,8 @@ import {
     seedMstMedRows,
     seedMstTrtRows,
 } from '../_shared/db'
-import {
-    GRID_LOAD_ATTEMPTS,
-    GRID_LOAD_TIMEOUT,
-    GRID_RELOAD_TIMEOUT,
-    TODAY_ISO,
-    patNo,
-    trtDt,
-} from '../_shared/env'
+import { openTreatmentEntry, ryoCells } from '../_shared/entry'
+import { TODAY_ISO, patNo, trtDt } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
@@ -56,7 +50,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *  - `treatment-entry-detail.tsx` `placePick` → `commitDrugPick` (600–699) gọi
  *    `GET /tenant/treatment/drug-rx` rồi `lines.join('\n')`.
  *  - `ResolveDrugHandler` — `joined == null` HOẶC `lines` rỗng thì gọi path B
- *    (`GetYakuTrtNmAsync` + `IMstMedQueries.GetUsagesAsync`). `found = false` giờ
+ *    (`IYakuSelectQueries.GetYakuTrtRowsAsync` + `IMstMedQueries.GetUsagesAsync`). `found = false` giờ
  *    CHỈ còn nghĩa 「không có dòng 処置マスタ hợp lệ」.
  *  - Trước bản vá này FE bung alert 「この薬剤コードは現在未対応です。」 và KHÔNG chèn
  *    dòng — đó chính là hồi quy mà assert (0) canh.
@@ -159,35 +153,12 @@ test.describe('診療入力 — 薬剤 path B (mst_trt 名称 + mst_med 用法)'
     /** Dialog カルテ記載選択 do AutoSantei tự bung khi vào màn. */
     let karteCmtDialog: Locator
 
-    /** Ô 療法・処置 của mọi dòng (RegiCol.ryo = 2). */
-    const ryoCells = () => page.locator('[data-grid-cell$="|2"]')
-
-    /** Text ô 療法・処置, GIỮ NGUYÊN xuống dòng (ô 薬剤 là ô nhiều dòng). */
+    /**
+     * Text ô 療法・処置, GIỮ NGUYÊN xuống dòng (ô 薬剤 là ô nhiều dòng) — `innerText`
+     * của Playwright gộp xuống dòng nên phải đọc `textContent`.
+     */
     async function ryoTexts(): Promise<string[]> {
-        return ryoCells().evaluateAll((els) => els.map((e) => e.textContent ?? ''))
-    }
-
-    async function openTreatmentScreen() {
-        let lastErr: unknown
-        for (let attempt = 1; attempt <= GRID_LOAD_ATTEMPTS; attempt++) {
-            await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, {
-                waitUntil: 'domcontentloaded',
-            })
-            try {
-                await expect(
-                    page.getByText('合計:').first(),
-                    'Màn 診療入力 không dựng xong (không thấy 「合計:」) — mất session?',
-                ).toBeVisible({
-                    timeout: attempt === 1 ? GRID_LOAD_TIMEOUT : GRID_RELOAD_TIMEOUT,
-                })
-                await drainAutoSantei()
-                return
-            } catch (e) {
-                lastErr = e
-                console.log(`openTreatmentScreen: lần ${attempt}/${GRID_LOAD_ATTEMPTS} hỏng — nạp lại`)
-            }
-        }
-        throw lastErr
+        return ryoCells(page).evaluateAll((els) => els.map((e) => e.textContent ?? ''))
     }
 
     /** Chờ chuỗi AutoSantei chạy hết rồi dọn sạch (handler chỉ chạy khi có assert). */
@@ -247,7 +218,7 @@ test.describe('診療入力 — 薬剤 path B (mst_trt 名称 + mst_med 用法)'
 
         const unsupported = page.getByText(UNSUPPORTED_MSG)
         const noTrt = page.getByText(NO_TRT_MSG)
-        const landed = ryoCells().filter({ hasText: nm })
+        const landed = ryoCells(page).filter({ hasText: nm })
 
         // (0) Ba kết cục loại trừ nhau — chờ CÁI NÀO ĐẾN TRƯỚC rồi mới phán xét,
         //     để thông báo lỗi nói đúng chuyện đã xảy ra thay vì chỉ "timeout".
@@ -322,7 +293,8 @@ test.describe('診療入力 — 薬剤 path B (mst_trt 名称 + mst_med 用法)'
         ])
 
         await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)
-        await openTreatmentScreen()
+        await openTreatmentEntry(page, PAT_NO, TRT_DT)
+        await drainAutoSantei()
 
         // コードモード — gõ MÃ vào ô 点 (frm203002 lớp ON: F10 → setInpMode('code')).
         // Dùng NÚT chứ không Shift+F10: đó là phím menu ngữ cảnh của hệ điều hành.

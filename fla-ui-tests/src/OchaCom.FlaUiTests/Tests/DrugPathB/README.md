@@ -61,53 +61,43 @@ if (!resolved.found || resolved.lines.length === 0) {
 > Mã mồ côi **không** dùng làm ứng viên được: gõ `620` thì `GetTrtmasCod` không tìm ra
 > 処置 nào và app bung 「該当処置はありません」 (modMain.cs:487) — chưa tới được `editDrugName`.
 
-⇒ Luồng **giấu tạm** dòng `MST_DRUG_RX` của mã đem thử: chụp — in ra — trả lại (F20), nằm
-sau cờ riêng `drugPathB.allowSeed` (mặc định **tắt**).
+⇒ Luồng **tạo mã riêng**: clone một dòng master có sẵn ra mã mới rồi chèn `MST_MED` cho
+nó. Mã mới thì **đương nhiên** không có `MST_DRUG_RX` ⇒ rơi thẳng vào path B.
 
-**Thứ bị sửa là bảng 処置変換 dùng chung cả phòng khám**, nên **không** dùng chung
-`drugAmount.allowSeed` (bên đó sửa `mst_trt.F2` — bảng khác, rủi ro khác).
-
----
-
-## 3. Hai cửa vào path B — và vì sao đo cả hai
-
-Điều kiện rẽ nhánh là `mstDrugRXGroupData != null && dg_nm[0] != ""`. Có **hai** cách làm
-nó sai:
-
-| Chế độ | Làm gì | `drugRxData` | Giống ca thật nào |
-|---|---|---|---|
-| `HideByDate` | dời `app_st_dt`/`app_ed_dt` ra `29990101–29991231` | **null** | 「phòng khám tự đăng ký thuốc riêng」 — có master, không có 処置変換 |
-| `BlankDgCd` | bỏ trống `dg_cd1..3` | **khác null** | 処置変換 có dòng nhưng không trỏ tới thuốc nào |
-
-Đo **cả hai** là đối chứng của chính phép seed: giống nhau ⇒ kết luận về path B không phụ
-thuộc cách ta ép nó vào path B. Khác nhau ⇒ chỗ khác đó chính là thứ phải soi — nhánh
-`if (drugInfStr.drugRxData != null)` ở frm203016.cs:1470 **chỉ chạy ở chế độ thứ hai**.
-
-⚠️ `HideByDate` đụng **cột khoá chính** (`trt_cd, trt_sb, app_st_dt, app_ed_dt`). Update
-vẫn hợp lệ vì khoá đích không đụng dòng nào — nhưng vì thế phải có hàng rào
-`ParkedRowExists`: đã có sẵn dòng ở khoảng cất tạm ⇒ một lượt chạy trước chết giữa chừng,
-fixture **dừng** và bắt dọn tay chứ không chồng lên rác cũ (F22).
+**Lượt chạy chỉ THÊM dòng rồi XOÁ — không sửa dòng nào đang có.** Vẫn nằm sau cờ riêng
+`drugPathB.allowSeed` (mặc định **tắt**) vì bảng bị thêm vào là master dùng chung cả
+phòng khám; và **không** dùng chung `drugAmount.allowSeed` (bên đó *sửa* `mst_trt.F2`
+của một dòng thật — rủi ro khác hẳn).
 
 ---
 
-## 4. Ứng viên
+## 3. Ứng viên — trùng khít với vế Playwright
+
+Cả ba mã lấy đúng hằng số của
+`../web-tenant-tests/tests/treatment-grid/drug-path-b-mst-med.spec.ts`:
 
 | Vai | Mã | Vì sao |
 |---|---|---|
-| **Đối tượng** | `605/0` 「ｵｾﾞｯｸｽ150ｍｇ３T」 | **Có** `MST_MED` 「１日３回朝昼夕食後　服用」 ⇒ đo được **cả hai** dòng của path B. Một 枝番 ⇒ 処置選択 không hiện. |
-| **Đối chứng** | `630/0` 「ムコスタ錠１００ｍｇ」 | **Không** có `MST_MED` ⇒ path B mất dòng 用法. Tách đôi câu hỏi: dòng 1 từ `getMstTrtDataYaku`, dòng 2 từ `MST_MED`. |
+| **Nguồn clone** | `602/0` 「ﾒｲｱｸﾄMS錠100ｍｇ４T」 | `active_flg = 1`, `F2 = 0` (không mở 薬剤使用量選択 — đó là G1). Cũng là **đối chứng của chính phép seed**: nó **vẫn có** `MST_DRUG_RX` nên phải đi path A. |
+| **Path B có 用法** | `698/0` 「ﾃｽﾄ院内調剤薬PB」 + `MST_MED` 「ﾃｽﾄ用法　毎食後　服用」 | đo được **cả hai** dòng |
+| **Path B không 用法** | `699/0` 「ﾃｽﾄ院内調剤薬NM」 | mất dòng 用法 ⇒ tách đôi câu hỏi: dòng 1 từ `getMstTrtDataYaku`, dòng 2 từ `MST_MED` |
 
-`605` cố ý **trùng mã của luồng G1**. Cùng một mã:
+Tên seed **cố ý không chứa** 「日分」/「回分」, để câu hỏi 「path B có gắn hậu tố 用量 không」
+không bị chính dữ liệu seed làm nhiễu. Cụm sinh 「n日分」 nằm bên trong nhánh A
+(EditControl.cs:1118-1133) nên path B **không** có nó — nhưng đó là điều phải **đo**, không
+phải điều được giả định.
+
+Đối chiếu hai nhánh trên cùng một màn hình:
 
 ```
-path A (G1)  「オゼックス錠150 150mg 3T    1日3回朝昼夕食後 服用  3日分」   ← 1 dòng text + 用法 + 用量
-path B (G2)  「ｵｾﾞｯｸｽ150ｍｇ３T」                                        ← trt_nm của master
-             「１日３回朝昼夕食後　服用」                                   ← MST_MED, KHÔNG có 用量
+path A (602, còn 処置変換)  「ﾒｲｱｸﾄMS錠100ｍｇ４T…」 dựng từ mst_drug + 数量 + 単位 + 用法 + 用量
+path B (698, không có)      「ﾃｽﾄ院内調剤薬PB」        ← trt_nm của master
+                            「ﾃｽﾄ用法　毎食後　服用」   ← MST_MED, KHÔNG có 用量
 ```
 
-Đặt cạnh nhau là thấy ngay path B **không** phải một biến thể của path A: khác nguồn tên,
-khác độ rộng chữ (半角/全角), và **không có hậu tố 用量** — cụm sinh 「n日分」 nằm bên trong
-nhánh A (EditControl.cs:1118-1133).
+⚠️ **Hàng rào (F22):** mã đích đã tồn tại ⇒ hoặc master thật dùng mã đó, hoặc một lượt
+chạy trước chết giữa chừng. Cả hai trường hợp `SeedCodes` đều **dừng** và bắt dọn tay
+chứ không ghi đè. Fixture cũng tự `Cleanup` một lượt **trước khi** seed.
 
 ---
 
@@ -146,8 +136,8 @@ rồi lấy phần chênh (`DrugAmountFlow.WaitForAddedDrugRow`).
 # LUÔN từng -Case một (F7)
 .\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc0_ProbeMasterData        # chỉ DB
 .\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc1_ProbePathBRow          # 1 vòng
-.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc2_ProbeControlWithoutUsage  # 1 vòng
-.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc3_ProbeSeedModesAndPathA    # 2 vòng
+.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc2_ProbeWithoutUsage      # 1 vòng
+.\run-resolve-drug-path-b.ps1 -Probe -Seed -Case Tc3_ProbeCloneSourceIsPathA # 1 vòng
 ```
 
 Không bật `-Seed` ⇒ fixture tự Ignore **trước khi mở app**, kèm lý do.
@@ -155,26 +145,25 @@ Không bật `-Seed` ⇒ fixture tự Ignore **trước khi mở app**, kèm lý
 **Kiểm lại trước khi đóng máy:**
 
 ```sql
-SELECT COUNT(*) FROM MST_DRUG_RX WHERE app_st_dt = '29990101';       -- phải là 0
-SELECT trt_cd, trt_sb, app_st_dt, app_ed_dt, dg_cd1
-  FROM MST_DRUG_RX WHERE trt_cd IN (605, 630);                       -- dg_cd1 khác rỗng
+SELECT COUNT(*) FROM MST_TRT266 WHERE TRT_CD IN (698, 699);   -- phải là 0
+SELECT COUNT(*) FROM MST_MED    WHERE TRT_CD IN (698, 699);   -- phải là 0
 ```
 
-Lượt chạy chết giữa chừng thì tìm dòng `ẢNH CHỤP MST_DRUG_RX` trong `.trx` rồi `UPDATE`
-tay về.
+Lượt chạy chết giữa chừng thì dọn tay bằng đúng hai câu `DELETE` tương ứng — không có
+dòng nào bị *sửa* nên không cần khôi phục gì.
 
 ---
 
 ## 7. Cặp Playwright
 
-Chưa có — bên web hiện chỉ có nhánh 「現在未対応です」. Khi `mst_med` được migrate (53 dòng /
-14 cột, rẻ) thì spec bên kia đặt cùng thư mục `tests/dialogs-selection/` và **dùng đúng hai
-mã này** để số đo so thẳng được.
+`../web-tenant-tests/tests/treatment-grid/drug-path-b-mst-med.spec.ts` — đã có, và **dùng
+đúng ba mã ở mục 3** (clone 602 → 698/699, cùng tên, cùng 用法), nên số đo hai bên so thẳng
+được với nhau.
 
-Cho tới lúc đó, vế WinForm ở đây là **đặc tả hành vi đúng**, và điều cần khẳng định trước
-tiên là: *WinForm có thật sự chèn dòng không* (KQ-3). Nếu hoá ra nó cũng không chèn thì
-điểm parity G2 nhỏ hơn nhiều so với giả định, và bản web chỉ còn thiếu **câu thông báo**
-chứ không thiếu **dòng dữ liệu**.
+Điều cần khẳng định trước tiên vẫn là **KQ-3**: *WinForm có thật sự chèn dòng không*. Nếu
+hoá ra nó cũng không chèn thì điểm parity G2 nhỏ hơn nhiều so với giả định — bản web chỉ
+còn thiếu **câu thông báo**, không thiếu **dòng dữ liệu**. Chưa chạy vế WinForm lần nào
+thì chưa được kết luận theo hướng nào.
 
 ---
 

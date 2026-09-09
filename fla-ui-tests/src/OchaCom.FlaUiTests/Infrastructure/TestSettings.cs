@@ -589,42 +589,58 @@ public sealed class TestSettings
     public sealed class DrugPathBSection
     {
         /// <summary>
-        /// Cho phép <b>giấu tạm</b> dòng <c>MST_DRUG_RX</c> của mã đem thử.
+        /// Cho phép TẠO các mã 薬剤 seed trong bảng master + <c>MST_MED</c>.
         ///
-        /// <para>⚠️ Bắt buộc: cả 63/63 mã 600–699 của dev đều có 処置変換 phủ ngày test
-        /// (đo 2026-09-09) ⇒ path B không bao giờ chạy, và mọi testcase sẽ xanh vì chẳng
-        /// đo gì. Thứ bị sửa là <b>bảng 処置変換 dùng chung cả phòng khám</b> — nên có cờ
-        /// RIÊNG, không dùng chung <c>drugAmount.allowSeed</c> (bên đó sửa
-        /// <c>mst_trt.F2</c>, bảng khác, rủi ro khác).</para>
+        /// <para>⚠️ Bắt buộc: cả 63/63 mã 600–699 của dev đều có <c>MST_DRUG_RX</c> phủ
+        /// ngày test (đo 2026-09-09) ⇒ path B không bao giờ chạy, và mọi testcase sẽ
+        /// xanh vì chẳng đo gì.</para>
         ///
-        /// <para>Mặc định false ⇒ fixture tự Ignore TRƯỚC khi mở app.</para>
+        /// <para>Lượt chạy <b>chỉ THÊM dòng rồi XOÁ</b>, không sửa dòng nào có sẵn — nhưng
+        /// bảng bị thêm vào là master dùng chung cả phòng khám, nên vẫn có cờ RIÊNG,
+        /// không dùng chung <c>drugAmount.allowSeed</c> (bên đó SỬA <c>mst_trt.F2</c> của
+        /// một dòng thật). Mặc định false ⇒ fixture tự Ignore TRƯỚC khi mở app.</para>
         /// </summary>
         [JsonPropertyName("allowSeed")] public bool AllowSeed { get; set; }
 
         /// <summary>
-        /// Mã đem thử — phải CÓ dòng <c>MST_MED</c> để đo được cả hai dòng của path B.
-        /// 605/0 「ｵｾﾞｯｸｽ150ｍｇ３T」, <c>MST_MED.usage</c> = 「１日３回朝昼夕食後　服用」.
+        /// Dòng 薬剤 dùng làm NGUỒN CLONE, và đồng thời là <b>đối chứng path A</b>.
+        /// 600/0 「ﾎﾞﾙﾀﾚﾝ錠25mg２T」 — <c>active_flg = 1</c>, <c>F2 = 0</c> (không mở
+        /// 薬剤使用量選択; đó là luồng G1), <c>score1 = 1</c>, <c>g_cnt = 2</c>.
         ///
-        /// <para>Cố ý TRÙNG mã của luồng G1: cùng một mã, path A cho
-        /// 「オゼックス錠150 150mg 3T … 3日分」 còn path B cho 「ｵｾﾞｯｸｽ150ｍｇ３T」 +
-        /// 「１日３回朝昼夕食後　服用」. Đặt hai kết quả cạnh nhau là thấy ngay path B là
-        /// một màn hình khác hẳn, không phải một biến thể.</para>
+        /// <para><b><c>grp = 2</c> mới là lý do chọn nó</b>: mã seed thừa hưởng
+        /// <c>grp</c> của dòng nguồn, nên nó nằm ở tab 屯服 của 薬剤選択 — tab chỉ có
+        /// <b>9</b> dòng, không phải cuộn để với tới. Clone từ một mã <c>grp = 1</c>
+        /// (nội phục) thì tab đó dài và lưới <c>DataGridView</c> chỉ phơi ra dòng ĐANG
+        /// NHÌN THẤY (F10).</para>
+        ///
+        /// <para>Trùng <c>TEST_CLONE_TRT_CD</c> của
+        /// <c>medicine-selection-drug-name.spec.ts</c>.</para>
         /// </summary>
-        [JsonPropertyName("trtCd")] public int TrtCd { get; set; } = 605;
+        [JsonPropertyName("cloneTrtCd")] public int CloneTrtCd { get; set; } = 600;
+
+        [JsonPropertyName("cloneTrtSb")] public int CloneTrtSb { get; set; }
+
+        /// <summary>Mã seed CÓ dòng <c>MST_MED</c> ⇒ path B đủ hai dòng. Trùng vế Playwright.</summary>
+        [JsonPropertyName("pathBTrtCd")] public int PathBTrtCd { get; set; } = 698;
+
+        /// <summary>Mã seed KHÔNG có dòng <c>MST_MED</c> ⇒ path B chỉ còn dòng 処置名称.</summary>
+        [JsonPropertyName("noMedTrtCd")] public int NoMedTrtCd { get; set; } = 699;
 
         [JsonPropertyName("trtSb")] public int TrtSb { get; set; }
 
         /// <summary>
-        /// Mã <b>ĐỐI CHỨNG</b> — cũng ép vào path B, nhưng <b>KHÔNG</b> có dòng
-        /// <c>MST_MED</c>. 630/0 「ムコスタ錠１００ｍｇ」 (một 枝番, một dòng rx).
+        /// 処置名称 của mã seed — <b>dòng thứ nhất</b> path B in ra.
         ///
-        /// <para>Nó tách đôi câu hỏi: dòng thứ nhất đến từ <c>getMstTrtDataYaku</c>, dòng
-        /// thứ hai đến từ <c>MST_MED</c>. Không có đối chứng thì thấy hai dòng cũng không
-        /// biết dòng nào từ đâu ra. Dev có 12 mã 600–699 không nằm trong <c>MST_MED</c>.</para>
+        /// <para>Cố ý ĐỘC NHẤT và KHÔNG chứa 「日分」/「回分」, để câu hỏi 「path B có gắn
+        /// hậu tố 用量 không」 không bị chính dữ liệu seed làm nhiễu. Trùng từng ký tự với
+        /// vế Playwright.</para>
         /// </summary>
-        [JsonPropertyName("controlTrtCd")] public int ControlTrtCd { get; set; } = 630;
+        [JsonPropertyName("pathBTrtNm")] public string PathBTrtNm { get; set; } = "ﾃｽﾄ院内調剤薬PB";
 
-        [JsonPropertyName("controlTrtSb")] public int ControlTrtSb { get; set; }
+        [JsonPropertyName("noMedTrtNm")] public string NoMedTrtNm { get; set; } = "ﾃｽﾄ院内調剤薬NM";
+
+        /// <summary><c>MST_MED.usage</c> của mã seed — <b>dòng thứ hai</b>. Trùng vế Playwright.</summary>
+        [JsonPropertyName("pathBUsage")] public string PathBUsage { get; set; } = "ﾃｽﾄ用法　毎食後　服用";
     }
 
     public sealed class RunSection
@@ -777,9 +793,10 @@ public sealed class TestSettings
         Set("OCHA_DRUG_AMOUNT_CLICK_TIMES", v => s.DrugAmount.ClickTimes = int.Parse(v));
         Set("OCHA_DRUG_AMOUNT_TYPED_COUNT", v => s.DrugAmount.TypedCount = v);
         Set("OCHA_DRUG_PATH_B_ALLOW_SEED", v => s.DrugPathB.AllowSeed = ToBool(v));
-        Set("OCHA_DRUG_PATH_B_TRT_CD", v => s.DrugPathB.TrtCd = int.Parse(v));
+        Set("OCHA_DRUG_PATH_B_TRT_CD", v => s.DrugPathB.PathBTrtCd = int.Parse(v));
+        Set("OCHA_DRUG_PATH_B_NO_MED_TRT_CD", v => s.DrugPathB.NoMedTrtCd = int.Parse(v));
+        Set("OCHA_DRUG_PATH_B_CLONE_TRT_CD", v => s.DrugPathB.CloneTrtCd = int.Parse(v));
         Set("OCHA_DRUG_PATH_B_TRT_SB", v => s.DrugPathB.TrtSb = int.Parse(v));
-        Set("OCHA_DRUG_PATH_B_CONTROL_TRT_CD", v => s.DrugPathB.ControlTrtCd = int.Parse(v));
 
         static void Set(string name, Action<string> apply)
         {

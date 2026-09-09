@@ -10,14 +10,8 @@ import {
     seedMstTrtRows,
     type DrugRxRow,
 } from '../_shared/db'
-import {
-    GRID_LOAD_ATTEMPTS,
-    GRID_LOAD_TIMEOUT,
-    GRID_RELOAD_TIMEOUT,
-    TODAY_ISO,
-    patNo,
-    trtDt,
-} from '../_shared/env'
+import { openTreatmentEntry, ryoCells } from '../_shared/entry'
+import { TODAY_ISO, patNo, trtDt } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
@@ -72,8 +66,12 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *
  *   | mã     | mst_trt              | mst_med | kỳ vọng             |
  *   |--------|----------------------|---------|---------------------|
- *   | 698-0  | clone 600-0, đổi tên | CÓ      | 2 dòng: 名称 + 用法 |
- *   | 699-0  | clone 600-0, đổi tên | KHÔNG   | 1 dòng: 名称        |
+ *   | 696-0  | clone 600-0, đổi tên | CÓ      | 2 dòng: 名称 + 用法 |
+ *   | 697-0  | clone 600-0, đổi tên | KHÔNG   | 1 dòng: 名称        |
+ *
+ * Dải mã CỐ Ý khác spec `treatment-grid/drug-path-b-mst-med.spec.ts` (698/699):
+ * hai spec seed cùng bảng master, trùng mã là chúng xoá dữ liệu của nhau khi
+ * Playwright chạy song song 4 worker.
  *
  * Clone **600-0** vì hai lẽ: `f2 = 0` (không bật 薬剤使用量選択 — dialog đó đọc thành
  * phần từ `mst_drug_rx`, thứ path B không có) và `grp = 2` ⇒ mã seed nằm ở tab
@@ -113,9 +111,9 @@ const CLONE_TRT_CD = Number(process.env.TEST_CLONE_TRT_CD ?? 600)
 const CLONE_TRT_SB = Number(process.env.TEST_CLONE_TRT_SB ?? 0)
 
 /** Mã seed CÓ 用法 trong mst_med → path B đủ 2 dòng. */
-const PATH_B_CD = Number(process.env.TEST_PATHB_TRT_CD ?? 698)
+const PATH_B_CD = Number(process.env.TEST_PATHB_TRT_CD ?? 696)
 /** Mã seed KHÔNG có 用法 → path B chỉ còn dòng 処置名称. */
-const NO_MED_CD = Number(process.env.TEST_PATHB_NO_MED_TRT_CD ?? 699)
+const NO_MED_CD = Number(process.env.TEST_PATHB_NO_MED_TRT_CD ?? 697)
 const SEED_TRT_SB = 0
 
 const PATH_B_NM = 'ﾃｽﾄ屯服院内薬PB'
@@ -159,35 +157,12 @@ test.describe('薬剤選択 (Shift+F6) — ô 療法・処置 của dòng 薬剤
     let dialog: Locator
     let karteCmtDialog: Locator
 
-    /** Ô 療法・処置 của mọi dòng (RegiCol.ryo = 2). */
-    const ryoCells = () => page.locator('[data-grid-cell$="|2"]')
-
-    /** Text ô 療法・処置, GIỮ NGUYÊN xuống dòng (ô 薬剤 là ô nhiều dòng). */
+    /**
+     * Text ô 療法・処置, GIỮ NGUYÊN xuống dòng (ô 薬剤 là ô nhiều dòng) — `innerText`
+     * của Playwright gộp xuống dòng nên phải đọc `textContent`.
+     */
     async function ryoTexts(): Promise<string[]> {
-        return ryoCells().evaluateAll((els) => els.map((e) => e.textContent ?? ''))
-    }
-
-    async function openTreatmentScreen() {
-        let lastErr: unknown
-        for (let attempt = 1; attempt <= GRID_LOAD_ATTEMPTS; attempt++) {
-            await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, {
-                waitUntil: 'domcontentloaded',
-            })
-            try {
-                await expect(
-                    page.getByText('合計:').first(),
-                    'Màn 診療入力 không dựng xong (không thấy 「合計:」) — mất session?',
-                ).toBeVisible({
-                    timeout: attempt === 1 ? GRID_LOAD_TIMEOUT : GRID_RELOAD_TIMEOUT,
-                })
-                await drainAutoSantei()
-                return
-            } catch (e) {
-                lastErr = e
-                console.log(`openTreatmentScreen: lần ${attempt}/${GRID_LOAD_ATTEMPTS} hỏng — nạp lại`)
-            }
-        }
-        throw lastErr
+        return ryoCells(page).evaluateAll((els) => els.map((e) => e.textContent ?? ''))
     }
 
     /** Chờ chuỗi AutoSantei chạy hết rồi dọn sạch (handler chỉ chạy khi có assert). */
@@ -277,7 +252,7 @@ test.describe('薬剤選択 (Shift+F6) — ô 療法・処置 của dòng 薬剤
                 },
                 {
                     timeout: CONFIRM_DRAIN_TIMEOUT,
-                    intervals: Array.from({ length: 60 }, () => 1000),
+                    intervals: [1000],
                     message:
                         `Sau F9 確定 không thấy dòng 「${gridNeedle}」 trên lưới — vòng per-item của ` +
                         'handleMedicineConfirm có thể đang kẹt ở một dialog mà drainOneDialog() ' +
@@ -335,7 +310,8 @@ test.describe('薬剤選択 (Shift+F6) — ô 療法・処置 của dòng 薬剤
         ])
 
         await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)
-        await openTreatmentScreen()
+        await openTreatmentEntry(page, PAT_NO, TRT_DT)
+        await drainAutoSantei()
     })
 
     test.afterAll(async () => {

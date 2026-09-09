@@ -2002,8 +2002,6 @@ export interface DrugRxRow {
     medKbn: string
     /** `mst_drug_rx.usage_nm` — dòng 用法 của path A. Rỗng = mã này không có 用法. */
     usageNm: string
-    /** `mst_drug_rx.usage_suppl_inf` — ghép ngay sau `usage_nm`. */
-    usageSupplInf: string
     /** `mst_drug.dg_nm` của thành phần đầu — gốc dòng 薬剤名 của path A. */
     dgNm: string
     /** true = mã CÓ dòng 処置変換テーブル ⇒ đi path A của editDrugName. */
@@ -2043,7 +2041,6 @@ export async function findDrugRx(
                     coalesce(mt.grp, 0)              AS grp,
                     coalesce(rx.med_kbn, '')         AS med_kbn,
                     coalesce(rx.usage_nm, '')        AS usage_nm,
-                    coalesce(rx.usage_suppl_inf, '') AS usage_suppl_inf,
                     coalesce(dg.dg_nm, '')           AS dg_nm,
                     (rx.trt_cd IS NOT NULL)          AS has_drug_rx
                FROM view_mst_trt_active mt
@@ -2068,7 +2065,6 @@ export async function findDrugRx(
             grp: Number(row['grp'] ?? 0),
             medKbn: String(row['med_kbn'] ?? '').trim(),
             usageNm: String(row['usage_nm'] ?? '').trim(),
-            usageSupplInf: String(row['usage_suppl_inf'] ?? '').trim(),
             dgNm: String(row['dg_nm'] ?? '').trim(),
             hasDrugRx: Boolean(row['has_drug_rx']),
         }
