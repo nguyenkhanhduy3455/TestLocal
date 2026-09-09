@@ -2,8 +2,8 @@
 
 Nửa **WinForm** của điểm parity G2.
 
-> **Trạng thái: THÔNG LUỒNG + PROBE, ĐÃ CHẠY — 5/6 câu đo được trên máy thật (§8),
-> và đã đối chiếu parity với hai spec Playwright (§9). Chưa có testcase assert.**
+> **Trạng thái: THÔNG LUỒNG + PROBE, ĐÃ CHẠY — 6/6 câu đo được trên máy thật (§8),
+> parity với hai spec Playwright SẠCH (§9). Chưa có testcase assert.**
 > Luật F1 đã xong phần của nó: probe trả lời 5/6 câu, và **hai lỗi harness** bị bắt trong
 > lúc đó (§4.1, §4.2). Giờ mới đủ căn cứ viết `DrugPathBTests` (assert) — kỳ vọng lấy từ
 > `DrugPathBDb.PathBCandidate.ExpectedLines`, không hardcode.
@@ -266,23 +266,37 @@ KQ-7  ĐỐI CHỨNG — nguồn clone 600 (còn 2 dòng rx) ⇒ path A:
 **Lối 薬剤選択 (Shift+F6):**
 
 ```
+KQ-10  628 (path A) ⇒ mở=True chọn=True 確定=True
+       lưới PHẢI trước 確定: [カロナール錠200mg 1T | 1 | 2]
+       dòng: [20] 3 | (null) | カロナール錠200 200mg 1T    疼痛時 服用  2回分 | 1 | 2
+       ⇒ GIỐNG HỆT KQ-7 (cùng mã, lối gõ mã) ✔
 KQ-11  698 ⇒ mở=True chọn=True 確定=True
        lưới PHẢI trước 確定: [テスト院内調剤薬PB | 1 | 2]
        dòng: [23] 3 | (null) | テスト院内調剤薬PB    テスト用法 毎食後 服用 | 1 | 2
-       2 dòng text — GIỐNG HỆT lối gõ mã ✔
-KQ-12  699 ⇒ ĐÚNG MỘT dòng 「ﾃｽﾄ院内調剤薬NM」 — cũng giống lối gõ mã ✔
-KQ-10  600 (path A) ⇒ CHƯA ĐO ĐƯỢC — xem dưới.
+       2 dòng text — GIỐNG HỆT KQ-3 ✔
+KQ-12  699 ⇒ ĐÚNG MỘT dòng 「ﾃｽﾄ院内調剤薬NM」 — GIỐNG HỆT KQ-6 ✔
 ```
 
-> **KQ-10 bị chặn, và không phải lỗi harness.** 確定 với mã `600` bung
-> 「処置名称 ボルタレン錠25mg2T 医療上の必要性を選択してください。」 — hộp thoại
-> **長期収載品の選定療養**. `DismissAll` trả lời an toàn nên dòng KHÔNG rơi xuống lưới.
-> Đó là một luồng riêng, không thuộc path B; muốn đo path A qua 薬剤選択 thì phải trả lời
-> hộp thoại đó cho đúng nghiệp vụ trước. Vế Playwright TC-1 xanh vì nó có sẵn đoạn dọn
-> cascade 「摘要選択（長期収載品の選定療養）」.
+> **KQ-10 phải trả giá hai lượt mới đo được**, và cả hai đều đáng ghi.
 >
-> Path A vẫn được đối chứng đầy đủ ở **KQ-7** (lối gõ mã) nên kết luận của §9 không phụ
-> thuộc câu này.
+> **① Nguồn clone `600` kéo theo một tính năng khác.** 確定 bung `frm203012`
+> 「処置名称 ボルタレン錠25mg2T 医療上の必要性を選択してください。」 — **長期収載品の選定療養**.
+> Cửa của nó là `CmtAuto.IsDrug_lt_listed_product` (CmtAuto.cs:925-975): mã 薬剤 **và**
+> một thành phần `dg_cd*` bắt đầu bằng `6` **và** `MST_DRUG.selected_treat_kb = '1'`
+> **và** `mst_trt.F3 = 1` (院内処方). `600/0` dính đủ bốn.
+> Trong dải 600–699 `grp = 2`: `600/601/624` dính, `628/631/632/637/654/662` thì không.
+> ⇒ Đổi nguồn clone sang **`628/0`** 「カロナール錠200mg　１T」 — cùng `grp 2`, `F2 0`,
+> `F3 1`, `score1 1`, `g_cnt 2`, `med_kbn 22` (path A vẫn có hậu tố 用量) nhưng
+> `selected_treat_kb = 0`. Đổi ở **cả hai vế** để vẫn đo cùng một mã.
+>
+> **② Dò dòng path A không được dựa vào `trt_nm`.** Hết bị chặn rồi mà vẫn
+> 「dòng = KHÔNG CÓ」: path A in ra tên của **`mst_drug`**, không phải master.
+> `master 「カロナール錠200mg　１T」` ≠ `mst_drug 「カロナール錠２００　２００ｍｇ」` ≠
+> `lưới 「カロナール錠200 200mg 1T」`. NFKC hai vế rồi thì needle vẫn không phải chuỗi con.
+> Đường lui 「chỉ có đúng một dòng mới」 cũng không cứu được vì 確定 của 薬剤選択 còn tự
+> chèn các dòng 加算 (処方料/調剤料/薬剤情報提供料).
+> ⇒ `PathBCandidate.RowNeedle` = tên `mst_drug` khi có, ngược lại là `trt_nm`.
+> Đây đúng là lỗi mà vế Playwright cũng vấp khi thêm đối chứng path A.
 
 Hai lượt `KQ-11`/`KQ-12` còn kéo theo 診療チェック 「…1日の算定限度(1回)を超えています」 cho
 処方料/調剤料/薬剤情報提供料 — nhiễu do chạy lại nhiều lần trong cùng một ngày, đã dẹp và
@@ -300,11 +314,12 @@ không ảnh hưởng dòng đo.
 | 1 | path B **có** `mst_med` ⇒ 処置名称 + 用法 | gõ mã | ✅ KQ-3 | ✅ |
 | 2 | path B **không** `mst_med` ⇒ chỉ 処置名称 | gõ mã | ✅ KQ-6 | ✅ |
 | 3 | **đối chứng** path A ⇒ tên từ `mst_drug`, CÓ 用量 | gõ mã | ✅ KQ-7 | ✅ *(bổ sung 2026-09-09)* |
-| 4 | path A qua hộp thoại | 薬剤選択 | ⚠️ KQ-10 chặn bởi 長期収載品 | ✅ TC-1 |
+| 4 | path A qua hộp thoại | 薬剤選択 | ✅ KQ-10 | ✅ TC-1 |
 | 5 | path B **có** `mst_med` | 薬剤選択 | ✅ KQ-11 | ✅ TC-2 |
 | 6 | path B **không** `mst_med` | 薬剤選択 | ✅ KQ-12 | ✅ TC-3 |
 
-**WinForm 5/6 đo được (1 bị chặn bởi tính năng khác) · Web 6/6 xanh.**
+**WinForm 6/6 đo được · Web 6/6 xanh.** Cả hai vế dùng **cùng ba mã** (`628` clone →
+`698`/`699`), cùng tên, cùng 用法.
 
 ### 9.1 Kết luận nghiệp vụ
 
@@ -325,10 +340,17 @@ vá thì cả 6 testcase đều xanh với **cùng chuỗi kỳ vọng**.
 
 ### 9.2 Còn lệch ở đâu
 
-Không có điểm lệch nào ở phần đo được. Hai chỗ **chưa** so được:
+**Không còn điểm lệch nào.** 6/6 testcase đo được ở cả hai vế, cùng mã, cùng chuỗi kỳ
+vọng, `点 = 1` / `回 = 2` giống nhau.
 
-1. **KQ-10** — path A qua 薬剤選択 (hộp thoại 長期収載品の選定療養 chặn ở vế WinForm).
-2. **`点`/`回` của mã seed** — `drug-path-b-mst-med.spec.ts` mặc định clone từ `602`
-   (`score1 = 29`, `g_cnt = 3`) còn vế WinForm và spec 薬剤選択 dùng `600`
-   (`score1 = 1`, `g_cnt = 2`). Chạy nó với `TEST_CLONE_TRT_CD=600` thì hai bên khớp
-   cả hai con số — đã chạy như vậy 2026-09-09, **3/3 xanh**.
+Một quan sát phụ, không phải lệch: hai lượt 薬剤選択 kéo theo 診療チェック
+「…1日の算定限度(1回)を超えています」 cho 処方料/調剤料/薬剤情報提供料 — nhiễu do chạy
+lại nhiều lần trong cùng một ngày, đã dẹp và không ảnh hưởng dòng đo.
+
+### 9.3 Việc còn để lại
+
+**長期収載品の選定療養** (`frm203012` 「医療上の必要性を選択してください」) là một điểm
+parity **riêng**, chưa ai đo. Cửa vào đã biết rõ (`CmtAuto.IsDrug_lt_listed_product`,
+CmtAuto.cs:925-975) và mã sẵn có: chạy lại cả hai vế với `TEST_CLONE_TRT_CD=600`
+(hoặc `drugPathB.cloneTrtCd = 600`) là nó bung ra ngay. Nên là một thư mục luồng riêng
+chứ không nhét vào G2.
