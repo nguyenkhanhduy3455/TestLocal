@@ -297,8 +297,8 @@
     ],
     "//allowSeed": "⚠️ LUONG GHI NANG NHAT CUA CA BO: chen dong vao TRNTRN (処置行 THAT cua benh nhan). Khong co duong nao khac — thu dang do la duong LOAD. Luot chay CHI CHEN dong mang DISP_NO rieng roi XOA, khong bao gio sua/xoa dong co san. Mac dinh false => fixture tu Ignore TRUOC khi mo app.",
     "allowSeed": false,
-    "//dispNo": "DISP_NO dau tien danh rieng cho luong nay; bon dong seed dung dispNo + 0..3. Tranh dai da co chu: 9001 (seed 再初診 — benh nhan 10 DANG co mot dong mang so do), 9101-9103 (UnpaidRaiinCnt). Ve Playwright dung 9001-9003 tren Postgres — so khac nhau KHONG SAO, disp_no khong hien ra luoi va khong testcase nao assert no.",
-    "dispNo": 9201,
+    "//dispNo": "DISP_NO dau tien; bon dong seed dung dispNo + 0..3 => 9001-9004. TRUNG KHIT ve Playwright: seedTreatmentRows dat disp_no = SEED_DISP_BASE + 1 + i = 9001-9004. Dong 再初診 co san cua benh nhan 10 cung mang DISP_NO 9001 nhung o ngay 2026-07-20, KHONG phai ngay test 2026-08-10 — hang rao cua Seed() chi xet TRUNG NGAY nen khong dung nhau. Doi so nay thi phai doi ca SEED_DISP_BASE ben web.",
+    "dispNo": 9001,
     "//trtCd": "Ma 薬剤 CO mst_drug_rx — hai dong path A. 602/0 (cnt1 = 4, med_kbn = 21). TRUNG TEST_LOAD_TRT_CD cua treatment-grid/drug-row-rebuild-on-load.spec.ts.",
     "trtCd": 602,
     "trtSb": 0,
@@ -313,7 +313,7 @@
     "stale": "ｽﾃｰﾙ保存文字列ZZZ",
     "//trtCnt": "回数 cua moi dong seed — vao hau to 用量 「n日分」/「n回分」. TRUNG TRT_CNT cua ve Playwright.",
     "trtCnt": 7,
-    "//markerPoint": "点数 cua dong seed dau tien; cac dong sau dung markerPoint + 1..3. MOC DE DO DONG tren luoi. Do theo 点 chu khong theo ten la BAT BUOC: cai dang do CHINH LA chuoi ten, lay ten lam moc tim thi thanh vong luan quan. Ve Playwright de ca ba dong cung trt_pt = 40 va nhan dong theo thu tu — khac biet nay KHONG lam hai ben do khac nhau (khong testcase nao assert 点).",
+    "//markerPoint": "点数 cua dong seed dau tien; cac dong sau dung markerPoint + 1..3 => 771-774. MOC DE DO DONG tren luoi. Do theo 点 chu khong theo ten la BAT BUOC: cai dang do CHINH LA chuoi ten, lay ten lam moc tim thi thanh vong luan quan. TRUNG KHIT ve Playwright (PT_PLAIN/PT_FREEWD/PT_PATH_B/PT_CONTROL) — khong testcase nao assert 点, no chi de dong nao ra dong nay trong thong bao loi.",
     "markerPoint": 771
   },
 

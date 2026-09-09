@@ -13,13 +13,13 @@ namespace OchaCom.FlaUiTests.Tests.DrugRowReload;
 /// thật sự bị khoá không. Probe trả lời trước, <c>DrugRowReloadTests</c> viết sau.</para>
 ///
 /// ═══════════════════════════════════════════════════════════════════════════
-/// BỐN DÒNG SEED — ba dòng đầu ĐÚNG BẰNG vế Playwright
+/// BỐN DÒNG SEED — ĐÚNG BẰNG vế Playwright
 /// ═══════════════════════════════════════════════════════════════════════════
-/// <c>treatment-grid/drug-row-rebuild-on-load.spec.ts:214-218</c> seed đúng ba dòng;
-/// luồng này seed y hệt rồi thêm một dòng ĐỐI CHỨNG mà vế web chưa có.
+/// <c>treatment-grid/drug-row-rebuild-on-load.spec.ts</c> seed đúng bốn dòng này.
 /// <code>
+///   患者 10 · 診療日 2026-08-10 · disp_no 9001–9004 · 回数 7
 ///   点 771  602/0  freewd ""      dsp_trt ｽﾃｰﾙ…1   ← path A, master nguyên bản
-///   点 772  602/0  freewd "2"     dsp_trt ｽﾃｰﾙ…2   ← path A, freewd khác mặc định
+///   点 772  602/0  freewd &lt;khác&gt;  dsp_trt ｽﾃｰﾙ…2   ← path A, freewd khác mặc định
 ///   点 773  694/0  freewd ""      dsp_trt ｽﾃｰﾙ…3   ← path B (mã seed, không có RX)
 ///   点 774  110/0  freewd ""      dsp_trt ｽﾃｰﾙ…4   ← ĐỐI CHỨNG, ngoài dải 600–699
 /// </code>

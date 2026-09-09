@@ -12,7 +12,7 @@ import {
     type DrugRxRow,
 } from '../_shared/db'
 import { openTreatmentEntry, ryoCells } from '../_shared/entry'
-import { TODAY_ISO, patNo, trtDt } from '../_shared/env'
+import { patNo, trtDt } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
@@ -63,6 +63,8 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * 3. TUYỆT ĐỐI KHÔNG Escape trên màn 診療入力: WinForm map Escape → End (登録).
  * 4. Dải mã seed KHÁC hai spec path B (696–699), VÀ 診療日 khác hôm nay — xem chú
  *    thích của TRT_DT. Cả hai đều để chạy song song không đụng nhau.
+ * 5. Điều kiện test phải TRÙNG KHÍT vế FlaUI, nếu không thì "hai bên cùng xanh"
+ *    không chứng minh được gì. Xem mục ĐIỀU KIỆN DÙNG CHUNG bên dưới.
  *
  * ═════════════════════════════════════════════════════════════════════════════
  * CHẠY
@@ -72,25 +74,44 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * Spec CÓ ghi DB: dòng `trn_trn` ở vùng `disp_no >= 9000` (vùng dành cho test),
  * 2 dòng `mst_trt` + 1 dòng `mst_med`; dọn hết ở afterAll. KHÔNG bấm F9 登録.
  *
- * Mặc định: 患者 10, 診療日 = một ngày KHÁC hôm nay trong tháng này (xem chú thích
- * của TRT_DT). Đổi bằng TEST_PAT_NO / TEST_TRT_DT.
+ * Mặc định: 患者 10, 診療日 2026-08-10. Đổi bằng TEST_PAT_NO / TEST_TRT_DT.
+ *
+ * ═════════════════════════════════════════════════════════════════════════════
+ * ĐIỀU KIỆN DÙNG CHUNG VỚI VẾ FLAUI
+ * ═════════════════════════════════════════════════════════════════════════════
+ * Cặp WinForm là `fla-ui-tests/.../Tests/DrugRowReload` (`DrugRowReloadTests`).
+ * Hai bên phải seed **y hệt** nhau thì "cùng xanh" mới là bằng chứng parity:
+ *
+ *     患者 10 · 診療日 2026-08-10 · disp_no 9001–9004 · 回数 7
+ *     点 771  602/0  freewd ""       dsp_trt ｽﾃｰﾙ保存文字列ZZZ1   path A, master gốc
+ *     点 772  602/0  freewd <khác>   dsp_trt ｽﾃｰﾙ保存文字列ZZZ2   path A, có freewd
+ *     点 773  694/0  freewd ""       dsp_trt ｽﾃｰﾙ保存文字列ZZZ3   path B (mã seed)
+ *     点 774  110/0  freewd ""       dsp_trt ｽﾃｰﾙ保存文字列ZZZ4   ĐỐI CHỨNG ngoài dải
+ *
+ * Đổi bất cứ dòng nào ở đây thì phải đổi cả `testsettings.json` mục
+ * `drugRowReload` bên FlaUI, và ngược lại.
  */
 
 const PAT_NO = patNo('10')
 
 /**
- * 診療日 — CỐ Ý khác hôm nay, dù vẫn trong THÁNG HIỆN TẠI (WinForm chặn thao tác
- * sang tháng khác).
+ * 診療日 — CỐ ĐỊNH 2026-08-10, không phải hôm nay và không phải ngày tự tính.
  *
- * Ba spec drug còn lại (`side-panel/guide-drug-usage-line`,
- * `treatment-grid/drug-path-b-mst-med`, `dialogs-selection/medicine-selection-drug-name`)
- * đều dùng 患者 10 + hôm nay và đều gọi `deleteTreatmentRows(patNo, hôm nay)`.
- * Chúng chỉ XOÁ nên không phiền nhau; spec này là spec DUY NHẤT SEED dòng
- * `trn_trn`, nên dùng chung ngày là dòng seed bị xoá giữa chừng khi Playwright
- * chạy song song 4 worker.
+ * Ba lý do, cả ba đều bắt buộc:
+ *
+ *  1. **Trùng vế FlaUI.** Ngày tự tính theo `new Date()` thì hai bên chạy lệch giờ
+ *     là ra hai ngày khác nhau, và "cùng xanh" không còn chứng minh được gì.
+ *  2. **Nằm trong cửa sổ bảo hiểm** của 患者 10: `insurance.med_st_dt/med_ed_dt` =
+ *     `2026-08-03 → 2026-08-14` — GIỐNG NHAU ở cả Postgres `t_tenant1` lẫn SQL
+ *     Server `SIM2000`. WinForm cần bảo hiểm còn hiệu lực để mở 診療入力; ngoài
+ *     cửa sổ đó vế FlaUI không chạy được.
+ *  3. **Ngày TRỐNG ở cả hai DB** (患者 10 chỉ có dòng ở 07-20 / 08-03 / 08-14), nên
+ *     lưới chỉ có đúng bốn dòng seed. Và vì không phải hôm nay nên ba spec drug
+ *     còn lại (`side-panel/guide-drug-usage-line`, `treatment-grid/drug-path-b-mst-med`,
+ *     `dialogs-selection/medicine-selection-drug-name`) — đều gọi
+ *     `deleteTreatmentRows(patNo, hôm nay)` — không xoá mất dòng seed khi chạy 4 worker.
  */
-const OTHER_DAY = new Date().getDate() >= 15 ? '01' : '28'
-const TRT_DT = trtDt(`${TODAY_ISO.slice(0, 8)}${OTHER_DAY}`)
+const TRT_DT = trtDt('2026-08-10')
 
 /** Mã 薬剤 CÓ mst_drug_rx — dùng cho TC-1/TC-2 (path A dựng lại). */
 const DRUG_CD = Number(process.env.TEST_LOAD_TRT_CD ?? 602)
@@ -108,8 +129,23 @@ const PATH_B_USAGE = 'ﾃｽﾄ用法　就寝前　服用'
  */
 const STALE = 'ｽﾃｰﾙ保存文字列ZZZ'
 
+/** Mã ĐỐI CHỨNG — NGOÀI dải 600–699 nên đi nhánh else: in nguyên văn `dsp_trt`. */
+const CONTROL_CD = Number(process.env.TEST_LOAD_CTRL_TRT_CD ?? 110)
+const CONTROL_SB = 0
+
 /** 回数 của dòng seed — chọn số ít trùng để thông báo lỗi dễ đọc. */
 const TRT_CNT = 7
+
+/**
+ * 点数 của bốn dòng seed. Không testcase nào assert 点 — chúng chỉ để dòng nào ra
+ * dòng nấy trong thông báo lỗi, và để TRÙNG mốc dò dòng của vế FlaUI
+ * (`DrugRowReloadFlow.FindByPoint` dò theo 点 chứ không theo tên, vì cái đang đo
+ * CHÍNH LÀ chuỗi tên).
+ */
+const PT_PLAIN = 771
+const PT_FREEWD = 772
+const PT_PATH_B = 773
+const PT_CONTROL = 774
 
 /** NFKC + gộp khoảng trắng — dùng cho CẢ hai vế mọi phép so chuỗi (BẪY 2). */
 const norm = (s: string) => s.normalize('NFKC').replace(/\s+/g, ' ').trim()
@@ -207,14 +243,37 @@ test.describe('診療入力 — dòng 薬剤 đã lưu được dựng lại t�
         ])
 
         await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)
-        // BA dòng đã lưu, cả ba mang `dsp_trt` rác (BẪY 1):
-        //   1. path A, freewd rỗng      → ô = master nguyên bản
+        // BỐN dòng đã lưu, cả bốn mang `dsp_trt` rác (BẪY 1) — TRÙNG KHÍT vế FlaUI:
+        //   1. path A, freewd rỗng          → ô = master nguyên bản
         //   2. path A, freewd khác mặc định → ô đổi theo freewd
-        //   3. path B (không có mst_drug_rx) → 処置名称 + 用法
+        //   3. path B (không có mst_drug_rx)→ 処置名称 + 用法
+        //   4. ĐỐI CHỨNG ngoài dải 600–699  → in NGUYÊN VĂN dsp_trt
+        // `seedTreatmentRows` đặt disp_no = SEED_DISP_BASE + 1 + i ⇒ 9001–9004, đúng
+        // bằng `drugRowReload.dispNo` bên FlaUI.
         await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
-            { trtCd: DRUG_CD, trtSb: DRUG_SB, trtCnt: TRT_CNT, dspTrt: `${STALE}1` },
-            { trtCd: DRUG_CD, trtSb: DRUG_SB, trtCnt: TRT_CNT, dspTrt: `${STALE}2`, freewd },
-            { trtCd: PATH_B_CD, trtSb: SEED_TRT_SB, trtCnt: TRT_CNT, dspTrt: `${STALE}3` },
+            { trtCd: DRUG_CD, trtSb: DRUG_SB, trtCnt: TRT_CNT, trtPt: PT_PLAIN, dspTrt: `${STALE}1` },
+            {
+                trtCd: DRUG_CD,
+                trtSb: DRUG_SB,
+                trtCnt: TRT_CNT,
+                trtPt: PT_FREEWD,
+                dspTrt: `${STALE}2`,
+                freewd,
+            },
+            {
+                trtCd: PATH_B_CD,
+                trtSb: SEED_TRT_SB,
+                trtCnt: TRT_CNT,
+                trtPt: PT_PATH_B,
+                dspTrt: `${STALE}3`,
+            },
+            {
+                trtCd: CONTROL_CD,
+                trtSb: CONTROL_SB,
+                trtCnt: TRT_CNT,
+                trtPt: PT_CONTROL,
+                dspTrt: `${STALE}4`,
+            },
         ])
 
         await openTreatmentEntry(page, PAT_NO, TRT_DT)
@@ -246,12 +305,18 @@ test.describe('診療入力 — dòng 薬剤 đã lưu được dựng lại t�
         await step()
 
         // (1) Chuỗi rác đã lưu KHÔNG được lọt ra lưới — đây là cốt lõi của G3.
+        //
+        // Chỉ ba dòng 薬剤 (ZZZ1/ZZZ2/ZZZ3), KHÔNG phải cả lưới: dòng ĐỐI CHỨNG
+        // (ZZZ4, mã ngoài dải 600–699) hiện `dsp_trt` NGUYÊN VĂN là ĐÚNG — đó chính
+        // là điều TC-4 canh.
         const all = (await ryoTexts()).map(norm).join('\n')
-        expect(
-            all,
-            `Lưới vẫn in chuỗi 「${STALE}」 đã lưu ở dsp_trt ⇒ đường LOAD chưa dựng lại ` +
-                'dòng 薬剤 (treatment-table-mapper vẫn gán thẳng name: dspTrt).',
-        ).not.toContain(norm(STALE))
+        for (const n of [1, 2, 3]) {
+            expect(
+                all,
+                `Lưới vẫn in chuỗi 「${STALE}${n}」 đã lưu ở dsp_trt của dòng 薬剤 ⇒ đường ` +
+                    'LOAD chưa dựng lại (treatment-table-mapper vẫn gán thẳng name: dspTrt).',
+            ).not.toContain(norm(`${STALE}${n}`))
+        }
 
         // (2) Ô là combineDrugNms: 薬剤名 (từ mst_drug) + dòng 用法 (từ mst_drug_rx).
         expect(cell.includes('\n'), `ô path A phải nhiều dòng: ${JSON.stringify(cell)}`).toBe(true)
@@ -337,5 +402,28 @@ test.describe('診療入力 — dòng 薬剤 đã lưu được dựng lại t�
             norm(cell),
             `path B gắn hậu tố 用量: ${JSON.stringify(cell)}`,
         ).not.toMatch(/\d+\s*(日分|回分)/)
+    })
+
+    /**
+     * ĐỐI CHỨNG. Không có testcase này thì "chuỗi rác biến mất ở dòng 薬剤" (TC-1)
+     * chưa loại được khả năng "app không bao giờ in dsp_trt". Dòng ngoài dải
+     * 600–699 rơi vào nhánh else `hFG1[2] = REGIRYO_PADLEFT + dsp_trt`
+     * (modSave.cs:2639) nên PHẢI hiện nguyên văn.
+     *
+     * Cặp WinForm: `DrugRowReloadTests.TcG3_4_NonDrugRowShowsSavedDspTrt`.
+     */
+    test('TC-4 đối chứng — mã ngoài dải 600–699 hiện NGUYÊN VĂN dsp_trt', async () => {
+        const expected = `${STALE}4`
+        const cell = await cellContaining(
+            expected,
+            `Dòng đối chứng ${CONTROL_CD}-${CONTROL_SB} phải hiện NGUYÊN VĂN dsp_trt ` +
+                `「${expected}」 — nhánh else modSave.cs:2639 không dựng lại gì. Không thấy ` +
+                'nghĩa là app đang bỏ qua dsp_trt cho MỌI dòng, và khi đó TC-1 chưa chứng ' +
+                'minh được gì về riêng dải 600–699.',
+        )
+        await step()
+
+        // Ô chỉ có đúng chuỗi đã lưu, không nối thêm gì.
+        expect(norm(cell), `ô đối chứng: ${JSON.stringify(cell)}`).toBe(norm(expected))
     })
 })

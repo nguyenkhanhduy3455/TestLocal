@@ -83,7 +83,7 @@ phép đo, và cũng là lý do không thể mượn một dòng có sẵn.
 
 1. Cờ RIÊNG `drugRowReload.allowSeed`, mặc định **tắt** ⇒ fixture tự Ignore **trước khi
    mở app**.
-2. **Chỉ CHÈN** dòng mới mang `DISP_NO` riêng (9201 / 9202) — **không bao giờ** sửa hay
+2. **Chỉ CHÈN** dòng mới mang `DISP_NO` riêng (9001–9004) — **không bao giờ** sửa hay
    xoá dòng có sẵn. Dọn là `DELETE` đúng `DISP_NO` đó, và chạy cả **trước** khi seed
    (lượt trước chết giữa chừng thì hàng rào sẽ chặn, mà chặn xong cũng không đo được gì).
 3. Chèn bằng **clone** một dòng có sẵn của chính bệnh nhân + ngày test rồi ghi đè vài cột,
@@ -96,17 +96,42 @@ phép đo, và cũng là lý do không thể mượn một dòng có sẵn.
 
 ---
 
-## 4. Bốn dòng seed — ba dòng đầu **đúng bằng** vế Playwright
+## 4. Bốn dòng seed — ĐIỀU KIỆN DÙNG CHUNG với vế Playwright
 
-`treatment-grid/drug-row-rebuild-on-load.spec.ts:214-218` seed đúng ba dòng; luồng này
-seed y hệt rồi thêm một dòng **đối chứng** mà vế web chưa có.
+`treatment-grid/drug-row-rebuild-on-load.spec.ts` seed **đúng bốn dòng này**: cùng 患者,
+cùng 診療日, cùng `disp_no`, cùng 点, cùng `dsp_trt`, cùng 回数.
+
+> Đổi bất cứ dòng nào ở bảng dưới thì **phải đổi cả hai vế**. Hai bên seed khác nhau thì
+> 「cùng xanh」 chỉ là hai phép đo trên hai bộ dữ liệu khác nhau — không chứng minh được
+> parity.
+
+**患者 10 · 診療日 2026-08-10 · 回数 7**
 
 | Vai | `DISP_NO` | Mã | `freewd` | `dsp_trt` | 点 | cặp web |
 |---|---|---|---|---|---|---|
-| path A, master nguyên bản | 9201 | `602/0` | *(rỗng)* | `ｽﾃｰﾙ保存文字列ZZZ1` | 771 | TC-1 |
-| path A, `freewd` khác mặc định | 9202 | `602/0` | `2` | `…ZZZ2` | 772 | TC-2 |
-| **path B khi LOAD** | 9203 | `694/0` 「ﾃｽﾄ読込薬PB」 | *(rỗng)* | `…ZZZ3` | 773 | TC-3 |
-| **ĐỐI CHỨNG** | 9204 | `110/0` 再診 (ngoài dải 薬剤) | *(rỗng)* | `…ZZZ4` | 774 | *(chưa có)* |
+| path A, master nguyên bản | 9001 | `602/0` | *(rỗng)* | `ｽﾃｰﾙ保存文字列ZZZ1` | 771 | TC-1 |
+| path A, `freewd` khác mặc định | 9002 | `602/0` | `1` | `…ZZZ2` | 772 | TC-2 |
+| **path B khi LOAD** | 9003 | `694/0` 「ﾃｽﾄ読込薬PB」 | *(rỗng)* | `…ZZZ3` | 773 | TC-3 |
+| **ĐỐI CHỨNG** | 9004 | `110/0` 再診 (ngoài dải 薬剤) | *(rỗng)* | `…ZZZ4` | 774 | TC-4 |
+
+### Vì sao 診療日 **2026-08-10**
+
+- **Nằm trong cửa sổ bảo hiểm** của 患者 10 — `insurance` `2026-08-03 → 2026-08-14`,
+  **giống hệt nhau** ở Postgres `t_tenant1` lẫn SQL Server `SIM2000`. WinForm cần bảo
+  hiểm còn hiệu lực mới mở được 診療入力.
+- **Trống ở cả hai DB** (患者 10 chỉ có dòng ở `07-20` / `08-03` / `08-14`) ⇒ lưới chỉ có
+  đúng bốn dòng seed.
+- **Không phải hôm nay** ⇒ ba spec drug còn lại (đều gọi `deleteTreatmentRows(patNo, hôm
+  nay)`) không xoá mất dòng seed khi Playwright chạy 4 worker.
+- **Vẫn là tháng đang mở** của màn hình ⇒ đi qua `GetTrnRs` (`modSave.cs:2626`) — đúng
+  nhánh vế web đo, **không** phải `GetTrnRsOld` (`:4966`, khoá ô vô điều kiện).
+- **Cố định, không tự tính theo `new Date()`** — ngày tự tính thì hai bên chạy lệch giờ là
+  ra hai ngày khác nhau.
+
+`disp_no` 9001–9004 khớp cả hai bên: vế web `seedTreatmentRows` đặt
+`SEED_DISP_BASE + 1 + i`, vế FlaUI dùng `drugRowReload.dispNo + 0..3`. Dòng 再初診 có sẵn
+của 患者 10 cũng mang `DISP_NO 9001` nhưng ở ngày `2026-07-20`, và hàng rào của `Seed()`
+chỉ xét **trùng ngày**, nên không đụng nhau.
 
 - `602/0` chọn vì **có `mst_drug_rx`** (path A ⇒ nhánh khoá ô mới chạy), `cnt1 = 4`,
   `med_kbn = 21` ⇒ có hậu tố 「n日分」. Trùng `TEST_LOAD_TRT_CD` của vế web.
@@ -118,11 +143,6 @@ seed y hệt rồi thêm một dòng **đối chứng** mà vế web chưa có.
 - **Dòng đối chứng tách đôi câu hỏi:** chuỗi bịa biến mất ở dòng 薬剤 là hành vi **riêng**
   của dải 600–699, hay app không bao giờ hiện `dsp_trt`? Dòng ngoài dải phải hiện **nguyên
   văn** chuỗi bịa.
-
-> `disp_no` hai bên **không trùng nhau** (web dùng 9001–9003 trên Postgres). Không sao:
-> `disp_no` không hiện ra lưới và không testcase nào assert nó — hai bên chỉ cần cùng
-> **nội dung** dòng. 点 cũng vậy: vế web để cả ba dòng `trt_pt = 40` và nhận dòng theo
-> thứ tự, còn ở đây 点 là **mốc dò dòng** (mục 5.1) nên phải khác nhau.
 
 ---
 
@@ -148,27 +168,19 @@ và bung dirty gate 「保存しますか」.
 
 ## 6. Chạy
 
+`診療日` mặc định của runner **đã là** ngày dùng chung (2026-08-10) — không cần truyền gì.
+
 ```powershell
-# ⚠️ GHIM 診療日 ĐÚNG BẰNG vế Playwright — dòng seed phải nằm đúng ngày cả hai bên mở.
-.\run-reload-drug-row.ps1 -Probe -Seed -TrtDate 2026-09-08                # cả fixture
-.\run-reload-drug-row.ps1 -Probe -Seed -TrtDate 2026-09-08 -Case Tc0_ProbeSeededData
-.\run-reload-drug-row.ps1 -Probe -Seed -TrtDate 2026-09-08 -Case Tc1_ProbeDrugRowOnLoad
-.\run-reload-drug-row.ps1 -Probe -Seed -TrtDate 2026-09-08 -Case Tc2_ProbeFreeWdChangesAmount
-.\run-reload-drug-row.ps1 -Probe -Seed -TrtDate 2026-09-08 -Case Tc3_ProbePathBRowOnLoad
-.\run-reload-drug-row.ps1 -Probe -Seed -TrtDate 2026-09-08 -Case Tc4_ProbeNonDrugRowShowsDspTrt
+.\run-reload-drug-row.ps1 -Seed                 # fixture ASSERT, 4 TC
+.\run-reload-drug-row.ps1 -Probe -Seed          # fixture PROBE, 8 câu KQ
+.\run-reload-drug-row.ps1 -Probe -Seed -Case Tc3_ProbePathBRowOnLoad
 ```
 
-Vế web chạy cùng ngày đó:
+Vế web, cùng điều kiện, **cũng không cần truyền ngày** (spec để cố định 2026-08-10):
 
 ```bash
-TEST_DB=1 TEST_TRT_DT=2026-09-08 npx playwright test \
-  tests/treatment-grid/drug-row-rebuild-on-load.spec.ts
+TEST_DB=1 npx playwright test tests/treatment-grid/drug-row-rebuild-on-load.spec.ts
 ```
-
-Vì sao **không** dùng hôm nay: vế web cố ý tránh (spec:81-93) — ba spec drug còn lại đều
-gọi `deleteTreatmentRows(patNo, hôm nay)` và sẽ xoá mất dòng seed khi chạy 4 worker.
-Ngày phải **cùng tháng hiện tại** (WinForm chặn thao tác sang tháng khác) và nên là ngày
-**đã qua**, tránh 診療日 tương lai.
 
 Cả fixture chỉ **một** vòng giao diện (không nhập gì, chỉ đọc lưới đã nạp sẵn) nên rẻ —
 khác hẳn G1/G2.
@@ -178,7 +190,7 @@ Không bật `-Seed` ⇒ fixture tự Ignore **trước khi mở app**, kèm lý
 **Kiểm lại trước khi đóng máy:**
 
 ```sql
-SELECT COUNT(*) FROM TRNTRN     WHERE DISP_NO BETWEEN 9201 AND 9204;  -- phải là 0
+SELECT COUNT(*) FROM TRNTRN     WHERE PAT_NO = 10 AND TRT_DT = '2026-08-10';  -- 0
 SELECT COUNT(*) FROM MST_TRT266 WHERE TRT_CD = 694;                  -- phải là 0
 SELECT COUNT(*) FROM MST_MED    WHERE TRT_CD = 694;                  -- phải là 0
 ```
@@ -192,13 +204,13 @@ Lượt chạy chết giữa chừng thì dọn tay bằng đúng câu `DELETE` 
 
 `web-tenant-tests/tests/treatment-grid/drug-row-rebuild-on-load.spec.ts` — 3 TC.
 
-| Web | WinForm | Hỏi cùng một thứ |
-|---|---|---|
-| TC-1 | `Tc1_ProbeDrugRowOnLoad` (KQ-2/4/5/7) | `dsp_trt` đã lưu **không** được in ra; ô dựng lại từ master |
-| TC-2 | `Tc2_ProbeFreeWdChangesAmount` (KQ-3) | hai dòng cùng mã khác `freewd` ⇒ **hai** chuỗi khác nhau |
-| TC-3 | `Tc3_ProbePathBRowOnLoad` (KQ-8) | path B khi load: 処置名称 + 用法, **không** hậu tố 用量 |
-| *(chưa có)* | `Tc4_ProbeNonDrugRowShowsDspTrt` (KQ-6) | dòng ngoài dải hiện **nguyên văn** `dsp_trt` |
-| *(chưa có)* | KQ-4 trong Tc1/Tc3 | ô có bị **khoá** không — web chưa đo ReadOnly |
+| Web | WinForm (assert) | WinForm (probe) | Hỏi cùng một thứ |
+|---|---|---|---|
+| TC-1 | `TcG3_1_SavedDspTrtIsNotPrinted` | `Tc1` KQ-2/5/7 | `dsp_trt` đã lưu **không** được in ra; ô dựng lại từ master |
+| TC-2 | `TcG3_2_FreeWdOverridesAmount` | `Tc2` KQ-3 | hai dòng cùng mã khác `freewd` ⇒ **hai** chuỗi khác nhau |
+| TC-3 | `TcG3_3_PathBRowOnLoad` | `Tc3` KQ-8 | path B khi load: 処置名称 + 用法, **không** hậu tố 用量 |
+| TC-4 | `TcG3_4_NonDrugRowShowsSavedDspTrt` | `Tc4` KQ-6 | dòng ngoài dải hiện **nguyên văn** `dsp_trt` |
+| *(chưa có)* | assert `ReadOnly` trong TC-1/TC-3 | KQ-4 | ô có bị **khoá** không — vế web chưa đo |
 
 Điều cần khẳng định trước tiên là **KQ-2**: *chuỗi bịa có hiện ra không*. Nếu hoá ra
 WinForm cũng hiện `dsp_trt` thì điểm parity G3 không tồn tại và phải đọc lại
