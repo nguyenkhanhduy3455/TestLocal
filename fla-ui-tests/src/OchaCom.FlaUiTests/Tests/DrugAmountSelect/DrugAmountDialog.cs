@@ -58,8 +58,14 @@ public sealed class DrugAmountDialog
     /// <summary>Câu app bung ra khi 処置変換 rỗng rồi TỰ ĐÓNG hộp thoại (:119-123).</summary>
     public const string NoRowsFragment = "算定可能な処置はありません";
 
-    // Tiêu đề cột, nguyên văn từ frm203020.cs:65-72 (có 全角空白 chen giữa).
-    public const string ColName = "薬";      // 「薬　剤　名　称」 và 「薬　価」 đều bắt đầu bằng 薬
+    // Tiêu đề cột, nguyên văn từ frm203020.cs:65-72 (có 全角空白 chen giữa):
+    //   「薬　剤　名　称」 · 「薬　価」 · 「使用量」 · 「単　位」 · 「薬　価　計」
+    //
+    // ⚠️ BA cột chứa 「薬」 nên KHÔNG dò cột 薬価 bằng một mình chữ đó — phải loại cả
+    //    「剤」 (薬剤名称) lẫn 「計」 (薬価計). Đo được 2026-09-09 (Tc1, KQ-4): bản đầu
+    //    chỉ loại 「計」 nên ô 薬価 đọc ra chính TÊN THUỐC, và dòng in ra thành
+    //    「薬価 オゼックス錠150 150mg × 3錠」 — sai mà trông vẫn hợp lý.
+    public const string ColName = "薬";
     public const string HeaderDrugName = "剤";   // chỉ 薬剤名称 có 「剤」
     public const string HeaderCount = "使用量";
     public const string HeaderUnit = "単";
@@ -165,12 +171,15 @@ public sealed class DrugAmountDialog
         }
         return rows;
 
-        // 「薬　価」 và 「薬　価　計」 cùng chứa 「薬」 — lấy ô KHÔNG chứa 「計」.
+        // Ba cột chứa 「薬」 — lấy ô KHÔNG chứa 「剤」 và KHÔNG chứa 「計」.
         static string CostCell(DgvRow row)
         {
             for (var i = 0; i < row.CellDescriptions.Count; i++)
-                if (Txt.Has(row.CellDescriptions[i], ColName) && !Txt.Has(row.CellDescriptions[i], HeaderCost))
+            {
+                var d = row.CellDescriptions[i];
+                if (Txt.Has(d, ColName) && !Txt.Has(d, HeaderDrugName) && !Txt.Has(d, HeaderCost))
                     return row.At(i);
+            }
             return row.At(1);
         }
     }

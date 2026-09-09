@@ -380,18 +380,47 @@ public sealed class DrugAmountFlow
         AutoSanteiChkAuto.AutoSanteiOps.RowByName(_grid.Snapshot(limit), nameFragment);
 
     /// <summary>
+    /// 単位 <b>đã rút gọn</b> — bản chép <c>EditControl.editDrugUnitToShortUnit</c>
+    /// (EditControl.cs:1160-1190).
+    ///
+    /// <para>⚠️ <b>Bắt buộc phải qua bảng này.</b> Ô 療法・処置 in ra 単位 RÚT GỌN, không
+    /// phải 単位 trong <c>mst_drug</c>: 「錠」 hiện ra là <b>「T」</b>. Đo được 2026-09-09
+    /// (Tc1, KQ-11): lưới in 「オゼックス錠150 150mg 3T … 3日分」. Dò 数量 bằng 「錠」 thì
+    /// không khớp gì cả, và testcase sẽ kết luận 「free_wd không tới nơi」 — đổ oan hoàn
+    /// toàn cho app.</para>
+    /// </summary>
+    public static string ShortUnit(string? unitNm) => Txt.N(unitNm) switch
+    {
+        "" => "",
+        "カートリッジ" => "Ct",
+        "カプセル" => "C",
+        "錠" => "T",
+        "管" => "A",
+        "瓶" => "V",
+        var other => other,     // default: editZenToHan — với 「ｇ」/「mL」 thì giữ nguyên
+    };
+
+    /// <summary>
     /// 数量 đọc được từ ô 療法・処置 của dòng thuốc — chuỗi mà <c>editDrugName</c> dựng.
     ///
-    /// <para>Định dạng: <c>&lt;tên thuốc&gt;&lt;dấu cách căn cột&gt;&lt;数量&gt;&lt;単位&gt;</c>
-    /// (EditControl.cs:1100-1111). Trả về mọi cụm 「số + đơn vị」 tìm được, theo thứ tự —
+    /// <para>Định dạng: <c>&lt;tên thuốc&gt;&lt;dấu cách căn cột&gt;&lt;数量&gt;&lt;単位 rút gọn&gt;</c>
+    /// (EditControl.cs:1101-1111). Trả về mọi cụm 「số + đơn vị」 tìm được, theo thứ tự —
     /// một 処置 nhiều thành phần thì mỗi thành phần một dòng.</para>
+    ///
+    /// <para>Nhận <b>cả hai</b> dạng đơn vị (đầy đủ và rút gọn) để dòng 用量 kiểu
+    /// 「3日分」 không làm trượt phép dò khi hai chuỗi tình cờ giống nhau.</para>
     /// </summary>
-    public static IReadOnlyList<string> AmountsInRowText(string? ryoText, string unit)
+    public static IReadOnlyList<string> AmountsInRowText(string? ryoText, string unitNm)
     {
         var text = Txt.N(ryoText);
-        if (text.Length == 0 || unit.Length == 0) return [];
+        var units = new[] { ShortUnit(unitNm), Txt.N(unitNm) }
+                    .Where(u => u.Length > 0)
+                    .Distinct()
+                    .ToList();
+        if (text.Length == 0 || units.Count == 0) return [];
 
-        var pattern = @"(\d+(?:\.\d+)?)\s*" + System.Text.RegularExpressions.Regex.Escape(unit);
+        var pattern = @"(\d+(?:\.\d+)?)\s*(?:" +
+                      string.Join("|", units.Select(System.Text.RegularExpressions.Regex.Escape)) + ")";
         return System.Text.RegularExpressions.Regex.Matches(text, pattern)
                      .Select(m => m.Groups[1].Value)
                      .ToList();

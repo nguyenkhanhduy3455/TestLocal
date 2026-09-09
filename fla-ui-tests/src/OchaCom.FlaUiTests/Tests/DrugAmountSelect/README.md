@@ -3,7 +3,8 @@
 Nửa **WinForm** của điểm parity G1. Bản web **chưa port** màn này: 0 hit trong
 `ochacom-saas`.
 
-> **Trạng thái: THÔNG LUỒNG + PROBE. Chưa có testcase assert.**
+> **Trạng thái: THÔNG LUỒNG + PROBE (WinForm). Chưa có testcase assert.**
+> Vế Playwright đã có — xem mục 4.
 > Chưa ai mở được hộp thoại này trên máy thật (xem mục 2), nên mọi assert viết bây giờ
 > đều là phỏng đoán. Luật F1: **probe trước, assert sau.** `DrugAmountTests` sẽ được viết
 > sau khi có file `select-drug-amount-KQ.txt` đầu tiên.
@@ -105,15 +106,29 @@ F3 == 2          → 0     (院外処方 — phòng khám không tính điểm t
 
 ## 4. Bảng tương ứng với bên Playwright
 
+Vế Playwright: `web-tenant-tests/tests/dialogs-selection/drug-qty-selection-dialog.spec.ts`
+(viết 2026-09-09, sau khi web port màn này ở nhánh `feat/inp-drug-qty-select` của
+`ochacom-saas`).
+
 | WinForm (ở đây) | Playwright | Câu hỏi |
 |---|---|---|
 | `Tc0_ProbeMasterData` | — | Master có gì; oracle có khớp `SCORE1` |
-| `Tc1_ProbeOpenAndShape` | *(chưa có — web chưa port)* | Hộp thoại mở ra hình dạng gì |
-| `Tc2_ProbeChangeAmount` | *(chưa có)* | Click / gõ có đổi 数量 không; 確定 đẩy gì về lưới |
-| `Tc3_ProbeReopenAndControl` | *(chưa có)* | Bẫy phiên + mã đối chứng |
+| `Tc1_ProbeOpenAndShape` | 「bung ra với đúng thành phần…」 | Hộp thoại mở ra hình dạng gì |
+| `Tc2_ProbeChangeAmount` | 「click vào dòng làm 使用量 +1…」 · 「Escape là 確定…」 | Click / gõ có đổi 数量 không; 確定 đẩy gì về lưới |
+| `Tc3_ProbeReopenAndControl` | 「mã đối chứng (f2 = 0)…」 · 「F10 戻る…」 | Bẫy phiên + mã đối chứng |
 
-Cặp Playwright sẽ được viết **sau**, khi bên web có màn hình để so. Cho tới lúc đó, vế
-WinForm này là **đặc tả hành vi đúng** — số đo ở mục 7 chính là thứ bên kia phải khớp.
+Hai vế **cố ý đo cùng một mã** (`605/0` 「ｵｾﾞｯｸｽ150ｍｇ３T」, đối chứng `606/0`) để số đo
+so thẳng được với nhau. Vế WinForm vẫn là **đặc tả hành vi đúng** — số đo ở mục 7 chính
+là thứ bên kia phải khớp.
+
+Vế Playwright KHÔNG hardcode số của mã nào: nó tính lại kỳ vọng từ
+`mst_trt` + `mst_drug_rx` + `mst_drug` ngay trong spec, rồi kiểm tréo bằng đúng phát
+hiện ở mục 3 — với 使用量 mặc định thì `点数` tính từ 薬価 phải trùng `SCORE1`. Nghĩa là
+nếu công thức 15円/10円 bên web sai, testcase ĐẦU TIÊN đỏ ngay, không phải đợi tới lúc
+đổi 数量.
+
+Điều **chưa** kiểm được bên Playwright: KQ-10 (`dataLineSource` của singleton
+`frm203016`, mục 5.5) là bẫy riêng của WinForm — web không có singleton đó.
 
 ---
 
@@ -214,6 +229,51 @@ oracle     : 使用量 3 → 薬価合計 85.80 → 点数 9   (== SCORE1 ✔)
 Đối chứng `606/0` 「ｸﾗﾋﾞｯﾄ錠250ｍｇ2T」: 621925701, 薬価 59.80, cnt 2 → 119.60 → 12 điểm,
 `SCORE1 = 12`, `F2 = 0` (**giữ nguyên, không seed**).
 
-### *(lần chạy trên app thật — chưa có)*
+### 2026-09-09 11:15 — `Tc0_ProbeMasterData` trên máy thật · **XANH**
 
-Cần điền: KQ-3 … KQ-11, kèm ảnh `artifacts\screenshots\`.
+`ochacom-win` · bệnh nhân **10** · 診療日 **2026-08-03** · `MST_TRT266`.
+
+```
+KQ-1  MST_TRT266 đang có 1 dòng F2 = 1  (đã tính dòng probe vừa seed ⇒ nền là 0 ✔)
+KQ-2  getPoint(薬価合計 ở 数量 MẶC ĐỊNH) == SCORE1 cho MỌI mã thuốc còn hiệu lực
+KQ-2  ĐỐI TƯỢNG = 605/0 「ｵｾﾞｯｸｽ150ｍｇ３T」 score1=9 F2=0 F3=1 g_cnt=3 枝番×1 · 1 thành phần
+KQ-2  ĐỐI CHỨNG = 606/0 「ｸﾗﾋﾞｯﾄ錠250ｍｇ2T」 score1=12 F2=0 F3=1 g_cnt=3 枝番×1 · 1 thành phần
+KQ-2  616290167 「オゼックス錠１５０　１５０ｍｇ」 薬価 28.60 × 3錠 (cost_type=1)
+KQ-2  使用量 [3] → 薬価合計 85.80 · 点数 9  · free_wd 「3」 · score1 9
+KQ-2  使用量 [4] → 薬価合計 114.40 · 点数 11 · free_wd 「4」
+```
+
+Sau `OneTimeTearDown`, kiểm từ Mac: `SELECT COUNT(*) FROM MST_TRT266 WHERE F2 = 1` → **0**,
+`605/0` và `606/0` đều `F2 = 0`. **Vòng seed/trả lại chạy đúng.**
+
+### 2026-09-09 11:18 — `Tc1_ProbeOpenAndShape` trên máy thật · **XANH**
+
+```
+KQ-3  gõ mã 605 (1 枝番) ⇒ 処置選択 KHÔNG hiện — ĐÚNG như đọc từ modMain.cs:474.
+      薬剤使用量選択 = mở · không hộp thoại lạ nào.
+KQ-4  lưới có 1 dòng, 5 ô ra tới UIA, NGUYÊN VĂN:
+      [オゼックス錠150 150mg] [28.60] [3] [錠] [85.8]
+      ⇒ CellFormatting KHÔNG để lại dấu cách nào đọc được qua UIA.
+      ⇒ 薬価計 in 「85.8」 (editFloatToString = float.ToString), còn 薬価合計 in 「85.80」.
+KQ-5  vừa mở: 使用量=[3] 薬価合計=「85.80」 点数=「9」
+      oracle nói 薬価合計 =「85.80」· 点数 =「9」· score1 = 9      ⇒ TRÙNG KHÍT
+KQ-6  nút: [F9  確定, F10  戻る, Minimize, Maximize, Close]   (hai dấu cách sau số F)
+KQ-11 「F10 戻る」: hộp thoại đóng ✔ · 月計点数 413 → 413 (KHÔNG đổi ✔)
+      dòng thuốc VẪN nằm trên lưới sau khi huỷ:
+      [14] 3 | (null) | オゼックス錠150 150mg 3T    1日3回朝昼夕食後 服用  3日分 | 9 | 3
+```
+
+**Hai lỗi HARNESS lộ ra ở lô này, đã sửa** (đây là lý do F1 tồn tại):
+
+1. **Ô 薬価 đọc ra tên thuốc.** Ba cột chứa 「薬」 (`薬剤名称` / `薬価` / `薬価計`); bản đầu
+   chỉ loại 「計」 nên 「薬　剤　名　称」 khớp trước. Dòng in ra thành
+   「薬価 オゼックス錠150 150mg × 3錠」 — **sai mà trông vẫn hợp lý**.
+   Sửa: loại cả 「剤」 lẫn 「計」 (`DrugAmountDialog.CostCell`).
+2. **単位 trên lưới bị RÚT GỌN: 「錠」 → 「T」** (`editDrugUnitToShortUnit`,
+   EditControl.cs:1160-1190). Dò 数量 bằng 「錠」 thì không khớp gì, và testcase sẽ kết
+   luận 「free_wd không tới nơi」 — đổ oan hoàn toàn cho app.
+   Sửa: `DrugAmountFlow.ShortUnit` + `AmountsInRowText` nhận cả hai dạng.
+
+### *(Tc2 / Tc3 — chưa chạy)*
+
+Cần điền: KQ-7 (click +1), KQ-8 (gõ tay), KQ-9 (確定 → lưới), KQ-10 (mở lại lần 2).
