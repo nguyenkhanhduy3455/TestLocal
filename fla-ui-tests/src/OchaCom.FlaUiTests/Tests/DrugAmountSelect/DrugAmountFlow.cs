@@ -330,8 +330,14 @@ public sealed class DrugAmountFlow
     /// (EditControl.cs:1049-1055), nên <b>数量 mới hiện ra ngay trong ô 療法・処置</b> —
     /// đó là mốc đọc được từ giao diện, khỏi phải đọc cột ẩn.</para>
     /// </summary>
+    /// <param name="before">
+    /// Ảnh chụp lưới TRƯỚC khi gõ mã. Có thì dòng kết quả nhận bằng phần CHÊNH
+    /// (<see cref="WaitForAddedDrugRow"/>) — bắt buộc khi fixture có nhiều testcase, vì
+    /// mỗi lượt để lại một dòng cùng tên thuốc. null thì lui về 「dòng đầu tiên khớp tên」.
+    /// </param>
     public CommitResult Confirm(DrugAmountDialog dialog, string drugNameFragment,
-                                TestTrace? trace = null)
+                                TestTrace? trace = null,
+                                IReadOnlyList<RegiRow>? before = null)
     {
         var pointBefore = _grid.AllPointValue();
         var confirmed = dialog.Confirm(trace);
@@ -360,7 +366,9 @@ public sealed class DrugAmountFlow
             Thread.Sleep(500);
         }
 
-        var row = FindDrugRow(drugNameFragment);
+        var row = before is null
+            ? FindDrugRow(drugNameFragment)
+            : WaitForAddedDrugRow(before, drugNameFragment);
         var pointAfter = _grid.AllPointValue();
 
         var result = new CommitResult(confirmed, row, pointBefore, pointAfter, seen);
@@ -432,9 +440,56 @@ public sealed class DrugAmountFlow
     ///
     /// <para>Deadline vừa phải: <c>frmTrtSel_Let_Trt_Data</c> còn chạy <c>getDrugName</c>
     /// (một câu SQL) rồi <c>SingleChk</c> trước khi lưới vẽ lại.</para>
+    ///
+    /// <para>⚠️ <b>Dùng bản này chỉ khi chắc chắn lưới có ĐÚNG MỘT dòng mang tên đó.</b>
+    /// Nhiều testcase trong cùng một fixture thì mỗi lượt lại để lại một dòng cùng tên
+    /// thuốc, và hàm này trả về dòng ĐẦU TIÊN — tức dòng của lượt CŨ. Dùng
+    /// <see cref="WaitForAddedDrugRow"/>.</para>
     /// </summary>
     public RegiRow? WaitForDrugRow(string nameFragment, TimeSpan? timeout = null) =>
         Waits.TryFor(() => FindDrugRow(nameFragment), timeout ?? TimeSpan.FromSeconds(20));
+
+    /// <summary>Ảnh chụp lưới để về sau lấy phần chênh. Gọi TRƯỚC khi gõ mã.</summary>
+    public IReadOnlyList<RegiRow> RowsNow(int limit = 200) => _grid.Snapshot(limit);
+
+    /// <summary>
+    /// Dòng thuốc VỪA rơi xuống, nhận bằng phần CHÊNH so với ảnh chụp
+    /// <paramref name="before"/> — không phải bằng 「dòng đầu tiên khớp tên」.
+    ///
+    /// <para>⚠️ <b>Đây là bẫy đã trả giá 2026-09-09</b> (TcG4 đỏ oan). Một fixture nhiều
+    /// testcase thì mỗi lượt để lại một dòng mang CÙNG tên thuốc, nên
+    /// <c>FirstOrDefault(khớp tên)</c> trả về dòng của lượt TRƯỚC — testcase đọc 点 = 9
+    /// (score1 của lượt 戻る cũ) rồi kết luận 「nhánh ghi đè không chạy」, đổ oan hoàn
+    /// toàn cho app. Vế Playwright vấp đúng chỗ này và giải bằng
+    /// <c>waitForAddedRow</c> (BẪY 4 trong doc của spec đó).</para>
+    ///
+    /// <para>So theo khoá <c>日|部位|療法・処置|点|回</c> và bỏ đúng MỘT bản mỗi lần khớp,
+    /// nên hai dòng giống hệt nhau vẫn phân biệt được. Không so theo chỉ số: app chèn
+    /// vào GIỮA lưới nên mọi dòng phía dưới đều dịch.</para>
+    /// </summary>
+    public RegiRow? WaitForAddedDrugRow(IReadOnlyList<RegiRow> before, string nameFragment,
+                                        TimeSpan? timeout = null) =>
+        Waits.TryFor(() => AddedRows(before).FirstOrDefault(
+                         r => Txt.Has(AutoSanteiChkAuto.AutoSanteiOps.Norm(r.Ryo),
+                                      AutoSanteiChkAuto.AutoSanteiOps.Norm(nameFragment))),
+                     timeout ?? TimeSpan.FromSeconds(25));
+
+    /// <summary>Các dòng CÓ THÊM so với ảnh chụp, so theo NỘI DUNG chứ không theo chỉ số.</summary>
+    public IReadOnlyList<RegiRow> AddedRows(IReadOnlyList<RegiRow> before)
+    {
+        static string Key(RegiRow r) => $"{r.Day}|{r.Bui}|{r.Ryo}|{r.Ten}|{r.Kai}";
+
+        var pool = before.Where(AutoSanteiChkAuto.AutoSanteiOps.EntryMeasure.IsData)
+                         .Select(Key).ToList();
+        var added = new List<RegiRow>();
+        foreach (var row in RowsNow().Where(AutoSanteiChkAuto.AutoSanteiOps.EntryMeasure.IsData))
+        {
+            var i = pool.IndexOf(Key(row));
+            if (i >= 0) pool.RemoveAt(i);   // dòng cũ — bỏ đúng MỘT bản
+            else added.Add(row);
+        }
+        return added;
+    }
 
     /// <summary>Đóng hộp thoại + 処置選択 mà KHÔNG chốt gì — dùng ở dọn dẹp giữa các testcase.</summary>
     public void CancelAll(TestTrace? trace = null)

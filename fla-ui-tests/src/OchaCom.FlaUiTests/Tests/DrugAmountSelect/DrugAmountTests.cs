@@ -154,7 +154,7 @@ public sealed class DrugAmountTests : UiTestBase
         using var trace = TestTrace.Begin();
         var subject = RequireSubject();
 
-        var dlg = RequireDialog(subject, trace);
+        var dlg = RequireDialog(subject, trace).Dialog;
 
         var rows = dlg.Rows();
         Assert.That(rows, Has.Count.EqualTo(subject.RowCount),
@@ -221,7 +221,7 @@ public sealed class DrugAmountTests : UiTestBase
         var subject = RequireSubject();
         var idx = ScalableIndex(subject);
 
-        var dlg = RequireDialog(subject, trace);
+        var dlg = RequireDialog(subject, trace).Dialog;
         var change = _flow.ClickTimes(dlg, idx, Cfg.ClickTimes, trace);
 
         var expected = BumpedCounts(subject, idx, Cfg.ClickTimes);
@@ -263,7 +263,7 @@ public sealed class DrugAmountTests : UiTestBase
                 "Cùng lý do và cùng mã với spec Playwright.");
 
         var slot = subject.Components[idx];
-        var dlg = RequireDialog(subject, trace);
+        var dlg = RequireDialog(subject, trace).Dialog;
         var change = _flow.ClickTimes(dlg, idx, Math.Max(Cfg.ClickTimes, 1), trace);
 
         Assert.That(change.After.Counts[idx], Is.EqualTo(change.Before.Counts[idx]).Within(0.001f),
@@ -291,7 +291,8 @@ public sealed class DrugAmountTests : UiTestBase
         var subject = RequireSubject();
         var idx = ScalableIndex(subject);
 
-        var dlg = RequireDialog(subject, trace);
+        var opened = RequireDialog(subject, trace);
+        var dlg = opened.Dialog;
         _flow.ClickTimes(dlg, idx, Cfg.ClickTimes, trace);
 
         var expected = BumpedCounts(subject, idx, Cfg.ClickTimes);
@@ -309,7 +310,7 @@ public sealed class DrugAmountTests : UiTestBase
             "False ở đây thường là HARNESS: phím rơi nhầm form (xem ghi chú dirty gate " +
             "trong ConfirmByEscape), chứ không phải app từ chối Escape.");
 
-        var row = _flow.WaitForDrugRow(FirstDrugName(subject));
+        var row = _flow.WaitForAddedDrugRow(opened.Before, FirstDrugName(subject));
         Assert.That(row, Is.Not.Null,
             "Sau 確定, dòng 薬剤 phải rơi xuống lưới. Lưới:\n  " +
             string.Join("\n  ", _flow.Base.DescribeGrid()));
@@ -365,7 +366,8 @@ public sealed class DrugAmountTests : UiTestBase
         var subject = RequireSubject();
         var idx = ScalableIndex(subject);
 
-        var dlg = RequireDialog(subject, trace);
+        var opened = RequireDialog(subject, trace);
+        var dlg = opened.Dialog;
 
         // Bấm +1 rồi bỏ đi — 戻る phải VỨT thay đổi này.
         _flow.ClickTimes(dlg, idx, Cfg.ClickTimes, trace);
@@ -374,7 +376,7 @@ public sealed class DrugAmountTests : UiTestBase
         Assert.That(dlg.Cancel(trace), Is.True,
             "「F10 戻る」 phải đóng hộp thoại (frm203020 btnF10 = 戻る của BaseDialog).");
 
-        var row = _flow.WaitForDrugRow(FirstDrugName(subject));
+        var row = _flow.WaitForAddedDrugRow(opened.Before, FirstDrugName(subject));
         Assert.That(row, Is.Not.Null,
             "戻る vẫn để dòng 薬剤 rơi xuống lưới — nó chỉ bỏ phần ghi đè 点数/free_wd. " +
             "Lưới:\n  " + string.Join("\n  ", _flow.Base.DescribeGrid()));
@@ -411,7 +413,7 @@ public sealed class DrugAmountTests : UiTestBase
             IgnoreWithReason($"drugAmount.typedCount = 「{typed}」 không phải số — " +
                              "ô 使用量 chỉ nhận chữ số và dấu chấm (ComLibrary.NumAndPeriod_KeyPress).");
 
-        var dlg = RequireDialog(subject, trace);
+        var dlg = RequireDialog(subject, trace).Dialog;
         var change = _flow.TypeCount(dlg, idx, typed, trace);
 
         var expected = subject.BaseCounts.ToList();
@@ -451,14 +453,15 @@ public sealed class DrugAmountTests : UiTestBase
             IgnoreWithReason($"drugAmount.typedCount = 「{typed}」 phải là một con số để đo " +
                              "được vòng free_wd.");
 
-        var dlg = RequireDialog(subject, trace);
+        var opened = RequireDialog(subject, trace);
+        var dlg = opened.Dialog;
         _flow.TypeCount(dlg, idx, typed, trace);
 
         var expected = subject.BaseCounts.ToList();
         expected[idx] = typedF;
         var expectedPoint = DrugAmountDb.ExpectedPoint(subject, expected);
 
-        var commit = _flow.Confirm(dlg, FirstDrugName(subject), trace);
+        var commit = _flow.Confirm(dlg, FirstDrugName(subject), trace, opened.Before);
         Assert.That(commit.Confirmed, Is.True, "「F9 確定」 phải đóng hộp thoại.");
         Assert.That(commit.Row, Is.Not.Null,
             "Sau 確定, dòng 薬剤 phải rơi xuống lưới. Lưới:\n  " +
@@ -533,8 +536,17 @@ public sealed class DrugAmountTests : UiTestBase
     private static IReadOnlyList<float> BumpedCounts(DrugAmountDb.DrugCandidate c, int idx, int times) =>
         c.BaseCounts.Select((v, i) => i == idx ? v + times : v).ToList();
 
+    /// <summary>
+    /// Hộp thoại vừa mở + ẢNH CHỤP lưới ngay TRƯỚC khi gõ mã.
+    ///
+    /// <para>Ảnh chụp là bắt buộc: mỗi testcase để lại một dòng mang CÙNG tên thuốc, nên
+    /// sau này phải nhận dòng mới bằng phần CHÊNH chứ không bằng 「dòng đầu tiên khớp
+    /// tên」 (xem <see cref="DrugAmountFlow.WaitForAddedDrugRow"/>).</para>
+    /// </summary>
+    private sealed record Opened(DrugAmountDialog Dialog, IReadOnlyList<RegiRow> Before);
+
     /// <summary>Mở hộp thoại trên một dòng trống của ngày test; không mở được thì đỏ ngay.</summary>
-    private DrugAmountDialog RequireDialog(DrugAmountDb.DrugCandidate c, TestTrace trace)
+    private Opened RequireDialog(DrugAmountDb.DrugCandidate c, TestTrace trace)
     {
         var row = _flow.BlankRowOn(TrtDate.Day, trace);
         Assert.That(row, Is.Not.Null,
@@ -542,6 +554,7 @@ public sealed class DrugAmountTests : UiTestBase
             "trước khi đọc bất cứ kết luận nào về app. Lưới:\n  " +
             string.Join("\n  ", _flow.Base.DescribeGrid()));
 
+        var before = _flow.RowsNow();
         var open = _flow.OpenDialog(row!, c.TrtCd, c.TrtSb, trace);
         Assert.That(open.DialogOpened, Is.True,
             $"薬剤使用量選択 phải bung ra cho {c.TrtCd}/{c.TrtSb} vì fixture đã bật " +
@@ -549,7 +562,7 @@ public sealed class DrugAmountTests : UiTestBase
             "Kiểm theo thứ tự: (1) seed có chạy không — xem dòng 「SEED —」 ở đầu log; " +
             "(2) có hộp thoại lạ nào chắn không — xem ảnh 「khong-mo-203020」; " +
             "(3) dataLineSource của singleton frm203016 có dính ID210002 không (README §5.5).");
-        return open.Dialog!;
+        return new Opened(open.Dialog!, before);
     }
 
     /// <summary>Gõ mã và khẳng định hộp thoại KHÔNG mở; trả về dòng đã rơi xuống lưới.</summary>
@@ -558,13 +571,14 @@ public sealed class DrugAmountTests : UiTestBase
         var blank = _flow.BlankRowOn(TrtDate.Day, trace);
         Assert.That(blank, Is.Not.Null, "Không có dòng trống nào để gõ mã — HARNESS hỏng.");
 
+        var before = _flow.RowsNow();
         var open = _flow.OpenDialog(blank!, c.TrtCd, c.TrtSb, trace);
         Assert.That(open.DialogOpened, Is.False,
             $"薬剤使用量選択 KHÔNG được mở cho mã có F2 = 0 ({c.TrtCd}/{c.TrtSb}). Mở ra " +
             "nghĩa là cửa mở hộp thoại KHÔNG phải F2 — và khi đó mọi testcase khác của " +
             $"fixture này xanh mà chẳng chứng minh được gì. {open}");
 
-        var row = _flow.WaitForDrugRow(FirstDrugName(c));
+        var row = _flow.WaitForAddedDrugRow(before, FirstDrugName(c));
         Assert.That(row, Is.Not.Null,
             $"Mã {c.TrtCd} phải rơi thẳng xuống lưới, không qua hộp thoại nào. Lưới:\n  " +
             string.Join("\n  ", _flow.Base.DescribeGrid()));
