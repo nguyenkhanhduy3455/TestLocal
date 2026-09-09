@@ -390,6 +390,50 @@ public sealed class DrugAmountProbeTests : UiTestBase
         });
     }
 
+    // ═════════════════════════════════════════════════════════════════════════
+    // Tc4 — HAI vòng: click ở hộp thoại thứ NHẤT, rồi click ở hộp thoại thứ HAI.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Test]
+    [Description("PROBE — CellClick còn ăn ở lượt mở THỨ HAI trong cùng phiên app không")]
+    [CancelAfter(600_000)]
+    public void Tc4_ProbeClickOnSecondDialog()
+    {
+        using var trace = TestTrace.Begin();
+        if (_subject is null) { Kq(12, "không có ứng viên — bỏ qua."); return; }
+
+        // Câu hỏi này sinh ra từ một lượt chạy THẬT 2026-09-09: DrugAmountTests chạy cả
+        // fixture thì TcG2 (click +1) ĐỎ, mà chạy MỘT MÌNH thì XANH. Khác biệt duy nhất
+        // là TcG1 đã mở-rồi-đóng một hộp thoại TRƯỚC đó trong cùng phiên app.
+        // frm203020 là SINGLETON (_instance, frm203020.cs:81-91) nên lượt thứ hai dùng
+        // lại đúng form cũ. Probe này đo thẳng câu đó, KHÔNG assert.
+        for (var round = 1; round <= 2; round++)
+        {
+            var r = round;
+            Say(() =>
+            {
+                var open = OpenOnBlankRow(_subject, trace);
+                if (open.Dialog is not { } d)
+                {
+                    Kq(12, $"lượt {r}: hộp thoại KHÔNG mở — {open}");
+                    _flow.CancelAll(trace);
+                    return;
+                }
+
+                var before = DrugAmountFlow.Capture(d);
+                var change = _flow.ClickTimes(d, 0, 1, trace);
+                Kq(12, $"lượt {r} (hộp thoại thứ {r} của phiên app): {change}");
+                Kq(12, $"        Δ使用量 = [{string.Join(",", change.CountDeltas.Select(x => x.ToString("0.####")))}] " +
+                       (change.CountDeltas.Count > 0 && Math.Abs(change.CountDeltas[0]) < 0.001f
+                           ? "⇒ CellClick KHÔNG ăn ở lượt này"
+                           : "⇒ CellClick ăn bình thường"));
+                Kq(12, $"        ô đang giữ con trỏ sau click: 「{_flow.Grid.FocusedCellName()}」");
+                d.Cancel(trace);
+                _flow.CancelAll(trace);
+            });
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>Chèn/tìm một dòng trống của ngày test rồi gõ mã lên đó.</summary>
