@@ -278,6 +278,43 @@ KQ-11 「F10 戻る」: hộp thoại đóng ✔ · 月計点数 413 → 413 (KH
    luận 「free_wd không tới nơi」 — đổ oan hoàn toàn cho app.
    Sửa: `DrugAmountFlow.ShortUnit` + `AmountsInRowText` nhận cả hai dạng.
 
-### *(Tc2 / Tc3 — chưa chạy)*
+### 2026-09-09 11:25 — `Tc2_ProbeChangeAmount` trên máy thật · **XANH**
 
-Cần điền: KQ-7 (click +1), KQ-8 (gõ tay), KQ-9 (確定 → lưới), KQ-10 (mở lại lần 2).
+```
+KQ-7  1 cú click vào ô 薬剤名称 dòng 0:
+      使用量=[3] 薬価合計=「85.80」 点数=「9」  →  使用量=[4] 薬価合計=「114.40」 点数=「11」
+      Δ使用量 = [1] · Δ点 = 2 · oracle nói 「114.40」/「11」        ⇒ TRÙNG KHÍT
+KQ-8  gõ 使用量 = 「10」 rồi rời ô: ĐỌC RA 使用量=[5] 薬価合計=「143.00」 点数=「14」
+      oracle nói 「286.00」/「29」                                  ⇒ LỆCH — nhưng là LỖI HARNESS
+KQ-9  確定 với hộp thoại ĐANG HIỂN THỊ 点数=「14」 ⇒ lưới nhận:
+      [14] 3 | (null) | オゼックス錠150 150mg 10T    1日3回朝昼夕食後 服用  3日分 | 29 | 3
+      数量 đọc ra từ ô 療法・処置: [10]   (gốc master là 3)
+      月計点数 413 → 500 (Δ 87 = 29 điểm × 3 回)
+```
+
+**KQ-8 và KQ-9 mâu thuẫn nhau — và KQ-9 mới là sự thật.** Giá trị 「10」 gõ vào **CÓ**
+tới nơi: 確定 đẩy `free_wd = 10` về lưới, ô 療法・処置 in 「10T」, 点 = **29** đúng bằng
+oracle của 使用量 = 10. Cái sai là **phép đọc của harness**, không phải app:
+
+> **Lỗi harness #3 — mũi tên ↓ không rời được ô khi lưới chỉ có MỘT dòng.**
+> Ô không mất tiêu điểm ⇒ `CellValidating` (:269-301) chưa chạy ⇒ 薬価計 / 薬価合計 /
+> 点数 vẫn là số của bước TRƯỚC, và `Capture` đọc đúng số cũ đó. Validation chỉ chạy lúc
+> bấm 「F9 確定」 (nút lấy tiêu điểm) — nên `setPacData` vẫn lấy đúng 「29」.
+> Sửa: rời ô bằng **Tab** (`StandardTab = true`, Designer:130).
+>
+> **Lỗi harness #4 — `F2` bị chính hộp thoại nuốt.** `formBase_KeyDown` chuyển F2 sang
+> `base.btnF2_Click` (:138-140) ⇒ editor không mở. Không cần F2: `DataGridView` mặc định
+> `EditOnKeystrokeOrF2` nên **gõ thẳng chữ số vừa mở editor vừa thay nội dung**.
+
+Kết luận nghiệp vụ rút ra từ KQ-9 (đây là **đặc tả** cho vế web):
+
+| Mốc | Giá trị |
+|---|---|
+| `free_wd` → ô 療法・処置 | 「オゼックス錠150 150mg **10T**」 — 数量 mới, 単位 **rút gọn** |
+| 点数 dòng lưới | **29** = `getPoint(28.60 × 10, 1)`, **không** phải `score1 = 9` |
+| 月計点数 | +87 = 29 điểm × 3 回 |
+| `回数` | vẫn là `g_cnt` = 3 — 数量 và 回数 là **hai thứ khác nhau** |
+
+### *(Tc3 — chưa chạy)*
+
+Cần điền: KQ-10 (mở lại lần 2 trong cùng phiên — bẫy `dataLineSource`), KQ-11 (mã đối chứng).

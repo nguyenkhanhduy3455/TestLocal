@@ -249,13 +249,27 @@ public sealed class DrugAmountDialog
     /// Gõ một 使用量 mới vào ô 使用量 của dòng, rồi <b>rời ô</b> để <c>CellValidating</c>
     /// chạy (frm203020.cs:267-301 — 「セルが入力フォーカスを失う時に発生」).
     ///
-    /// <para>Rời ô bằng <b>mũi tên xuống/lên</b>, KHÔNG bằng Enter và tuyệt đối không bằng
-    /// Escape: <c>formBase_KeyDown</c> biến Escape thành 確定 (:153). Enter thì tuỳ
-    /// <c>ActiveControl</c> — với lưới nó rơi vào nhánh 「không ProcessTabKey」 (:156-168)
-    /// nên vô hại, nhưng mũi tên là đường chắc chắn rời ô mà không rời form.</para>
+    /// <para>⚠️ Cú click để đặt con trỏ vào ô <b>đã tự cộng 1</b> (CellClick). Không tránh
+    /// được — nhưng cũng không cần: gõ thẳng số sẽ <b>ghi đè</b> (xem dưới).</para>
     ///
-    /// <para>⚠️ Cú click để đặt con trỏ vào ô <b>đã tự cộng 1</b> (CellClick). Vì thế hàm
-    /// GHI ĐÈ giá trị: chọn hết rồi gõ, chứ không gõ thêm vào sau.</para>
+    /// ─── Ba điều đo được 2026-09-09 (Tc2, KQ-8), cả ba đều làm hỏng bản đầu ────
+    /// <list type="number">
+    /// <item><b>Đừng bấm <c>F2</c> để mở editor.</b> <c>formBase_KeyDown</c> của CHÍNH
+    ///   hộp thoại nuốt F2 và chuyển sang <c>base.btnF2_Click</c> (frm203020.cs:138-140)
+    ///   ⇒ editor không bao giờ mở. Không cần F2: <c>DataGridView</c> mặc định
+    ///   <c>EditOnKeystrokeOrF2</c>, nên <b>gõ thẳng chữ số là vào edit-mode và THAY
+    ///   nội dung cũ</b> — đúng thứ ta muốn.</item>
+    /// <item><b>Mũi tên ↓ KHÔNG rời được ô khi lưới chỉ có MỘT dòng.</b> Ô không mất tiêu
+    ///   điểm ⇒ <c>CellValidating</c> không chạy ⇒ 薬価計/合計 vẫn là số cũ, và mọi phép
+    ///   đọc ngay sau đó là <b>số cũ</b>. Bản đầu đọc ra 使用量=5 · 点数=14 trong khi giá
+    ///   trị gõ vào là 10 — trông y như 「gõ không ăn」, thực ra chỉ là chưa validate.
+    ///   Rời ô bằng <b>Tab</b> (<c>StandardTab = true</c>, Designer:130 ⇒ Tab đưa tiêu
+    ///   điểm ra khỏi lưới). ←/→ thì vô dụng: <c>dgvSelect_KeyDown</c> đặt
+    ///   <c>e.Handled = true</c> cho cả hai (:216-224).</item>
+    /// <item>⛔ <b>Không bao giờ dùng Escape để "thoát editor"</b> —
+    ///   <c>formBase_KeyDown</c> biến Escape thành <c>btnF9_Click</c>, tức 確定 (:153-155).
+    ///   <c>End</c> cũng vậy (:150-152).</item>
+    /// </list>
     /// </summary>
     public bool TypeCount(DrugRow row, string value, TestTrace? trace = null)
     {
@@ -265,22 +279,19 @@ public sealed class DrugAmountDialog
 
         var (x, y) = Uia.Center(cells[idx]);
         trace?.Step($"go 使用量 = 「{value}」 vao dong 「{row.Name}」 " +
-                    "(luu y: chinh cu click nay da +1 qua CellClick, nen gia tri se bi GHI DE)");
+                    "(chinh cu click nay da +1 qua CellClick; go thang chu so se GHI DE)");
 
         Uia.LeftClickPhysical(x, y);
         Thread.Sleep(250);
 
-        // F2 mở editor của ô đang chọn; Ctrl+A + gõ để GHI ĐÈ chứ không nối thêm.
-        Keyboard.Press(VirtualKeyShort.F2);
-        Thread.Sleep(200);
-        Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_A);
-        Thread.Sleep(100);
+        // Gõ thẳng — phím đầu tiên vừa mở editor vừa thay nội dung (EditOnKeystrokeOrF2).
         Keyboard.Type(value);
-        Thread.Sleep(200);
+        Thread.Sleep(250);
 
-        // Rời ô ⇒ CellValidating chạy ⇒ 薬価計 + 合計 được tính lại.
-        Keyboard.Press(VirtualKeyShort.DOWN);
-        Thread.Sleep(400);
+        // Tab ⇒ ô mất tiêu điểm ⇒ CellValidating chạy ⇒ 薬価計 + 合計 được tính lại.
+        trace?.Note("Tab de roi o — KHONG dung ↓ (luoi mot dong thi ↓ khong roi o duoc)");
+        Keyboard.Press(VirtualKeyShort.TAB);
+        Thread.Sleep(500);
         return true;
     }
 
