@@ -155,7 +155,14 @@ public sealed class DrugAmountFlow
     /// 15 phút.</para>
     /// </summary>
     /// <param name="trtSb">枝番 cần chốt KHI 処置選択 hiện ra. Không hiện thì không dùng tới.</param>
-    public OpenResult OpenDialog(RegiRow row, int trtCd, int trtSb, TestTrace? trace = null)
+    /// <param name="expectDialog">
+    /// <b>false</b> = đang đo một mã mà ta tin là KHÔNG mở hộp thoại (F2 = 0, hoặc luồng
+    /// G2 path B). Khi đó deadline rút xuống 6s — luật F2: 「hộp thoại mình tin là KHÔNG
+    /// tồn tại: 5–8s, cố ý ngắn」. Chờ 22s cho một thứ không tới là mua 22 giây bằng
+    /// không có gì, và nhân lên theo số testcase.
+    /// </param>
+    public OpenResult OpenDialog(RegiRow row, int trtCd, int trtSb, TestTrace? trace = null,
+                                 bool expectDialog = true)
     {
         var seen = new List<string>();
 
@@ -172,7 +179,7 @@ public sealed class DrugAmountFlow
         // 枝番 thì 処置選択 không bao giờ tới, và vòng chờ đầu tiên sẽ ăn trọn deadline.
         var appeared = Waits.TryUntil(
             () => Dialog() is not null || Picker() is not null || Crashed(),
-            TimeSpan.FromSeconds(12));
+            TimeSpan.FromSeconds(expectDialog ? 12 : 6));
 
         if (!appeared)
         {
@@ -198,7 +205,8 @@ public sealed class DrugAmountFlow
                         "(modMain.cs:474 goi thang frm203016_Hide_Let_Trt_Data)");
         }
 
-        var dialog = DrugAmountDialog.WaitFor(_app, _screen.Window, TimeSpan.FromSeconds(10));
+        var dialog = DrugAmountDialog.WaitFor(
+            _app, _screen.Window, TimeSpan.FromSeconds(expectDialog ? 10 : 4));
         if (dialog is null)
         {
             // Đây là chỗ dễ ĐỔ OAN cho app nhất: có thể app đúng là không mở (F2 chưa

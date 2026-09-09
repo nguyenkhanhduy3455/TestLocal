@@ -211,6 +211,54 @@ export async function deleteMstTrtRows(ids: readonly string[]): Promise<number> 
     })
 }
 
+export interface SeedMstMedInput {
+    /** 処置コード / 枝番 mà dòng 用法 này gắn vào. */
+    trtCd: number
+    trtSb: number
+    /** 用法 (MST_MED.USAGE → mst_med.usage_nm). */
+    usageNm: string
+    /** 用法グループ (CODMST cd_type 45). 1 = 内服 trong master dev. */
+    grp?: number
+}
+
+/**
+ * Seed dòng 用法マスタ (`mst_med`) — bảng clinic tự đăng ký qua frm503006 薬剤用法登録.
+ *
+ * KHÔNG có cột kỳ áp dụng (MST_MED gốc cũng không), khoá là (trt_cd, trt_sb) nên
+ * seed xong PHẢI dọn bằng `deleteMstMedRows()` với id trả về ở đây — cùng lý do
+ * và cùng cách với `seedMstTrtRows` (xem chú thích của nó): xoá theo
+ * (trt_cd, trt_sb) là rủi ro vì tenant khác có thể có mã đó thật.
+ *
+ * Dọn tay nếu một lần chạy bị Ctrl+C giữa chừng:
+ *   SELECT id, trt_cd, trt_sb, usage_nm, created_at FROM t_tenant1.mst_med
+ *    WHERE trt_cd BETWEEN 600 AND 699 ORDER BY created_at DESC;
+ */
+export async function seedMstMedRows(rows: readonly SeedMstMedInput[]): Promise<string[]> {
+    if (rows.length === 0) return []
+    return withDb(async (c) => {
+        const ids: string[] = []
+        for (const r of rows) {
+            const res = await c.query<{ id: string }>(
+                `INSERT INTO mst_med (trt_cd, trt_sb, grp, usage_nm)
+                 VALUES ($1::int, $2::int, $3::int, $4::text)
+                 RETURNING id`,
+                [r.trtCd, r.trtSb, r.grp ?? 1, r.usageNm],
+            )
+            if (res.rows[0]) ids.push(res.rows[0].id)
+        }
+        return ids
+    })
+}
+
+/** Xoá HẲN các dòng mst_med đã seed (theo id trả về từ seedMstMedRows). */
+export async function deleteMstMedRows(ids: readonly string[]): Promise<number> {
+    if (ids.length === 0) return 0
+    return withDb(async (c) => {
+        const r = await c.query('DELETE FROM mst_med WHERE id = ANY($1::uuid[])', [ids])
+        return r.rowCount ?? 0
+    })
+}
+
 /** Số record 義歯管理 (chưa soft-delete) của một bệnh nhân. */
 export async function countGisiKanri(patNo: number): Promise<number> {
     return withDb(async (c) => {
@@ -1940,6 +1988,90 @@ export async function findGuideDrugSlots(
             usageSupplInf: String(row['usage_suppl_inf'] ?? '').trim(),
             dgNm: String(row['dg_nm'] ?? '').trim(),
         }))
+    })
+}
+
+export interface DrugRxRow {
+    /** `mst_trt.trt_nm` của chính mã đó (bản master hiệu lực cho `onDate`). */
+    trtNm: string
+    /** `mst_trt.g_cnt` — 回数 mà 薬剤選択 nạp sẵn vào giỏ khi thêm dòng (moveData). */
+    gCnt: number
+    /** `mst_trt.grp` — quyết định mã nằm ở tab nào (1 内服 / 2 屯服 / 3 外用). */
+    grp: number
+    /** `mst_drug_rx.med_kbn` — '21' → 日分, '22' → 回分, khác → không có 用量. */
+    medKbn: string
+    /** `mst_drug_rx.usage_nm` — dòng 用法 của path A. Rỗng = mã này không có 用法. */
+    usageNm: string
+    /** `mst_drug_rx.usage_suppl_inf` — ghép ngay sau `usage_nm`. */
+    usageSupplInf: string
+    /** `mst_drug.dg_nm` của thành phần đầu — gốc dòng 薬剤名 của path A. */
+    dgNm: string
+    /** true = mã CÓ dòng 処置変換テーブル ⇒ đi path A của editDrugName. */
+    hasDrugRx: boolean
+}
+
+/**
+ * Đọc master của MỘT mã 薬剤 (600–699) theo bản hiệu lực cho `onDate` — dùng khi
+ * spec cần TỰ TÍNH kỳ vọng thay vì hardcode chuỗi của tenant dev.
+ *
+ * `hasDrugRx = false` nghĩa là mã đó rơi vào path B của `editDrugName`
+ * (EditControl.cs:1136) — lúc đó `medKbn`/`usageNm`/`dgNm` đều rỗng.
+ * Trả null khi không có dòng `mst_trt` nào (mã không tra được).
+ */
+export async function findDrugRx(
+    trtCd: number,
+    trtSb: number,
+    onDate: string,
+): Promise<DrugRxRow | null> {
+    return withDb(async (c) => {
+        const ver = await c.query<{ version_id: string }>(
+            `SELECT version_id
+               FROM view_mst_trt_ver_active
+              WHERE table_name LIKE 'MST_TRT%'
+                AND start_date <= $1::timestamptz
+                AND end_date   >= $1::timestamptz
+              ORDER BY start_date DESC
+              LIMIT 1`,
+            [`${onDate}T00:00:00+09:00`],
+        )
+        const versionId = ver.rows[0]?.version_id
+        if (!versionId) return null
+
+        const r = await c.query<Record<string, unknown>>(
+            `SELECT mt.trt_nm,
+                    coalesce(mt.g_cnt, 0)            AS g_cnt,
+                    coalesce(mt.grp, 0)              AS grp,
+                    coalesce(rx.med_kbn, '')         AS med_kbn,
+                    coalesce(rx.usage_nm, '')        AS usage_nm,
+                    coalesce(rx.usage_suppl_inf, '') AS usage_suppl_inf,
+                    coalesce(dg.dg_nm, '')           AS dg_nm,
+                    (rx.trt_cd IS NOT NULL)          AS has_drug_rx
+               FROM view_mst_trt_active mt
+               LEFT JOIN view_mst_drug_rx_active rx
+                 ON  rx.trt_cd = mt.trt_cd AND rx.trt_sb = mt.trt_sb
+                 AND $2::date BETWEEN rx.app_st_dt AND rx.app_ed_dt
+               LEFT JOIN view_mst_drug_active dg
+                 ON  dg.dg_cd = rx.dg_cd1
+                 AND $2::date BETWEEN dg.app_st_dt AND dg.app_ed_dt
+              WHERE mt.version_id = $1
+                AND mt.trt_cd = $3 AND mt.trt_sb = $4
+                AND mt.active_flg = 1
+                AND right(mt.trt_nm, 1) <> '!'
+              LIMIT 1`,
+            [versionId, onDate, trtCd, trtSb],
+        )
+        const row = r.rows[0]
+        if (!row) return null
+        return {
+            trtNm: String(row['trt_nm'] ?? '').trim(),
+            gCnt: Number(row['g_cnt'] ?? 0),
+            grp: Number(row['grp'] ?? 0),
+            medKbn: String(row['med_kbn'] ?? '').trim(),
+            usageNm: String(row['usage_nm'] ?? '').trim(),
+            usageSupplInf: String(row['usage_suppl_inf'] ?? '').trim(),
+            dgNm: String(row['dg_nm'] ?? '').trim(),
+            hasDrugRx: Boolean(row['has_drug_rx']),
+        }
     })
 }
 

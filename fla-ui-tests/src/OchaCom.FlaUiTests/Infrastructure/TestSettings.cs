@@ -30,6 +30,7 @@ public sealed class TestSettings
     [JsonPropertyName("buiPrice")] public BuiPriceSection BuiPrice { get; set; } = new();
     [JsonPropertyName("karteCmt")] public KarteCmtSection KarteCmt { get; set; } = new();
     [JsonPropertyName("drugAmount")] public DrugAmountSection DrugAmount { get; set; } = new();
+    [JsonPropertyName("drugPathB")] public DrugPathBSection DrugPathB { get; set; } = new();
     [JsonPropertyName("locators")] public Dictionary<string, string> Locators { get; set; } = new();
 
     private static TestSettings? _current;
@@ -576,6 +577,56 @@ public sealed class TestSettings
         [JsonPropertyName("typedCount")] public string TypedCount { get; set; } = "10";
     }
 
+    /// <summary>
+    /// Luồng <c>Tests/DrugPathB</c> — <b>G2: path B của <c>EditControl.editDrugName</c></b>,
+    /// nhánh chạy khi KHÔNG tìm thấy dòng <c>MST_DRUG_RX</c>: tên lấy từ
+    /// <c>MstTrt.getMstTrtDataYaku</c>, 用法 lấy từ <c>MST_MED</c>
+    /// (EditControl.cs:1137-1148).
+    ///
+    /// <para>Bản web dừng ở <c>alertDialog(「この薬剤コードは現在未対応です。」)</c>
+    /// (treatment-entry-detail.tsx:5077-5079) và KHÔNG chèn dòng nào.</para>
+    /// </summary>
+    public sealed class DrugPathBSection
+    {
+        /// <summary>
+        /// Cho phép <b>giấu tạm</b> dòng <c>MST_DRUG_RX</c> của mã đem thử.
+        ///
+        /// <para>⚠️ Bắt buộc: cả 63/63 mã 600–699 của dev đều có 処置変換 phủ ngày test
+        /// (đo 2026-09-09) ⇒ path B không bao giờ chạy, và mọi testcase sẽ xanh vì chẳng
+        /// đo gì. Thứ bị sửa là <b>bảng 処置変換 dùng chung cả phòng khám</b> — nên có cờ
+        /// RIÊNG, không dùng chung <c>drugAmount.allowSeed</c> (bên đó sửa
+        /// <c>mst_trt.F2</c>, bảng khác, rủi ro khác).</para>
+        ///
+        /// <para>Mặc định false ⇒ fixture tự Ignore TRƯỚC khi mở app.</para>
+        /// </summary>
+        [JsonPropertyName("allowSeed")] public bool AllowSeed { get; set; }
+
+        /// <summary>
+        /// Mã đem thử — phải CÓ dòng <c>MST_MED</c> để đo được cả hai dòng của path B.
+        /// 605/0 「ｵｾﾞｯｸｽ150ｍｇ３T」, <c>MST_MED.usage</c> = 「１日３回朝昼夕食後　服用」.
+        ///
+        /// <para>Cố ý TRÙNG mã của luồng G1: cùng một mã, path A cho
+        /// 「オゼックス錠150 150mg 3T … 3日分」 còn path B cho 「ｵｾﾞｯｸｽ150ｍｇ３T」 +
+        /// 「１日３回朝昼夕食後　服用」. Đặt hai kết quả cạnh nhau là thấy ngay path B là
+        /// một màn hình khác hẳn, không phải một biến thể.</para>
+        /// </summary>
+        [JsonPropertyName("trtCd")] public int TrtCd { get; set; } = 605;
+
+        [JsonPropertyName("trtSb")] public int TrtSb { get; set; }
+
+        /// <summary>
+        /// Mã <b>ĐỐI CHỨNG</b> — cũng ép vào path B, nhưng <b>KHÔNG</b> có dòng
+        /// <c>MST_MED</c>. 630/0 「ムコスタ錠１００ｍｇ」 (một 枝番, một dòng rx).
+        ///
+        /// <para>Nó tách đôi câu hỏi: dòng thứ nhất đến từ <c>getMstTrtDataYaku</c>, dòng
+        /// thứ hai đến từ <c>MST_MED</c>. Không có đối chứng thì thấy hai dòng cũng không
+        /// biết dòng nào từ đâu ra. Dev có 12 mã 600–699 không nằm trong <c>MST_MED</c>.</para>
+        /// </summary>
+        [JsonPropertyName("controlTrtCd")] public int ControlTrtCd { get; set; } = 630;
+
+        [JsonPropertyName("controlTrtSb")] public int ControlTrtSb { get; set; }
+    }
+
     public sealed class RunSection
     {
         [JsonPropertyName("stepMs")] public int StepMs { get; set; }
@@ -725,6 +776,10 @@ public sealed class TestSettings
         Set("OCHA_DRUG_AMOUNT_CONTROL_TRT_CD", v => s.DrugAmount.ControlTrtCd = int.Parse(v));
         Set("OCHA_DRUG_AMOUNT_CLICK_TIMES", v => s.DrugAmount.ClickTimes = int.Parse(v));
         Set("OCHA_DRUG_AMOUNT_TYPED_COUNT", v => s.DrugAmount.TypedCount = v);
+        Set("OCHA_DRUG_PATH_B_ALLOW_SEED", v => s.DrugPathB.AllowSeed = ToBool(v));
+        Set("OCHA_DRUG_PATH_B_TRT_CD", v => s.DrugPathB.TrtCd = int.Parse(v));
+        Set("OCHA_DRUG_PATH_B_TRT_SB", v => s.DrugPathB.TrtSb = int.Parse(v));
+        Set("OCHA_DRUG_PATH_B_CONTROL_TRT_CD", v => s.DrugPathB.ControlTrtCd = int.Parse(v));
 
         static void Set(string name, Action<string> apply)
         {

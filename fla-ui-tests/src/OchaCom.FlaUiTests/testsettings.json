@@ -246,6 +246,31 @@
     "typedCount": "10"
   },
 
+  "drugPathB": {
+    "//": [
+      "Luong Tests/DrugPathB — G2: PATH B cua EditControl.editDrugName, nhanh chay khi",
+      "KHONG tim thay dong MST_DRUG_RX (EditControl.cs:1137-1148):",
+      "  ten  <- MstTrt.getMstTrtDataYaku(bang master, trt_cd, trt_sb)  => trt_nm",
+      "  用法 <- SyoPac.getMstMed(trt_cd, trt_sb)                        => MST_MED.usage",
+      "",
+      "Ban web KHONG co path B: ResolveDrugHandler tra found = false roi commitDrugPick",
+      "dung o alertDialog(「この薬剤コードは現在未対応です。」) — treatment-entry-detail.tsx:5077.",
+      "KHONG dong nao roi xuong luoi, trong khi WinForm van chen dong.",
+      "",
+      "⚠️ Du lieu dev KHONG co ca nao roi vao path B: ca 63/63 ma 600-699 deu co 処置変換",
+      "phu ngay test (do 2026-09-09). MST_MED co 53 dong; 620/0 va 647/1 la dong MO COI",
+      "(khong co 処置 trong master) nen go ma do chi ra 「該当処置はありません」."
+    ],
+    "//allowSeed": "Cho phep GIAU TAM dong MST_DRUG_RX cua ma dem thu (doi app_st_dt/app_ed_dt ra 29990101-29991231, hoac bo trong dg_cd1..3). Co RIENG, khong dung chung drugAmount.allowSeed: ben do sua mst_trt.F2 — bang khac, rui ro khac. Fixture chup MOI dong rx cua cac ma dung toi truoc khi ghi, IN RA STDOUT, va tra lai o OneTimeTearDown. Mac dinh false => fixture tu Ignore TRUOC khi mo app.",
+    "allowSeed": false,
+    "//trtCd": "Ma dem thu — phai CO dong MST_MED de do duoc CA HAI dong cua path B. 605/0 「ｵｾﾞｯｸｽ150ｍｇ３T」, usage = 「１日３回朝昼夕食後　服用」. Co y TRUNG ma cua luong G1: cung mot ma, path A ra 「オゼックス錠150 150mg 3T … 3日分」 con path B ra 「ｵｾﾞｯｸｽ150ｍｇ３T」 + 「１日３回朝昼夕食後　服用」.",
+    "trtCd": 605,
+    "trtSb": 0,
+    "//controlTrtCd": "Ma DOI CHUNG — cung ep vao path B nhung KHONG co dong MST_MED. 630/0 「ムコスタ錠１００ｍｇ」. No tach doi cau hoi: dong 1 tu getMstTrtDataYaku, dong 2 tu MST_MED. Dev co 12 ma 600-699 khong nam trong MST_MED.",
+    "controlTrtCd": 630,
+    "controlTrtSb": 0
+  },
+
   "locators": {
     "//": "AutomationId = Control.Name bên WinForm. Nếu máy Windows soi Inspect thấy khác thì sửa ở đây, KHÔNG phải sửa code.",
     "kobetuTabItem": "個別",
