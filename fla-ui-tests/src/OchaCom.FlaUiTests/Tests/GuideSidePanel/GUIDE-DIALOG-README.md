@@ -102,7 +102,7 @@ rồi diff — đó là bảng parity ở mục 4. Cả hai bên đều NFKC tr�
 
 ---
 
-## 4. Parity đo được — 2026-09-08
+## 4. Parity đo được — 2026-09-08, xác minh lại 2026-09-09
 
 ### 4.0 Điều kiện đo (phải khớp thì số mới có nghĩa)
 
@@ -213,6 +213,44 @@ Còn lại **khớp**: con trỏ vào ô 回数 dòng đầu khi mở, ↑/↓ �
 đầu, sắp xếp 4 cột đầu (lần hai đảo chiều) và 「回数」 KHÔNG sắp xếp được, ô 回数 chỉ nhận
 chữ số, đóng bằng F10 rồi mở lại là form MỚI (回数 về CalcCnt, sort sạch), thanh F chỉ có
 F9 確定 + F10 戻る, Escape = 確定.
+
+### 4.4 XÁC MINH SAU KHI SỬA — 2026-09-09
+
+Chạy lại bên web trên đúng tiền đề đã ghim:
+
+```bash
+TEST_PAT_NO=10 TEST_TRT_DT=2026-07-20 npx playwright test tests/side-panel/guide-selection-dialog-format.spec.ts
+```
+
+**19/19 XANH** — kể cả năm testcase parity `D-a` / `D-b` / `D-d` / `D-e` / `D-e2`.
+Số đọc được, đối chiếu với cột WinForm ở mục 4.1–4.2:
+
+| Điểm | WinForm (đáp án) | web sau khi sửa |
+|---|---|---|
+| Tên 薬剤 `601/0` | 「ボルタレン錠25mg1T 疼痛時 服用」 | **y hệt** (`usageNm=疼痛時 服用` ghép ở tầng vẽ) |
+| 回数 dòng `326/1` lúc vừa mở | 5 | **5** |
+| Chạm mặt răng | `ucToothGuide_Changed` tính lại | **tính lại** (5 → 1), dòng ngoài nhóm không đổi |
+| 回数 bằng chuột | click đơn +1, double-click +2, Enter +0 | **0→1**, **0→0** (trần 1 nên +2 quay vòng), **0→0** |
+| Nền dòng | lật khi `acc_unit >> 4` đổi | **đúng ranh giới nhóm** (`bgruns 1,4,1,1,3,3,2`, so trực tiếp với `accUnit` của response) |
+
+**Danh sách 処置: 7/7 ガイド TRÙNG KHÍT 100%** — diff `DUMP|web|scanrow|…` của lượt này với
+`DUMP|win|scanrow|…` đo được 2026-09-08 (cùng bệnh nhân 10, cùng ngày 2026-07-20):
+
+| ガイド | 番号 | dòng | kết quả |
+|---|---|---|---|
+| 抜歯 | 511 | 16 | trùng khít |
+| 異種充填 | 611 | 9 | trùng khít *(trước đây lệch 2 dòng)* |
+| コーピング set | 821 | 8 | trùng khít |
+| 抜歯 | 10650 | 13 | trùng khít *(trước đây lệch 2 dòng)* |
+| コーピング KP・imp | 630 | 3 | trùng khít |
+| HJK set | 715 | 6 | trùng khít |
+| 支台築造印象 | 720 | 1 | trùng khít |
+
+> ⚠️ Lượt này **chưa chạy lại nửa WinForm**: máy `ochacom-win` không SSH được
+> (`connect … Operation timed out`). Bản fix chỉ đụng `ochacom-saas`, không đụng
+> `src/OCHACOM`, nên dump WinForm ngày 2026-09-08 vẫn là đáp án hợp lệ — nhưng khi máy
+> lên thì chạy lại cho chắc:
+> `.\run-open-guide-dialog.ps1 -Case TcD16 -TrtDate 2026-07-20 -PatNo 10`.
 
 ### 4.3 HÌNH THỨC — ghi nhận, KHÔNG tính là lệch
 
