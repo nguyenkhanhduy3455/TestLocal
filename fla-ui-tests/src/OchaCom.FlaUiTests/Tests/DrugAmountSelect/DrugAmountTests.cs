@@ -310,7 +310,7 @@ public sealed class DrugAmountTests : UiTestBase
             "False ở đây thường là HARNESS: phím rơi nhầm form (xem ghi chú dirty gate " +
             "trong ConfirmByEscape), chứ không phải app từ chối Escape.");
 
-        var row = _flow.WaitForAddedDrugRow(opened.Before, FirstDrugName(subject));
+        var row = _flow.WaitForAddedDrugRow(opened.Before, FirstDrugName(subject), trace: trace);
         Assert.That(row, Is.Not.Null,
             "Sau 確定, dòng 薬剤 phải rơi xuống lưới. Lưới:\n  " +
             string.Join("\n  ", _flow.Base.DescribeGrid()));
@@ -376,7 +376,7 @@ public sealed class DrugAmountTests : UiTestBase
         Assert.That(dlg.Cancel(trace), Is.True,
             "「F10 戻る」 phải đóng hộp thoại (frm203020 btnF10 = 戻る của BaseDialog).");
 
-        var row = _flow.WaitForAddedDrugRow(opened.Before, FirstDrugName(subject));
+        var row = _flow.WaitForAddedDrugRow(opened.Before, FirstDrugName(subject), trace: trace);
         Assert.That(row, Is.Not.Null,
             "戻る vẫn để dòng 薬剤 rơi xuống lưới — nó chỉ bỏ phần ghi đè 点数/free_wd. " +
             "Lưới:\n  " + string.Join("\n  ", _flow.Base.DescribeGrid()));
@@ -583,7 +583,7 @@ public sealed class DrugAmountTests : UiTestBase
             "nghĩa là cửa mở hộp thoại KHÔNG phải F2 — và khi đó mọi testcase khác của " +
             $"fixture này xanh mà chẳng chứng minh được gì. {open}");
 
-        var row = _flow.WaitForAddedDrugRow(before, FirstDrugName(c));
+        var row = _flow.WaitForAddedDrugRow(before, FirstDrugName(c), trace: trace);
         Assert.That(row, Is.Not.Null,
             $"Mã {c.TrtCd} phải rơi thẳng xuống lưới, không qua hộp thoại nào. Lưới:\n  " +
             string.Join("\n  ", _flow.Base.DescribeGrid()));

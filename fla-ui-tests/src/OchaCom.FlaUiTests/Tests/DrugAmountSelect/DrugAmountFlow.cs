@@ -368,7 +368,7 @@ public sealed class DrugAmountFlow
 
         var row = before is null
             ? FindDrugRow(drugNameFragment)
-            : WaitForAddedDrugRow(before, drugNameFragment);
+            : WaitForAddedDrugRow(before, drugNameFragment, trace: trace);
         var pointAfter = _grid.AllPointValue();
 
         var result = new CommitResult(confirmed, row, pointBefore, pointAfter, seen);
@@ -467,12 +467,37 @@ public sealed class DrugAmountFlow
     /// nên hai dòng giống hệt nhau vẫn phân biệt được. Không so theo chỉ số: app chèn
     /// vào GIỮA lưới nên mọi dòng phía dưới đều dịch.</para>
     /// </summary>
+    /// <param name="nameFragment">
+    /// Tên thuốc dùng làm GỢI Ý, không phải điều kiện bắt buộc.
+    ///
+    /// <para>⚠️ Tên trên lưới KHÔNG luôn chứa tên thành phần đầu: khi <c>free_wd</c> RỖNG
+    /// (đường 戻る) và thành phần đầu là 「OA…1~2歯」, <c>editDrugName</c> <b>gộp</b> hai
+    /// dòng thành 「OA+&lt;thuốc sau&gt;」 rồi bỏ dòng thứ hai (EditControl.cs:1091-1099) —
+    /// chuỗi 「ＯＡ（１～２歯）」 biến mất khỏi ô. Đi qua 確定 thì <c>free_wd</c> khác rỗng
+    /// nên KHÔNG gộp, và ô có đủ hai dòng. Đo được 2026-09-09 (TcG6 với mã 690).
+    /// Bản web port đúng điều kiện đó (<c>DrugNameEditor.Build</c>, cùng cờ
+    /// <c>!hasFreeWd</c>) nên hai bên khớp — nhưng phép DÒ DÒNG thì không được dựa vào tên.</para>
+    /// </param>
     public RegiRow? WaitForAddedDrugRow(IReadOnlyList<RegiRow> before, string nameFragment,
-                                        TimeSpan? timeout = null) =>
-        Waits.TryFor(() => AddedRows(before).FirstOrDefault(
-                         r => Txt.Has(AutoSanteiChkAuto.AutoSanteiOps.Norm(r.Ryo),
-                                      AutoSanteiChkAuto.AutoSanteiOps.Norm(nameFragment))),
-                     timeout ?? TimeSpan.FromSeconds(25));
+                                        TimeSpan? timeout = null, TestTrace? trace = null) =>
+        Waits.TryFor(() =>
+        {
+            var added = AddedRows(before);
+            var byName = added.FirstOrDefault(
+                r => Txt.Has(AutoSanteiChkAuto.AutoSanteiOps.Norm(r.Ryo),
+                             AutoSanteiChkAuto.AutoSanteiOps.Norm(nameFragment)));
+            if (byName is not null) return byName;
+
+            // Không khớp tên mà lưới chỉ có ĐÚNG MỘT dòng mới ⇒ chính là nó. Ghi lại
+            // để người đọc log biết đã đi đường lui chứ không lặng lẽ đoán.
+            if (added.Count == 1)
+            {
+                trace?.Note($"dong moi khong chua ten 「{nameFragment}」 nhung chi co DUNG MOT " +
+                            $"dong duoc them — lay dong do: 「{added[0]}」 (xem ghi chu OA+ gop dong)");
+                return added[0];
+            }
+            return null;
+        }, timeout ?? TimeSpan.FromSeconds(25));
 
     /// <summary>Các dòng CÓ THÊM so với ảnh chụp, so theo NỘI DUNG chứ không theo chỉ số.</summary>
     public IReadOnlyList<RegiRow> AddedRows(IReadOnlyList<RegiRow> before)
