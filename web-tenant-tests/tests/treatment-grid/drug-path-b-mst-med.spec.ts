@@ -104,8 +104,27 @@ import { makeStep, skipWithReason } from '../_shared/step'
 const PAT_NO = patNo('10')
 const TRT_DT = trtDt(TODAY_ISO)
 
-/** Dòng 薬剤 dùng làm nguồn clone — f2 = 0 (xem 「VÌ SAO PHẢI SEED」). */
-const CLONE_TRT_CD = Number(process.env.TEST_CLONE_TRT_CD ?? 602)
+/**
+ * Dòng 薬剤 dùng làm nguồn clone VÀ làm đối chứng path A.
+ *
+ * 628-0 「カロナール錠200mg　１T」 — `grp = 2` (mã seed thừa hưởng ⇒ nằm ở tab 屯服 chỉ
+ * ~9 dòng, không phải cuộn lưới ảo), `f2 = 0` (không bật 薬剤使用量選択), `med_kbn = 22`
+ * (⇒ path A CÓ hậu tố 用量 「n回分」), và **`selected_treat_kb = 0`**.
+ *
+ * ⚠️ Điều kiện cuối cùng tốn một lượt chạy trên WinForm mới lộ ra. Bản đầu clone từ
+ * 600-0 — cùng hình dạng, nhưng thành phần của nó (620007096 ボルタレン) mang
+ * `selected_treat_kb = '1'`; với `f3 = 1` (院内処方) thì
+ * `CmtAuto.IsDrug_lt_listed_product` (CmtAuto.cs:925-975) trả true và lượt 確定 bung
+ * `frm203012` 「医療上の必要性を選択してください」 (長期収載品の選定療養). Trên WinForm dòng
+ * KHÔNG rơi xuống lưới (đo 2026-09-09, `DrugPathBProbeTests` KQ-10). Đó là một tính năng
+ * KHÁC, không thuộc path B — để nó trong spec này thì testcase đỏ vì lý do chẳng liên
+ * quan, và hai vế parity không còn đo cùng một thứ.
+ *
+ * Trong dải 600–699 `grp = 2`: 600/601/624 dính cờ đó; 628/631/632/637/654/662 thì không.
+ * Muốn ĐO chính cascade 選定療養 thì chạy lại với TEST_CLONE_TRT_CD=600 — nhưng nó xứng
+ * đáng một spec riêng.
+ */
+const CLONE_TRT_CD = Number(process.env.TEST_CLONE_TRT_CD ?? 628)
 const CLONE_TRT_SB = Number(process.env.TEST_CLONE_TRT_SB ?? 0)
 
 /** Mã seed CÓ dòng 用法 trong mst_med → path B đủ 2 dòng. */

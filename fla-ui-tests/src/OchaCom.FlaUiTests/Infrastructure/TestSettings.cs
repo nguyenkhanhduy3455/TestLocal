@@ -604,19 +604,32 @@ public sealed class TestSettings
 
         /// <summary>
         /// Dòng 薬剤 dùng làm NGUỒN CLONE, và đồng thời là <b>đối chứng path A</b>.
-        /// 600/0 「ﾎﾞﾙﾀﾚﾝ錠25mg２T」 — <c>active_flg = 1</c>, <c>F2 = 0</c> (không mở
-        /// 薬剤使用量選択; đó là luồng G1), <c>score1 = 1</c>, <c>g_cnt = 2</c>.
+        /// 628/0 「カロナール錠200mg　１T」 — <c>active_flg = 1</c>, <c>F2 = 0</c> (không mở
+        /// 薬剤使用量選択; đó là luồng G1), <c>score1 = 1</c>, <c>g_cnt = 2</c>,
+        /// <c>med_kbn = 22</c> ⇒ path A của nó CÓ hậu tố 用量 「n回分」.
         ///
-        /// <para><b><c>grp = 2</c> mới là lý do chọn nó</b>: mã seed thừa hưởng
+        /// <para><b><c>grp = 2</c> là điều kiện thứ nhất</b>: mã seed thừa hưởng
         /// <c>grp</c> của dòng nguồn, nên nó nằm ở tab 屯服 của 薬剤選択 — tab chỉ có
         /// <b>9</b> dòng, không phải cuộn để với tới. Clone từ một mã <c>grp = 1</c>
-        /// (nội phục) thì tab đó dài và lưới <c>DataGridView</c> chỉ phơi ra dòng ĐANG
-        /// NHÌN THẤY (F10).</para>
+        /// (内服) thì tab đó dài và lưới <c>DataGridView</c> chỉ phơi ra dòng ĐANG NHÌN
+        /// THẤY (F10).</para>
         ///
-        /// <para>Trùng <c>TEST_CLONE_TRT_CD</c> của
-        /// <c>medicine-selection-drug-name.spec.ts</c>.</para>
+        /// <para><b><c>selected_treat_kb = 0</c> là điều kiện thứ hai</b>, và nó tốn một
+        /// lượt chạy mới lộ ra. Bản đầu clone từ <c>600/0</c> — cùng hình dạng, nhưng
+        /// thành phần của nó (<c>620007096</c> ボルタレン) mang
+        /// <c>MST_DRUG.selected_treat_kb = '1'</c>. Với <c>F3 = 1</c> (院内処方) thì
+        /// <c>CmtAuto.IsDrug_lt_listed_product</c> (CmtAuto.cs:925-975) trả true ⇒ lượt
+        /// 確定 của 薬剤選択 bung <c>frm203012</c>
+        /// 「医療上の必要性を選択してください」 (長期収載品の選定療養) và dòng KHÔNG rơi
+        /// xuống lưới. Đo được 2026-09-09 (Tc4/KQ-10). Đó là một <b>tính năng khác</b>,
+        /// không thuộc path B — kéo nó vào đây thì testcase đỏ vì lý do chẳng liên quan.
+        /// Trong dải 600–699 <c>grp = 2</c>: 600/601/624 dính cờ đó, còn
+        /// 628/631/632/637/654/662 thì không.</para>
+        ///
+        /// <para>Muốn ĐO chính cascade 選定療養 thì đặt lại về <c>600</c> — nhưng đó nên
+        /// là một luồng riêng.</para>
         /// </summary>
-        [JsonPropertyName("cloneTrtCd")] public int CloneTrtCd { get; set; } = 600;
+        [JsonPropertyName("cloneTrtCd")] public int CloneTrtCd { get; set; } = 628;
 
         [JsonPropertyName("cloneTrtSb")] public int CloneTrtSb { get; set; }
 
