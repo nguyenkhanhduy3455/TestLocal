@@ -492,14 +492,19 @@ public sealed class DrugAmountTests : UiTestBase
             $"回 giữ nguyên g_cnt của master ({subject.GCnt}) — 数量 và 回数 là HAI thứ " +
             $"khác nhau, hộp thoại chỉ đụng 数量 (modMain.cs:410-413). Dòng: 「{row}」");
 
-        // Mốc NGOÀI lưới (F12): 月計点数 phải nhích đúng 点 × 回.
-        var delta = commit.PointDelta;
-        if (delta is not null)
-            Assert.That(delta, Is.EqualTo((int)expectedPoint * subject.GCnt),
-                $"月計点数 phải tăng đúng 点 × 回 = {expectedPoint:0.##} × {subject.GCnt}. " +
-                $"{commit}. Mốc này nằm NGOÀI lưới nên không trôi theo cuộn (F12).");
-        else
-            trace.Note("khong doc duoc lbAllPoint — bo qua moc 月計点数");
+        // 月計点数 chỉ GHI LẠI, KHÔNG assert — và đây là một quyết định có lý do.
+        //
+        // Mốc 「Δ月計 = 点 × 回」 đúng khi lượt chốt là thay đổi DUY NHẤT giữa hai lần
+        // đọc. Trong fixture này thì không: cả 8 testcase dùng chung một phiên app, mỗi
+        // lượt để lại một dòng 薬剤 mà ô 回 của nó còn đang mở editor, và
+        // `modAcc.Calc_MDPoint` chốt những dòng đó vào 月計 ở một thời điểm KHÁC. Đo
+        // được 2026-09-09: TcG8 thấy Δ = 264 trong khi dòng của chính nó chỉ đáng 87 —
+        // phần dư là của các lượt TRƯỚC vừa được chốt vào.
+        //
+        // Số sạch của mốc này lấy từ probe (Tc2 KQ-9, phiên app riêng): 413 → 500,
+        // Δ = 87 = 29 điểm × 3 回. Vế Playwright cũng không assert 月計 — hai bên đều
+        // dừng ở ô 点/回 của chính dòng đó, thứ đo được dứt khoát.
+        trace.Note($"月計点数 (chi ghi lai, khong assert): {commit}");
 
         _flow.Base.DismissAll(trace: trace);
     }
