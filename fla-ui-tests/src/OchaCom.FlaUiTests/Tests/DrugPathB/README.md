@@ -2,10 +2,11 @@
 
 Nửa **WinForm** của điểm parity G2.
 
-> **Trạng thái: THÔNG LUỒNG + PROBE, CHƯA CHẠY LẦN NÀO.**
-> Luật F1: dữ liệu dev không có ca nào rơi vào path B, nên **chưa ai nhìn thấy nhánh này
-> chạy trên app thật**. Mọi assert viết bây giờ đều là phỏng đoán — `DrugPathBTests` viết
-> sau khi có file `resolve-drug-path-b-KQ.txt` đầu tiên.
+> **Trạng thái: THÔNG LUỒNG + PROBE, ĐÃ CHẠY — 5/6 câu đo được trên máy thật (§8),
+> và đã đối chiếu parity với hai spec Playwright (§9). Chưa có testcase assert.**
+> Luật F1 đã xong phần của nó: probe trả lời 5/6 câu, và **hai lỗi harness** bị bắt trong
+> lúc đó (§4.1, §4.2). Giờ mới đủ căn cứ viết `DrugPathBTests` (assert) — kỳ vọng lấy từ
+> `DrugPathBDb.PathBCandidate.ExpectedLines`, không hardcode.
 
 ---
 
@@ -233,6 +234,101 @@ dòng」. Đã bổ sung — xem §9.
 > Điền sau **mỗi** lượt chạy: ngày, bệnh nhân, 診療日, và số đo **nguyên văn**.
 > Để trống là lần sau đo lại từ đầu.
 
-### *(chưa chạy lần nào)*
+### 2026-09-09 — `ochacom-win` · bệnh nhân **10** · 診療日 **2026-08-03** · `MST_TRT266`
 
-Cần điền: KQ-1 … KQ-9, kèm ảnh `artifacts\screenshots\`.
+Seed: clone `600/0` → `698/0` 「ﾃｽﾄ院内調剤薬PB」 (+`MST_MED` 「ﾃｽﾄ用法　毎食後　服用」) và
+`699/0` 「ﾃｽﾄ院内調剤薬NM」 (không `MST_MED`). Cả hai có **0 dòng `mst_drug_rx`**.
+
+```
+KQ-1   0 mã 600–699 ở path B TRƯỚC seed · MST_MED 53 dòng (54 khi đang seed)
+       2 dòng MST_MED MỒ CÔI: 620/0 「４Ｔ×５」 · 647/1 「２Ｔ×１４」
+KQ-2   oracle 698 ⇒ 2 dòng · 699 ⇒ 1 dòng · getMstTrtDataYaku trả bản ghi = True
+```
+
+**Lối GÕ MÃ (コードモード):**
+
+```
+KQ-3  698 ⇒ CÓ dòng rơi xuống lưới:
+      [14] 3 | (null) | テスト院内調剤薬PB    テスト用法 毎食後 服用 | 点 1 | 回 2
+      nguyên văn 2 dòng: 「ﾃｽﾄ院内調剤薬PB」 ⏎ 「ﾃｽﾄ用法　毎食後　服用」   == oracle
+      KHÔNG hộp thoại nào bung ra.
+KQ-4  hậu tố 用量: KHÔNG có — đúng như đọc từ source.
+      bản đã LÀM PHẲNG qua Txt.N: 「テスト院内調剤薬PB    テスト用法 毎食後 服用」
+      ⇒ đếm dòng trên bản này là xanh giả (F23).
+KQ-5  点 = 1 (score1 chép từ dòng clone) · 回 = 2 (g_cnt)
+KQ-6  699 ⇒ ĐÚNG MỘT dòng 「ﾃｽﾄ院内調剤薬NM」
+      ⇒ dòng thứ hai của KQ-3 ĐÚNG LÀ đến từ MST_MED.
+KQ-7  ĐỐI CHỨNG — nguồn clone 600 (còn 2 dòng rx) ⇒ path A:
+      「ﾎﾞﾙﾀﾚﾝ錠25mg 2T」 ⏎ 「疼痛時　服用  2回分」
+      ⇒ khác hẳn, và CÓ hậu tố 用量 ⇒ phép seed THẬT SỰ đổi nhánh.
+```
+
+**Lối 薬剤選択 (Shift+F6):**
+
+```
+KQ-11  698 ⇒ mở=True chọn=True 確定=True
+       lưới PHẢI trước 確定: [テスト院内調剤薬PB | 1 | 2]
+       dòng: [23] 3 | (null) | テスト院内調剤薬PB    テスト用法 毎食後 服用 | 1 | 2
+       2 dòng text — GIỐNG HỆT lối gõ mã ✔
+KQ-12  699 ⇒ ĐÚNG MỘT dòng 「ﾃｽﾄ院内調剤薬NM」 — cũng giống lối gõ mã ✔
+KQ-10  600 (path A) ⇒ CHƯA ĐO ĐƯỢC — xem dưới.
+```
+
+> **KQ-10 bị chặn, và không phải lỗi harness.** 確定 với mã `600` bung
+> 「処置名称 ボルタレン錠25mg2T 医療上の必要性を選択してください。」 — hộp thoại
+> **長期収載品の選定療養**. `DismissAll` trả lời an toàn nên dòng KHÔNG rơi xuống lưới.
+> Đó là một luồng riêng, không thuộc path B; muốn đo path A qua 薬剤選択 thì phải trả lời
+> hộp thoại đó cho đúng nghiệp vụ trước. Vế Playwright TC-1 xanh vì nó có sẵn đoạn dọn
+> cascade 「摘要選択（長期収載品の選定療養）」.
+>
+> Path A vẫn được đối chứng đầy đủ ở **KQ-7** (lối gõ mã) nên kết luận của §9 không phụ
+> thuộc câu này.
+
+Hai lượt `KQ-11`/`KQ-12` còn kéo theo 診療チェック 「…1日の算定限度(1回)を超えています」 cho
+処方料/調剤料/薬剤情報提供料 — nhiễu do chạy lại nhiều lần trong cùng một ngày, đã dẹp và
+không ảnh hưởng dòng đo.
+
+**Kiểm sau cùng:** `MST_TRT266` và `MST_MED` đều **0** dòng mang 698/699; `MST_MED` về
+đúng **53** dòng. Không lượt nào bấm F9 登録.
+
+---
+
+## 9. Parity WinForm ⇄ Web — đã chạy cả hai vế
+
+| # | Testcase | Lối vào | WinForm | Web |
+|---|---|---|---|---|
+| 1 | path B **có** `mst_med` ⇒ 処置名称 + 用法 | gõ mã | ✅ KQ-3 | ✅ |
+| 2 | path B **không** `mst_med` ⇒ chỉ 処置名称 | gõ mã | ✅ KQ-6 | ✅ |
+| 3 | **đối chứng** path A ⇒ tên từ `mst_drug`, CÓ 用量 | gõ mã | ✅ KQ-7 | ✅ *(bổ sung 2026-09-09)* |
+| 4 | path A qua hộp thoại | 薬剤選択 | ⚠️ KQ-10 chặn bởi 長期収載品 | ✅ TC-1 |
+| 5 | path B **có** `mst_med` | 薬剤選択 | ✅ KQ-11 | ✅ TC-2 |
+| 6 | path B **không** `mst_med` | 薬剤選択 | ✅ KQ-12 | ✅ TC-3 |
+
+**WinForm 5/6 đo được (1 bị chặn bởi tính năng khác) · Web 6/6 xanh.**
+
+### 9.1 Kết luận nghiệp vụ
+
+**Điểm parity G2 là THẬT, và đúng như đọc từ source:** WinForm **chèn dòng** cho mã 薬剤
+không có `mst_drug_rx` — ở **cả hai** lối vào, với **cùng một** ô 療法・処置:
+
+```
+698 (có mst_med)     「ﾃｽﾄ院内調剤薬PB」 ⏎ 「ﾃｽﾄ用法　毎食後　服用」      2 dòng
+699 (không mst_med)  「ﾃｽﾄ院内調剤薬NM」                                1 dòng
+```
+
+Hai lối vào cho ra chuỗi **giống hệt nhau** — đúng như `frmMed_LetData` đi chung đường
+chốt của 処置選択 (frm203002.cs:8791). Và path B **không** có hậu tố 用量, còn path A
+(cùng ngày, cùng bệnh nhân) **có**: 「疼痛時　服用  2回分」.
+
+Bản web trước bản vá dừng ở 「この薬剤コードは現在未対応です。」 và không chèn gì; sau bản
+vá thì cả 6 testcase đều xanh với **cùng chuỗi kỳ vọng**.
+
+### 9.2 Còn lệch ở đâu
+
+Không có điểm lệch nào ở phần đo được. Hai chỗ **chưa** so được:
+
+1. **KQ-10** — path A qua 薬剤選択 (hộp thoại 長期収載品の選定療養 chặn ở vế WinForm).
+2. **`点`/`回` của mã seed** — `drug-path-b-mst-med.spec.ts` mặc định clone từ `602`
+   (`score1 = 29`, `g_cnt = 3`) còn vế WinForm và spec 薬剤選択 dùng `600`
+   (`score1 = 1`, `g_cnt = 2`). Chạy nó với `TEST_CLONE_TRT_CD=600` thì hai bên khớp
+   cả hai con số — đã chạy như vậy 2026-09-09, **3/3 xanh**.
