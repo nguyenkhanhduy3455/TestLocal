@@ -2004,6 +2004,12 @@ export interface DrugRxRow {
     usageNm: string
     /** `mst_drug.dg_nm` của thành phần đầu — gốc dòng 薬剤名 của path A. */
     dgNm: string
+    /**
+     * `mst_drug_rx.cnt1` — 使用量 mặc định của thành phần đầu. Dòng trn_trn có
+     * `freewd` khác giá trị này thì ô dựng lại phải đổi theo freewd
+     * (EditControl.cs:1050-1055).
+     */
+    cnt1: string
     /** true = mã CÓ dòng 処置変換テーブル ⇒ đi path A của editDrugName. */
     hasDrugRx: boolean
 }
@@ -2042,6 +2048,7 @@ export async function findDrugRx(
                     coalesce(rx.med_kbn, '')         AS med_kbn,
                     coalesce(rx.usage_nm, '')        AS usage_nm,
                     coalesce(dg.dg_nm, '')           AS dg_nm,
+                    coalesce(rx.cnt1, '')            AS cnt1,
                     (rx.trt_cd IS NOT NULL)          AS has_drug_rx
                FROM view_mst_trt_active mt
                LEFT JOIN view_mst_drug_rx_active rx
@@ -2066,6 +2073,7 @@ export async function findDrugRx(
             medKbn: String(row['med_kbn'] ?? '').trim(),
             usageNm: String(row['usage_nm'] ?? '').trim(),
             dgNm: String(row['dg_nm'] ?? '').trim(),
+            cnt1: String(row['cnt1'] ?? '').trim(),
             hasDrugRx: Boolean(row['has_drug_rx']),
         }
     })

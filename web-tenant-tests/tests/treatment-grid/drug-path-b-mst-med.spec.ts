@@ -4,7 +4,6 @@ import {
     dbEnabled,
     deleteMstMedRows,
     deleteMstTrtRows,
-    deleteTreatmentRows,
     findDrugRx,
     seedMstMedRows,
     seedMstTrtRows,
@@ -320,7 +319,11 @@ test.describe('診療入力 — 薬剤 path B (mst_trt 名称 + mst_med 用法)'
         // ĐỐI CHỨNG ở cuối file.
         cloneRx = (await findDrugRx(CLONE_TRT_CD, CLONE_TRT_SB, TRT_DT)) ?? undefined
 
-        await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)
+        // KHÔNG deleteTreatmentRows ở đây: spec này chỉ chèn dòng vào lưới trong RAM
+        // (không bấm F9 登録) nên chẳng để lại gì trong trn_trn. Xoá "cho sạch" lại
+        // cuốn theo dòng mà spec khác dùng chung 患者 10 + hôm nay vừa seed —
+        // `side-panel/guide-drug-usage-line` seed 部位病名行 để lọc tab ガイド, mất nó là
+        // spec đó đỏ khi Playwright chạy song song.
         await openTreatmentEntry(page, PAT_NO, TRT_DT)
         await drainAutoSantei()
 
@@ -332,7 +335,6 @@ test.describe('診療入力 — 薬剤 path B (mst_trt 名称 + mst_med 用法)'
     })
 
     test.afterAll(async () => {
-        await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)
         await deleteMstMedRows(seededMedIds).catch(() => 0)
         await deleteMstTrtRows(seededTrtIds).catch(() => 0)
         await disposeOverlays?.()
