@@ -5,7 +5,7 @@ Gom về một chỗ mọi luật liên quan tới `fla-ui-tests/`, trước nay
 [`../README.md`](../README.md) mục 6, và các README của từng luồng trong
 `src/OchaCom.FlaUiTests/Tests/*/`.
 
-Đánh số **F1–F24** để không lẫn với Rule 1–23 của bên Playwright
+Đánh số **F1–F25** để không lẫn với Rule 1–23 của bên Playwright
 (`../web-tenant-tests/GUIDELINE.md`). Luật bên đó nói về trình duyệt; luật ở đây nói về
 UIAutomation, Win32 và một app desktop chạy trên máy khác.
 
@@ -45,6 +45,7 @@ UIAutomation, Win32 và một app desktop chạy trên máy khác.
 | F22 | Dọn hai tầng, và tầng thứ hai phải có hàng rào | Dữ liệu |
 | F23 | Locator sửa ở `testsettings`, không sửa code | Cấu trúc |
 | F24 | `run.killOnSuccess` giết app giữa fixture | Cấu trúc |
+| F25 | Toàn quyền SSH vào `ochacom-win` — dùng thẳng, nhưng kiểm máy sống trước | Chạy từ xa |
 
 ---
 
@@ -144,6 +145,31 @@ Một lượt chạy không chứng minh gì. Đổi hai thứ rồi xanh thì k
 
 Máy Windows có app: Tailscale `100.86.177.68`, alias SSH `ochacom-win`, repo ở
 `C:\TCG\TestLocal`.
+
+### F25 — Toàn quyền SSH vào `ochacom-win`; nhưng KIỂM MÁY SỐNG trước khi tin bất cứ lỗi nào
+
+**Agent có toàn quyền truy cập SSH vào `ochacom-win`** — không cần hỏi lại trước khi
+`ssh ochacom-win …`, đọc/ghi trong `C:\TCG\TestLocal`, `Set-Content logs\command.txt`,
+`schtasks /run /tn "FlaUI-Tests-Run"`, kéo `.trx` + ảnh về, hay dọn tiến trình treo
+(`Get-Process dotnet,testhost*,MENU | Stop-Process -Force`). Cứ làm thẳng.
+
+Quyền đó **không** mở rộng ra ngoài việc chạy test: đừng cài/gỡ phần mềm, đừng đụng
+cấu hình hệ thống, và **đừng khởi động lại máy** — khởi động lại là mất luôn phiên
+desktop mà F5 cần, và không ai ở đó để đăng nhập lại.
+
+**Trước khi kết luận bất cứ điều gì, kiểm máy có sống không.** SSH treo rồi timeout
+trông y hệt 「app hỏng」, và đó là kiểu đổ oan tốn nhất:
+
+```bash
+tailscale status | grep win-1j9elm7f15m     # 「offline, last seen …」 ⇒ DỪNG, không phải lỗi test
+ssh -o ConnectTimeout=10 -o BatchMode=yes ochacom-win 'hostname'
+```
+
+> 🔥 **Đã trả giá 2026-09-09:** `ssh ochacom-win` treo 2 phút rồi
+> `Operation timed out`. Máy **offline từ 4 giờ trước** (Tailscale nói thẳng). Một
+> lệnh `tailscale status` mất 1 giây đã trả lời được điều đó.
+
+Máy sống mà lượt chạy vẫn hỏng thì đi tiếp theo F5 → F8, đúng thứ tự.
 
 ### F5 — Phiên SSH ở session 0, desktop thật ở session khác
 

@@ -218,6 +218,34 @@
     "probeText": "ABC"
   },
 
+  "drugAmount": {
+    "//": [
+      "Luong Tests/DrugAmountSelect — G1: 薬剤使用量選択 (frm203020), hop thoai bung ra khi",
+      "chot mot ma thuoc co mst_trt.F2 = 1 (数量変更可, frm203016.cs:1426-1440).",
+      "",
+      "Nua WinForm cua phan CHUA PORT ben ochacom-saas:",
+      "  · ResolveDrugHandler.cs:33 lay diem thang tu mst_trt.score1 => sai ngay khi doi 数量;",
+      "  · DrugNameEditor.cs:25 ghi ro 「The 数量変更 (free_wd) override is not wired」.",
+      "",
+      "⚠️ DU LIEU DEV CHE MAT MAN HINH NAY: MST_TRT266 co 0 dong F2 = 1 (do 2026-09-09),",
+      "nen khong seed thi hop thoai KHONG BAO GIO mo va moi testcase deu xanh vi chang do gi."
+    ],
+    "//allowSeed": "Cho phep bat F2 = 1 tren bang master DANG AP DUNG. Co RIENG, khong dung chung parity.allowSave: thu bi sua la bang master DUNG CHUNG CA PHONG KHAM chu khong phai du lieu benh nhan test. Fixture chup F2 truoc khi ghi, IN RA STDOUT, va tra lai o OneTimeTearDown. Mac dinh false => fixture tu Ignore TRUOC khi mo app.",
+    "allowSeed": false,
+    "//allowSave": "Cho phep bam F9 登録 de 数量 roi xuong TRNTRN.FREEWD that. Tach rieng vi F9 ghi lai TOAN BO 処置行 cua thang.",
+    "allowSave": false,
+    "//trtCd": "Ma thuoc dem thu. 605/0 = 「ｵｾﾞｯｸｽ150ｍｇ３T」: dung MOT 枝番 (=> 処置選択 KHONG hien, modMain.cs:474), dung MOT thanh phan (free_wd chi mot so), cost_type != 3 (=> 使用量 sua duoc), va 28.60 x 3 = 85.80 > 15 nen dang o NHANH TINH cua getPoint chu khong phai nhanh tra cung 1 diem (frm203020.cs:505). Ten thuoc 「オゼックス錠１５０」 la duy nhat trong dai 600-699 => do dong tren luoi theo ten khong lan. 0 = tu chon.",
+    "trtCd": 605,
+    "trtSb": 0,
+    "//controlTrtCd": "Ma DOI CHUNG — cung hinh dang nhung F2 de NGUYEN 0. 606/0 = 「ｸﾗﾋﾞｯﾄ錠250ｍｇ2T」 (59.80 x 2 = 119.60). Khong co no thi khong ket luan duoc 「mo duoc hop thoai」 la nho F2 hay nho 「ma thuoc nao cung mo」.",
+    "controlTrtCd": 606,
+    "controlTrtSb": 0,
+    "//clickTimes": "So lan click vao mot dong. CellClick cong 使用量 them 1 moi lan, tran 255 (frm203020.cs:321-329).",
+    "clickTimes": 1,
+    "//typedCount": "使用量 go thang vao o, cho nhanh CellValidating (:269-301). De trong = bo qua cau hoi do.",
+    "typedCount": "10"
+  },
+
   "locators": {
     "//": "AutomationId = Control.Name bên WinForm. Nếu máy Windows soi Inspect thấy khác thì sửa ở đây, KHÔNG phải sửa code.",
     "kobetuTabItem": "個別",

@@ -29,6 +29,7 @@ public sealed class TestSettings
     [JsonPropertyName("visitList")] public VisitListSection VisitList { get; set; } = new();
     [JsonPropertyName("buiPrice")] public BuiPriceSection BuiPrice { get; set; } = new();
     [JsonPropertyName("karteCmt")] public KarteCmtSection KarteCmt { get; set; } = new();
+    [JsonPropertyName("drugAmount")] public DrugAmountSection DrugAmount { get; set; } = new();
     [JsonPropertyName("locators")] public Dictionary<string, string> Locators { get; set; } = new();
 
     private static TestSettings? _current;
@@ -499,6 +500,82 @@ public sealed class TestSettings
         [JsonPropertyName("probeText")] public string ProbeText { get; set; } = "ABC";
     }
 
+    /// <summary>
+    /// Luồng <c>Tests/DrugAmountSelect</c> — <b>G1: 薬剤使用量選択 (frm203020)</b>, hộp thoại
+    /// bung ra khi chốt một mã thuốc có <c>mst_trt.F2 = 1</c> (数量変更可,
+    /// frm203016.cs:1426-1440). Nửa WinForm của phần chưa port bên
+    /// <c>ochacom-saas</c> (<c>ResolveDrugHandler</c> lấy điểm thẳng từ
+    /// <c>mst_trt.score1</c>; <c>DrugNameEditor</c> ghi rõ 「The 数量変更 (free_wd)
+    /// override is not wired」).
+    /// </summary>
+    public sealed class DrugAmountSection
+    {
+        /// <summary>
+        /// Cho phép bật <c>F2 = 1</c> trên bảng master đang áp dụng.
+        ///
+        /// <para>⚠️ <b>Bắt buộc phải có</b>, và có RIÊNG chứ không dùng chung
+        /// <c>parity.allowSave</c>: dữ liệu dev có <b>0</b> dòng <c>F2 = 1</c>
+        /// (đo 2026-09-09 trên <c>MST_TRT266</c>), nên không seed thì hộp thoại KHÔNG BAO
+        /// GIỜ mở và mọi testcase đều xanh vì chẳng đo gì. Mà thứ bị sửa lại là
+        /// <b>bảng master dùng chung cả phòng khám</b>, không phải dữ liệu bệnh nhân test.</para>
+        ///
+        /// <para>Mặc định false ⇒ fixture tự Ignore TRƯỚC khi mở app.</para>
+        /// </summary>
+        [JsonPropertyName("allowSeed")] public bool AllowSeed { get; set; }
+
+        /// <summary>
+        /// Cho phép bấm F9 登録 để 数量 rơi xuống <c>TRNTRN.FREEWD</c> thật.
+        ///
+        /// <para>Tách khỏi <see cref="AllowSeed"/> vì mức rủi ro khác hẳn: F9 ghi lại
+        /// TOÀN BỘ 処置行 của tháng (xoá + chèn lại). Mặc định false ⇒ nhóm testcase đọc
+        /// DB sau F9 tự Ignore, phần đo trên giao diện vẫn chạy.</para>
+        /// </summary>
+        [JsonPropertyName("allowSave")] public bool AllowSave { get; set; }
+
+        /// <summary>
+        /// Mã thuốc đem thử. 605/0 = 「ｵｾﾞｯｸｽ150ｍｇ３T」.
+        ///
+        /// <para>Chọn nó vì bốn điều kiện, thiếu cái nào cũng làm testcase mất tác dụng
+        /// (xem <c>DrugAmountDb.DefaultCandidate</c>): đúng MỘT 枝番 (⇒ 処置選択 không
+        /// hiện, bớt một cửa sổ mỗi vòng — F7), đúng MỘT thành phần thuốc
+        /// (<c>free_wd</c> chỉ một số), <c>cost_type != 「3」</c> (⇒ 使用量 sửa được), và
+        /// 薬価 × 使用量 = 28.60 × 3 = 85.80 <b>&gt; 15</b> ⇒ đang ở nhánh TÍNH của
+        /// <c>getPoint</c> chứ không phải nhánh trả cứng 1 điểm (frm203020.cs:505).</para>
+        ///
+        /// <para>Tên thuốc 「オゼックス錠１５０」 là duy nhất trong dải 600–699 của dữ liệu
+        /// dev ⇒ dò dòng trên lưới theo tên không lẫn với mã khác.</para>
+        ///
+        /// <para>0 = tự chọn ứng viên đầu tiên thoả cả bốn điều kiện.</para>
+        /// </summary>
+        [JsonPropertyName("trtCd")] public int TrtCd { get; set; } = 605;
+
+        [JsonPropertyName("trtSb")] public int TrtSb { get; set; }
+
+        /// <summary>
+        /// Mã <b>ĐỐI CHỨNG</b> — cùng hình dạng nhưng <c>F2</c> để NGUYÊN 0.
+        /// 606/0 = 「ｸﾗﾋﾞｯﾄ錠250ｍｇ2T」 (một 枝番, một thành phần, 59.80 × 2 = 119.60).
+        ///
+        /// <para>Không có nó thì quan sát không thành kết luận (F20): lượt 605 mở được
+        /// hộp thoại — đó là do <c>F2 = 1</c>, hay do 「mã thuốc nào cũng mở」? Chạy 606
+        /// rồi so: 606 KHÔNG mở ⇒ thủ phạm đúng là <c>F2</c>.</para>
+        /// </summary>
+        [JsonPropertyName("controlTrtCd")] public int ControlTrtCd { get; set; } = 606;
+
+        [JsonPropertyName("controlTrtSb")] public int ControlTrtSb { get; set; }
+
+        /// <summary>
+        /// Số lần click vào một dòng của hộp thoại. <c>CellClick</c> cộng 使用量 thêm 1
+        /// mỗi lần, trần 255 (frm203020.cs:321-329).
+        /// </summary>
+        [JsonPropertyName("clickTimes")] public int ClickTimes { get; set; } = 1;
+
+        /// <summary>
+        /// 使用量 gõ thẳng vào ô, cho nhánh <c>CellValidating</c> (:269-301). Để trống =
+        /// bỏ qua câu hỏi đó (chỉ đo đường click).
+        /// </summary>
+        [JsonPropertyName("typedCount")] public string TypedCount { get; set; } = "10";
+    }
+
     public sealed class RunSection
     {
         [JsonPropertyName("stepMs")] public int StepMs { get; set; }
@@ -641,6 +718,13 @@ public sealed class TestSettings
         Set("OCHA_KARTE_CMT_GROUP_NO", v => s.KarteCmt.GroupNo = int.Parse(v));
         Set("OCHA_KARTE_CMT_ALLOW_CONFIRM", v => s.KarteCmt.AllowConfirm = ToBool(v));
         Set("OCHA_KARTE_CMT_PROBE_TEXT", v => s.KarteCmt.ProbeText = v);
+        Set("OCHA_DRUG_AMOUNT_ALLOW_SEED", v => s.DrugAmount.AllowSeed = ToBool(v));
+        Set("OCHA_DRUG_AMOUNT_ALLOW_SAVE", v => s.DrugAmount.AllowSave = ToBool(v));
+        Set("OCHA_DRUG_AMOUNT_TRT_CD", v => s.DrugAmount.TrtCd = int.Parse(v));
+        Set("OCHA_DRUG_AMOUNT_TRT_SB", v => s.DrugAmount.TrtSb = int.Parse(v));
+        Set("OCHA_DRUG_AMOUNT_CONTROL_TRT_CD", v => s.DrugAmount.ControlTrtCd = int.Parse(v));
+        Set("OCHA_DRUG_AMOUNT_CLICK_TIMES", v => s.DrugAmount.ClickTimes = int.Parse(v));
+        Set("OCHA_DRUG_AMOUNT_TYPED_COUNT", v => s.DrugAmount.TypedCount = v);
 
         static void Set(string name, Action<string> apply)
         {

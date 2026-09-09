@@ -1,6 +1,6 @@
 # fla-ui-tests — test tự động cho app WinForm お茶コン
 
-> 📗 **Luật viết & chạy: [`FLA-UI-GUIDELINE.md`](./FLA-UI-GUIDELINE.md) (F1–F24).**
+> 📗 **Luật viết & chạy: [`FLA-UI-GUIDELINE.md`](./FLA-UI-GUIDELINE.md) (F1–F25).**
 > Đọc trước khi viết testcase mới hoặc trước khi đi sửa một lượt chạy treo.
 > [`PROBE-GUIDELINE.md`](./PROBE-GUIDELINE.md) là phần vì-sao + khuôn mẫu probe của F1.
 
@@ -294,6 +294,7 @@ Runner được **đặt tên theo HÀM WinForm mà nó lái**, không theo tên
 | `.\run-calc-bui-price.ps1 -Exception` | nhánh NGOẠI LỆ (患者登録データ) + F8 会計 → `modAcc.LetAccData2` | `Tests/BuiPriceE00100/` | ⚠️ **CÓ** — thêm `INS_KBN`/`OLD_FLG` và `UNPAID` của ngày test |
 | `.\run-insert-bui-into-karte-cmt.ps1` | F6 コメント → nút group → F1 部位 → `frm203012.btnF1_Click` (chèn 省略表示 部位 vào ô テキスト) | `Tests/KarteCmtBuiCaret/` | ✖ — nhưng CHỈ VÌ nó tránh **bốn** phím: F9 / End / Escape / Enter đều là `fixProc` → `fixCmt2` ghi `mst_cmt2.use_cnt` |
 | `.\run-insert-bui-into-karte-cmt.ps1 -AllowConfirm` | như trên + đo xem Enter trong ô テキスト là 確定 hay chỉ xuống dòng | `Tests/KarteCmtBuiCaret/` | ⚠️ **CÓ THỂ** — `mst_cmt2.use_cnt`, đúng cái đang đo |
+| `.\run-select-drug-amount.ps1 -Probe -Seed` | gõ mã thuốc `F2 = 1` → `frmTrtSel_Let_Trt_Data` → `frm203020` (薬剤使用量選択 — sửa 数量, tính lại 点数 từ 薬価) | `Tests/DrugAmountSelect/` | ⚠️ **CÓ** — `mst_trt.F2` trên **bảng master dùng chung**; dữ liệu dev có 0 dòng `F2=1` nên không seed thì hộp thoại không bao giờ mở |
 | `.\run-edit-treatment-rows.ps1 -Case Probe_Advanced` | PROBE — dò hành vi, KHÔNG assert | `Tests/TreatmentGrid/` | ✖ |
 
 > Thêm luồng mới thì giữ đúng quy ước này: `run-<động từ>-<đối tượng>.ps1` mô tả việc

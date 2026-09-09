@@ -18,7 +18,7 @@ KHÔNG tự `goto('/login')` trừ khi có lý do ghi rõ trong doc-comment.
 
 Trước khi viết test UI cho app WinForm (`fla-ui-tests/`): đọc
 [`fla-ui-tests/FLA-UI-GUIDELINE.md`](./fla-ui-tests/FLA-UI-GUIDELINE.md) — toàn bộ luật
-F1–F24 của bên WinForm gom về một chỗ (`PROBE-GUIDELINE.md` giữ nguyên phần vì-sao và
+F1–F25 của bên WinForm gom về một chỗ (`PROBE-GUIDELINE.md` giữ nguyên phần vì-sao và
 khuôn mẫu probe). Ba luật bao trùm:
 
 1. **F1 — chụp màn hình → đọc ảnh → rồi mới viết assert.** KHÔNG viết assert theo phỏng
