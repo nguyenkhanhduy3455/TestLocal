@@ -223,7 +223,12 @@ public sealed class DrugRowReloadDb
     /// của master thì mới thấy được phép dựng lại có đọc nó hay không.
     /// </param>
     public sealed record SeedRow(int DispNo, int TrtCd, int TrtSb, int TrtCnt, int TrtPt,
-                                 string FreeWd, string DspTrt);
+                                 string FreeWd, string DspTrt)
+    {
+        public override string ToString() =>
+            $"disp_no {DispNo} = {TrtCd}/{TrtSb} 点 {TrtPt} 回 {TrtCnt} " +
+            $"freewd「{FreeWd}」 dsp_trt「{DspTrt}」";
+    }
 
     /// <param name="Blocker">Khác null ⇒ KHÔNG seed được; testcase phải Ignore kèm lý do này.</param>
     public sealed record SeedResult(IReadOnlyList<SeedRow> Created, string? Blocker)
@@ -251,12 +256,16 @@ public sealed class DrugRowReloadDb
     {
         if (rows.Count == 0) return new SeedResult([], "danh sách seed rỗng");
 
-        var existing = ReadDay(patNo, day);
-        if (existing.Count == 0)
+        // Dòng NGUỒN để clone lấy từ BẤT KỲ ngày nào của bệnh nhân, không nhất thiết ngày
+        // đích: ngày đích cố ý chọn một ngày TRỐNG (xem DrugRowReloadProbeTests) để lưới chỉ
+        // có đúng mấy dòng seed và không đụng dữ liệu thật. TRT_DT được GHI ĐÈ khi chèn.
+        var srcSeq = AnyRowSeq(patNo);
+        if (srcSeq is null)
             return new SeedResult([],
-                $"bệnh nhân {patNo} không có dòng TRNTRN nào ngày {day:yyyy-MM-dd} — không có " +
-                "dòng nguồn để clone. Chọn ngày mà bệnh nhân test đã có dữ liệu.");
+                $"bệnh nhân {patNo} không có dòng TRNTRN nào để clone. Chọn bệnh nhân test đã " +
+                "có ít nhất một 処置行 (bất kỳ ngày nào).");
 
+        var existing = ReadDay(patNo, day);
         var clash = rows.Where(r => existing.Any(e => e.DispNo == r.DispNo))
                         .Select(r => r.DispNo).ToList();
         if (clash.Count > 0)
@@ -270,7 +279,6 @@ public sealed class DrugRowReloadDb
                                       .ToList();
         if (cols.Count == 0) return new SeedResult([], "không đọc được cột của TRNTRN");
 
-        var srcSeq = existing[0].Seq;
         var created = new List<SeedRow>();
 
         using var con = Open();
@@ -281,6 +289,7 @@ public sealed class DrugRowReloadDb
             {
                 var select = string.Join(", ", cols.Select(c => c.ToUpperInvariant() switch
                 {
+                    "TRT_DT" => "@day",
                     "DISP_NO" => "@disp",
                     "TRT_CD" => "@cd",
                     "TRT_SB" => "@sb",
@@ -302,7 +311,8 @@ public sealed class DrugRowReloadDb
                 ins.Parameters.Add("@pt", SqlDbType.Int).Value = row.TrtPt;
                 ins.Parameters.Add("@free", SqlDbType.VarChar, 100).Value = row.FreeWd;
                 ins.Parameters.Add("@dsp", SqlDbType.VarChar, 200).Value = row.DspTrt;
-                ins.Parameters.Add("@srcSeq", SqlDbType.Int).Value = srcSeq;
+                ins.Parameters.Add("@day", SqlDbType.DateTime).Value = day.Date;
+                ins.Parameters.Add("@srcSeq", SqlDbType.Int).Value = srcSeq.Value;
 
                 if (ins.ExecuteNonQuery() != 1)
                 {
@@ -336,6 +346,22 @@ public sealed class DrugRowReloadDb
         cmd.Parameters.Add("@d", SqlDbType.DateTime).Value = day.Date;
         var n = cmd.ExecuteNonQuery();
         return n == 0 ? "không còn dòng seed nào (đã dọn từ trước)." : $"đã xoá {n} dòng seed.";
+    }
+
+    /// <summary>
+    /// <c>SEQ</c> của một dòng bất kỳ của bệnh nhân — dòng NGUỒN để clone. Không lọc theo
+    /// ngày: ngày đích thường trống, mà mọi cột NOT NULL cần mượn (<c>PAT_BR</c>,
+    /// <c>INSU_CD</c>, <c>DR_NO</c>…) thì ngày nào cũng như nhau.
+    /// </summary>
+    private int? AnyRowSeq(int patNo)
+    {
+        using var con = Open();
+        using var cmd = Cmd(con,
+            "SELECT TOP 1 SEQ FROM TRNTRN WHERE PAT_NO = @pat AND DEL_FLG = 0 " +
+            "ORDER BY TRT_DT DESC, SEQ DESC");
+        cmd.Parameters.Add("@pat", SqlDbType.Int).Value = patNo;
+        var v = cmd.ExecuteScalar();
+        return v is null || v == DBNull.Value ? null : Convert.ToInt32(v);
     }
 
     private IReadOnlyList<string> ColumnsOf(string table)

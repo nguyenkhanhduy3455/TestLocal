@@ -669,73 +669,87 @@ public sealed class TestSettings
     public sealed class DrugRowReloadSection
     {
         /// <summary>
-        /// Cho phép CHÈN dòng <c>TRNTRN</c> seed.
+        /// Cho phép CHÈN dòng <c>TRNTRN</c> seed + mã master cho nhánh path B.
         ///
-        /// <para>⚠️ <b>Đây là luồng ghi nặng nhất của cả bộ</b>: <c>TRNTRN</c> là 処置行 thật
-        /// của bệnh nhân. Không có đường nào khác — thứ đang đo là đường LOAD, nên dữ liệu
+        /// <para>⚠️ <b>Luồng ghi nặng nhất của cả bộ</b>: <c>TRNTRN</c> là 処置行 thật của
+        /// bệnh nhân. Không có đường nào khác — thứ đang đo là đường LOAD, nên dữ liệu
         /// phải nằm sẵn trong DB trước khi màn hình mở.</para>
         ///
-        /// <para>Lượt chạy <b>CHỈ CHÈN</b> dòng mới mang <see cref="DispNo"/> riêng, không
-        /// bao giờ sửa/xoá dòng có sẵn; dọn là <c>DELETE</c> đúng <c>DISP_NO</c> đó. Vẫn có
-        /// cờ RIÊNG, mặc định TẮT ⇒ fixture tự Ignore TRƯỚC khi mở app.</para>
+        /// <para>Lượt chạy <b>CHỈ CHÈN</b> rồi <b>XOÁ</b>: dòng <c>TRNTRN</c> mang
+        /// <c>DISP_NO</c> riêng, và mã master <see cref="PathBTrtCd"/> chưa từng tồn tại.
+        /// Không dòng nào có sẵn bị sửa. Mặc định TẮT ⇒ fixture tự Ignore TRƯỚC khi mở app.</para>
         /// </summary>
         [JsonPropertyName("allowSeed")] public bool AllowSeed { get; set; }
 
         /// <summary>
-        /// <c>DISP_NO</c> dành riêng cho luồng này. Mặc định 9201.
+        /// <c>DISP_NO</c> đầu tiên của luồng; các dòng seed dùng <c>DispNo + 0..3</c>.
         ///
-        /// <para>Tránh các dải đã có chủ: <c>9001</c> (seed 再初診), <c>9101-9103</c>
-        /// (luồng <c>UnpaidRaiinCnt</c>). Dòng đối chứng dùng <c>DispNo + 1</c>.</para>
+        /// <para>Tránh dải đã có chủ: <c>9001</c> (seed 再初診 — bệnh nhân 10 ĐANG có một
+        /// dòng mang số đó), <c>9101-9103</c> (<c>UnpaidRaiinCnt</c>).</para>
+        ///
+        /// <para>⚠️ Vế Playwright dùng <c>SEED_DISP_BASE + 1..3</c> = 9001–9003 trên
+        /// <b>Postgres</b>. Số không trùng nhau là KHÔNG SAO: <c>disp_no</c> không hiện ra
+        /// lưới và không testcase nào assert nó — hai bên chỉ cần cùng <b>nội dung</b> dòng.</para>
         /// </summary>
         [JsonPropertyName("dispNo")] public int DispNo { get; set; } = 9201;
 
         /// <summary>
-        /// Mã 薬剤 của dòng seed. 628/0 「カロナール錠200mg　１T」 — có <c>mst_drug_rx</c>
-        /// (path A ⇒ nhánh <c>drugRxData != null</c> mới khoá ô) và
-        /// <c>selected_treat_kb = 0</c> (không kéo theo 長期収載品, xem luồng G2).
+        /// Mã 薬剤 <b>CÓ</b> <c>mst_drug_rx</c> — dùng cho hai dòng path A.
+        /// 602/0 「ﾒｲｱｸﾄMS錠100ｍｇ４T」 (<c>cnt1 = 4</c>, <c>med_kbn = 21</c>).
+        /// Trùng <c>TEST_LOAD_TRT_CD</c> của
+        /// <c>treatment-grid/drug-row-rebuild-on-load.spec.ts</c>.
         /// </summary>
-        [JsonPropertyName("trtCd")] public int TrtCd { get; set; } = 628;
+        [JsonPropertyName("trtCd")] public int TrtCd { get; set; } = 602;
 
         [JsonPropertyName("trtSb")] public int TrtSb { get; set; }
 
         /// <summary>
-        /// Mã ĐỐI CHỨNG — <b>không</b> thuộc dải 600–699 nên rơi vào nhánh <c>else</c>
-        /// (<c>hFG1[2] = dsp_trt</c>). 110 = 再診.
+        /// Mã seed cho nhánh <b>path B khi load</b> — clone từ <see cref="TrtCd"/> nên mọi
+        /// cột khác giống dữ liệu thật, và <b>không</b> có <c>mst_drug_rx</c>.
+        /// Trùng <c>TEST_LOADPB_TRT_CD</c> của vế Playwright.
+        /// </summary>
+        [JsonPropertyName("pathBTrtCd")] public int PathBTrtCd { get; set; } = 694;
+
+        [JsonPropertyName("pathBTrtNm")] public string PathBTrtNm { get; set; } = "ﾃｽﾄ読込薬PB";
+
+        [JsonPropertyName("pathBUsage")] public string PathBUsage { get; set; } = "ﾃｽﾄ用法　就寝前　服用";
+
+        /// <summary>
+        /// Mã ĐỐI CHỨNG — <b>ngoài</b> dải 600–699 nên rơi vào nhánh <c>else</c>
+        /// (<c>hFG1[2] = dsp_trt</c>, modSave.cs:2639). 110 = 再診.
         ///
-        /// <para>Nó tách đôi câu hỏi: 「dsp_trt bịa bị bỏ qua」 là hành vi RIÊNG của dòng
-        /// 薬剤, hay là app không bao giờ hiện <c>dsp_trt</c>? Dòng đối chứng phải hiện
-        /// nguyên văn chuỗi bịa.</para>
+        /// <para>Nó tách đôi câu hỏi: 「chuỗi rác bị bỏ qua」 là hành vi RIÊNG của dòng
+        /// 薬剤, hay app không bao giờ hiện <c>dsp_trt</c>? <b>Vế Playwright chưa có
+        /// testcase này</b> — xem README §7.</para>
         /// </summary>
         [JsonPropertyName("controlTrtCd")] public int ControlTrtCd { get; set; } = 110;
 
         [JsonPropertyName("controlTrtSb")] public int ControlTrtSb { get; set; }
 
         /// <summary>
-        /// <c>freewd</c> của dòng seed — <b>khác</b> 使用量 mặc định của master thì mới
-        /// thấy được phép dựng lại có đọc nó không. Master của 628 ghi <c>cnt1 = 1</c>.
+        /// Chuỗi rác cố ý ghi vào <c>dsp_trt</c>. Hiện ra trên lưới ⇒ app in giá trị đã
+        /// lưu; biến mất ⇒ app dựng lại. Đó là toàn bộ phép đo.
+        /// Trùng <c>STALE</c> của vế Playwright; mỗi dòng nối thêm số thứ tự.
         /// </summary>
-        [JsonPropertyName("freeWd")] public string FreeWd { get; set; } = "7";
+        [JsonPropertyName("stale")] public string Stale { get; set; } = "ｽﾃｰﾙ保存文字列ZZZ";
+
+        /// <summary>回数 của mọi dòng seed. Vào hậu tố 用量 「n日分」/「n回分」.</summary>
+        [JsonPropertyName("trtCnt")] public int TrtCnt { get; set; } = 7;
 
         /// <summary>
-        /// <c>dsp_trt</c> đã lưu — cố ý là chuỗi BỊA, không master nào dựng ra được.
-        /// Hiện ra ⇒ app đọc <c>dsp_trt</c>; biến mất ⇒ app dựng lại. Đó là toàn bộ phép đo.
-        /// </summary>
-        [JsonPropertyName("markerDspTrt")] public string MarkerDspTrt { get; set; } = "ｾﾞﾃｽﾄDSPTRTﾏｰｶｰ";
-
-        /// <summary>
-        /// 点数 của dòng seed — <b>mốc để dò dòng trên lưới</b>. Phải là con số không đụng
-        /// dòng nào khác trong ngày test.
+        /// 点数 của dòng seed đầu tiên; các dòng sau dùng <c>MarkerPoint + 1..3</c>.
         ///
-        /// <para>Dò theo 点 chứ không theo tên là bắt buộc: cái đang đo CHÍNH LÀ chuỗi tên,
-        /// lấy tên làm mốc tìm thì thành vòng luẩn quẩn.</para>
+        /// <para><b>Mốc để dò dòng trên lưới.</b> Dò theo 点 chứ không theo tên là bắt
+        /// buộc: cái đang đo CHÍNH LÀ chuỗi tên, lấy tên làm mốc tìm thì thành vòng luẩn
+        /// quẩn — không thấy thì không phân biệt được 「app dựng tên khác」 với 「dòng
+        /// không có trên lưới」.</para>
+        ///
+        /// <para>⚠️ Vế Playwright để cả ba dòng cùng <c>trt_pt = 40</c> (mặc định của
+        /// <c>seedTreatmentRows</c>) và nhận dòng theo thứ tự. Đặt 点 khác nhau ở đây
+        /// KHÔNG làm hai bên đo khác nhau — không testcase nào assert 点, nó chỉ để thông
+        /// báo lỗi đọc được.</para>
         /// </summary>
-        [JsonPropertyName("markerPoint")] public int MarkerPoint { get; set; } = 777;
-
-        /// <summary>点数 của dòng ĐỐI CHỨNG — cũng phải độc nhất trong ngày.</summary>
-        [JsonPropertyName("controlPoint")] public int ControlPoint { get; set; } = 778;
-
-        /// <summary>回数 của cả hai dòng seed. Vào hậu tố 用量 「n回分」 của path A.</summary>
-        [JsonPropertyName("trtCnt")] public int TrtCnt { get; set; } = 2;
+        [JsonPropertyName("markerPoint")] public int MarkerPoint { get; set; } = 771;
     }
 
     public sealed class RunSection
@@ -895,7 +909,7 @@ public sealed class TestSettings
         Set("OCHA_DRUG_RELOAD_ALLOW_SEED", v => s.DrugRowReload.AllowSeed = ToBool(v));
         Set("OCHA_DRUG_RELOAD_DISP_NO", v => s.DrugRowReload.DispNo = int.Parse(v));
         Set("OCHA_DRUG_RELOAD_TRT_CD", v => s.DrugRowReload.TrtCd = int.Parse(v));
-        Set("OCHA_DRUG_RELOAD_FREE_WD", v => s.DrugRowReload.FreeWd = v);
+        Set("OCHA_DRUG_RELOAD_PATH_B_TRT_CD", v => s.DrugRowReload.PathBTrtCd = int.Parse(v));
 
         static void Set(string name, Action<string> apply)
         {

@@ -23,14 +23,21 @@
     Ban web doc thang dspTrt (treatment-table-mapper.ts:160,234), khong co nhanh
     isDrugCode nao o luong load => lech khi master doi hoac freewd khac mac dinh.
 
-    ⚠️ CHAY -Probe TRUOC TIEN (luat F1). Sau cau chi DO moi biet:
+    ⚠️ CHAY -Probe TRUOC TIEN (luat F1). Tam cau chi DO moi biet:
       KQ-1  Seed da vao TRNTRN chua; master cua ma dem thu ra sao.
-      KQ-2  CHUOI BIA trong dsp_trt CO HIEN RA KHONG — cau quyet dinh.
-      KQ-3  Neu dung lai: luoi hien 数量 cua freewd (7) hay mac dinh cua master (1)?
+      KQ-2  CHUOI BIA trong dsp_trt CO HIEN RA KHONG — cau quyet dinh (web TC-1).
+      KQ-3  Hai dong CUNG ma chi khac freewd co ra hai chuoi KHAC nhau khong (web TC-2).
       KQ-4  O 療法・処置 co KHOA khong (thu mo editor, khong doc thuoc tinh).
       KQ-5  点 / 回 co dung bang gia tri da luu khong (app KHONG tinh lai).
       KQ-6  DOI CHUNG ngoai dai 600-699 phai hien NGUYEN VAN dsp_trt va KHONG khoa.
       KQ-7  O nguyen van co may dong, co hau to 用量 khong.
+      KQ-8  Dong PATH B khi LOAD: 処置名称 + 用法, KHONG hau to 用量, KHONG khoa (web TC-3).
+
+    ─── BON DONG SEED (ba dong dau DUNG BANG ve Playwright) ───────────────────
+      点 771  602/0  freewd ""   dsp_trt ｽﾃｰﾙ…1   path A, master nguyen ban
+      点 772  602/0  freewd "2"  dsp_trt ｽﾃｰﾙ…2   path A, freewd khac mac dinh
+      点 773  694/0  freewd ""   dsp_trt ｽﾃｰﾙ…3   path B (ma SEED, khong co RX)
+      点 774  110/0  freewd ""   dsp_trt ｽﾃｰﾙ…4   DOI CHUNG (ve web chua co)
 
     ─── GHI DB ────────────────────────────────────────────────────────────────
     ⚠️ NANG NHAT CUA CA BO: chen dong vao TRNTRN — 処置行 THAT cua benh nhan.
@@ -41,8 +48,8 @@
 
     Ba hang rao:
       1. Co RIENG drugRowReload.allowSeed (mac dinh TAT).
-      2. CHI CHEN dong mang DISP_NO rieng (9201/9202) — khong bao gio sua/xoa dong
-         co san. Don la DELETE dung DISP_NO do.
+      2. CHI CHEN dong mang DISP_NO rieng (9201-9204) va MOT ma master moi (694) —
+         khong bao gio sua/xoa dong co san. Don la DELETE dung khoa vua tao.
       3. Chen bang CLONE mot dong co san cua chinh benh nhan test roi ghi de vai cot,
          nen moi cot NOT NULL (枝番, 保険, DrNo, 32 cot BUI...) deu dung boi canh.
 
@@ -50,17 +57,19 @@
 
 .PARAMETER Case
     Ten testcase le (Tc0_ProbeSeededData, Tc1_ProbeDrugRowOnLoad,
-    Tc2_ProbeNonDrugRowShowsDspTrt). Bo trong = ca fixture (chi 1 vong giao dien).
+    Tc2_ProbeFreeWdChangesAmount, Tc3_ProbePathBRowOnLoad,
+    Tc4_ProbeNonDrugRowShowsDspTrt). Bo trong = ca fixture (chi 1 vong giao dien).
 
 .PARAMETER Probe
-    Chay fixture PROBE (DrugRowReloadProbeTests): 7 cau hoi, KHONG assert.
+    Chay fixture PROBE (DrugRowReloadProbeTests): 8 cau hoi, KHONG assert.
 
 .PARAMETER Seed
     Bat drugRowReload.allowSeed = true cho luot chay nay.
 
 .EXAMPLE
-    .\run-reload-drug-row.ps1 -Probe -Seed
-    .\run-reload-drug-row.ps1 -Probe -Seed -Case Tc1_ProbeDrugRowOnLoad
+    # ⚠️ GHIM 診療日 dung bang ve Playwright (OTHER_DAY = 01 neu hom nay >= 15, con lai 28)
+    .\run-reload-drug-row.ps1 -Probe -Seed -TrtDate 2026-09-01
+    .\run-reload-drug-row.ps1 -Probe -Seed -TrtDate 2026-09-01 -Case Tc3_ProbePathBRowOnLoad
 #>
 [CmdletBinding()]
 param(
@@ -70,7 +79,7 @@ param(
     [switch]$Seed,
     [int]$TrtCd = 0,
     [int]$DispNo = 0,
-    [string]$FreeWd = "",
+    [int]$PathBTrtCd = 0,
     # Ghim 診療日 (yyyy-MM-dd). BAT BUOC khi doi chieu voi ban web: dong seed phai nam
     # dung ngay ma ca hai ben cung mo.
     [string]$TrtDate = "",
@@ -93,13 +102,13 @@ if ($PatNo -ne "") {
 }
 if ($TrtCd -gt 0)  { $env:OCHA_DRUG_RELOAD_TRT_CD = "$TrtCd" }
 if ($DispNo -gt 0) { $env:OCHA_DRUG_RELOAD_DISP_NO = "$DispNo" }
-if ($FreeWd -ne "") { $env:OCHA_DRUG_RELOAD_FREE_WD = $FreeWd }
+if ($PathBTrtCd -gt 0) { $env:OCHA_DRUG_RELOAD_PATH_B_TRT_CD = "$PathBTrtCd" }
 
 if ($Seed) {
     $env:OCHA_DRUG_RELOAD_ALLOW_SEED = "1"
     Write-Host ""
     Write-Host "⚠️  SEED BAT — luot nay CHEN DONG VAO TRNTRN (処置行 THAT cua benh nhan)." -ForegroundColor Red
-    Write-Host "   Chi chen DISP_NO rieng (mac dinh 9201/9202), khong sua/xoa dong co san." -ForegroundColor Yellow
+    Write-Host "   Chi chen DISP_NO rieng (mac dinh 9201-9204) + ma master 694, khong sua/xoa dong co san." -ForegroundColor Yellow
     Write-Host "   Fixture in ra TRNTRN truoc khi seed va tu DELETE o OneTimeTearDown." -ForegroundColor Yellow
     Write-Host ""
 } else {
@@ -162,7 +171,9 @@ Write-Host "1. reload-drug-row-KQ.txt - cac dong KQ + anh chup TRNTRN (UTF-8 sac
 Write-Host "2. $artifacts\screenshots    - nhat ky tung buoc + anh man hinh"
 Write-Host ""
 Write-Host "KIEM LAI TRUOC KHI DONG MAY:" -ForegroundColor Yellow
-Write-Host "   SELECT COUNT(*) FROM TRNTRN WHERE DISP_NO IN (9201,9202)   -- phai la 0"
+Write-Host "   SELECT COUNT(*) FROM TRNTRN WHERE DISP_NO BETWEEN 9201 AND 9204   -- phai la 0"
+Write-Host "   SELECT COUNT(*) FROM MST_TRT266 WHERE TRT_CD = 694                -- phai la 0"
+Write-Host "   SELECT COUNT(*) FROM MST_MED    WHERE TRT_CD = 694                -- phai la 0"
 
 $shots = Join-Path $artifacts "screenshots"
 if (Test-Path $shots) {
