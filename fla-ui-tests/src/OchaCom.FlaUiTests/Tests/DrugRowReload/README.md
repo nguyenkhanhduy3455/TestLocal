@@ -2,10 +2,10 @@
 
 Nửa **WinForm** của điểm parity G3.
 
-> **Trạng thái: ĐÃ CHẠY THẬT — probe 8/8 câu, assert 4/4 XANH (2026-09-09).**
-> Vế web `drug-row-rebuild-on-load.spec.ts` cùng ngày: **3/3 XANH**. Chuỗi nguyên văn ba
-> dòng seed **trùng khít** hai bên ⇒ không có điểm lệch parity ở G3. Số đo đầy đủ ở
-> [mục 9](#9-đo-được-trên-máy-thật).
+> **Trạng thái: ĐÃ CHẠY THẬT trên CÙNG MỘT điều kiện — 4/4 XANH cả hai vế (2026-09-09).**
+> 患者 10 · 診療日 2026-08-10 · `disp_no` 9001–9004 · 点 771–774 · 4 dòng seed giống hệt
+> nhau ở cả hai DB. Chuỗi nguyên văn **trùng khít** ⇒ không có điểm lệch parity ở G3.
+> Số đo đầy đủ ở [mục 9](#9-đo-được-trên-máy-thật).
 
 ---
 
@@ -235,47 +235,57 @@ WinForm cũng hiện `dsp_trt` thì điểm parity G3 không tồn tại và ph�
 
 > Điền sau **mỗi** lượt chạy: ngày, bệnh nhân, 診療日, và số đo **nguyên văn**.
 
-### 2026-09-09 — 患者 10, 診療日 **2026-08-10**, `ochacom-win`
+### 2026-09-09 (lượt 2) — HAI VẾ TRÊN **CÙNG MỘT** ĐIỀU KIỆN
 
-Probe `-Probe -Seed` (4 TC, 8 câu) rồi assert `-Seed` (**4/4 XANH**, 1.8 phút).
+Lượt 1 hai bên cùng xanh nhưng trên **dữ liệu khác nhau** (WinForm 診療日 2026-08-10 /
+`disp_no` 9201–9204 / 4 dòng; web ngày tự tính / `disp_no` 9001–9003 / 3 dòng / `trt_pt`
+đều 40). Lượt này ép cả hai về đúng bảng ở [mục 4](#4-bốn-dòng-seed--điều-kiện-dùng-chung-với-vế-playwright).
 
-`診療日` chọn 2026-08-10 vì bảo hiểm của bệnh nhân 10 chỉ còn hiệu lực
-`2026-08-03 → 2026-08-14` (`INSURANCE`). Ngày đó vẫn là **tháng đang mở** của màn hình
-nên đi qua `GetTrnRs` (`modSave.cs:2626`), đúng nhánh vế web đo — **không** phải
-`GetTrnRsOld` (`:4966`, lưới quá khứ in-line, chỉ chạy khi `pInpOpt[41] == 1`).
+| | WinForm (`ochacom-win`) | Web |
+|---|---|---|
+| 患者 / 診療日 | 10 / **2026-08-10** | 10 / **2026-08-10** |
+| `disp_no` | **9001–9004** | **9001–9004** |
+| 点 | **771 / 772 / 773 / 774** | **771 / 772 / 773 / 774** |
+| dòng seed | **4** | **4** |
+| Kết quả | **4/4 XANH** (62s) | **4/4 XANH** (11.6s) |
+
+Không phải sửa DB nào để làm được việc này: `2026-08-10` vốn đã trống ở cả hai DB và nằm
+trong cửa sổ bảo hiểm `2026-08-03 → 2026-08-14` — cửa sổ đó **giống hệt nhau** ở Postgres
+`t_tenant1` lẫn SQL Server `SIM2000`, và 14 dòng `trn_trn` sẵn có của 患者 10 cũng trùng
+khít từng dòng. Hai bộ dữ liệu vốn đã là bản sao của nhau.
+
+### Số đo (lượt 1, `-Probe -Seed`, 8 câu KQ)
 
 | KQ | Đo được |
 |---|---|
 | KQ-1 | master `602/0` = 「ﾒｲｱｸﾄMS錠100ｍｇ４T」 · `mst_drug`「メイアクトＭＳ錠１００ｍｇ」 · `cnt1 = 4` 錠 · `usage_nm`「１日４回朝昼夕食後と就寝前　服用」 · `med_kbn = 21` · `g_cnt = 3` · `score1 = 29`. `freewd` đem thử = 「1」. Mã seed `694/0` **không** có `mst_drug_rx` ⇒ đúng path B. |
 | **KQ-2** | Chuỗi bịa `ｽﾃｰﾙ保存文字列ZZZ1` **KHÔNG** hiện. Ô = 「ﾒｲｱｸﾄMS錠100mg 4T」 ⏎ 「１日４回朝昼夕食後と就寝前　服用  7日分」 ⇒ **app dựng lại, bỏ qua `dsp_trt`**. |
 | **KQ-3** | `freewd` rỗng → 数量 **4** · `freewd`「1」 → 数量 **1**. Hai ô **KHÁC** nhau ⇒ `freewd` CÓ được đọc lúc dựng lại. |
-| KQ-4 | path A **ReadOnly = CÓ** · path B **ReadOnly = KHÔNG** · đối chứng **KHÔNG** — đúng như `modSave.cs:2635` chỉ khoá khi `drugRxData != null`. |
+| KQ-4 | path A **ReadOnly = CÓ** · path B **ReadOnly = KHÔNG** · đối chứng **KHÔNG** — đúng `modSave.cs:2635` chỉ khoá khi `drugRxData != null`. |
 | KQ-5 | 点 = 771 (đã lưu 771) · 回 = 7 (đã lưu 7) — app không tính lại. |
 | **KQ-6** | Đối chứng `110/0` hiện **NGUYÊN VĂN** 「ｽﾃｰﾙ保存文字列ZZZ4」 ⇒ KQ-2 đúng là hành vi RIÊNG của dải 600–699. |
 | KQ-7 | 2 dòng. Hậu tố 用量 = 「**7**日分」 — bám `trn_trn.trt_cnt` (7), **không** phải `g_cnt` của master (3). |
 | **KQ-8** | path B ra **đúng 2 dòng** 「ﾃｽﾄ読込薬PB」 ⏎ 「ﾃｽﾄ用法　就寝前　服用」, **không** hậu tố 用量, **không** khoá ô. |
 
-### Đối chiếu parity với vế web (cùng ngày 2026-09-09)
+### Chuỗi nguyên văn — so thẳng
 
-`TEST_DB=1 npx playwright test …drug-row-rebuild-on-load.spec.ts` → **3/3 XANH** (47.2s).
-
-Chuỗi **nguyên văn** hai bên, sau khi bỏ `REGIRYO_PADLEFT` (xem ghi chú dưới):
+Sau khi bỏ `REGIRYO_PADLEFT` (xem ghi chú dưới):
 
 | Dòng | WinForm | Web |
 |---|---|---|
 | path A, `freewd` rỗng | `ﾒｲｱｸﾄMS錠100mg 4T` ⏎ `１日４回朝昼夕食後と就寝前　服用  7日分` | **y hệt** |
 | path A, `freewd`「1」 | `ﾒｲｱｸﾄMS錠100mg 1T` ⏎ `１日４回朝昼夕食後と就寝前　服用  7日分` | **y hệt** |
 | path B | `ﾃｽﾄ読込薬PB` ⏎ `ﾃｽﾄ用法　就寝前　服用` | **y hệt** |
+| đối chứng | `ｽﾃｰﾙ保存文字列ZZZ4` | **y hệt** |
 
-Hai DB khác nhau nhưng master lái phép dựng lại thì **trùng**: `mst_drug_rx.cnt1 = 4`,
-`usage_nm`, `med_kbn = 21`, `mst_drug.dg_nm`, `unit_nm = 錠` giống nhau ở cả SQL Server
-`SIM2000` lẫn Postgres `t_tenant1`. (`mst_trt.trt_nm` thì khác — 「ｶﾛﾅｰﾙ細粒20%1g」 bên
-Postgres — nhưng `trt_nm` chỉ vào chuỗi ở **path B**, mà path B dùng mã seed `694` do cả
-hai bên tự đặt tên giống nhau, nên không ảnh hưởng.)
+Master lái phép dựng lại cũng trùng ở hai DB: `mst_drug_rx.cnt1 = 4`, `usage_nm`,
+`med_kbn = 21`, `mst_drug.dg_nm`, `unit_nm = 錠`. (`mst_trt.trt_nm` thì khác —
+「ｶﾛﾅｰﾙ細粒20%1g」 bên Postgres — nhưng `trt_nm` chỉ vào chuỗi ở **path B**, mà path B dùng
+mã seed `694` do cả hai bên tự đặt tên giống nhau, nên không ảnh hưởng.)
 
 ⇒ **KHÔNG có điểm lệch parity nào ở G3.**
 
-#### Một khác biệt CHƯA bên nào đo: `REGIRYO_PADLEFT`
+### Một khác biệt CHƯA bên nào đo: `REGIRYO_PADLEFT`
 
 `getDrugName` (`modSave.cs:2229`) nối `CommonInp.REGIRYO_PADLEFT` = **hai dấu cách** vào
 **đầu mỗi dòng** của ô; nhánh `else` (`:2639`) cũng vậy. Nguyên văn WinForm là
