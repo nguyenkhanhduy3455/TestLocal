@@ -31,6 +31,67 @@ import { makeStep, skipWithReason } from '../_shared/step'
 import { closeDialogs } from '../_shared/virtual-grid'
 
 /**
+ * Theo dõi "Vite dev nhả hụt module" — nguồn của MỌI lần lưới không lên.
+ *
+ * Vite **dev** thỉnh thoảng trả `net::ERR_FAILED` cho một module `/src/*.ts`;
+ * module hụt ⇒ React KHÔNG mount ⇒ `#root` rỗng ⇒ chờ lưới bao lâu cũng vô ích.
+ * Bắt sự kiện đó để BIẾT NGAY thay vì ngồi hết `GRID_LOAD_TIMEOUT`.
+ *
+ * ⚠️ VÌ SAO QUAN TRỌNG HƠN VẺ NGOÀI: đo thật 2026-09-11, một lượt chạy có 5 lần
+ * 「lần 1/3 không nạp được lưới」, MỖI lần đốt trọn 60s = 5 phút trên tổng 6.1
+ * phút. Chờ mù lâu như vậy còn kéo dài cửa sổ để tiến trình trình duyệt sập giữa
+ * chừng — và khi nó sập thì Playwright tháo worker, `afterAll` chạy ngang, test
+ * đang dở báo 「Target page, context or browser has been closed」, trông y hệt một
+ * lỗi logic ở chỗ chẳng liên quan (đã gặp thật ở TC-7). Phát hiện sớm cắt 60s
+ * xuống ~1s.
+ *
+ * Chỉ nhận `ERR_FAILED`: `ERR_ABORTED` là chuyện thường khi rời trang giữa chừng,
+ * đếm cả nó vào sẽ nạp lại oan.
+ */
+function watchModuleDeath(p: Page): { died: () => boolean; reset: () => void } {
+    let dead = false
+    p.on('requestfailed', (r) => {
+        if (r.failure()?.errorText === 'net::ERR_FAILED' && r.url().includes('/src/')) {
+            dead = true
+        }
+    })
+    return {
+        died: () => dead,
+        reset: () => {
+            dead = false
+        },
+    }
+}
+
+/** Mount xong là chuyện của ~1s; quá mốc này coi như trang trắng. */
+const MOUNT_TIMEOUT = 15_000
+
+/**
+ * Chờ app MOUNT sau `goto`, hoặc phát hiện SỚM là nó sẽ không bao giờ mount.
+ */
+async function waitForApp(
+    p: Page,
+    watch: ReturnType<typeof watchModuleDeath>,
+): Promise<'mounted' | 'dead' | 'timeout'> {
+    if (watch.died()) return 'dead'
+    const mounted = p
+        .locator('#root > *')
+        .first()
+        .waitFor({ state: 'attached', timeout: MOUNT_TIMEOUT })
+        .then(() => 'mounted' as const)
+        .catch(() => 'timeout' as const)
+    const died = p
+        .waitForEvent('requestfailed', {
+            predicate: (r) =>
+                r.failure()?.errorText === 'net::ERR_FAILED' && r.url().includes('/src/'),
+            timeout: MOUNT_TIMEOUT,
+        })
+        .then(() => 'dead' as const)
+        .catch(() => 'timeout' as const)
+    return Promise.race([mounted, died])
+}
+
+/**
  * SanteiConfirm 「〜を算定しますか？」 — trả lời **キャンセル**, KHÔNG phải いいえ.
  *
  * Bệnh nhân của spec này do test tự dựng nên THÁNG LUÔN TRỐNG lúc mở màn lần đầu
@@ -395,7 +456,12 @@ const ALL_TEST_TRT_CDS = [SYOSIN_TRT_CD, SAISIN_TRT_CD, ISL_TRT_CD, PLAIN_TRT_CD
 
 const GRID_LOAD_TIMEOUT = 60_000
 const GRID_RELOAD_TIMEOUT = 30_000
-const GRID_LOAD_ATTEMPTS = 3
+/**
+ * Số lần thử nạp màn. 5 chứ không phải 3: từ khi `waitForApp` phát hiện sớm, một
+ * lần hỏng chỉ tốn ~1s (trước đây 60s) nên thử thêm gần như miễn phí — mà đo thật
+ * 2026-09-11 có lượt Vite dev nhả hụt module HAI lần liên tiếp, 3 lần là không đủ.
+ */
+const GRID_LOAD_ATTEMPTS = 5
 const SAVE_TIMEOUT = 60_000
 
 const ryoCells = (page: Page) => page.locator('[data-grid-cell$="|2"]')
@@ -636,22 +702,34 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
     async function openTreatmentScreen() {
         let lastErr: unknown
         for (let attempt = 1; attempt <= GRID_LOAD_ATTEMPTS; attempt++) {
+            moduleWatch.reset()
             await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, {
                 waitUntil: 'domcontentloaded',
             })
+
+            // MOUNT trước, LƯỚI sau. Trang trắng lộ ra trong ~1s thay vì đốt trọn
+            // GRID_LOAD_TIMEOUT rồi mới chịu nạp lại (xem watchModuleDeath).
+            const app = await waitForApp(page, moduleWatch)
+            if (app !== 'mounted') {
+                lastErr = new Error(`app không mount (${app})`)
+                console.log(
+                    `openTreatmentScreen: lần ${attempt}/${GRID_LOAD_ATTEMPTS} app KHÔNG mount ` +
+                        `(${app === 'dead' ? 'Vite dev nhả hụt module /src/*.ts' : 'quá hạn'}) → nạp lại`,
+                )
+                continue
+            }
+
             try {
                 await expect(
                     ryoCells(page).first(),
                     'Lưới 診療入力 không nạp được dữ liệu (không có ô 療法 nào)',
-                ).toBeVisible({
-                    timeout: attempt === 1 ? GRID_LOAD_TIMEOUT : GRID_RELOAD_TIMEOUT,
-                })
+                ).toBeVisible({ timeout: GRID_RELOAD_TIMEOUT })
                 await closeDialogs(page)
                 return
             } catch (e) {
                 lastErr = e
                 console.log(
-                    `openTreatmentScreen: lần ${attempt}/${GRID_LOAD_ATTEMPTS} không nạp được lưới — nạp lại`,
+                    `openTreatmentScreen: lần ${attempt}/${GRID_LOAD_ATTEMPTS} app mount rồi mà lưới không lên — nạp lại`,
                 )
             }
         }
@@ -763,6 +841,8 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
     /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
      *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
     let disposeOverlays: (() => Promise<void>) | undefined
+    /** Cờ "Vite dev nhả hụt module" — cắm ở beforeAll, đọc trong openTreatmentScreen. */
+    let moduleWatch: ReturnType<typeof watchModuleDeath>
 
     test.beforeAll(async ({ authedPage }) => {
         // Dựng bệnh nhân TỪ SỐ 0 (xem khối 「BỆNH NHÂN TỰ DỰNG」 ở đầu file).
@@ -787,6 +867,7 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
         )
 
         page = authedPage
+        moduleWatch = watchModuleDeath(page)
         disposeOverlays = await installSanteiCancel(page)
         step = makeStep(page)
 
@@ -1445,7 +1526,12 @@ const ALL_TEST_TRT_CDS = [RES_TRT_CD, HOKAN_TRT_CD] as const
 
 const GRID_LOAD_TIMEOUT = 60_000
 const GRID_RELOAD_TIMEOUT = 30_000
-const GRID_LOAD_ATTEMPTS = 3
+/**
+ * Số lần thử nạp màn. 5 chứ không phải 3: từ khi `waitForApp` phát hiện sớm, một
+ * lần hỏng chỉ tốn ~1s (trước đây 60s) nên thử thêm gần như miễn phí — mà đo thật
+ * 2026-09-11 có lượt Vite dev nhả hụt module HAI lần liên tiếp, 3 lần là không đủ.
+ */
+const GRID_LOAD_ATTEMPTS = 5
 const SAVE_TIMEOUT = 60_000
 
 const SHOT_DIR = 'capture-results/p0-oral-chart'
@@ -1630,21 +1716,35 @@ test.describe('診療入力 F9 登録 — LetHokan / Let_BNOW (口腔内チャ�
     async function openTreatmentScreen() {
         let lastErr: unknown
         for (let attempt = 1; attempt <= GRID_LOAD_ATTEMPTS; attempt++) {
+            moduleWatch.reset()
             await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, {
                 waitUntil: 'domcontentloaded',
             })
+
+            // MOUNT trước, LƯỚI sau. Trang trắng lộ ra trong ~1s thay vì đốt trọn
+            // GRID_LOAD_TIMEOUT rồi mới chịu nạp lại (xem watchModuleDeath).
+            const app = await waitForApp(page, moduleWatch)
+            if (app !== 'mounted') {
+                lastErr = new Error(`app không mount (${app})`)
+                console.log(
+                    `openTreatmentScreen: lần ${attempt}/${GRID_LOAD_ATTEMPTS} app KHÔNG mount ` +
+                        `(${app === 'dead' ? 'Vite dev nhả hụt module /src/*.ts' : 'quá hạn'}) → nạp lại`,
+                )
+                continue
+            }
+
             try {
                 await expect(
                     ryoCells(page).first(),
                     'Lưới 診療入力 không nạp được dữ liệu (không có ô 療法 nào)',
-                ).toBeVisible({
-                    timeout: attempt === 1 ? GRID_LOAD_TIMEOUT : GRID_RELOAD_TIMEOUT,
-                })
+                ).toBeVisible({ timeout: GRID_RELOAD_TIMEOUT })
                 await closeDialogs(page)
                 return
             } catch (e) {
                 lastErr = e
-                console.log(`openTreatmentScreen: lần ${attempt}/${GRID_LOAD_ATTEMPTS} hỏng — nạp lại`)
+                console.log(
+                    `openTreatmentScreen: lần ${attempt}/${GRID_LOAD_ATTEMPTS} app mount rồi mà lưới không lên — nạp lại`,
+                )
             }
         }
         throw lastErr
@@ -1693,6 +1793,8 @@ test.describe('診療入力 F9 登録 — LetHokan / Let_BNOW (口腔内チャ�
     /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
      *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
     let disposeOverlays: (() => Promise<void>) | undefined
+    /** Cờ "Vite dev nhả hụt module" — cắm ở beforeAll, đọc trong openTreatmentScreen. */
+    let moduleWatch: ReturnType<typeof watchModuleDeath>
 
     test.beforeAll(async ({ authedPage }) => {
         const firstOfMonth = `${TRT_DT.slice(0, 8)}01`
@@ -1714,6 +1816,7 @@ test.describe('診療入力 F9 登録 — LetHokan / Let_BNOW (口腔内チャ�
         console.log(`bệnh nhân test ${PAT_NO} đã dựng (chưa có bnow / pat_info — đúng ý đồ)`)
 
         page = authedPage
+        moduleWatch = watchModuleDeath(page)
         disposeOverlays = await installSanteiCancel(page)
         step = makeStep(page)
 
