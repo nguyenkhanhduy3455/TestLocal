@@ -149,10 +149,14 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * dòng 599 của hôm nay xong `rowCount(KAIGO_KEY)` vẫn trả 1 ⇒ đỏ oan
  * (「Expected: 0, Received: 1」), và `serial` kéo theo 8 TC sau không chạy.
  *
- * Rác đó do lượt chạy NGÀY KHÁC để lại: mọi hàm dọn ở đây đều khoá theo
- * `(PAT_NO, TRT_DT)` = ngày đang chạy, nên dòng của ngày hôm trước không bao giờ
- * bị đụng tới. Bệnh nhân tự dựng cắt đứt hẳn: `deleteTestPatient` xoá `trn_trn`
- * của MỌI ngày nên không còn gì tích tụ được.
+ * Rác đó CÙNG NGÀY chứ không phải ngày khác, và thoát được mọi hàm dọn vì
+ * `disp_no` của nó là 1..7: F9/bulk-save GHI LẠI CẢ THÁNG và đánh số `disp_no`
+ * TỪ 1, trong khi `deleteTreatmentRows` chỉ quét vùng seed `disp_no >= 9000`.
+ * (Chính TC-12 của file này biết điều đó nên phải dọn thêm theo `trt_cd` — nhưng
+ * dòng do spec KHÁC lưu xuống thì không ai dọn.)
+ *
+ * Bệnh nhân tự dựng cắt đứt hẳn: `deleteTestPatient` xoá `trn_trn` của bệnh nhân
+ * đó ở MỌI ngày và MỌI vùng `disp_no`, nên không còn gì tích tụ được.
  */
 const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 33))
 

@@ -4,6 +4,13 @@ import { patNo, trtDt } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
+import {
+    dbEnabled,
+    deleteTestPatient,
+    SEED_PAT_NO_BASE,
+    seedTestPatient,
+    seedTreatmentRows,
+} from '../_shared/db'
 import { makeStep } from '../_shared/step'
 import { closeDialogs } from '../_shared/virtual-grid'
 
@@ -144,7 +151,29 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * CÙNG một bệnh nhân và CÙNG một ngày thì mới so được. Bệnh nhân 10 được chọn vì chỉ
  * có 8 dòng TRNTRN trong toàn bộ lịch sử (12138 có 2.864 ⇒ WinForm treo hơn một phút).
  */
-const PAT_NO = patNo('10')
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * BỆNH NHÂN TỰ DỰNG — vì sao file này TỪNG lúc xanh lúc đỏ
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Bản trước mượn (bệnh nhân 10, tháng 2026-08) và KHÔNG seed gì: mọi phép đếm
+ * dòng / đọc 合計 đều dựa vào dữ liệu sẵn có của hồ sơ đó. Nhưng
+ * `dialogs-management/men-input-dialog.spec.ts` dùng ĐÚNG cặp (10, 2026-08-03),
+ * seed dòng của nó và TC-M8 còn bấm F9 登録 — mà bulk-save GHI LẠI CẢ THÁNG.
+ * Chạy hai spec theo thứ tự khác nhau là tiền đề của file này khác nhau ⇒ lúc
+ * xanh lúc đỏ, và cái đỏ KHÔNG nói lên điều gì về app.
+ *
+ * Nay file tự dựng bệnh nhân riêng + tự seed dòng + tự xoá hẳn:
+ *   · `seedTestPatient` dựng person/insurance/siga/kon trong dải
+ *     `SEED_PAT_NO_BASE` (990000+) — không spec nào khác biết số này;
+ *   · `seedTreatmentRows` dựng đúng bộ dòng mà TC-1 cần (lưới phải có ≥1 dòng),
+ *     các TC còn lại chỉ so TƯƠNG ĐỐI trước/sau nên không phụ thuộc gì thêm;
+ *   · `deleteTestPatient` ở `afterAll` xoá `trn_trn` của MỌI ngày ⇒ không để lại
+ *     rác cho lượt chạy hôm sau (đúng cái bẫy đã hạ p0-save và table-handler).
+ *
+ * Đánh đổi: file này giờ CẦN `TEST_DB=1` (trước đây không). Đổi lại nó tất định
+ * và không còn tranh dữ liệu với bất kỳ spec nào.
+ */
+const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 34))
 
 /**
  * Ngày test — PHẢI khớp `patient.trtDate` bên `testsettings.local.json` (FlaUI).
@@ -203,6 +232,31 @@ interface GridRow {
  * bên WinForm.
  */
 const HISTORY_KEY_RE = /^\d+-\d+$/
+
+/**
+ * Bộ dòng seed — chỉ cần đủ cho TC-1 (「lưới tháng hiện hành phải có ít nhất một
+ * dòng」 + phải có dòng 日計 ở cuối). Mọi TC còn lại so TƯƠNG ĐỐI trước/sau, và
+ * dòng đem thao tác là dòng do chính TC-2 chèn từ panel 個別, nên KHÔNG cần dựng
+ * sẵn gì thêm — seed càng ít thì càng ít thứ có thể lệch giữa hai lượt chạy.
+ *
+ * Seed vào THÁNG ĐANG MỞ cũng khiến AutoSantei không chạy (tháng đã có 処置) ⇒
+ * không có bộ pick 初再診 nào chen vào làm sai phép đếm dòng của TC-1/TC-2.
+ */
+const SEED_ROWS = [
+    { trtCd: 1, trtSb: 0, trtPt: 272, trtCnt: 1, dspTrt: '歯科初診料' },
+    { trtCd: 108, trtSb: 9, trtPt: 12, trtCnt: 1, dspTrt: '歯科外来診療医療安全対策加算１' },
+]
+
+// GUIDELINE Rule 18 — skip cấp file phải NÓI LÝ DO ra stdout, nếu không người chạy
+// thấy chữ "skipped" trơ trọi và tưởng spec đã chạy xong.
+if (!dbEnabled) {
+    console.log(
+        'SKIP tests/treatment-grid/treatment-grid-basic.spec.ts — thiếu TEST_DB=1.\n' +
+            '  File này TỰ DỰNG bệnh nhân + 処置行 của nó (xem khối 「BỆNH NHÂN TỰ DỰNG」)\n' +
+            '  nên cần quyền ghi DB. Chạy: TEST_DB=1 npx playwright test tests/treatment-grid/treatment-grid-basic.spec.ts',
+    )
+}
+test.skip(!dbEnabled, 'Cần TEST_DB=1 để tự dựng bệnh nhân và seed 処置行')
 
 test.describe.configure({ mode: 'serial', timeout: 300_000 })
 
@@ -395,6 +449,12 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
     let disposeOverlays: (() => Promise<void>) | undefined
 
     test.beforeAll(async ({ authedPage }) => {
+        // Dựng bệnh nhân TỪ SỐ 0 rồi seed đúng bộ dòng cần thiết — xem khối
+        // 「BỆNH NHÂN TỰ DỰNG」 ở đầu file. `seedTestPatient` idempotent nên một
+        // lượt chạy trước bị kill cũng không để lại tiền đề bẩn.
+        await seedTestPatient({ patNo: Number(PAT_NO) })
+        await seedTreatmentRows(Number(PAT_NO), TRT_DT, SEED_ROWS)
+
         page = authedPage
         disposeOverlays = await installOverlayHandlers(page, { santei: true, kartePicker: true, alerts: true })
         step = makeStep(page)
@@ -404,9 +464,13 @@ test.describe('診療入力 — lưới 処置: bảy thao tác cơ bản (parit
     })
 
     test.afterAll(async () => {
-        // Không seed gì, không bấm F9 ⇒ không có gì để dọn. Đóng page là xong.
         await disposeOverlays?.()
         await releaseSharedPage(page)
+        // Xoá HẲN bệnh nhân: kéo theo trn_trn của MỌI ngày + insurance + siga + kon.
+        await deleteTestPatient(Number(PAT_NO)).catch((e: unknown) =>
+            console.log(`afterAll: không xoá được bệnh nhân test — ${String(e)}`),
+        )
+        console.log(`afterAll: đã xoá HẲN bệnh nhân test ${PAT_NO}`)
     })
 
     // ═══════════════════════════════════════════════════════════════════════

@@ -323,13 +323,16 @@ test.describe('nhóm P0 chưa port', () => {
  * disp_no đánh lại từ 1). Mượn bệnh nhân thật thì spec phải cuốn theo mọi dòng
  * sẵn có của tháng đó, và hai nguồn rác tích tụ qua từng lượt chạy:
  *
- *   1. dòng seed `disp_no >= SEED_DISP_BASE` của lượt chạy NGÀY KHÁC — `afterAll`
- *      chỉ dọn theo TRT_DT của hôm nay nên không bao giờ đụng tới chúng;
+ *   1. dòng do CHÍNH F9 ghi xuống: bulk-save đánh số lại `disp_no` TỪ 1, mà
+ *      `deleteTreatmentRows` chỉ dọn vùng seed `disp_no >= SEED_DISP_BASE`
+ *      ⇒ dòng nằm ngoài tầm dọn, sống sót qua `afterAll` sang lượt chạy sau;
  *   2. bộ 加算 再診 do chính handler dọn popup sinh ra — 「いいえ」 của
- *      SanteiConfirm ÁP bộ pick 再診 vào lưới, rồi cú F9 kế tiếp lưu chúng xuống.
+ *      SanteiConfirm ÁP bộ pick 再診 vào lưới, rồi cú F9 kế tiếp lưu chúng xuống
+ *      (đúng 7 dòng `disp_no 1..7` đo được trên 12138).
  *
  * Đo thật 2026-09-11 trên 12138: tháng 2026-09 còn 12 dòng sống (5 dòng seed
- * disp 9001-9005 + 7 dòng 108-x / 109-x của AutoSantei) và 206 dòng kể cả xoá mềm.
+ * `disp_no 9001-9005` + 7 dòng `disp_no 1..7` gồm 108-x / 109-x của AutoSantei và
+ * cặp 599 介護) và 206 dòng kể cả xoá mềm.
  * Hậu quả: bulk-save trả 409 CONCURRENT_SAVE_CONFLICT, số 「処置行 THẬT」 nhảy
  * 5→6→7 ngay giữa lượt chạy, và TC-0 (mốc) đỏ ⇒ cả file mất giá trị chẩn đoán.
  *
@@ -798,10 +801,14 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
         // Không cần `restoreInsurance` / `purgeWait` nữa — không còn gì để trả lại.
         // `wait` không nằm trong deleteTestPatient nên vẫn phải dọn tay.
         await purgeWait(Number(PAT_NO)).catch(() => 0)
-        await deleteTestPatient(Number(PAT_NO)).catch((e: unknown) =>
-            console.log(`afterAll: không xoá được bệnh nhân test — ${String(e)}`),
-        )
-        console.log(`dọn: xoá HẲN bệnh nhân test ${PAT_NO} (trn_trn mọi ngày + insurance + wait)`)
+        // Chỉ báo thành công khi THẬT SỰ xoá được — báo bừa là lần sau thấy rác mà
+        // log vẫn xanh thì không ai truy ra được.
+        try {
+            await deleteTestPatient(Number(PAT_NO))
+            console.log(`dọn: xoá HẲN bệnh nhân test ${PAT_NO} (trn_trn mọi ngày + insurance + wait)`)
+        } catch (e) {
+            console.log(`⚠️ afterAll: KHÔNG xoá được bệnh nhân test ${PAT_NO} — ${String(e)}`)
+        }
     })
 
     // ─────────────────────────────────────────────────────────────────────────
