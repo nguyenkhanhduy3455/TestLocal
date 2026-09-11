@@ -2,6 +2,9 @@ import { type Page } from '@playwright/test'
 
 import {
     type AuditRow,
+    actionsOf,
+    actionsTotal,
+    actionsTruncated,
     auditColumns,
     auditRowsSince,
     dbNow,
@@ -45,15 +48,14 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *  - `apps/ddl/scripts/migrate/schema-ddl.mjs` — the tenant table:
  *      · CREATE TABLE t_<slug>.audit_log (id UUID DEFAULT uuidv7(),
  *        event_type VARCHAR(100) NOT NULL, actor_id UUID NULL,
- *        meta_json JSONB NOT NULL DEFAULT '{}', before_json JSONB NULL,
- *        after_json JSONB NULL, ip_address VARCHAR(45) NULL,
+ *        meta_json JSONB NOT NULL DEFAULT '{}', ip_address VARCHAR(45) NULL,
  *        created_at TIMESTAMPTZ NOT NULL DEFAULT now());
  *      · append-only: NO deleted_at, NO updated_at, NO view_audit_log_active.
- *      · `before_json` / `after_json` are RECENT additions. The statement is a
- *        plain CREATE TABLE run at provisioning time, so a schema created
- *        BEFORE that change does not have them — re-running the DDL pipeline is
- *        what adds them. TC-4 exists to say that out loud instead of failing
- *        with a bare `column ... does not exist`.
+ *      · there are NO before_json / after_json columns. They existed briefly and
+ *        were removed: what an operation did to the database now travels inside
+ *        meta_json as an `actions` array. A schema still carrying them was
+ *        provisioned before that change — TC-4 says so out loud rather than
+ *        leaving a stale schema to be found later.
  *  - `Ochacom.Domain/Constants/AuditEventTypes.cs`
  *      · `TreatmentsSaved = "treatments_saved"` — "Tenant op (F9 一括保存).
  *        Written by SaveTreatmentsHandler after commit. Metadata:
@@ -68,8 +70,6 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *      · `before`/`after` stay NULL when the caller passes no snapshot, so
  *        "not captured" is distinguishable from "captured, and empty".
  *
- * ═══════════════════════════════════════════════════════════════════════════
- * ⚠️ KNOWN GAP — TC-5 IS EXPECTED RED TODAY
  * ═══════════════════════════════════════════════════════════════════════════
  * Measured 2026-09-10 on `feat/tenant-audit-log`: the writer and the two
  * columns are in place, but **no handler passes `before:` / `after:` yet** —
@@ -180,8 +180,6 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
 
     /** Columns present on the tenant table, read once in TC-0. */
     let columns: string[] = []
-    /** false when the DDL pipeline has not been re-run since before_json landed. */
-    let hasSnapshotColumns = false
     /** DB clock right before the first F9 — start of the "rows appended" window. */
     let sinceFirstSave: Date
     /** The row TC-1 produced; every later test reads it. */
@@ -252,7 +250,7 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
         await expect
             .poll(
                 async () => {
-                    rows = await auditRowsSince(since, EVENT_TREATMENTS_SAVED, hasSnapshotColumns)
+                    rows = await auditRowsSince(since, EVENT_TREATMENTS_SAVED)
                     return rows.length
                 },
                 {
@@ -332,13 +330,6 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
             expect(columns, `audit_log thiếu cột bắt buộc '${col}'`).toContain(col)
         }
 
-        hasSnapshotColumns = columns.includes('before_json') && columns.includes('after_json')
-        if (!hasSnapshotColumns) {
-            console.log(
-                `⚠️ ${DB_SCHEMA}.audit_log CHƯA có before_json/after_json — schema được tạo trước ` +
-                    'khi hai cột đó vào DDL. TC-4/TC-5 sẽ đỏ; chạy lại pipeline DDL để có chúng.',
-            )
-        }
         await step()
     })
 
@@ -402,9 +393,9 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
         await step()
     })
 
-    // Ordered before the two snapshot-column tests on purpose: append-only holds
-    // regardless of whether before_json/after_json exist, and in serial mode a red
-    // TC-4 would otherwise skip this check over an unrelated schema gap.
+    // Ordered before the two actions tests on purpose: append-only holds regardless
+    // of what meta_json carries, and in serial mode a red TC-4 would otherwise skip
+    // this check over an unrelated schema gap.
     test('TC-6 — audit là APPEND-ONLY: lưu lần hai THÊM một dòng, không ghi đè dòng cũ', async () => {
         expect(savedRow, 'TC-1 chưa lấy được dòng audit').not.toBeNull()
 
@@ -426,48 +417,81 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
         ).toBe(savedRow!.id)
         await step()
     })
-    test('TC-4 — schema tenant CÓ hai cột before_json / after_json (DDL đã migrate)', async () => {
+    test('TC-4 — schema tenant KHÔNG còn before_json / after_json (đã gộp vào meta_json)', async () => {
+        // Hai cột từng tồn tại rồi bị bỏ: thao tác đã làm gì với DB nay nằm trong mảng
+        // `actions` của chính meta_json. Nếu chúng còn, schema lạc hậu so với code.
+        const hint = 'Chạy lại pipeline DDL cho tenant này.'
         expect(
             columns,
-            `${DB_SCHEMA}.audit_log thiếu 'before_json'. Hai cột snapshot được thêm vào ` +
-                'CREATE TABLE trong apps/ddl/scripts/migrate/schema-ddl.mjs, mà lệnh đó chỉ ' +
-                'chạy lúc provision ⇒ schema cũ KHÔNG tự có. Chạy lại pipeline DDL cho tenant này.',
-        ).toContain('before_json')
+            `${DB_SCHEMA}.audit_log vẫn còn 'before_json'. ${hint}`,
+        ).not.toContain('before_json')
         expect(
             columns,
-            `${DB_SCHEMA}.audit_log thiếu 'after_json' — xem thông báo của before_json`,
-        ).toContain('after_json')
+            `${DB_SCHEMA}.audit_log vẫn còn 'after_json'. ${hint}`,
+        ).not.toContain('after_json')
         await step()
     })
 
-    test('TC-5 (GAP đã biết — ĐỎ tới khi handler chụp snapshot) — thao tác SỬA phải có before_json ≠ after_json', async () => {
+    test('TC-5 — meta_json mang bộ ba actions / actionsTotal / actionsTruncated đúng hợp đồng', async () => {
         expect(savedRow, 'TC-1 chưa lấy được dòng audit').not.toBeNull()
-        skipWithReason(
-            !hasSnapshotColumns,
-            'schema chưa có before_json/after_json (TC-4 đã đỏ) — không có gì để so',
+        const meta = savedRow!.meta
+
+        // Ba khoá đi cùng nhau. Thiếu actionsTruncated là mất tín hiệu "nhật ký này
+        // không đủ để khôi phục" — thứ duy nhất phân biệt chụp thiếu với chụp đủ.
+        for (const k of ['actionsTotal', 'actionsTruncated', 'actions']) {
+            expect(
+                Object.keys(meta),
+                `meta_json thiếu '${k}'. Ba khoá do TenantAuditLogWriter gộp vào, nên ` +
+                    `thiếu một khoá nghĩa là writer chưa chạy nhánh actions. ` +
+                    `meta=${JSON.stringify(meta)}`,
+            ).toContain(k)
+        }
+
+        const actions = actionsOf(savedRow!)
+
+        // actionsTotal đếm TRƯỚC khi cắt, nên luôn ≥ số phần tử thực có. Ngược lại là
+        // bộ đếm nói dối về quy mô thao tác.
+        expect(
+            actionsTotal(savedRow!),
+            'actionsTotal nhỏ hơn số action đang có ⇒ đếm sau khi cắt, sai hợp đồng',
+        ).toBeGreaterThanOrEqual(actions.length)
+        expect(
+            actionsTruncated(savedRow!),
+            'actionsTruncated phải true khi và chỉ khi actionsTotal > số action giữ lại',
+        ).toBe(actionsTotal(savedRow!) > actions.length)
+
+        // Mỗi action phải tự đủ: không có `table` + `key` thì không viết nổi mệnh đề
+        // WHERE, và cả dòng nhật ký thành vô dụng cho việc khôi phục.
+        for (const a of actions) {
+            expect(
+                ['insert', 'update', 'softdelete', 'delete'],
+                `action.type lạ: ${JSON.stringify(a)}`,
+            ).toContain(a.type)
+            expect(String(a.table ?? ''), `action thiếu 'table': ${JSON.stringify(a)}`).not.toBe('')
+            expect(
+                Object.keys(a.key ?? {}).length,
+                `action thiếu 'key' ⇒ không tìm lại được dòng: ${JSON.stringify(a)}`,
+            ).toBeGreaterThan(0)
+
+            if (a.type === 'insert') {
+                expect(a.old, `insert không được có 'old': ${JSON.stringify(a)}`).toBeUndefined()
+                expect(a.new, `insert phải có 'new': ${JSON.stringify(a)}`).toBeDefined()
+            }
+            if (a.type === 'delete') {
+                expect(a.new, `delete không được có 'new': ${JSON.stringify(a)}`).toBeUndefined()
+                expect(a.old, `delete phải có 'old': ${JSON.stringify(a)}`).toBeDefined()
+            }
+            // softdelete là UPDATE đóng dấu — phải có đủ hai phía để gỡ lại được.
+            if (a.type === 'softdelete' || a.type === 'update') {
+                expect(a.old, `${a.type} phải có 'old': ${JSON.stringify(a)}`).toBeDefined()
+                expect(a.new, `${a.type} phải có 'new': ${JSON.stringify(a)}`).toBeDefined()
+            }
+        }
+
+        console.log(
+            `actions: total=${actionsTotal(savedRow!)} ` +
+                `truncated=${actionsTruncated(savedRow!)} chi tiết=${JSON.stringify(actions)}`,
         )
-
-        const before = savedRow!.beforeJson
-        const after = savedRow!.afterJson
-
-        // bulk-save soft-deletes the whole month and re-inserts it, so this is an
-        // UPDATE and both ends must be captured. Both NULL = the handler never
-        // passed `before:` / `after:` at all.
-        expect(
-            before,
-            'before_json NULL. TenantAuditLogWriter để null khi caller không truyền snapshot ' +
-                '(SerializeOrNull) ⇒ SaveTreatmentsHandler chưa chụp trạng thái TRƯỚC khi ghi. ' +
-                'Không có nó thì một lần lưu nhầm cả tháng không thể khôi phục bằng tay từ trail.',
-        ).not.toBeNull()
-        expect(
-            after,
-            'after_json NULL — SaveTreatmentsHandler chưa chụp trạng thái SAU khi ghi',
-        ).not.toBeNull()
-        expect(
-            JSON.stringify(before),
-            'before_json y hệt after_json: thao tác SỬA mà trail nói "không có gì đổi" ⇒ ' +
-                'snapshot chụp SAI THỜI ĐIỂM (đọc lại sau commit thì cả hai đều là trạng thái mới)',
-        ).not.toBe(JSON.stringify(after))
         await step()
     })
 

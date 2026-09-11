@@ -17,9 +17,6 @@ export interface AuditRow {
     eventType: string
     actorId: string | null
     meta: Record<string, unknown>
-    /** undefined = the column is not in this schema at all. */
-    beforeJson: unknown
-    afterJson: unknown
     ipAddress: string | null
     createdAt: Date
 }
@@ -39,24 +36,6 @@ export async function auditColumns(): Promise<string[]> {
 }
 
 /**
- * True when the schema carries the recovery snapshot columns.
- *
- * They are added to `CREATE TABLE` in `apps/ddl/scripts/migrate/schema-ddl.mjs`,
- * which only runs at provision time — a schema created before that change does
- * NOT pick them up, so every spec has to cope with both shapes rather than
- * exploding on `column does not exist`.
- */
-export function hasSnapshotColumns(columns: readonly string[]): boolean {
-    return columns.includes('before_json') && columns.includes('after_json')
-}
-
-/** Message for the assertion that pins the columns' presence. */
-export const MISSING_SNAPSHOT_COLUMNS_HINT =
-    `${DB_SCHEMA}.audit_log thiếu before_json/after_json. Hai cột này được thêm vào ` +
-    'CREATE TABLE trong apps/ddl/scripts/migrate/schema-ddl.mjs, mà lệnh đó chỉ chạy ' +
-    'lúc provision ⇒ schema cũ KHÔNG tự có. Chạy lại pipeline DDL cho tenant này.'
-
-/**
  * "now" read from the DATABASE, not from the test machine.
  *
  * The two can sit on different hosts (see `db.ts` — TEST_DB_HOST exists exactly
@@ -70,19 +49,11 @@ export async function dbNow(): Promise<Date> {
     })
 }
 
-/**
- * Rows appended since `since`, newest last. `withSnapshots` selects the two
- * snapshot columns only when the schema has them, so a stale schema still reads.
- */
-export async function auditRowsSince(
-    since: Date,
-    eventType: string,
-    withSnapshots: boolean,
-): Promise<AuditRow[]> {
-    const snapshotCols = withSnapshots ? ', before_json, after_json' : ''
+/** Rows appended since `since`, newest last. */
+export async function auditRowsSince(since: Date, eventType: string): Promise<AuditRow[]> {
     return withDb(async (c) => {
         const r = await c.query<Record<string, unknown>>(
-            `SELECT id, event_type, actor_id, meta_json, ip_address, created_at${snapshotCols}
+            `SELECT id, event_type, actor_id, meta_json, ip_address, created_at
                FROM audit_log
               WHERE created_at >= $1 AND event_type = $2
               ORDER BY created_at, id`,
@@ -94,8 +65,6 @@ export async function auditRowsSince(
             actorId: (x['actor_id'] as string | null) ?? null,
             // jsonb comes back already parsed by `pg`.
             meta: (x['meta_json'] as Record<string, unknown> | null) ?? {},
-            beforeJson: withSnapshots ? (x['before_json'] ?? null) : undefined,
-            afterJson: withSnapshots ? (x['after_json'] ?? null) : undefined,
             ipAddress: (x['ip_address'] as string | null) ?? null,
             createdAt: x['created_at'] as Date,
         }))
@@ -106,50 +75,65 @@ export async function auditRowsSince(
 export function describeRow(r: AuditRow): string {
     return (
         `id=${r.id} event=${r.eventType} actor=${r.actorId ?? 'NULL'} ` +
-        `ip=${r.ipAddress ?? 'NULL'} meta=${JSON.stringify(r.meta)} ` +
-        `before=${JSON.stringify(r.beforeJson ?? null)} after=${JSON.stringify(r.afterJson ?? null)}`
+        `ip=${r.ipAddress ?? 'NULL'} meta=${JSON.stringify(r.meta)}`
     )
 }
 
-// ─── Snapshot shape (written by TenantChangeRecordingInterceptor) ────────────
+// ─── actions (bên trong meta_json) ───────────────────────────────────────────
+//
+// Không còn cột before_json / after_json. Thao tác đã làm gì với DB nằm trong
+// mảng `actions` của chính meta_json, mỗi phần tử tự đủ để khôi phục một dòng.
 
-/** One row inside a `before_json` / `after_json` capture. */
-export interface SnapshotRow {
+/** Loại thao tác. `softdelete` là UPDATE đóng dấu deleted_at — dòng vẫn còn. */
+export type AuditActionType = 'insert' | 'update' | 'softdelete' | 'delete'
+
+export interface AuditAction {
+    type: AuditActionType
+    /** Tên bảng vật lý, không phải tên entity C#. */
     table: string
-    /** insert | update | delete — the intent, before soft-delete rewriting. */
-    op: string
-    /** Column name → value. Column names, not CLR property names. */
-    values: Record<string, unknown>
+    /** Cột khoá → giá trị, để viết mệnh đề WHERE. */
+    key: Record<string, unknown>
+    /** Vắng mặt với `insert` — không có trạng thái trước. */
+    old?: Record<string, unknown>
+    /** Vắng mặt với `delete` — không còn gì sau đó. */
+    new?: Record<string, unknown>
 }
 
-interface SnapshotCapture {
-    totalRows: number
-    truncated: boolean
-    rows: SnapshotRow[]
+/** Mọi action của một dòng nhật ký, theo đúng thứ tự đã ghi. */
+export function actionsOf(r: AuditRow): AuditAction[] {
+    const a = r.meta['actions']
+    return Array.isArray(a) ? (a as AuditAction[]) : []
 }
 
 /**
- * Reads the recorder's capture shape. Returns null when the side is absent,
- * which is a real state and not a failure: an insert has no before, a delete has
- * no after.
+ * Số action thao tác thực sự đã làm — đếm TRƯỚC khi bị cắt bớt.
+ *
+ * Khác với `actionsOf(r).length` khi `actionsTruncated` là true. Dùng cái này
+ * khi muốn khẳng định "thao tác đụng đúng N dòng".
  */
-export function readCapture(side: unknown): SnapshotCapture | null {
-    if (side === null || side === undefined) return null
-    const c = side as Partial<SnapshotCapture>
-    if (!Array.isArray(c.rows)) return null
-    return {
-        totalRows: Number(c.totalRows ?? c.rows.length),
-        truncated: Boolean(c.truncated),
-        rows: c.rows as SnapshotRow[],
-    }
+export function actionsTotal(r: AuditRow): number {
+    return Number(r.meta['actionsTotal'] ?? 0)
 }
 
-/** Every captured row for one table, in capture order. */
-export function rowsForTable(side: unknown, table: string): SnapshotRow[] {
-    return readCapture(side)?.rows.filter((r) => r.table === table) ?? []
+/** true = nhật ký không đủ để khôi phục; thao tác quá lớn nên bị cắt. */
+export function actionsTruncated(r: AuditRow): boolean {
+    return Boolean(r.meta['actionsTruncated'])
 }
 
-/** One column's value off the first captured row of `table`, or undefined. */
-export function capturedValue(side: unknown, table: string, column: string): unknown {
-    return rowsForTable(side, table)[0]?.values[column]
+/** Các action đụng vào một bảng. */
+export function actionsOn(r: AuditRow, table: string): AuditAction[] {
+    return actionsOf(r).filter((a) => a.table === table)
+}
+
+/**
+ * Giá trị một cột ở phía `new` của action đầu tiên trên bảng đó.
+ * Trả về undefined khi không có action nào, hoặc action đó không có phía `new`.
+ */
+export function newValue(r: AuditRow, table: string, column: string): unknown {
+    return actionsOn(r, table)[0]?.new?.[column]
+}
+
+/** Như `newValue`, nhưng đọc phía `old`. */
+export function oldValue(r: AuditRow, table: string, column: string): unknown {
+    return actionsOn(r, table)[0]?.old?.[column]
 }

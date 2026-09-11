@@ -13,7 +13,7 @@
  * `UpdateRegisteredPatientHandler` XOÁ MỀM rồi CHÈN LẠI cùng một khoá tự nhiên
  * (2 pha SaveChangesAsync trong 1 transaction). Nếu
  * TenantChangeRecordingInterceptor ghi nhầm thứ tự — hoặc bản "trước" bị bản
- * "sau" ghi đè — thì `before_json` sẽ bằng `after_json` và nhật ký trông như
+ * "sau" ghi đè — thì action sẽ nói "không có gì đổi" và nhật ký trông như
  * "không có gì đổi". KHÔNG có gì fail trong trường hợp đó: writer fail-open,
  * API vẫn 2xx, màn hình vẫn báo lưu xong. Chỉ có test này bắt được.
  *
@@ -33,14 +33,11 @@ import { type Page } from '@playwright/test'
 
 import {
     type AuditRow,
-    MISSING_SNAPSHOT_COLUMNS_HINT,
+    actionsOn,
     auditColumns,
     auditRowsSince,
-    capturedValue,
     dbNow,
     describeRow,
-    hasSnapshotColumns,
-    rowsForTable,
 } from '../_shared/audit-log'
 import {
     SEED_PAT_NO_BASE,
@@ -91,7 +88,6 @@ test.describe('監査ログ — 患者登録画面 ghi audit đủ để khôi p
     let step: () => Promise<void>
 
     let columns: string[] = []
-    let withSnapshots = false
 
     /** Mốc thời gian (giờ DB) ngay trước khi bấm F9. */
     let sinceSave: Date
@@ -131,7 +127,6 @@ test.describe('監査ログ — 患者登録画面 ghi audit đủ để khôi p
         }
 
         columns = await auditColumns()
-        withSnapshots = hasSnapshotColumns(columns)
         console.log(`audit_log columns: ${columns.join(', ')}`)
     })
 
@@ -259,7 +254,7 @@ test.describe('監査ログ — 患者登録画面 ghi audit đủ để khôi p
         await expect
             .poll(
                 async () => {
-                    rows = await auditRowsSince(since, eventType, withSnapshots)
+                    rows = await auditRowsSince(since, eventType)
                     return rows.length
                 },
                 {
@@ -329,7 +324,7 @@ test.describe('監査ログ — 患者登録画面 ghi audit đủ để khôi p
     test('TC-3 — KHÔNG ghi nhầm thành patient_registered', async () => {
         // Hai handler dùng chung màn hình và chỉ khác nhau ở chế độ. Ghi nhầm loại
         // sự kiện làm hỏng mọi bộ lọc dựng trên event_type.
-        const wrong = await auditRowsSince(sinceSave, EVENT_PATIENT_REGISTERED, withSnapshots)
+        const wrong = await auditRowsSince(sinceSave, EVENT_PATIENT_REGISTERED)
         expect(
             wrong.length,
             `sửa bệnh nhân có sẵn mà lại ghi '${EVENT_PATIENT_REGISTERED}': ` +
@@ -337,61 +332,64 @@ test.describe('監査ログ — 患者登録画面 ghi audit đủ để khôi p
         ).toBe(0)
     })
 
-    test('TC-4 — schema có before_json / after_json', async () => {
-        expect(columns, MISSING_SNAPSHOT_COLUMNS_HINT).toContain('before_json')
-        expect(columns, MISSING_SNAPSHOT_COLUMNS_HINT).toContain('after_json')
+    test('TC-4 — schema KHÔNG còn before_json / after_json (đã gộp vào meta_json)', async () => {
+        // Hai cột từng tồn tại rồi bị bỏ. Nếu chúng còn, schema lạc hậu so với code:
+        // writer sẽ INSERT thiếu cột, fail-open nuốt lỗi, nhật ký mất trắng không báo gì.
+        const hint = 'Chạy lại pipeline DDL cho tenant này.'
+        expect(columns, `audit_log vẫn còn 'before_json'. ${hint}`).not.toContain('before_json')
+        expect(columns, `audit_log vẫn còn 'after_json'. ${hint}`).not.toContain('after_json')
     })
 
-    test('TC-5 — before_json giữ số điện thoại CŨ, after_json giữ số MỚI', async () => {
+    test('TC-5 — action trên insurance giữ số điện thoại CŨ ở old, số MỚI ở new', async () => {
         expect(savedRow, 'TC-1 chưa lấy được dòng audit').not.toBeNull()
-        skipWithReason(
-            !withSnapshots,
-            'schema chưa có before_json/after_json (TC-4 đã đỏ) — không có gì để so',
-        )
 
-        const before = savedRow!.beforeJson
-        const after = savedRow!.afterJson
-
+        // Màn này xoá mềm rồi chèn lại cùng khoá tự nhiên qua change tracker, nên
+        // recorder PHẢI thấy. Không có action nào trên insurance nghĩa là interceptor
+        // không bắt được màn này, và một lần sửa nhầm hồ sơ là không khôi phục nổi.
+        const actions = actionsOn(savedRow!, 'insurance')
         expect(
-            before,
-            'before_json NULL. Handler xoá-mềm-rồi-chèn-lại qua change tracker nên ' +
-                'TenantChangeRecordingInterceptor PHẢI thấy — null nghĩa là camera ' +
-                'không bắt được màn này, và một lần sửa nhầm hồ sơ là không khôi phục nổi.',
-        ).not.toBeNull()
-        expect(after, 'after_json NULL — không có trạng thái sau khi ghi').not.toBeNull()
-
-        // Đây là thứ người khôi phục thực sự đọc.
-        expect(
-            capturedValue(before, 'insurance', 'tel_1'),
-            `before_json.insurance.tel_1 phải là giá trị CŨ, đang là ` +
-                `${JSON.stringify(capturedValue(before, 'insurance', 'tel_1'))}. ` +
-                'Bằng giá trị mới ⇒ snapshot chụp SAI THỜI ĐIỂM (đọc lại sau commit ' +
-                'thì cả hai bên đều là trạng thái mới).',
-        ).not.toBe(NEW_PHONE)
-
-        expect(
-            capturedValue(after, 'insurance', 'tel_1'),
-            'after_json.insurance.tel_1 phải là số vừa nhập',
-        ).toBe(NEW_PHONE)
-    })
-
-    test('TC-6 — snapshot có nhắc tới bảng insurance và không rỗng', async () => {
-        expect(savedRow, 'TC-1 chưa lấy được dòng audit').not.toBeNull()
-        skipWithReason(!withSnapshots, 'schema chưa có before_json/after_json')
-
-        const beforeRows = rowsForTable(savedRow!.beforeJson, 'insurance')
-        const afterRows = rowsForTable(savedRow!.afterJson, 'insurance')
-
-        expect(
-            beforeRows.length,
-            'before_json không chứa dòng insurance nào — 保険 là bảng mà màn này ghi',
+            actions.length,
+            'không có action nào trên bảng insurance. 保険 là bảng màn này ghi. ' +
+                `actions=${JSON.stringify(savedRow!.meta['actions'])}`,
         ).toBeGreaterThan(0)
-        expect(afterRows.length).toBeGreaterThan(0)
 
-        // Đủ cột để dựng lại câu lệnh khôi phục, không chỉ vài field lẻ.
+        // Số mới phải xuất hiện ở phía `new` của một action nào đó.
         expect(
-            Object.keys(beforeRows[0]!.values).length,
-            'snapshot chỉ có vài cột — khôi phục tay cần đủ cột của dòng',
-        ).toBeGreaterThan(5)
+            actions.some((a) => a.new?.['tel_1'] === NEW_PHONE),
+            `không action nào có new.tel_1 = ${NEW_PHONE}. actions=${JSON.stringify(actions)}`,
+        ).toBe(true)
+
+        // Và KHÔNG được xuất hiện ở phía `old` — nếu có, recorder chụp sai thời điểm:
+        // sau khi SaveChanges thành công, EF chép current đè lên original.
+        expect(
+            actions.some((a) => a.old?.['tel_1'] === NEW_PHONE),
+            'old.tel_1 đã bằng số MỚI ⇒ recorder chụp phía "trước" SAI THỜI ĐIỂM',
+        ).toBe(false)
+    })
+
+    test('TC-6 — action tự đủ để dựng lại câu lệnh khôi phục', async () => {
+        expect(savedRow, 'TC-1 chưa lấy được dòng audit').not.toBeNull()
+
+        const actions = actionsOn(savedRow!, 'insurance')
+        expect(actions.length, 'xem TC-5').toBeGreaterThan(0)
+
+        for (const a of actions) {
+            expect(
+                Object.keys(a.key ?? {}).length,
+                `action thiếu 'key' ⇒ không viết nổi mệnh đề WHERE: ${JSON.stringify(a)}`,
+            ).toBeGreaterThan(0)
+        }
+
+        // Một action mang trạng thái đầy đủ (insert hoặc delete) phải đủ cột để dựng
+        // lại dòng, không chỉ vài field lẻ.
+        const full = actions.find((a) => a.type === 'insert' || a.type === 'delete')
+        if (full) {
+            const side = full.type === 'insert' ? full.new : full.old
+            expect(
+                Object.keys(side ?? {}).length,
+                `${full.type} chỉ có vài cột — khôi phục tay cần đủ cột của dòng: ` +
+                    JSON.stringify(full),
+            ).toBeGreaterThan(5)
+        }
     })
 })

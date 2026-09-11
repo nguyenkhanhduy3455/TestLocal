@@ -24,12 +24,12 @@ import { type Page } from '@playwright/test'
 
 import {
     type AuditRow,
-    MISSING_SNAPSHOT_COLUMNS_HINT,
+    actionsOf,
+    actionsTotal,
     auditColumns,
     auditRowsSince,
     dbNow,
     describeRow,
-    hasSnapshotColumns,
 } from '../_shared/audit-log'
 import {
     SEED_PAT_NO_BASE,
@@ -87,7 +87,6 @@ test.describe('監査ログ — 窓口精算 ghi lại việc thu tiền', () =>
     let step: () => Promise<void>
 
     let columns: string[] = []
-    let withSnapshots = false
 
     let sinceSave: Date
     let savedRow: AuditRow | null = null
@@ -135,7 +134,6 @@ test.describe('監査ログ — 窓口精算 ghi lại việc thu tiền', () =>
         }
 
         columns = await auditColumns()
-        withSnapshots = hasSnapshotColumns(columns)
         console.log(`audit_log columns: ${columns.join(', ')}`)
     })
 
@@ -266,7 +264,7 @@ test.describe('監査ログ — 窓口精算 ghi lại việc thu tiền', () =>
         await expect
             .poll(
                 async () => {
-                    rows = await auditRowsSince(since, eventType, withSnapshots)
+                    rows = await auditRowsSince(since, eventType)
                     return rows.length
                 },
                 {
@@ -336,47 +334,42 @@ test.describe('監査ログ — 窓口精算 ghi lại việc thu tiền', () =>
         }
     })
 
-    test('TC-4 — schema có before_json / after_json', async () => {
-        expect(columns, MISSING_SNAPSHOT_COLUMNS_HINT).toContain('before_json')
-        expect(columns, MISSING_SNAPSHOT_COLUMNS_HINT).toContain('after_json')
+    test('TC-4 — schema KHÔNG còn before_json / after_json (đã gộp vào meta_json)', async () => {
+        // Hai cột từng tồn tại rồi bị bỏ. Nếu chúng còn, schema lạc hậu so với code:
+        // writer sẽ INSERT thiếu cột, fail-open nuốt lỗi, nhật ký mất trắng không báo gì.
+        const hint = 'Chạy lại pipeline DDL cho tenant này.'
+        expect(columns, `audit_log vẫn còn 'before_json'. ${hint}`).not.toContain('before_json')
+        expect(columns, `audit_log vẫn còn 'after_json'. ${hint}`).not.toContain('after_json')
     })
 
-    test('TC-5 — camera có chụp được thao tác này (snapshot không rỗng)', async () => {
+    test('TC-5 — recorder có bắt được thao tác này (actions không rỗng)', async () => {
         expect(savedRow, 'TC-1 chưa lấy được dòng audit').not.toBeNull()
-        skipWithReason(!withSnapshots, 'schema chưa có before_json/after_json (TC-4 đã đỏ)')
 
-        // Chỉ khẳng định camera CÓ chụp. Cố tình KHÔNG đòi phải thấy `acc_dat`:
+        // Chỉ khẳng định recorder CÓ bắt. Cố tình KHÔNG đòi phải thấy `acc_dat`:
         // ca này thu 0 円 nên `ClaimAllocator` không sinh dòng nào, và cái duy nhất
         // đổi là `tenant_config` (receType ghi nhớ lần dùng gần nhất). Nếu đổi
         // assertion thành "phải có acc_dat" thì nó đỏ vì bối cảnh test, chứ không
         // phải vì audit hỏng — kiểu test tệ nhất.
         expect(
-            savedRow!.afterJson,
-            'after_json NULL ⇒ TenantChangeRecordingInterceptor không bắt được màn ' +
+            actionsTotal(savedRow!),
+            'actionsTotal = 0 ⇒ TenantChangeRecordingInterceptor không bắt được màn ' +
                 'tiền. Handler ghi qua IAppUserDbContext nên nó PHẢI thấy.',
-        ).not.toBeNull()
+        ).toBeGreaterThan(0)
     })
 
-    test('TC-6 (ghi nhận hiện trạng) — snapshot chụp CẢ thay đổi ăn theo, không chỉ tiền', async () => {
+    test('TC-6 (ghi nhận hiện trạng) — actions gồm CẢ thay đổi ăn theo, không chỉ tiền', async () => {
         expect(savedRow, 'TC-1 chưa lấy được dòng audit').not.toBeNull()
-        skipWithReason(!withSnapshots, 'schema chưa có before_json/after_json (TC-4 đã đỏ)')
 
-        // Camera chụp MỌI dòng mà request đó chạm vào, nên 精算登録 kéo theo cả
+        // Recorder bắt MỌI dòng mà request đó chạm vào, nên 精算登録 kéo theo cả
         // `tenant_config` — `RecordReceTypeAsync` ghi nhớ 領収書種別 vừa dùng.
-        // Đây là hành vi ĐÚNG theo thiết kế hiện tại (chụp đủ để khôi phục), nhưng
-        // nó có nghĩa là cột khôi phục lẫn cả thứ không liên quan tới tiền.
+        // Đây là hành vi ĐÚNG theo thiết kế hiện tại (ghi đủ để khôi phục), nhưng
+        // nó có nghĩa là nhật ký lẫn cả thứ không liên quan tới tiền.
         //
         // Test này KHÔNG phán đúng/sai — nó ghim hiện trạng lại để nếu sau này có
         // lọc bớt bảng ăn theo thì chỗ này đỏ và người sửa biết là mình đang đổi
         // hợp đồng, chứ không phải vô tình.
-        const tables = ((savedRow!.afterJson as { rows?: { table: string }[] }).rows ?? []).map(
-            (r) => r.table,
-        )
-        expect(
-            tables.length,
-            'after_json không có dòng nào — xem TC-5',
-        ).toBeGreaterThan(0)
-        console.log(`bảng bị chụp trong lần 精算登録 này: ${tables.join(', ')}`)
+        const tables = actionsOf(savedRow!).map((a) => a.table)
+        expect(tables.length, 'không có action nào — xem TC-5').toBeGreaterThan(0)
+        console.log(`bảng bị đụng trong lần 精算登録 này: ${tables.join(', ')}`)
     })
 })
-
