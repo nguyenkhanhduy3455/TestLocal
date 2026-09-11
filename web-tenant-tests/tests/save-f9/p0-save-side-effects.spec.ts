@@ -14,12 +14,76 @@
  */
 
 import { type Page } from '@playwright/test'
-import { countRealTreatmentRowsInMonth, dbEnabled, deleteTreatmentRows, deleteTreatmentRowsByTrtCd, seedTreatmentRows, withDb } from '../_shared/db'
+import {
+    countRealTreatmentRowsInMonth,
+    dbEnabled,
+    deleteTestPatient,
+    deleteTreatmentRows,
+    deleteTreatmentRowsByTrtCd,
+    SEED_PAT_NO_BASE,
+    seedTestPatient,
+    seedTreatmentRows,
+    withDb,
+} from '../_shared/db'
 import { patNo } from '../_shared/env'
-import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
 import { closeDialogs } from '../_shared/virtual-grid'
+
+/**
+ * SanteiConfirm 「〜を算定しますか？」 — trả lời **キャンセル**, KHÔNG phải いいえ.
+ *
+ * Bệnh nhân của spec này do test tự dựng nên THÁNG LUÔN TRỐNG lúc mở màn lần đầu
+ * ⇒ AutoSantei CHẮC CHẮN chạy và bung hộp này (khác hẳn hồi mượn 12138: tháng
+ * đó sẵn có 処置 nên AutoSantei im).
+ *
+ * `installOverlayHandlers({ santei: true })` dùng chung bấm 「いいえ」, mà 「いいえ」
+ * ÁP bộ pick 再診 vào lưới — cú F9 kế tiếp sẽ lưu nguyên bộ 108-x / 109-x đó xuống
+ * DB và làm hỏng mọi phép đếm dòng của file này (đúng vết đã tìm thấy trong dữ
+ * liệu rác của 12138). 「キャンセル」 return ngay: không áp pick, không thêm dòng
+ * nào, không đẻ ra popup kế tiếp (Rule 14.1).
+ *
+ * Trả về hàm gỡ — page dùng chung theo worker nên không gỡ là rò sang spec sau.
+ */
+async function installSanteiCancel(p: Page): Promise<() => Promise<void>> {
+    const loc = p.getByText(/を算定しますか？/).first()
+    await p.addLocatorHandler(
+        loc,
+        async () => {
+            await p
+                .getByRole('button', { name: /^(Cancel|キャンセル)$/ })
+                .first()
+                .click({ timeout: 3_000 })
+                .catch(() => {})
+        },
+        { times: 60 },
+    )
+    return async () => {
+        await p.removeLocatorHandler(loc).catch(() => {})
+    }
+}
+
+/**
+ * Vét hộp 算定 đang mở bằng キャンセル.
+ *
+ * `addLocatorHandler` chỉ chen vào trước một ACTION của Playwright; `keyboard.press`
+ * (F9) không phải action nên handler trên KHÔNG cứu được — phải vét tay trước khi bấm.
+ */
+async function drainSanteiCancel(p: Page): Promise<void> {
+    for (let i = 0; i < 10; i++) {
+        const box = p.getByText(/を算定しますか？/).first()
+        const shown = await box
+            .waitFor({ state: 'visible', timeout: 1_500 })
+            .then(() => true)
+            .catch(() => false)
+        if (!shown) return
+        await p
+            .getByRole('button', { name: /^(Cancel|キャンセル)$/ })
+            .first()
+            .click({ timeout: 3_000 })
+            .catch(() => {})
+    }
+}
 
 // ═══ nguyên văn từ p0-save-side-effects.spec.ts (đã gộp vào file này) ══════════════════════════════════
 test.describe('nhóm P0 chưa port', () => {
@@ -247,13 +311,39 @@ test.describe('nhóm P0 chưa port', () => {
  *   TEST_DB=1          BẮT BUỘC — mọi assert đều soi thẳng Postgres
  *   TEST_P0_SKIP_WAIT=1  bỏ TC-6 khi tenant TẮT 受付患者一覧
  *
- * ⚠️ RỦI RO DỮ LIỆU: mỗi F9 XOÁ MỀM + CHÈN LẠI toàn bộ 処置行 của THÁNG đó
- *    (disp_no được đánh lại từ 1). `beforeAll` in ra số dòng thật bị ảnh hưởng.
- *    Chọn TEST_PAT_NO / TEST_TRT_DT vào tháng TRỐNG thì con số đó = 0.
- *    TC-7 còn GHI `insurance.med_ed_dt` — snapshot + trả lại ở afterAll.
+ * ⚠️ DỮ LIỆU: spec TỰ DỰNG bệnh nhân của nó và XOÁ HẲN khi xong — không mượn
+ *    bệnh nhân nào của dev DB nữa. Xem khối 「BỆNH NHÂN TỰ DỰNG」 ngay dưới.
  */
 
-const PAT_NO = patNo('12138')
+/**
+ * ═════════════════════════════════════════════════════════════════════════════
+ * BỆNH NHÂN TỰ DỰNG — vì sao KHÔNG mượn 12138 nữa
+ * ═════════════════════════════════════════════════════════════════════════════
+ * Mỗi F9 là bulk-save GHI LẠI TOÀN BỘ 処置行 CỦA THÁNG (xoá mềm + chèn lại,
+ * disp_no đánh lại từ 1). Mượn bệnh nhân thật thì spec phải cuốn theo mọi dòng
+ * sẵn có của tháng đó, và hai nguồn rác tích tụ qua từng lượt chạy:
+ *
+ *   1. dòng seed `disp_no >= SEED_DISP_BASE` của lượt chạy NGÀY KHÁC — `afterAll`
+ *      chỉ dọn theo TRT_DT của hôm nay nên không bao giờ đụng tới chúng;
+ *   2. bộ 加算 再診 do chính handler dọn popup sinh ra — 「いいえ」 của
+ *      SanteiConfirm ÁP bộ pick 再診 vào lưới, rồi cú F9 kế tiếp lưu chúng xuống.
+ *
+ * Đo thật 2026-09-11 trên 12138: tháng 2026-09 còn 12 dòng sống (5 dòng seed
+ * disp 9001-9005 + 7 dòng 108-x / 109-x của AutoSantei) và 206 dòng kể cả xoá mềm.
+ * Hậu quả: bulk-save trả 409 CONCURRENT_SAVE_CONFLICT, số 「処置行 THẬT」 nhảy
+ * 5→6→7 ngay giữa lượt chạy, và TC-0 (mốc) đỏ ⇒ cả file mất giá trị chẩn đoán.
+ *
+ * Nên bệnh nhân ở đây do `seedTestPatient` dựng trong dải `SEED_PAT_NO_BASE`
+ * (990000+, chắc chắn không đụng dữ liệu thật) và `deleteTestPatient` xoá HẲN ở
+ * `afterAll` — kể cả `trn_trn` của MỌI ngày, nên rác không thể tích tụ. Nhờ vậy
+ * cũng không cần snapshot/khôi phục `insurance` / `wait` nữa: xoá bệnh nhân là
+ * xoá luôn.
+ *
+ * Hai khối của file dùng HAI số khác nhau để chạy lẻ một khối cũng không đụng
+ * nhau (`seedTestPatient` xoá-rồi-dựng, dùng chung số là khối sau xoá mất tiền
+ * đề của khối trước).
+ */
+const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 31))
 
 const TRT_DT =
     process.env.TEST_TRT_DT ??
@@ -604,6 +694,8 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
                 r.url().includes('/tenant/treatment/bulk-save') && r.request().method() === 'POST',
             { timeout: SAVE_TIMEOUT },
         )
+        // `keyboard.press` không kích hoạt addLocatorHandler ⇒ vét tay (xem installSanteiCancel).
+        await drainSanteiCancel(page)
         await page.keyboard.press('F9')
         await step()
         await page
@@ -636,6 +728,8 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
                 r.url().includes('/tenant/treatment/bulk-save') && r.request().method() === 'POST',
             { timeout: SAVE_TIMEOUT },
         )
+        // `keyboard.press` không kích hoạt addLocatorHandler ⇒ vét tay (xem installSanteiCancel).
+        await drainSanteiCancel(page)
         await page.keyboard.press('F9')
         await step()
         await page
@@ -668,23 +762,29 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
     let disposeOverlays: (() => Promise<void>) | undefined
 
     test.beforeAll(async ({ authedPage }) => {
-        insBefore = await readInsurance(Number(PAT_NO))
-        const realRows = await countRealTreatmentRowsInMonth(Number(PAT_NO), TRT_DT)
+        // Dựng bệnh nhân TỪ SỐ 0 (xem khối 「BỆNH NHÂN TỰ DỰNG」 ở đầu file).
+        // `seedTestPatient` idempotent: xoá sạch rồi dựng lại, nên một lượt chạy
+        // trước bị kill giữa chừng cũng không để lại tiền đề bẩn.
+        await seedTestPatient({ patNo: Number(PAT_NO) })
 
+        // Chốt cứng tiền đề thay vì chỉ cảnh báo: bệnh nhân vừa dựng thì tháng
+        // PHẢI trống. Còn dòng nào ⇒ có spec/lượt chạy khác đang dùng trùng số
+        // trong dải seed, và mọi phép đếm dòng bên dưới sẽ sai một cách khó truy.
+        const realRows = await countRealTreatmentRowsInMonth(Number(PAT_NO), TRT_DT)
+        expect(
+            realRows,
+            `bệnh nhân test ${PAT_NO} vừa dựng mà tháng ${TRT_DT.slice(0, 7)} đã có ` +
+                `${realRows} 処置行 — ai đó đang dùng trùng pat_no trong dải seed`,
+        ).toBe(0)
+
+        insBefore = await readInsurance(Number(PAT_NO))
         console.log(
-            `insurance nguyên trạng của ${PAT_NO} (LƯU LẠI phòng khi test bị kill giữa chừng):\n` +
-                insBefore.map((r) => `  pat_br ${r.patBr}: med_ed_dt = ${r.medEdDt}`).join('\n'),
+            `bệnh nhân test ${PAT_NO} đã dựng — insurance: ` +
+                insBefore.map((r) => `枝番${r.patBr} med_ed_dt=${r.medEdDt}`).join(', '),
         )
-        if (realRows > 0) {
-            console.log(
-                `⚠️ tháng của ${TRT_DT} đang có ${realRows} 処置行 THẬT — mỗi lần F9 sẽ ghi lại toàn bộ ` +
-                    '(xoá mềm + chèn lại với disp_no mới). Đổi TEST_PAT_NO/TEST_TRT_DT sang tháng ' +
-                    'trống nếu không muốn đụng dữ liệu đó.',
-            )
-        }
 
         page = authedPage
-        disposeOverlays = await installOverlayHandlers(page, { santei: true })
+        disposeOverlays = await installSanteiCancel(page)
         step = makeStep(page)
 
         await openTreatmentScreen()
@@ -694,14 +794,14 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
         await disposeOverlays?.()
         await releaseSharedPage(page)
 
-        const n = await purgeTestRows()
-        await restoreInsurance(Number(PAT_NO), insBefore)
-        if (waitRowCreated) await purgeWait(Number(PAT_NO))
-
-        console.log(
-            `dọn: xoá ${n} 処置行 test, trả insurance.med_ed_dt về nguyên trạng` +
-                (waitRowCreated ? ', xoá dòng wait do test tạo' : ''),
+        // Xoá HẲN bệnh nhân: kéo theo trn_trn của MỌI ngày, insurance, siga, kon.
+        // Không cần `restoreInsurance` / `purgeWait` nữa — không còn gì để trả lại.
+        // `wait` không nằm trong deleteTestPatient nên vẫn phải dọn tay.
+        await purgeWait(Number(PAT_NO)).catch(() => 0)
+        await deleteTestPatient(Number(PAT_NO)).catch((e: unknown) =>
+            console.log(`afterAll: không xoá được bệnh nhân test — ${String(e)}`),
         )
+        console.log(`dọn: xoá HẲN bệnh nhân test ${PAT_NO} (trn_trn mọi ngày + insurance + wait)`)
     })
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -922,6 +1022,8 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
         await openTreatmentScreen()
         await step()
 
+        // `keyboard.press` không kích hoạt addLocatorHandler ⇒ vét tay (xem installSanteiCancel).
+        await drainSanteiCancel(page)
         await page.keyboard.press('F9')
         await step()
 
@@ -1285,7 +1387,12 @@ test.describe('lô 5: LetHokan / Let_BNOW (口腔内チャート)', () => {
  *    Trỏ TEST_PAT_NO vào bệnh nhân test, đừng dùng dữ liệu thật.
  */
 
-const PAT_NO = patNo('12138')
+/**
+ * Bệnh nhân TỰ DỰNG của khối này — số KHÁC khối trên vì `seedTestPatient` là
+ * xoá-rồi-dựng: dùng chung số thì khối chạy sau xoá mất tiền đề của khối trước
+ * (và chạy lẻ một khối cũng phải độc lập). Xem khối 「BỆNH NHÂN TỰ DỰNG」 đầu file.
+ */
+const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 32))
 
 const TRT_DT =
     process.env.TEST_TRT_DT ??
@@ -1485,6 +1592,14 @@ async function hokanCell(patNo: number, n: number): Promise<string | null> {
     })
 }
 
+/** Xoá HẲN dòng `pat_info` của bệnh nhân test — BE tự tạo lại khi lưu. */
+async function deletePatInfo(patNo: number): Promise<number> {
+    return withDb(async (c) => {
+        const r = await c.query('DELETE FROM pat_info WHERE pat_no = $1', [patNo])
+        return r.rowCount ?? 0
+    })
+}
+
 async function clearHokan(patNo: number): Promise<void> {
     const setList = Array.from({ length: 32 }, (_, i) => `hokan_${i + 1} = NULL`).join(', ')
     await withDb(async (c) => {
@@ -1504,8 +1619,6 @@ test.describe('診療入力 F9 登録 — LetHokan / Let_BNOW (口腔内チャ�
     let step: () => Promise<void>
 
     let versionId = 0
-    /** Nguyên trạng `bnow` — TC-L4 xoá dòng này, afterAll trả lại. */
-    let bnowBefore: Record<string, number> | null = null
 
     async function openTreatmentScreen() {
         let lastErr: unknown
@@ -1551,6 +1664,8 @@ test.describe('診療入力 F9 登録 — LetHokan / Let_BNOW (口腔内チャ�
             (r) => r.url().includes('/tenant/treatment/bulk-save') && r.request().method() === 'POST',
             { timeout: SAVE_TIMEOUT },
         )
+        // `keyboard.press` không kích hoạt addLocatorHandler ⇒ vét tay (xem installSanteiCancel).
+        await drainSanteiCancel(page)
         await page.keyboard.press('F9')
         await step()
         await page.getByRole('button', { name: /^(はい|Yes|OK)$/ }).first().click()
@@ -1575,27 +1690,24 @@ test.describe('診療入力 F9 登録 — LetHokan / Let_BNOW (口腔内チャ�
     test.beforeAll(async ({ authedPage }) => {
         const firstOfMonth = `${TRT_DT.slice(0, 8)}01`
         versionId = (await trtVersionIdFor(firstOfMonth)) ?? 0
-        bnowBefore = await readBnow(Number(PAT_NO))
-        const realRows = await countRealTreatmentRowsInMonth(Number(PAT_NO), TRT_DT)
-
         console.log(`master 処置 version_id có hiệu lực tại ${firstOfMonth}: ${versionId}`)
-        if (bnowBefore) {
-            const nonZero = Object.entries(bnowBefore).filter(([, v]) => v !== 0)
-            console.log(
-                `bnow nguyên trạng của ${PAT_NO} (LƯU LẠI phòng khi test bị kill): ` +
-                    (nonZero.length === 0 ? '(toàn 0)' : JSON.stringify(Object.fromEntries(nonZero))),
-            )
-        } else {
-            console.log(`⚠️ bệnh nhân ${PAT_NO} vốn KHÔNG có dòng bnow`)
-        }
-        if (realRows > 0) {
-            console.log(
-                `⚠️ tháng của ${TRT_DT} đang có ${realRows} 処置行 THẬT — mỗi F9 ghi lại toàn bộ.`,
-            )
-        }
+
+        // Bệnh nhân dựng từ số 0 ⇒ KHÔNG có dòng `bnow` nào. Các TC-L1..L3 đọc
+        // `bnow` nên phải có dòng: `zeroBnow` (được mỗi TC gọi) tự INSERT khi thiếu.
+        // TC-L4 thì cố tình xoá dòng đó đi — cũng không cần khôi phục nữa, vì cả
+        // bệnh nhân sẽ bị xoá ở afterAll.
+        await seedTestPatient({ patNo: Number(PAT_NO) })
+
+        const realRows = await countRealTreatmentRowsInMonth(Number(PAT_NO), TRT_DT)
+        expect(
+            realRows,
+            `bệnh nhân test ${PAT_NO} vừa dựng mà tháng ${TRT_DT.slice(0, 7)} đã có ` +
+                `${realRows} 処置行 — ai đó đang dùng trùng pat_no trong dải seed`,
+        ).toBe(0)
+        console.log(`bệnh nhân test ${PAT_NO} đã dựng (chưa có bnow / pat_info — đúng ý đồ)`)
 
         page = authedPage
-        disposeOverlays = await installOverlayHandlers(page, { santei: true })
+        disposeOverlays = await installSanteiCancel(page)
         step = makeStep(page)
 
         await openTreatmentScreen()
@@ -1604,10 +1716,14 @@ test.describe('診療入力 F9 登録 — LetHokan / Let_BNOW (口腔内チャ�
     test.afterAll(async () => {
         await disposeOverlays?.()
         await releaseSharedPage(page)
-        const n = await purgeTestRows()
-        await clearHokan(Number(PAT_NO))
-        if (bnowBefore) await restoreBnow(Number(PAT_NO), bnowBefore)
-        console.log(`dọn: xoá ${n} 処置行 test, hokan_* về NULL, bnow về nguyên trạng`)
+        // `bnow` / `pat_info` không nằm trong deleteTestPatient ⇒ dọn tay, rồi mới
+        // xoá hẳn bệnh nhân (kéo theo trn_trn mọi ngày + insurance + siga + kon).
+        await deleteBnow(Number(PAT_NO)).catch(() => 0)
+        await deletePatInfo(Number(PAT_NO)).catch(() => 0)
+        await deleteTestPatient(Number(PAT_NO)).catch((e: unknown) =>
+            console.log(`afterAll: không xoá được bệnh nhân test — ${String(e)}`),
+        )
+        console.log(`dọn: xoá HẲN bệnh nhân test ${PAT_NO} (trn_trn + insurance + bnow + pat_info)`)
     })
 
     // ─────────────────────────────────────────────────────────────────────────
