@@ -37,8 +37,12 @@
  * `category-tabs.tsx` — 画像 và レントゲン DÙNG CHUNG một chỗ trên thanh công cụ,
  *   loại trừ nhau: PIC_LINK_MODES_SHOW_GAZOU {1,3,4} → 画像(&P);
  *   PIC_LINK_MODES_SHOW_ROENTGEN {5,6,12,15} → レントゲン; mã khác → ẩn CẢ HAI.
- *   Trong 4 mã hiện レントゲン chỉ PIC_LINK_MODES_LAUNCH_EXE {12,15} gọi agent;
- *   5 và 6 vẫn là 開発中 vì hai cơ chế đó chưa port.
+ *   CẢ BỐN mã hiện レントゲン đều gọi agent: `handleRoentgen` đi thẳng
+ *   `launchXraySoftware(patientId)` (treatment-entry-detail.tsx:3909). Đây là LỆCH
+ *   PARITY CÓ CHỦ Ý — WinForm chỉ 12/15 mới khởi chạy 画像編集ソフト, còn 5 đi
+ *   Neolink.dll (AdrStart) và 6 đi modPicture.pLinkTW. Bỏ nhánh 開発中 của 5/6 ở
+ *   commit 515a1852b (2026-08-14), xoá luôn hằng PIC_LINK_MODES_LAUNCH_EXE; chi
+ *   tiết và điều kiện để viết lại nằm ở khối chú thích ngay trên TC-VENDOR-1.
  * `category-tabs.tsx` — bảng `actionsRef` gom access key và bắt theo `e.code`
  *   (macOS gõ Alt+P ra `π` chứ không ra `p`, đọc `e.key` là chết mnemonic).
  *   `KeyP` chỉ được ĐĂNG KÝ khi `showGazou` — đúng luật "control ẩn thì access key
@@ -128,8 +132,6 @@ const GAZOU_DIALOG_MARK = '取込対象'
 
 /** Tiêu đề hộp thoại lỗi — `agent-xray.ts` XRAY_LAUNCH_DIALOG_TITLE. */
 const DIALOG_TITLE = 'レントゲンソフト連携'
-/** `notify-under-development.ts`. */
-const UNDER_DEVELOPMENT = 'この機能は開発中です。'
 
 /** Cho phép CHẠY THẬT chương trình ngoài ở TC-REAL. Mặc định tắt (Rule 18.1). */
 const ALLOW_LAUNCH = process.env.TEST_ALLOW_LAUNCH === '1'
@@ -407,32 +409,75 @@ test.describe('診療入力 — 画像 / レントゲン ボタン（PicLink ス
         await step()
     })
 
-    // ═══ Hai hãng chưa port ══════════════════════════════════════════════════
+    // ═══ Hai hãng bàn giao riêng — ĐANG LỆCH PARITY CÓ CHỦ Ý ════════════════
+    //
+    // ⚠️ ĐỌC TRƯỚC KHI SỬA HAI TC DƯỚI ĐÂY.
+    //
+    // WinForm tách bốn mã ra ba cơ chế khác nhau (frm203002.cs:1070-1086):
+    //     12 / 15 → KeyFunc(1013) → NeoPremiumStart(img_edit_soft, patId)
+    //      5      → KeyFunc(1011) → CoopRoentgen.AdrStart   (Neolink.dll → Adrplus)
+    //      6      → KeyFunc(1012) → modPicture.pLinkTW
+    // Web hiện gộp CẢ BỐN vào một đường: `handleRoentgen` gọi thẳng
+    // `launchXraySoftware(patientId)` (treatment-entry-detail.tsx:3909), tức phòng
+    // khám dùng 5 hoặc 6 sẽ thấy CHƯƠNG TRÌNH 画像編集ソフト cấu hình sẵn bật lên chứ
+    // KHÔNG phải cú bàn giao của hãng.
+    //
+    // Đó là quyết định có chủ ý, không phải bug bỏ quên: commit 515a1852b
+    // (2026-08-14, 「画像編集ソフトが設定してあればレントゲンを使えるようにする」) bỏ nhánh
+    // 開発中 của 5/6 và xoá luôn hằng PIC_LINK_MODES_LAUNCH_EXE; chính commit message
+    // nhận phần lệch — 「5 / 6 の医院はハンドオフではなく設定したプログラムが立ち上がる
+    // ので、正確を期すならその二経路の移植が別途必要になる」.
+    //
+    // Nên hai TC này chốt HÀNH VI ĐANG CÓ, và chúng cũng là chỗ báo động nếu ai đó
+    // port xong Neolink/pLinkTW: lúc ấy 5/6 phải thôi gọi /v1/xray/launch và hai TC
+    // này PHẢI đỏ — đọc lại khối chú thích này rồi viết lại theo cơ chế mới, đừng
+    // chỉnh con số cho qua.
+    //
+    // (Bản trước của hai TC đòi hộp 開発中; nó chốt hành vi TRƯỚC 2026-08-14 nên đỏ
+    //  suốt, và `serial` kéo theo 8 TC phía sau không bao giờ chạy.)
 
-    test('TC-VENDOR-1 — 連携先 5 (NeoPremium): hiện nút nhưng ra 開発中, KHÔNG gọi agent', async () => {
+    test('TC-VENDOR-1 — 連携先 5 (NeoPremium): gọi agent như 12/15 (lệch parity, xem chú thích)', async () => {
         await openWithPicLink(PIC_LINK.neoPremium, BTN_ROENTGEN)
         launchCalls = 0
+        launchOutcome = 'ok'
 
+        const req = page.waitForRequest(
+            (r) => XRAY_LAUNCH_URL.test(r.url()) && r.method() === 'POST',
+            { timeout: 30000 },
+        )
         await roentgenBtn().click()
-        // WinForm đi AdrStart (Neolink.dll) — cơ chế khác, cấu hình khác, chưa port.
-        await expect(alertWithTitle('開発中')).toBeVisible({ timeout: 20000 })
-        await expect(page.getByText(UNDER_DEVELOPMENT)).toBeVisible()
+        await req
+
         expect(
             launchCalls,
-            'TC-VENDOR-1 FAIL: mã 5 KHÔNG được gọi /v1/xray/launch — nó không dùng 画像編集ソフト',
-        ).toBe(0)
+            'mã 5 hiện đi chung đường 画像編集ソフト với 12/15. Nếu số này về 0 thì nhánh ' +
+                'Neolink AdrStart đã được port — xem khối chú thích ngay trên.',
+        ).toBe(1)
+        // Không còn hộp 開発中 nào: nhánh đó đã bị bỏ ở 515a1852b.
+        await expect(alertWithTitle('開発中')).toHaveCount(0)
 
         await closeDialogs(page)
         await step()
     })
 
-    test('TC-VENDOR-2 — 連携先 6 (Trophy Windows): cũng 開発中, KHÔNG gọi agent', async () => {
+    test('TC-VENDOR-2 — 連携先 6 (Trophy Windows): cũng gọi agent (lệch parity, xem chú thích)', async () => {
         await openWithPicLink(PIC_LINK.trophy, BTN_ROENTGEN)
         launchCalls = 0
+        launchOutcome = 'ok'
 
+        const req = page.waitForRequest(
+            (r) => XRAY_LAUNCH_URL.test(r.url()) && r.method() === 'POST',
+            { timeout: 30000 },
+        )
         await roentgenBtn().click()
-        await expect(alertWithTitle('開発中')).toBeVisible({ timeout: 20000 })
-        expect(launchCalls, 'TC-VENDOR-2 FAIL: mã 6 đi modPicture.pLinkTW, không phải EXE').toBe(0)
+        await req
+
+        expect(
+            launchCalls,
+            'mã 6 hiện đi chung đường 画像編集ソフト. Về 0 tức modPicture.pLinkTW đã được ' +
+                'port — xem khối chú thích ngay trên.',
+        ).toBe(1)
+        await expect(alertWithTitle('開発中')).toHaveCount(0)
 
         await closeDialogs(page)
         await step()
