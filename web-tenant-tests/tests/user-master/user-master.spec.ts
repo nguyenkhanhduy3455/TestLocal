@@ -204,6 +204,63 @@ const REDEEMED_NM = process.env.TEST_REDEEMED_NM ?? 'E2E本人修正名'
 /** Nhãn 区分 nằm ở mst_cod cd_type 30 — spec chỉ khẳng định 3 mã này tồn tại. */
 const KBN_LABELS = ['ドクター', '衛生士', 'スタッフ'] as const
 
+/**
+ * Theo dõi "Vite dev nhả hụt module" — nguyên nhân của TRANG TRẮNG.
+ *
+ * Vite **dev** thỉnh thoảng trả `net::ERR_FAILED` cho một module `/src/*.ts`;
+ * module hụt ⇒ React KHÔNG mount ⇒ `#root` rỗng ⇒ không có tiêu đề 一覧 lẫn nút
+ * ログイン nào để chờ. Đây là nhiễu HẠ TẦNG, không phải lỗi tính năng — trỏ
+ * BASE_URL vào bản build (`vite preview`) thì không gặp.
+ *
+ * ⚠️ Đã gặp thật 2026-09-11: TC-INVITE-2 đỏ với 「element(s) not found」 sau 30s
+ * chờ ở `gotoList`, ảnh chụp lúc lỗi TRẮNG TINH — trông y như lỗi của luồng mời
+ * qua email dù luồng đó chưa kịp chạy. `gotoList` vốn đã lo được nhánh "bị đá về
+ * /login" nhưng KHÔNG lo trang trắng: câu expect nằm trong vòng lặp nên ném
+ * thẳng ở lượt đầu, không có cơ hội nạp lại.
+ *
+ * Chỉ nhận `ERR_FAILED`: `ERR_ABORTED` là chuyện thường khi rời trang giữa chừng.
+ */
+function watchModuleDeath(p: Page): { died: () => boolean; reset: () => void } {
+    let dead = false
+    p.on('requestfailed', (r) => {
+        if (r.failure()?.errorText === 'net::ERR_FAILED' && r.url().includes('/src/')) {
+            dead = true
+        }
+    })
+    return {
+        died: () => dead,
+        reset: () => {
+            dead = false
+        },
+    }
+}
+
+/** Mount xong là chuyện của ~1s; quá mốc này coi như trang trắng. */
+const MOUNT_TIMEOUT = 15000
+
+/** Chờ app MOUNT, hoặc biết SỚM là nó sẽ không bao giờ mount. */
+async function waitForApp(
+    p: Page,
+    watch: ReturnType<typeof watchModuleDeath>,
+): Promise<'mounted' | 'dead' | 'timeout'> {
+    if (watch.died()) return 'dead'
+    const mounted = p
+        .locator('#root > *')
+        .first()
+        .waitFor({ state: 'attached', timeout: MOUNT_TIMEOUT })
+        .then(() => 'mounted' as const)
+        .catch(() => 'timeout' as const)
+    const died = p
+        .waitForEvent('requestfailed', {
+            predicate: (r) =>
+                r.failure()?.errorText === 'net::ERR_FAILED' && r.url().includes('/src/'),
+            timeout: MOUNT_TIMEOUT,
+        })
+        .then(() => 'dead' as const)
+        .catch(() => 'timeout' as const)
+    return Promise.race([mounted, died])
+}
+
 test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効化', () => {
     let page: Page
     let step: () => Promise<void>
@@ -316,13 +373,40 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         const heading = page.getByText(UM.listHeading)
         const loginButton = page.getByRole('button', { name: JA.submit })
 
-        for (let attempt = 1; attempt <= 2; attempt++) {
+        // 4 lượt: 2 cho nhánh "mất session" như cũ, cộng chỗ cho trang trắng —
+        // một lượt hỏng vì module chết giờ chỉ tốn ~1s (xem waitForApp) nên thử
+        // thêm gần như miễn phí.
+        const NAV_ATTEMPTS = 4
+        for (let attempt = 1; attempt <= NAV_ATTEMPTS; attempt++) {
+            moduleWatch.reset()
             await page.goto(LIST_URL, { waitUntil: 'domcontentloaded' })
+
+            // MOUNT trước: trang trắng lộ ra trong ~1s thay vì chờ 30s rồi ném ra
+            // 「element(s) not found」 — thông báo đổ oan cho thứ đang test.
+            const app = await waitForApp(page, moduleWatch)
+            if (app !== 'mounted') {
+                console.log(
+                    `gotoList: lượt ${attempt}/${NAV_ATTEMPTS} app KHÔNG mount ` +
+                        `(${app === 'dead' ? 'Vite dev nhả hụt module /src/*.ts' : 'quá hạn'}) → nạp lại`,
+                )
+                continue
+            }
 
             // Phải CHỜ tới khi rõ là màn nào rồi mới quyết định: app chuyển hướng
             // về /login bất đồng bộ, đọc page.url() ngay sau goto() vẫn còn thấy
             // đường dẫn cũ và nhánh cứu này không bao giờ chạy.
-            await expect(heading.or(loginButton).first()).toBeVisible({ timeout: 30000 })
+            const shown = await heading
+                .or(loginButton)
+                .first()
+                .waitFor({ state: 'visible', timeout: 30000 })
+                .then(() => true)
+                .catch(() => false)
+            if (!shown) {
+                console.log(
+                    `gotoList: lượt ${attempt}/${NAV_ATTEMPTS} app mount rồi mà không ra màn nào — nạp lại`,
+                )
+                continue
+            }
 
             if (!(await loginButton.isVisible())) break
 
@@ -466,6 +550,9 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
 
     // ── Setup ────────────────────────────────────────────────────────────────
 
+    /** Cờ "Vite dev nhả hụt module" — cắm ở beforeAll, đọc trong gotoList. */
+    let moduleWatch: ReturnType<typeof watchModuleDeath>
+
     test.beforeAll(async ({ browser }) => {
         // Page tự tạo (không dùng fixture) để cả file dùng chung MỘT lần login.
         // browser.newPage() không kế thừa `use` của config nên phải truyền tay
@@ -476,6 +563,7 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
             locale: 'ja-JP',
         })
         step = makeStep(page)
+        moduleWatch = watchModuleDeath(page)
 
         await loginAsAdmin(page)
 
@@ -982,6 +1070,20 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
 
         skipWithReason((await rowCount(createdNo)) === 0, `không còn dòng NO=${createdNo}`)
         await openDetail(createdNo)
+
+        // Tự điền email — ĐỪNG bỏ dòng này.
+        //
+        // Hộp xác nhận CHỈ bung khi ô email có giá trị: email rỗng thì F9 lưu
+        // thẳng, không hỏi gì (chính TC-ACT-3 ở trên chốt luật đó). Bản trước
+        // không điền mà ăn theo tác dụng phụ của TC-INVITE-1 — mà TC-INVITE-1
+        // lại skip khi `TEST_ALLOW_INVITE != 1`, tức MẶC ĐỊNH. Hậu quả: chạy
+        // bình thường thì TC này đỏ ở 「không thấy alertdialog」, chỉ xanh khi
+        // bật cờ gửi mail thật; và `serial` kéo theo 9 TC sau không chạy.
+        //
+        // TC này KHÔNG cần cờ đó: nó bấm いいえ nên không có thư nào được gửi.
+        // Điền tại chỗ là đủ để tự đứng một mình.
+        await page.getByLabel(UM.labelEmail, { exact: true }).fill(INVITE_EMAIL)
+        await step()
 
         // Sửa một trường bất kỳ để chứng minh phần lưu KHÔNG phụ thuộc câu trả lời.
         const marker = `TEL-${Date.now() % 100000}`
