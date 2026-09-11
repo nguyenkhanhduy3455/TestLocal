@@ -6,9 +6,12 @@ import { expect, releaseSharedPage, test } from '../_shared/session'
 
 import {
     dbEnabled,
+    deleteTestPatient,
     deleteTreatmentRows,
     deleteTreatmentRowsByTrtCd,
     findTreatmentRows,
+    SEED_PAT_NO_BASE,
+    seedTestPatient,
     seedTreatmentRows,
 } from '../_shared/db'
 import { makeStep } from '../_shared/step'
@@ -134,8 +137,24 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *     --repeat-each=3 --retries=0 --workers=1
  */
 
-/** Bệnh nhân test — 12138 không có bản 介護保険 nào ⇒ rate đi nhánh fallback. */
-const PAT_NO = patNo('12138')
+/**
+ * Bệnh nhân test — TỰ DỰNG trong dải `SEED_PAT_NO_BASE` (990000+), xoá HẲN ở
+ * `afterAll`. Vẫn KHÔNG có bản 介護保険 nào (seedTestPatient chỉ dựng
+ * person/insurance/siga/kon) ⇒ rate vẫn đi nhánh fallback như khi mượn 12138.
+ *
+ * ⚠️ VÌ SAO KHÔNG MƯỢN 12138 NỮA — đo thật 2026-09-11:
+ * `currentMonthRows()` đếm dòng của CẢ THÁNG (chỉ lọc bỏ dòng của tháng lịch sử),
+ * mà tháng 2026-09 của 12138 còn sót dòng `599-0 歯科医師居宅療養管理指導Ⅰ` ngày
+ * 09-10 — TRÙNG TỪNG KÝ TỰ với `KAIGO_NM` của spec này. Hậu quả: TC-4 xoá đúng
+ * dòng 599 của hôm nay xong `rowCount(KAIGO_KEY)` vẫn trả 1 ⇒ đỏ oan
+ * (「Expected: 0, Received: 1」), và `serial` kéo theo 8 TC sau không chạy.
+ *
+ * Rác đó do lượt chạy NGÀY KHÁC để lại: mọi hàm dọn ở đây đều khoá theo
+ * `(PAT_NO, TRT_DT)` = ngày đang chạy, nên dòng của ngày hôm trước không bao giờ
+ * bị đụng tới. Bệnh nhân tự dựng cắt đứt hẳn: `deleteTestPatient` xoá `trn_trn`
+ * của MỌI ngày nên không còn gì tích tụ được.
+ */
+const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 33))
 
 /**
  * Ngày test = HÔM NAY (yyyy-MM-dd). BẮT BUỘC thuộc tháng hiện hành: chỉ dòng của
@@ -386,7 +405,13 @@ test.describe('診療入力 — thao tác trên lưới 処置 (行追加 / 行�
     let disposeOverlays: (() => Promise<void>) | undefined
 
     test.beforeAll(async ({ authedPage }) => {
+        // Dựng bệnh nhân TỪ SỐ 0 (xem chú thích ở PAT_NO). Idempotent: xoá sạch
+        // rồi dựng lại, nên lượt chạy trước bị kill cũng không để lại tiền đề bẩn.
+        await seedTestPatient({ patNo: Number(PAT_NO) })
+
         // Seed TRƯỚC khi mở trình duyệt: lưới đọc MỘT lần lúc vào màn.
+        // (Seed vào tháng hiện hành cũng khiến AutoSantei KHÔNG chạy — tháng đã có
+        //  処置 — nên không có bộ pick 再診 nào chen vào làm sai phép đếm dòng.)
         await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
             {
                 trtCd: INS_TRT_CD,
@@ -430,10 +455,13 @@ test.describe('診療入力 — thao tác trên lưới 処置 (行追加 / 行�
     test.afterAll(async () => {
         await disposeOverlays?.()
         await releaseSharedPage(page)
-        // Spec KHÔNG bấm F9 nên dòng seed giữ nguyên disp_no >= 9000 → một đường dọn
-        // là đủ (khác tooth-extraction, nơi F9 chèn lại với disp_no từ 1).
-        const n = await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)
-        console.log(`afterAll: đã xoá ${n} dòng seed của (${PAT_NO}, ${TRT_DT})`)
+        // Xoá HẲN bệnh nhân: kéo theo trn_trn của MỌI ngày (kể cả dòng mà TC-12 ghi
+        // xuống bằng F9 với disp_no đánh lại từ 1) + insurance + siga + kon. Không
+        // cần dọn theo ngày nữa — chính cách dọn đó là thứ để rác lại cho hôm sau.
+        await deleteTestPatient(Number(PAT_NO)).catch((e: unknown) =>
+            console.log(`afterAll: không xoá được bệnh nhân test — ${String(e)}`),
+        )
+        console.log(`afterAll: đã xoá HẲN bệnh nhân test ${PAT_NO}`)
     })
 
     test('TC-1 — lưới nạp đủ dòng seed và dòng 【介護保険一部負担金】 được dựng lại', async () => {
