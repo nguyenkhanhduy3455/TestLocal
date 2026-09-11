@@ -349,11 +349,21 @@ test.describe('client sort — dialog grid + list màn hình', () => {
    * không đoán được, và nó nuốt mọi click (Rule 14). Trả lời No để dọn màn
    * (Yes lại đẻ ra カルテ記載選択, Rule 14.1).
    *
-   * CHỈ cắm SAU test カルテ記載選択 — test đó cần bấm Yes mới có dialog.
+   * CHỈ cắm SAU test カルテ記載選択 — test đó cần bấm **Yes** mới có dialog, mà
+   * handler này thì bấm No.
+   *
+   * ⚠️ ĐỪNG chuyển lên `beforeAll`. Cắm sẵn từ đầu là `openEntryScreen(…,'Yes')`
+   * KHÔNG bao giờ bấm được Yes: trước mỗi actionability check Playwright thấy
+   * locator của handler đang hiện nên CHEN handler vào chạy trước, handler bấm
+   * No làm confirm biến mất, rồi cú click Yes chờ tiếp một nút không còn tồn tại
+   * → `locator.click: Timeout 15000ms exceeded` ngay ở test ĐẦU, và `mode:
+   * 'serial'` kéo theo 7 test còn lại không chạy. Đã dính đúng vậy khi phần cắm
+   * handler bị dời lên beforeAll lúc gom sang `_shared/overlays`.
    */
   const installSanteiNo = async () => {
     if (santeiHandlerOn) return
     santeiHandlerOn = true
+    disposeOverlays = await installOverlayHandlers(page, { santei: true })
   }
 
   /**
@@ -616,7 +626,8 @@ test.describe('client sort — dialog grid + list màn hình', () => {
     // worker thay vì mỗi file một lần — app chặn ở 10 login/khung thời gian
     // (Rule 10.1). `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
     page = authedPage
-    disposeOverlays = await installOverlayHandlers(page, { santei: true })
+    // KHÔNG cắm handler popup ở đây — test đầu tiên phải tự bấm Yes. Việc cắm
+    // nằm ở `installSanteiNo()`, các test từ thứ hai trở đi tự gọi.
     step = makeStep(page)
 
     // App crash → trang trắng → mọi test chỉ báo "element(s) not found". Log lỗi

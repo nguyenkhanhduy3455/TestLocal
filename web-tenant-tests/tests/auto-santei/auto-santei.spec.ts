@@ -1549,10 +1549,15 @@ test.describe("自動算定 — bảng nhánh (data giả)", () => {
 
     // Double-click = frm203012 dgvView_CellDoubleClick → defData: đẩy dòng vào
     // textarea. Chọn dòng thứ HAI để chứng minh không phải "lấy dòng đầu".
+    //
+    // `defData` chèn nội dung comment RỒI cộng thêm `Environment.NewLine`
+    // (frm203012.cs:616-622), nên ô text phải kết thúc bằng dấu xuống dòng —
+    // caret nằm sẵn ở dòng kế tiếp cho lượt chọn sau. Kỳ vọng KHÔNG có `\n` là
+    // sai parity, không phải app thiếu sót.
     await cmtPickerRows(page).nth(1).dblclick();
     await expect
       .poll(async () => cmtPickerText(page).inputValue(), { timeout: 10000 })
-      .toBe(`${TAG}cmtB`);
+      .toBe(`${TAG}cmtB\n`);
     await step();
 
     await cmtPickerBtn(page, "確定").click();
@@ -2021,9 +2026,21 @@ test.describe('自動算定 — 枝番 có hiệu lực tại 診療日 (GetVali
 
     /** Gọi thẳng BE cho một 診療日 — không phụ thuộc trạng thái lưới. */
     const fetchAutoSantei = async (trtDt: string): Promise<AutoSanteiBody> => {
+        // `apiOrigin` rỗng ⇒ url thành đường dẫn TƯƠNG ĐỐI, `page.request` ghép với
+        // baseURL và đi thẳng vào Vite dev server: SPA fallback trả index.html kèm
+        // status 200, nên check status vẫn qua và `res.json()` mới vỡ với
+        // "Unexpected token '<'". Chặn ngay ở đây cho ra thông báo đúng bệnh.
+        expect(
+            apiOrigin,
+            'chưa bắt được origin API từ request của app — `beforeAll` phải mở màn 診療入力 một lần trước',
+        ).not.toBe('')
         const url = `${apiOrigin}${AUTOSANTEI_PATH}?patNo=${PAT_NO}&trtDt=${trtDt}`
         const res = await page.request.get(url, { headers: authHeaders })
         expect(res.status(), `GET ${AUTOSANTEI_PATH} (${trtDt})`).toBe(200)
+        expect(
+            res.headers()['content-type'] ?? '',
+            `GET ${AUTOSANTEI_PATH} (${trtDt}) trả HTML chứ không phải JSON — url đang trỏ vào app (${url})`,
+        ).toContain('json')
         const json = (await res.json()) as { data?: Partial<AutoSanteiBody> }
         const d = json.data ?? {}
         return {
@@ -2054,6 +2071,13 @@ test.describe('自動算定 — 枝番 có hiệu lực tại 診療日 (GetVali
                 ),
             )
         })
+
+        // Mở màn 診療入力 MỘT lần để chính app phát request `/tenant/...` — đó là
+        // nguồn duy nhất của `apiOrigin` + token. TC-0/TC-3 chỉ đọc DB, không điều
+        // hướng, nên nếu không có cú mở màn này thì tới TC-1 `apiOrigin` vẫn rỗng:
+        // TC-1/TC-2 skip im lặng (luật 枝番 coi như KHÔNG được kiểm) còn TC-4 vỡ ở
+        // `res.json()`. Ngày nào cũng được — chỉ cần một request có Authorization.
+        await openFresh(TRT_DT_NOW)
 
         branches = await insuranceBranches(Number(PAT_NO))
         backBranch = branchInForceOn(branches, TRT_DT_BACK)
@@ -2090,7 +2114,10 @@ test.describe('自動算定 — 枝番 có hiệu lực tại 診療日 (GetVali
     })
 
     test('TC-1 nhập lùi ngày → BE lấy dis_flg của 枝番 hiệu lực hôm đó, KHÔNG phải 枝番 lớn nhất', async () => {
-        test.skip(apiOrigin === '', 'chưa bắt được request nào của app để lấy origin + token API')
+        // KHÔNG `test.skip` nữa: skip ở đây từng làm cả TC-1/TC-2 lặng lẽ bỏ qua
+        // mọi lần chạy ⇒ luật GetValidSubCode2 coi như chưa hề được kiểm. `beforeAll`
+        // đã mở màn một lần nên origin PHẢI có; không có là hỏng thật, phải đỏ.
+        expect(apiOrigin, 'chưa bắt được request nào của app để lấy origin + token API').not.toBe('')
 
         const body = await fetchAutoSantei(TRT_DT_BACK)
         const codes = [...body.picks, ...body.reExamPicks].map((p) => `${p.trtCd}-${p.trtSb} ${p.trtNm}`)
@@ -2105,7 +2132,10 @@ test.describe('自動算定 — 枝番 có hiệu lực tại 診療日 (GetVali
     })
 
     test('TC-2 ngày hiện hành → dis_flg = 0 ⇒ KHÔNG có dòng 105 nào', async () => {
-        test.skip(apiOrigin === '', 'chưa bắt được request nào của app để lấy origin + token API')
+        // KHÔNG `test.skip` nữa: skip ở đây từng làm cả TC-1/TC-2 lặng lẽ bỏ qua
+        // mọi lần chạy ⇒ luật GetValidSubCode2 coi như chưa hề được kiểm. `beforeAll`
+        // đã mở màn một lần nên origin PHẢI có; không có là hỏng thật, phải đỏ.
+        expect(apiOrigin, 'chưa bắt được request nào của app để lấy origin + token API').not.toBe('')
         expect(nowBranch?.disFlg ?? 0, `dữ liệu: 枝番 hiệu lực tại ${TRT_DT_NOW} phải có dis_flg = 0`).toBe(0)
 
         const body = await fetchAutoSantei(TRT_DT_NOW)

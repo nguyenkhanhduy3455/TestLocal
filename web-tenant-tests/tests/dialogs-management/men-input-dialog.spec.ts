@@ -411,21 +411,47 @@ test.describe('診療入力 — 面入力 (frm203035)', () => {
         ).toBe(2)
         await step()
 
+        // 面入力 đóng rồi thì SingleChk MỚI chạy. Mốc chờ là chính REQUEST đó —
+        // KHÔNG phải alert.
+        //
+        // ⚠️ Bản trước chờ `getByRole('alertdialog')`: sai mốc. Alert chỉ bung khi
+        // BE TRẢ VỀ cảnh báo (`runSingleCheck` chỉ gọi `alertDialog` cho từng phần
+        // tử `res.errors`, treatment-entry-detail.tsx:3676-3681), mà số cảnh báo
+        // phụ thuộc master + 「チェック項目設定」 của tenant — tenant nào tắt
+        // 歯種/病名チェック là không có alert nào, và test đỏ oan dù thứ tự vẫn ĐÚNG.
+        // Cái testcase này khoá là THỨ TỰ (面入力 đóng → mới tới 診療チェック), nên
+        // bằng chứng đúng là request bay ra SAU cú F9, không phải hệ quả của nó.
+        //
+        // Bẫy TRƯỚC khi bấm F9: request bắn ra ngay khi hộp thoại đóng. Đặt bẫy ở
+        // đây (không phải đầu test) cũng chính là phép đo thứ tự — một request đã
+        // bay lúc chọn 処置 ở TC-M2 sẽ KHÔNG bị bắt nhầm.
+        const pendingCheck = page
+            .waitForResponse((r) => /\/tenant\/treatment\/check-single/.test(r.url()), {
+                timeout: 20_000,
+            })
+            .catch(() => null)
+
         // 回数 = 1, 部位数 = 1 ⇒ `算定回数 ÷ 部位数` = 1 ⇒ MỘT lần 確定 là xong cả hộp thoại.
         await menDialog.locator('[data-fkey="F9"]').click()
         await expect(menDialog, 'răng cuối cùng 確定 xong thì 面入力 phải đóng').toBeHidden({
             timeout: 20_000,
         })
 
-        // 面入力 đóng rồi thì SingleChk MỚI chạy. Dòng seed có 部位 nhưng KHÔNG có 病名
-        // nên cảnh báo 「…算定可能な部位がありません。」 là CHẮC CHẮN xuất hiện — chờ nó
-        // hiện chính là bằng chứng thứ tự "面入力 xong → mới tới 診療チェック" (mốc thật,
-        // không sleep). Nuốt xong mới sang test sau.
-        await expect(
-            page.getByRole('alertdialog'),
+        const checkRes = await pendingCheck
+        expect(
+            checkRes,
             'SingleChk phải chạy NGAY SAU khi 面入力 đóng (WinForm: frm203016 trả điều khiển ' +
-                'về frm203002 rồi mới SingleChk)',
-        ).toBeVisible({ timeout: 20_000 })
+                'về frm203002 rồi mới SingleChk). Không thấy POST /tenant/treatment/check-single ' +
+                '⇒ hoặc cổng giữ SingleChk không được nhả (closeMenInput → setSingleCheckTick), ' +
+                'hoặc dòng vừa sửa không vào được payload.',
+        ).not.toBeNull()
+        console.log(
+            `TC-M4: SingleChk chạy sau khi 面入力 đóng — HTTP ${checkRes?.status()}, ` +
+                `body ${JSON.stringify(await checkRes?.text().catch(() => '')).slice(0, 300)}`,
+        )
+
+        // Cảnh báo (nếu BE có trả) bung SAU đó — nuốt hết để test kế không bị
+        // overlay z-[200] chặn. Rỗng cũng hợp lệ: xem ghi chú mốc chờ ở trên.
         const checkAlerts = await drainAlerts()
         console.log(`TC-M4: cảnh báo 診療チェック sau 面入力 = ${JSON.stringify(checkAlerts)}`)
 
@@ -475,9 +501,13 @@ test.describe('診療入力 — 面入力 (frm203035)', () => {
             new RegExp(`<[\\s\\S]{1,2}${FACE_CENTER}>`),
         )
 
-        // Giống TC-M4: 面入力 đóng ⇒ SingleChk chạy ⇒ cảnh báo hiện. Chờ rồi nuốt,
-        // nếu không overlay z-[200] của nó sẽ chặn click của TC-M7.
-        await expect(page.getByRole('alertdialog')).toBeVisible({ timeout: 20_000 })
+        // 面入力 đóng ⇒ SingleChk chạy ⇒ cảnh báo (NẾU BE trả) bung ra. Nuốt để
+        // overlay z-[200] của nó không chặn click của TC-M7.
+        //
+        // ⚠️ KHÔNG assert "phải có alert": cùng cái bẫy đã sửa ở TC-M4 — alert chỉ
+        // là HỆ QUẢ khi `res.errors` không rỗng, mà trên tenant hiện tại SingleChk
+        // trả `hasErrors: false` cho chính dòng này (xem log của TC-M4). Thứ tự
+        // 面入力→診療チェック đã được TC-M4 khoá bằng request rồi, ở đây chỉ cần dọn.
         await drainAlerts()
         await step()
     })

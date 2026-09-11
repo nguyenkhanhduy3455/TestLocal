@@ -43,7 +43,7 @@
  * vào hồ sơ bệnh nhân cho ngày TRT_DT. Chạy nhiều lần thì hồ sơ phình ra và các
  * spec cần "ngày còn sạch" (cmt-auto-picker) hỏng theo → đổi TEST_TRT_DT mỗi đợt.
  */
-import { type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page, type Request } from '@playwright/test'
 
 import { TODAY_ISO, patNo, trtDt } from '../_shared/env'
 import { expect, releaseSharedPage, test } from '../_shared/session'
@@ -206,12 +206,53 @@ test.afterAll(async () => {
  * test chờ hết 20s rồi báo "F3 không mở được dialog" — đổ oan cho app.
  * Mốc chờ = FKeyBar đã render, tức listener đã sống.
  */
+
+/**
+ * Số lần thử nạp một màn, và mốc chờ mỗi lần.
+ *
+ * Cần >1 vì Vite **dev** server thỉnh thoảng trả `net::ERR_FAILED` cho MỘT module
+ * `/src/*.ts`: module hụt ⇒ React KHÔNG mount ⇒ `#root` rỗng ⇒ ảnh chụp lúc lỗi
+ * là TRANG TRẮNG TINH và mọi locator "element(s) not found". Chờ bao lâu cũng vô
+ * ích, `goto` lại là hết. Đây là flake của DEV SERVER, KHÔNG phải lỗi app —
+ * trỏ BASE_URL vào bản build (`vite preview`) thì không gặp.
+ * (`client-sort.spec.ts` mô tả đầy đủ cơ chế này; ở đây chỉ cần phần chữa.)
+ *
+ * 30s × 3 thay cho 60s × 1: lần nạp lành xong trong ~1-2s, còn lần trang trắng
+ * thì chờ 60s cũng vô ích — rút ngắn để đổi lấy một lần thử nữa.
+ */
+const NAV_ATTEMPTS = 3
+const NAV_TIMEOUT = 30_000
+
+/**
+ * Chạy một thao tác điều hướng, `goto` lại khi app không mount (trang trắng).
+ *
+ * Đặt ở tầng này chứ không phải từng test: mọi test của file đều vào màn qua
+ * `gotoWaitList` / `gotoTreatmentEntry`, mà cả hai đều nằm trong `beforeAll` —
+ * trang trắng ở đó làm ĐỎ cả nhóm và 29 test sau không chạy.
+ */
+async function withReloadOnBlankPage(name: string, open: () => Promise<void>) {
+  for (let attempt = 1; attempt <= NAV_ATTEMPTS; attempt++) {
+    try {
+      await open()
+      return
+    } catch (err) {
+      const mounted = await page.locator('#root > *').count()
+      if (attempt === NAV_ATTEMPTS) throw err
+      console.log(
+        `${name}: lần ${attempt}/${NAV_ATTEMPTS} không nạp được ` +
+          `(#root ${mounted === 0 ? 'RỖNG → trang trắng, module Vite chết' : 'có nội dung'}) → nạp lại`,
+      )
+    }
+  }
+}
 async function gotoWaitList() {
-  await page.goto('/treatments', { waitUntil: 'domcontentloaded' })
-  await expect(
-    page.getByRole('button', { name: /F3\s*当月来患/ }),
-    'FKeyBar của 受付患者一覧 không render — app chưa mount xong',
-  ).toBeVisible({ timeout: 60000 })
+  await withReloadOnBlankPage('受付患者一覧', async () => {
+    await page.goto('/treatments', { waitUntil: 'domcontentloaded' })
+    await expect(
+      page.getByRole('button', { name: /F3\s*当月来患/ }),
+      'FKeyBar của 受付患者一覧 không render — app chưa mount xong',
+    ).toBeVisible({ timeout: NAV_TIMEOUT })
+  })
 }
 
 /**
@@ -241,13 +282,19 @@ const SANTEI_CONFIRM_TIMEOUT = 5000
  */
 async function gotoTreatmentEntry() {
   // Đặt bẫy TRƯỚC khi điều hướng: request bắn ra ngay khi treatmentsPage về, có
-  // thể xong trước cả lúc grid kịp render.
-  const pendingAutoSantei = page
-    .waitForRequest(/autosantei/, { timeout: AUTOSANTEI_REQUEST_TIMEOUT })
-    .catch(() => null)
+  // thể xong trước cả lúc grid kịp render. Đặt lại ở MỖI lần thử — bẫy của lần
+  // trước đã tiêu (resolve/timeout) nên lần nạp lại phải có bẫy mới.
+  let pendingAutoSantei: Promise<Request | null> = Promise.resolve(null)
+  await withReloadOnBlankPage('診療入力', async () => {
+    pendingAutoSantei = page
+      .waitForRequest(/autosantei/, { timeout: AUTOSANTEI_REQUEST_TIMEOUT })
+      .catch(() => null)
 
-  await page.goto(TREATMENT_URL, { waitUntil: 'domcontentloaded' })
-  await expect(page.locator('[data-grid-cell$="|3"]').last()).toBeVisible({ timeout: 60000 })
+    await page.goto(TREATMENT_URL, { waitUntil: 'domcontentloaded' })
+    await expect(page.locator('[data-grid-cell$="|3"]').last()).toBeVisible({
+      timeout: NAV_TIMEOUT,
+    })
+  })
 
   const req = await pendingAutoSantei
   if (req) {
@@ -651,8 +698,18 @@ test.describe('診療入力 — dialog mở bằng 1 phím / 1 click', () => {
 test.describe('診療入力 — chuỗi nhập 処置 (GHI DỮ LIỆU THẬT)', () => {
   const trtPicker = () => page.getByText('処置選択', { exact: true })
   const disTitle = () => page.getByText(/病\s*名\s*選\s*択/)
-  /** `exact` — nếu không sẽ match luôn 「ユーザー摘要コメント選択」 (frm203019). */
-  const sumCmtTitle = () => page.getByText('摘要コメント選択', { exact: true })
+  /**
+   * Tiêu đề #12 = `_title + "（" + pack_nm + "）"` (frm203018.cs:54 + :121), ví dụ
+   * 「摘要選択（除去-困難）」 — summary-comment-selection-dialog.tsx:326.
+   *
+   * ⚠️ KHÔNG dùng 「摘要コメント選択」: đó là tiêu đề CŨ, lệch parity, đã bỏ ở commit
+   * `47ed1fecc` (2026-08-19) nên `getByText` không bao giờ match nữa — dialog mở
+   * thật mà test vẫn báo "không mở được" (Rule 22).
+   *
+   * Regex neo đầu-cuối nên cũng không thể match 「ユーザー摘要コメント選択」 (frm203019,
+   * dialog mà #12 cascade sang khi comPattern===30).
+   */
+  const sumCmtTitle = () => page.getByText(/^摘要選択（.+）$/)
 
   /** Chọn dòng 点数=PICK_SCORE trong 処置選択 đang mở rồi chốt bằng dblclick. */
   const pickScoreRow = async () => {
