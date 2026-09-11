@@ -476,16 +476,51 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
     }
 
     /**
+     * Đóng 「カルテ記載選択」 (frm203012 gType.Auto) nếu nó đang mở, vét cho tới hết.
+     *
+     * `Chk_CmtAuto` mở hộp này cho từng 処置 của THÁNG hiện tại có カルテコメント cần
+     * người chọn, nên nó bung ngay cả khi mọi hộp 算定 đã trả lời No — tức
+     * `drainSanteiDialogs()` KHÔNG vét được nó. Bỏ sót là hỏng dây chuyền theo kiểu
+     * triệu chứng chẳng liên quan tới nguyên nhân: `fkey-scope-provider` có
+     * modal-dialog guard (:76-85) — còn một `[role=dialog]` mở mà scope topmost
+     * không nằm trong nó thì MỌI phím F bị `preventDefault` và NUỐT ⇒ F11 im lặng
+     * không làm gì, và test đỏ ở `openMenu` với thông báo "bấm F11 3 lần mà menu
+     * không mở". Đã dính thật: snapshot lúc lỗi có đúng dialog 「カルテ記載選択」.
+     *
+     * Là HÀNG ĐỢI (đóng cái này cái kế bung ngay) nên phải vòng lặp, không phải
+     * một lần `if` — cùng cách mà test đầu file này và `inp-p1-ported-dialogs`
+     * đang làm. F10 戻る = `onOpenChange(false)`, huỷ, KHÔNG ghi gì.
+     */
+    async function drainKartePickers() {
+        const karte = page.getByRole('dialog').filter({ hasText: 'カルテ記載選択' })
+        for (let i = 0; i < 10; i++) {
+            if ((await karte.count()) === 0) return
+            await karte
+                .getByRole('button', { name: /戻る/ })
+                .first()
+                .click({ timeout: 3_000 })
+                .catch(() => {})
+            await karte
+                .first()
+                .waitFor({ state: 'hidden', timeout: 5_000 })
+                .catch(() => {})
+        }
+    }
+
+    /**
      * Bấm F11 mở menu. FKeyScopeProvider preventDefault F1–F12 nên không bung
      * fullscreen của trình duyệt.
      *
-     * Vét hộp 算定 TRƯỚC rồi mới bấm: ĐÃ ĐO ĐƯỢC là bấm F11 lúc hộp còn mở thì phím
-     * bị hộp nuốt và menu không bao giờ hiện, testcase đỏ ở chỗ chẳng liên quan.
-     * Thử lại có giới hạn vì AutoSantei có thể bung thêm hộp ngay giữa hai thao tác.
+     * Vét MỌI dialog chắn đường TRƯỚC rồi mới bấm: ĐÃ ĐO ĐƯỢC là bấm F11 lúc còn
+     * hộp mở thì phím bị nuốt và menu không bao giờ hiện, testcase đỏ ở chỗ chẳng
+     * liên quan. Hai loại và phải vét CẢ HAI — 「〜を算定しますか？」 lẫn
+     * 「カルテ記載選択」 (xem drainKartePickers). Thử lại có giới hạn vì AutoSantei
+     * có thể bung thêm hộp ngay giữa hai thao tác.
      */
     async function openMenu() {
         for (let attempt = 1; attempt <= 3; attempt++) {
             await drainSanteiDialogs()
+            await drainKartePickers()
             await page.keyboard.press('F11')
             if (await rowMenu.isVisible({ timeout: 10_000 }).catch(() => false)) return
         }
@@ -572,7 +607,10 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
         if (dbEnabled) outcomeBefore = await readPatOutcome()
 
         page = authedPage
-        disposeOverlays = await installOverlayHandlers(page, { santei: true })
+        // `kartePicker` bật cùng: hộp 「カルテ記載選択」 bung độc lập với hộp 算定 và
+        // nuốt sạch phím F (xem drainKartePickers). Handler lo các đường đi qua
+        // ACTION; `openMenu` tự vét vì `keyboard.press` không kích hoạt handler.
+        disposeOverlays = await installOverlayHandlers(page, { santei: true, kartePicker: true })
         step = makeStep(page)
 
         rowMenu = page.getByRole('menu').filter({ hasText: '1 メニュー' })
