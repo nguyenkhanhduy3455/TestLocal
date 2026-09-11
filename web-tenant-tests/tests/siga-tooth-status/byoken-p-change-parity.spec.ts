@@ -110,6 +110,10 @@ const P_BUI_SLOT = 10
 const P_BUI_VAL = 1
 
 const GRID_LOAD_TIMEOUT = 60_000
+/** Lần nạp lại sau trang trắng — ngắn hơn vì lần lành xong trong ~1-2s. */
+const GRID_RELOAD_TIMEOUT = 30_000
+/** Số lần thử nạp màn trước khi chịu thua (xem openTreatmentScreen). */
+const GRID_LOAD_ATTEMPTS = 3
 /** Chờ 部位選択 — ngắn có chủ ý ở TC-P1: ở đó nó KHÔNG được mở. */
 const DIALOG_WAIT = 8_000
 
@@ -129,13 +133,46 @@ test.describe('診療入力 — cổng vào của Ｐ変更 (MonthP)', () => {
     let page: Page
     let step: () => Promise<void>
 
+    /**
+     * Mở màn 診療入力, nạp lại khi ra TRANG TRẮNG.
+     *
+     * Vite **dev** server thỉnh thoảng trả `net::ERR_FAILED` cho một module
+     * `/src/*.ts`; module hụt ⇒ React không mount ⇒ `#root` rỗng ⇒ ảnh chụp lúc
+     * lỗi TRẮNG TINH và mọi locator "element(s) not found". Chờ lâu hơn cũng vô
+     * ích — `goto` lại là hết. Là nhiễu HẠ TẦNG, không phải app chết: trỏ
+     * BASE_URL vào bản build (`vite preview`) thì không gặp.
+     *
+     * Đã dính thật 2026-09-11: TC-P2 đỏ ở đây sau khi TC-P1 vừa xanh, ảnh chụp
+     * trắng trơn. Cùng cách chữa mà `perio/perio-kensa-order` và
+     * `fkey-menu/treatment-f11-menu` đang dùng. Có log để lần nào phải nạp lại
+     * vẫn nhìn thấy, không giấu triệu chứng.
+     */
     async function openTreatmentScreen() {
-        await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
-        await expect(
-            ryoCells(page).first(),
-            'Lưới 診療入力 không nạp được dữ liệu (không có ô 療法 nào)',
-        ).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
-        await closeDialogs(page)
+        let lastErr: unknown
+        for (let attempt = 1; attempt <= GRID_LOAD_ATTEMPTS; attempt++) {
+            await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, {
+                waitUntil: 'domcontentloaded',
+            })
+            try {
+                await expect(
+                    ryoCells(page).first(),
+                    'Lưới 診療入力 không nạp được dữ liệu (không có ô 療法 nào)',
+                ).toBeVisible({
+                    timeout: attempt === 1 ? GRID_LOAD_TIMEOUT : GRID_RELOAD_TIMEOUT,
+                })
+                await closeDialogs(page)
+                return
+            } catch (e) {
+                lastErr = e
+                const mounted = await page.locator('#root > *').count()
+                console.log(
+                    `openTreatmentScreen: lần ${attempt}/${GRID_LOAD_ATTEMPTS} không nạp được lưới ` +
+                        `(#root ${mounted === 0 ? 'RỖNG → trang trắng, module Vite chết' : 'có nội dung'})` +
+                        ' — nạp lại',
+                )
+            }
+        }
+        throw lastErr
     }
 
     /** Chuyển sang tab 病検 rồi bấm Ｐ変更. */
