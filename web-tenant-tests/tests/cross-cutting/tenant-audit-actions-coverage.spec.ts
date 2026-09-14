@@ -573,11 +573,14 @@ test.describe('監査ログ — set-based / raw-SQL write phải để lại act
         const res = await page.request.delete(`${apiOrigin}/tenant/patients/${PAT_NO}`, {
             headers: json(),
         })
+        // 204 No Content, không phải 200 — endpoint trả `Results.NoContent()`
+        // (TenantPatientsEndpoints.cs:266). Đã vấp: assertion 200 làm TC đỏ trong khi xoá
+        // đã thành công.
         expect(
             res.status(),
             `DELETE patient thất bại (409 = guard chặn, còn dữ liệu liên quan): ` +
                 `${(await res.text()).slice(0, 200)}`,
-        ).toBe(200)
+        ).toBe(204)
 
         const row = await auditRowFor(EV.patientDeleted)
         console.log(`audit row: ${describeRow(row)}`)
