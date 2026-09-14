@@ -1,20 +1,16 @@
 import { type Page } from '@playwright/test'
 
 import {
+    SEED_PAT_NO_BASE,
     dbEnabled,
-    deleteChkAutoCompanionRows,
-    deleteTreatmentRows,
-    deleteTreatmentRowsByTrtCd,
-    ensureSigaRow,
+    deleteTestPatient,
     findChkAutoSlots,
     findMstTrt,
     findTreInpFlg,
-    readKon,
-    readSiga,
-    restoreSiga,
+    seedTestPatient,
     seedTreatmentRows,
+    writeKonTeeth,
     writeSigaTeeth,
-    type SigaSnapshot,
 } from '../_shared/db'
 import {
     GRID_LOAD_ATTEMPTS,
@@ -92,14 +88,29 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * Spec KHÔNG bấm F9 登録; cần `TEST_ALLOW_SAVE=1` vì có ghi nóng bảng `siga`.
  */
 
-const PAT_NO = patNo('10')
+/**
+ * Bệnh nhân test — spec TỰ DỰNG, không mượn bệnh nhân của dev DB.
+ *
+ * Bản đầu dùng bệnh nhân 10 và phải: dò trong `kon` xem răng nào 3 chân / 1 chân,
+ * chụp `siga` rồi trả lại ở `afterAll`, và skip nếu không tìm ra răng phù hợp.
+ * Ba thứ đó đều là phụ thuộc vào dữ liệu người khác có thể đổi. Giờ spec ghi thẳng
+ * `kon.ekon_*` nên số chân răng là HẰNG SỐ của bài test, và `deleteTestPatient` xoá
+ * sạch bệnh nhân ở `afterAll` nên không để lại rác ở bất kỳ ngày nào.
+ */
+const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 52))
 const TRT_DT = trtDt(TODAY_ISO)
+
+/** Ô 部位 (0-based) spec tự gán số chân răng — 右上7 nhiều chân, 右上3 một chân. */
+const MULTI_ROOT_SLOT = 1
+const SINGLE_ROOT_SLOT = 5
+/** Số chân ghi vào `kon.ekon_{slot+1}` cho hai ô trên. */
+const MULTI_ROOT_COUNT = 3
 
 /** 処置 có `unit` phụ thuộc số chân răng — 170/0 抜髄(1根), `unit = 61` (１根管). */
 const TRIGGER_CD = Number(process.env.TEST_CNT_CD ?? 170)
 const TRIGGER_SB = Number(process.env.TEST_CNT_SB ?? 0)
 
-/** Số chân mà `unit = 61` đòi. */
+/** Số chân mà `unit = 61` (１根管) đòi — `func3xCnt(bui, 1, kon)`. */
 const REQUIRED_ROOTS = 1
 
 /** 病名 của 部位病名行 seed: `dis_cd` 100 =「Ｃ」, `dis_sb` 2 =「Ｃ₂」. */
@@ -140,16 +151,9 @@ test.describe('診療入力 — 回数 phải theo CalcCnt, không phải hằng
     let step: () => Promise<void>
     let disposeOverlays: (() => Promise<void>) | undefined
 
-    let sigaBefore: SigaSnapshot | null = null
-    let sigaRowCreated = false
-
     let triggerNm = ''
     /** 処置名 của các slot `chk_auto` mà 170/0 kéo theo (nếu master có). */
     let slotNms: string[] = []
-
-    /** Index 0-7 (hàm trên bên phải) của một răng nhiều chân / đúng 1 chân. */
-    let multiRootSlot = -1
-    let singleRootSlot = -1
 
     const ryoCells = () => page.locator('[data-grid-cell$="|2"]')
 
@@ -214,21 +218,27 @@ test.describe('診療入力 — 回数 phải theo CalcCnt, không phải hằng
         throw lastErr
     }
 
-    async function purgeTestRows(): Promise<void> {
-        await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)
-        await deleteTreatmentRowsByTrtCd(Number(PAT_NO), TRT_DT, TRIGGER_CD).catch(() => 0)
-        await deleteChkAutoCompanionRows(
-            Number(PAT_NO),
-            TRT_DT,
-            TRIGGER_CD,
-            TRIGGER_SB,
-        ).catch(() => 0)
+    /**
+     * Dựng lại bệnh nhân từ 0 cho mỗi phase: xoá sạch (kể cả 処置行 của lần chạy
+     * trước bị ngắt, ở BẤT KỲ ngày nào) rồi ghi `kon` với số chân răng CỐ ĐỊNH.
+     *
+     * `ekon_{slot+1}` là thứ `CalcCntService.Func3xCnt` đọc, nên gán ở đây tức là
+     * bài test tự định nghĩa điều kiện của mình thay vì đi dò dữ liệu có sẵn.
+     */
+    async function resetPatient(): Promise<void> {
+        await seedTestPatient({ patNo: Number(PAT_NO) })
+        await writeKonTeeth(Number(PAT_NO), {
+            ekon: {
+                [MULTI_ROOT_SLOT + 1]: MULTI_ROOT_COUNT,
+                [SINGLE_ROOT_SLOT + 1]: REQUIRED_ROOTS,
+            },
+        })
     }
 
     /** ⚠️ Ghi `siga` TRƯỚC khi mở màn — FE chốt ảnh chụp 歯式 ở lần fetch đầu. */
     async function resetOnTooth(slot: number) {
+        await resetPatient()
         await writeSigaTeeth(Number(PAT_NO), { se: { [slot + 1]: SE_VITAL } })
-        await purgeTestRows()
         await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
             {
                 trtCd: 0,
@@ -246,8 +256,33 @@ test.describe('診療入力 — 回数 phải theo CalcCnt, không phải hằng
         await openTreatmentScreen()
     }
 
+    /**
+     * Dọn alert お茶コン đang mở và CHỜ nó tan hẳn.
+     *
+     * TC-1..TC-3 cố tình đặt 処置 lên răng sai số chân, nên SingleChk bung
+     * 「算定可能な部位がありません」 — ĐÚNG, WinForm cũng cảnh báo. Nhưng alert đó
+     * cướp focus và chặn click. `installOverlayHandlers({ alerts: true })` chỉ chạy
+     * khi Playwright đang có action/assert, nên không đủ: phải chủ động dọn ở các
+     * mốc giữa hai bước. Đã vấp: TC-2/TC-4 đỏ lần 1, xanh lần retry.
+     */
+    async function dismissAlerts(): Promise<void> {
+        const alert = page.locator('[role="alertdialog"]')
+        for (let i = 0; i < 5; i++) {
+            if ((await alert.count()) === 0) break
+            const ok = page.getByRole('button', { name: 'OK' })
+            if ((await ok.count()) > 0) await ok.first().click().catch(() => {})
+            else await page.keyboard.press('Enter').catch(() => {})
+            await expect(alert).toHaveCount(0, { timeout: 5_000 }).catch(() => {})
+        }
+        await expect(alert, 'alert お茶コン không tắt — mọi click sau đó sẽ bị nuốt').toHaveCount(
+            0,
+            { timeout: 15_000 },
+        )
+    }
+
     /** Chốt 処置 qua コードモード → 処置選択 → F9 確定. KHÔNG Enter ô 回. */
     async function commitTrigger(): Promise<string> {
+        await dismissAlerts()
         await closeDialogs(page)
         const modeBtn = page.locator('button[title^="点数/コード 入力モード切替"]')
         const footerTen = page.locator('input[data-footer-cell$=":footer-ten"]').last()
@@ -280,16 +315,25 @@ test.describe('診療入力 — 回数 phải theo CalcCnt, không phải hằng
 
         // Sau 確定 con trỏ nằm ở ô 回 của chính dòng vừa chốt, đang ở chế độ nhập —
         // giá trị trong đó CHÍNH LÀ số WinForm ghi vào grdRegi[4] (frm203016.cs:1531).
-        const editing = page.locator('input:focus')
-        await expect(editing, 'sau 確定 phải có ô 回 đang ở chế độ nhập').toBeVisible({
+        //
+        // ⚠️ ĐỪNG dùng `input:focus`: SingleChk có thể bung alert お茶コン
+        // (「算定可能な部位がありません」 — đúng và WinForm cũng cảnh báo) và alert đó
+        // cướp focus, nên `input:focus` trả về rỗng dù ô 回 vẫn đang mở. Đã vấp:
+        // TC-1/TC-2 đỏ lần 1, xanh lần retry. Neo vào chính ô 回 của lưới
+        // (`|4`, loại trừ ô của dòng 日計) và chờ alert tan trước.
+        await dismissAlerts()
+        const kaiEditor = page.locator('[data-grid-cell$="|4"] input:not([data-footer-cell])')
+        await expect(kaiEditor, 'sau 確定 phải có ô 回 đang ở chế độ nhập').toBeVisible({
             timeout: 20_000,
         })
-        return (await editing.inputValue()).trim()
+        return (await kaiEditor.inputValue()).trim()
     }
 
     /** Chờ lưới đứng yên sau khi Enter ô 回 (chuỗi cascade chạy xong). */
     async function settleAfterKaiEnter() {
         await page.keyboard.press('Enter')
+        // Enter ô 回 kích SingleChk ⇒ alert có thể bung ngay; dọn trước khi đo.
+        await dismissAlerts()
         let stable = 0
         let prev = ''
         const deadline = Date.now() + SETTLE_TIMEOUT
@@ -318,42 +362,24 @@ test.describe('診療入力 — 回数 phải theo CalcCnt, không phải hằng
             .filter((m): m is NonNullable<typeof m> => m !== undefined)
             .map((m) => norm(treInpFlg === 1 ? m.cctNm : m.trtNm))
 
-        // Chọn răng từ DB, không hardcode (BẪY 1). Chỉ dùng hàm trên bên phải
-        // (index 0-7) để `dsp_bui` seed nằm gọn một nhóm.
-        const kon = await readKon(Number(PAT_NO))
-        for (let i = 0; i <= 7; i++) {
-            const roots = kon?.ekon[i] ?? 0
-            if (roots > REQUIRED_ROOTS && multiRootSlot < 0) multiRootSlot = i
-            if (roots === REQUIRED_ROOTS && singleRootSlot < 0) singleRootSlot = i
-        }
         console.log(
             `master: ${TRIGGER_CD}/${TRIGGER_SB} 「${triggerNm}」, chk_auto slot ` +
-                `${JSON.stringify(slotNms)}; răng nhiều chân=index ${multiRootSlot}, ` +
-                `răng 1 chân=index ${singleRootSlot}`,
+                `${JSON.stringify(slotNms)}; răng nhiều chân = ô ${MULTI_ROOT_SLOT} ` +
+                `(${MULTI_ROOT_COUNT} chân), răng 1 chân = ô ${SINGLE_ROOT_SLOT} — cả hai do ` +
+                'spec tự ghi vào kon.',
         )
-
-        sigaRowCreated = await ensureSigaRow(Number(PAT_NO))
-        sigaBefore = await readSiga(Number(PAT_NO))
     })
 
     test.afterAll(async () => {
-        await purgeTestRows().catch(() => {})
-        if (sigaBefore && !sigaRowCreated) {
-            await restoreSiga(Number(PAT_NO), sigaBefore).catch(() => {})
-        }
+        // Xoá HẲN bệnh nhân: person + insurance + siga + kon + TOÀN BỘ trn_trn.
+        await deleteTestPatient(Number(PAT_NO)).catch(() => {})
         await disposeOverlays?.()
         await releaseSharedPage(page)
     })
 
     test('TC-1 unit không hợp với răng ⇒ 回数 = 0 (không phải 1)', async () => {
         skipWithReason(triggerNm === '', `master tháng test không có 処置 ${TRIGGER_CD}/${TRIGGER_SB}`)
-        skipWithReason(
-            multiRootSlot < 0,
-            `bệnh nhân ${PAT_NO} không có răng nào > ${REQUIRED_ROOTS} chân ở hàm trên phải — ` +
-                'đổi TEST_PAT_NO',
-        )
-
-        await resetOnTooth(multiRootSlot)
+        await resetOnTooth(MULTI_ROOT_SLOT)
         const kai = await commitTrigger()
 
         expect(
@@ -366,7 +392,7 @@ test.describe('診療入力 — 回数 phải theo CalcCnt, không phải hằng
     })
 
     test('TC-2 回数 = 0 ⇒ dòng không sinh điểm', async () => {
-        skipWithReason(triggerNm === '' || multiRootSlot < 0, 'TC-1 không dựng được lưới')
+        skipWithReason(triggerNm === '', 'TC-1 không dựng được lưới')
 
         await settleAfterKaiEnter()
 
@@ -385,7 +411,7 @@ test.describe('診療入力 — 回数 phải theo CalcCnt, không phải hằng
     })
 
     test('TC-3 回数 = 0 ⇒ KHÔNG chạy 自動算定 (frm203002.cs:5740 chặn ở 回数 ≥ 1)', async () => {
-        skipWithReason(triggerNm === '' || multiRootSlot < 0, 'TC-1 không dựng được lưới')
+        skipWithReason(triggerNm === '', 'TC-1 không dựng được lưới')
         skipWithReason(
             slotNms.length === 0,
             `${TRIGGER_CD}/${TRIGGER_SB} không có slot chk_auto nào khả dụng — không đo được`,
@@ -409,12 +435,7 @@ test.describe('診療入力 — 回数 phải theo CalcCnt, không phải hằng
 
     test('TC-4 ĐỐI CHỨNG — cùng 処置 trên răng 1 chân ⇒ 回数 = 1 và CÓ dòng 自動算定', async () => {
         skipWithReason(triggerNm === '', 'không tra được 処置名')
-        skipWithReason(
-            singleRootSlot < 0,
-            `bệnh nhân ${PAT_NO} không có răng ${REQUIRED_ROOTS} chân ở hàm trên phải`,
-        )
-
-        await resetOnTooth(singleRootSlot)
+        await resetOnTooth(SINGLE_ROOT_SLOT)
         const kai = await commitTrigger()
         expect(
             kai,
@@ -426,16 +447,29 @@ test.describe('診療入力 — 回数 phải theo CalcCnt, không phải hằng
         await settleAfterKaiEnter()
 
         skipWithReason(slotNms.length === 0, 'không có slot chk_auto để đối chứng')
-        const cells = (await ryoTexts()).map(norm)
-        const trtIdx = lastIdxOf(cells, norm(triggerNm))
-        expect(trtIdx, `không thấy dòng 「${triggerNm}」`).toBeGreaterThanOrEqual(0)
-        const below = cells.slice(trtIdx + 1)
-        for (const slotNm of slotNms) {
-            expect(
-                below.findIndex((c) => c.includes(slotNm)),
-                `回数 ≥ 1 thì Chk_ChkAuto phải chạy và chèn 「${slotNm}」 dưới ` +
-                    `「${triggerNm}」 (modMain.cs:958).\n  lưới dưới: ${JSON.stringify(below.filter(Boolean))}`,
-            ).toBeGreaterThanOrEqual(0)
-        }
+
+        // TC này khẳng định dòng CÓ MẶT, nên phải chờ theo điều kiện chứ không dựa vào
+        // "lưới đứng yên": sau 回 Enter, runChkAuto còn một chuỗi request nối nhau
+        // (cascade prefetch → cmt_auto → chk-auto), và giữa hai request lưới đứng yên
+        // thật. Đã vấp: TC-4 đỏ lần 1, xanh lần retry, trong khi app làm đúng.
+        let lastCells: string[] = []
+        await expect
+            .poll(
+                async () => {
+                    lastCells = (await ryoTexts()).map(norm)
+                    const at = lastIdxOf(lastCells, norm(triggerNm))
+                    if (at < 0) return [...slotNms]
+                    const below = lastCells.slice(at + 1)
+                    return slotNms.filter((n) => !below.some((c) => c.includes(n)))
+                },
+                {
+                    timeout: SETTLE_TIMEOUT,
+                    intervals: Array.from({ length: 30 }, () => 1000),
+                    message:
+                        `回数 ≥ 1 thì Chk_ChkAuto phải chạy và chèn dòng 自動算定 dưới ` +
+                        `「${triggerNm}」 (modMain.cs:958).`,
+                },
+            )
+            .toEqual([])
     })
 })

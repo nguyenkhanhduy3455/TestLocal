@@ -5,10 +5,12 @@ import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
 import {
+    SEED_PAT_NO_BASE,
     careInsRateFor,
     dayScoreByJihiFlg,
     dbEnabled,
-    deleteTreatmentRows,
+    deleteTestPatient,
+    seedTestPatient,
     seedTreatmentRows,
 } from '../_shared/db'
 import { makeStep } from '../_shared/step'
@@ -138,13 +140,32 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * Thứ tự testcase CÓ Ý NGHĨA: TC-9 (nhập tay) làm bẩn lưới nên phải nằm cuối.
  *
  * Lưới bị làm bẩn ở bước cuối (nhập tay 599-0) nhưng TUYỆT ĐỐI KHÔNG bấm F9 登録
- * ⇒ không ghi DB; dữ liệu duy nhất chạm DB là 2 dòng seed, đã dọn ở afterAll.
+ * ⇒ không ghi DB. Dữ liệu chạm DB là bệnh nhân seed + 2 dòng 処置 của nó, và
+ * `afterAll` xoá hẳn cả bệnh nhân nên không để lại gì.
  *
  *   npx playwright test tests/treatment-grid/kaigo-hutan-row.spec.ts
  */
 
-/** Bệnh nhân test — 12138 không có bản 介護保険 nào ⇒ rate đi nhánh fallback. */
-const PAT_NO = patNo('12138')
+/**
+ * Bệnh nhân test — spec TỰ DỰNG, không mượn bệnh nhân của dev DB.
+ *
+ * Trước đây dùng 12138 và chỉ dọn `deleteTreatmentRows(PAT_NO, TRT_DT)` ở
+ * `afterAll` — tức chỉ đúng NGÀY test. Một lần chạy bị ngắt (hoặc chạy với
+ * `TEST_TRT_DT` khác) để lại dòng 599 ở ngày khác CÙNG THÁNG, và vì lưới
+ * 診療入力 render CẢ THÁNG nên lần chạy sau thấy HAI dòng
+ * 【介護保険一部負担金】 → TC-2 đỏ oan ("Expected 1, Received 2"). Đã vấp thật
+ * 2026-09-14: rác còn lại ở 2026-09-11.
+ *
+ * `seedTestPatient` xoá sạch bệnh nhân rồi dựng lại (idempotent) và
+ * `deleteTestPatient` xoá TOÀN BỘ `trn_trn` của nó — không còn cửa nào cho rác
+ * ngày khác. Dải `>= SEED_PAT_NO_BASE` được helper chặn cứng nên không bao giờ
+ * đụng bệnh nhân thật.
+ *
+ * `accRate` phải KHÁC 0: không có bản 介護保険 nào nên `careInsRateFor` rơi xuống
+ * fallback `acc_rate == 0 ? 0 : 10`, và để trống (NULL) sẽ ra 0% thay vì 10% —
+ * đúng nhánh mà 12138 (acc_rate 10/20/30) vẫn đi.
+ */
+const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 51))
 
 /**
  * Ngày test = HÔM NAY (yyyy-MM-dd). Bắt buộc thuộc tháng hiện hành: chỉ dòng của
@@ -384,6 +405,10 @@ test.describe('診療入力 — 【介護保険一部負担金】行 (KaigoHutan
     let disposeOverlays: (() => Promise<void>) | undefined
 
     test.beforeAll(async ({ authedPage }) => {
+        // Dựng lại bệnh nhân từ 0 — cũng là bước dọn rác của lần chạy trước (kể cả
+        // lần bị ngắt giữa chừng, và kể cả dòng nằm ở ngày khác trong tháng).
+        await seedTestPatient({ patNo: Number(PAT_NO), accRate: 30 })
+
         // Seed TRƯỚC khi mở trình duyệt: lưới đọc 1 lần lúc vào màn, seed sau thì
         // phải nạp lại mới thấy.
         await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
@@ -443,8 +468,9 @@ test.describe('診療入力 — 【介護保険一部負担金】行 (KaigoHutan
     test.afterAll(async () => {
         await disposeOverlays?.()
         await releaseSharedPage(page)
-        const n = await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)
-        console.log(`dọn 処置行 seed: xoá ${n} dòng`)
+        // Xoá HẲN bệnh nhân: person + insurance + siga + kon + TOÀN BỘ trn_trn,
+        // không giới hạn theo ngày (xem chú thích ở PAT_NO).
+        await deleteTestPatient(Number(PAT_NO)).catch(() => {})
     })
 
     // ─────────────────────────────────────────────────────────────────────────

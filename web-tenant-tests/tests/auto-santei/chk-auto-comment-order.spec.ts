@@ -3,21 +3,21 @@ import { type Locator, type Page } from '@playwright/test'
 import {
     dbEnabled,
     deleteChkAutoCompanionRows,
+    SEED_PAT_NO_BASE,
+    deleteTestPatient,
     deleteTreatmentRows,
     deleteTreatmentRowsByTrtCd,
-    ensureSigaRow,
     findChkAutoSlots,
     findCmtAutos,
     findMstTrt,
     findTreInpFlg,
-    readSiga,
-    restoreSiga,
+    seedTestPatient,
     seedTreatmentRows,
+    writeKonTeeth,
     writeSigaTeeth,
     type ChkAutoSlot,
     type CmtAutoRow,
     type MstTrtRow,
-    type SigaSnapshot,
 } from '../_shared/db'
 import {
     GRID_LOAD_ATTEMPTS,
@@ -110,7 +110,19 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * Spec KHÔNG bấm F9 登録. Cần `TEST_ALLOW_SAVE=1` vì có ghi nóng bảng `siga`.
  */
 
-const PAT_NO = patNo('10')
+/**
+ * Bệnh nhân test — spec TỰ DỰNG, không mượn bệnh nhân của dev DB.
+ *
+ * Bản đầu dùng bệnh nhân 10: phải chụp `siga` rồi trả lại ở `afterAll`, và Phase 2
+ * dựa vào việc bệnh nhân đó tình cờ có 右上3 một chân (`kon.ekon_6 = 1`). Cả hai
+ * đều là phụ thuộc vào dữ liệu người khác có thể đổi, và `afterAll` chỉ dọn ĐÚNG
+ * NGÀY test nên một lần chạy bị ngắt để lại rác ở ngày khác cùng tháng (lưới
+ * 診療入力 render CẢ THÁNG ⇒ lần sau đỏ oan).
+ *
+ * Giờ spec ghi thẳng `kon.ekon_*` và `deleteTestPatient` xoá sạch bệnh nhân ở
+ * `afterAll` — không còn cửa nào cho rác, cũng không cần snapshot/restore.
+ */
+const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 53))
 const TRT_DT = trtDt(TODAY_ISO)
 
 /** Phase 1 — 処置 có cmt_auto của mình VÀ chk_auto trỏ tới slot cũng có cmt_auto. */
@@ -219,9 +231,6 @@ test.describe('診療入力 — thứ tự 自動算定 ↔ カルテコメン�
     let disposeOverlays: (() => Promise<void>) | undefined
 
     let treInpFlg = 0
-    let sigaBefore: SigaSnapshot | null = null
-    let sigaRowCreated = false
-
     /** Dialog frm203048 パラメータ — Phase 2 tự điền, KHÔNG để closeDialogs đụng. */
     let paramDialog: Locator
 
@@ -291,8 +300,20 @@ test.describe('診療入力 — thứ tự 自動算定 ↔ カルテコメン�
         return n
     }
 
-    /** ⚠️ Thứ tự BẮT BUỘC: ghi `siga` TRƯỚC khi mở màn. */
+    /**
+     * ⚠️ Thứ tự BẮT BUỘC: dựng bệnh nhân + ghi `siga`/`kon` TRƯỚC khi mở màn — FE
+     * chốt ảnh chụp 歯式 ở lần fetch đầu sau khi mount.
+     *
+     * `seedTestPatient` xoá sạch rồi dựng lại nên cũng là bước dọn rác của lần chạy
+     * trước (kể cả lần bị ngắt, kể cả dòng ở ngày khác).
+     */
     async function resetPhase(cd: number, sb: number, buiSlot: number) {
+        await seedTestPatient({ patNo: Number(PAT_NO) })
+        // Phase 2 chốt 170/0 抜髄(1根) — `unit 61` chỉ đếm răng ĐÚNG 1 chân
+        // (`CalcCntService.Func3xCnt`). Gán thẳng thay vì trông chờ dữ liệu có sẵn:
+        // nếu ô này nhiều chân thì 回数 = 0, Chk_ChkAuto không chạy và mọi assert về
+        // thứ tự chk_auto mất nghĩa.
+        await writeKonTeeth(Number(PAT_NO), { ekon: { [P2_BUI_SLOT + 1]: 1 } })
         await writeSigaTeeth(Number(PAT_NO), { se: { [buiSlot + 1]: SE_VITAL } })
         await purgeTestRows(cd, sb)
         await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
@@ -481,16 +502,11 @@ test.describe('診療入力 — thứ tự 自動算定 ↔ カルテコメン�
         paramDialog = page.getByRole('dialog').filter({ hasText: 'パ ラ メ ー タ' })
 
         treInpFlg = await findTreInpFlg()
-        sigaRowCreated = await ensureSigaRow(Number(PAT_NO))
-        sigaBefore = await readSiga(Number(PAT_NO))
     })
 
     test.afterAll(async () => {
-        await purgeTestRows(P1_CD, P1_SB).catch(() => 0)
-        await purgeTestRows(P2_CD, P2_SB).catch(() => 0)
-        if (sigaBefore && !sigaRowCreated) {
-            await restoreSiga(Number(PAT_NO), sigaBefore).catch(() => {})
-        }
+        // Xoá HẲN bệnh nhân: person + insurance + siga + kon + TOÀN BỘ trn_trn.
+        await deleteTestPatient(Number(PAT_NO)).catch(() => {})
         await disposeOverlays?.()
         await releaseSharedPage(page)
     })

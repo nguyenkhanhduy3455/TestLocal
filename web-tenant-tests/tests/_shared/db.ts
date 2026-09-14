@@ -405,6 +405,15 @@ export interface SeedPatientInput {
      * trong dev DB, và là loại KHÔNG kèm 公費 nên `getTensu` chạy nhánh thẳng.
      */
     recCd?: number
+    /**
+     * `insurance.acc_rate` (負担割合). Mặc định để NULL như trước.
+     *
+     * ⚠️ Chỉ cần khi spec đo TIỀN: `careInsRateFor` fallback về
+     * `acc_rate == 0 ? 0 : 10` (CareInsurance.cs) và `Number(null)` = 0, nên một
+     * bệnh nhân seed để trống sẽ ra rate 0% — khác hẳn bệnh nhân thật trong dev DB
+     * (toàn 10/20/30 ⇒ rate 10%). Truyền một giá trị KHÁC 0 để đi đúng nhánh đó.
+     */
+    accRate?: number
 }
 
 /** Chặn mọi thao tác ghi/xoá bệnh nhân ra ngoài dải test. */
@@ -438,6 +447,7 @@ export async function seedTestPatient(input: SeedPatientInput): Promise<void> {
     const patNm = input.patNm ?? 'E2Eテスト患者'
     const patKn = input.patKn ?? 'いーつーいーてすとかんじゃ'
     const recCd = input.recCd ?? 3112
+    const accRate = input.accRate ?? null
 
     await deleteTestPatient(patNo)
     await withDb(async (c) => {
@@ -451,12 +461,12 @@ export async function seedTestPatient(input: SeedPatientInput): Promise<void> {
                  pat_no, pat_br, medinsinf_no, pubexpinf_no,
                  pat_nm, pat_kn, birthdate, sex_1,
                  br_dt, med_st_dt, med_ed_dt, rec_cd,
-                 old_flg, dis_flg, ins_kbn, combi_kbn
+                 old_flg, dis_flg, ins_kbn, combi_kbn, acc_rate
              )
              VALUES ($1, 1, 0, 0, $2, $3, $4::date, $5,
                      $4::date, DATE '1900-01-01', DATE '9999-12-31', $6,
-                     0, 0, 1, 1)`,
-            [patNo, patNm, patKn, birthDt, sex, recCd],
+                     0, 0, 1, 1, $7)`,
+            [patNo, patNm, patKn, birthDt, sex, recCd, accRate],
         )
         await c.query('INSERT INTO siga (pat_no) VALUES ($1)', [patNo])
         await c.query('INSERT INTO kon (pat_no) VALUES ($1)', [patNo])
