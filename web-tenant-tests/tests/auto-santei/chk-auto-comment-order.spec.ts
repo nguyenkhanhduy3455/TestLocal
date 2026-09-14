@@ -325,31 +325,64 @@ test.describe('診療入力 — thứ tự 自動算定 ↔ カルテコメン�
         await step()
     }
 
+    /** Ô nhập của frm203048. Query lại mỗi vòng: dialog remount theo từng comment. */
+    const paramInput = () => paramDialog.locator('input').first()
+
     /**
-     * Điền hết frm203048 đang xếp hàng. Mỗi lần: `fill` cả chuỗi đã thay dấu sao rồi
+     * Điền hết frm203048 đang xếp hàng. Mỗi lần: `fill` chuỗi đã thay dấu sao rồi
      * F9 確定 — `btnF9_Click` quét từ index 0 nên chỉ đóng khi KHÔNG còn `*`
      * (frm203048.cs:159-166), tức là bài test cũng đang kiểm luôn điều đó.
+     *
+     * ⚠️ KHÔNG assert `paramDialog` biến mất. `frmCmt3_PrmChk` chạy cho TỪNG comment
+     * còn `*` (frm203002.cs:10038), nên dialog của comment kế bung NGAY sau khi cái
+     * trước đóng — locator dùng chung vẫn "visible" liên tục. Đã vấp thật:
+     * `toBeHidden` đỏ oan trong khi app làm đúng. Mốc CÓ THẬT là ô nhập đổi giá trị
+     * (comment khác) hoặc dialog biến mất hẳn.
+     *
+     * ⚠️ Điền NGUYÊN VĂN giá trị đọc ra, không `norm()` trước khi gõ: NFKC đổi
+     * 「（」 thành 「(」 nên sẽ ghi xuống lưới một chuỗi mà người dùng không bao giờ gõ.
+     * `norm` chỉ dùng lúc SO SÁNH.
      *
      * Trả về danh sách text đã xác nhận, theo thứ tự dialog bung ra.
      */
     async function fillPendingParamDialogs(maxDialogs: number): Promise<string[]> {
         const confirmed: string[] = []
         for (let i = 0; i < maxDialogs; i++) {
-            const appeared = await paramDialog
+            const appeared = await paramInput()
                 .waitFor({ state: 'visible', timeout: i === 0 ? 20_000 : 8_000 })
                 .then(() => true)
                 .catch(() => false)
             if (!appeared) break
 
-            const input = paramDialog.locator('input').first()
-            const raw = norm(await input.inputValue())
+            const raw = await paramInput().inputValue()
+            if (!hasParam(raw)) {
+                throw new Error(
+                    `frm203048 bung với 「${raw}」 — chuỗi này không còn \`*\`, đáng lẽ ` +
+                        'frmCmt3_PrmChk không được gọi cho nó (frm203002.cs:10051).',
+                )
+            }
             const out = filledText(raw)
-            await input.fill(out)
+            await paramInput().fill(out)
             await paramDialog.getByRole('button', { name: /F9\s*確定/ }).click()
-            await expect(
-                paramDialog,
-                `frm203048 không đóng sau F9 với 「${out}」 — còn sót cụm \`*\`?`,
-            ).toBeHidden({ timeout: 10_000 })
+
+            await expect
+                .poll(
+                    async () => {
+                        if (!(await paramDialog.isVisible().catch(() => false))) return '<đóng>'
+                        return paramInput()
+                            .inputValue()
+                            .catch(() => '<đang remount>')
+                    },
+                    {
+                        timeout: 10_000,
+                        message:
+                            `F9 với 「${out}」 mà frm203048 vẫn giữ nguyên chuỗi đó — ` +
+                            'btnF9_Click chỉ đóng khi quét từ index 0 không còn cụm `*` ' +
+                            '(frm203048.cs:159-166).',
+                    },
+                )
+                .not.toBe(out)
+
             confirmed.push(out)
             await step()
         }
