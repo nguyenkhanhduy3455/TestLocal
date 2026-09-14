@@ -61,6 +61,10 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  * beforeAll. Các testcase nối tiếp nhau trên cùng tab, thứ tự có ý nghĩa — chạy
  * lẻ một testcase ở giữa sẽ hỏng vì tab パック chưa được mở.
  *
+ * Rule 23 (4 testcase bắt buộc cho hộp thoại) nằm ở cuối file: 23.1 con trỏ lúc mở,
+ * 23.2 thanh cuộn, 23.4 mở lại reset — còn 23.3 (thông báo) là testcase
+ * 「算定可能な処置はありません。」 ở giữa file.
+ *
  * Testcase 確定 (F9) ĐẨY DÒNG VÀO GRID mặc định bị bỏ qua (chỉ sửa state màn hình,
  * chưa ghi DB, nhưng làm bẩn lưới đang mở). Muốn chạy:
  *   TEST_ALLOW_COMMIT=1 npx playwright test tests/side-panel/pack-sidepanel-handler.spec.ts
@@ -535,6 +539,101 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
         expect(await highlightedIdx()).toBe(idx)
         await step()
         await dismiss(second)
+    })
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Rule 23 — 4 testcase bắt buộc cho MỌI hộp thoại.
+    // 23.3 (thông báo trùng WinForm) đã nằm ở testcase 「パック không có 処置 tính
+    // được → alert 算定可能な処置はありません。」 phía trên. Ba cái còn lại ở đây.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Mở パック ĐẦU TIÊN ra được picker (bỏ qua パック rỗng) và trả về index dòng.
+     * Không cố định dòng 1: パック nào rỗng là tuỳ dữ liệu tenant.
+     */
+    async function openAnyPicker(): Promise<number> {
+        const total = Math.min(await rows.count(), SCAN_LIMIT)
+        for (let i = 0; i < total; i++) {
+            await rows.nth(i).click()
+            if ((await waitPickResult()) === 'picker') return i
+            await dismiss('alert')
+        }
+        throw new Error(`không パック nào trong ${total} dòng đầu mở được picker`)
+    }
+
+    /** Ô 回数 của dòng thứ `n` trong lưới dialog (cnt-cell.tsx: cell-cnt là <input>). */
+    const pickerCntInput = (n: number) =>
+        picker.locator('[data-testid^="row-"]').nth(n).locator('[data-testid="cell-cnt"] input')
+
+    test('Rule 23.1 — vừa mở: con trỏ nằm ở ô 回数 của DÒNG ĐẦU', async () => {
+        // pack-selection-dialog.tsx dùng `useCntCellApi({ open, rows, … })`, cùng
+        // wiring với ガイド (frm203017) — on-open focus đặt vào ô 回数 dòng đầu.
+        // WinForm frm203014: dgvSelect nhận focus, CurrentCell = cột 回数 dòng 0.
+        await openAnyPicker()
+        const first = pickerCntInput(0)
+        await expect(first, 'lưới dialog không có ô 回数 nào').toBeVisible({ timeout: 15000 })
+
+        // Đua với alert/popup có thể cướp focus → poll thay vì đọc một lần.
+        await expect
+            .poll(() => first.evaluate((el) => el === document.activeElement), { timeout: 15000 })
+            .toBe(true)
+        await step()
+        await dismiss('picker')
+    })
+
+    test('Rule 23.2 — dialog nằm trong viewport và chỉ THÂN cuộn, không phải cả trang', async () => {
+        await openAnyPicker()
+
+        // (a) Cả hộp thoại phải nằm gọn trong viewport.
+        const vp = page.viewportSize()
+        expect(vp, 'không đọc được viewport').not.toBeNull()
+        const box = await picker.boundingBox()
+        expect(box, 'không đọc được bounding box của dialog').not.toBeNull()
+        expect(box!.y, 'dialog tràn lên trên viewport').toBeGreaterThanOrEqual(-1)
+        expect(
+            box!.y + box!.height,
+            `dialog cao ${Math.round(box!.height)}px, tràn dưới viewport ${vp!.height}px`,
+        ).toBeLessThanOrEqual(vp!.height + 1)
+
+        // (b) Nội dung dài hơn thì CUỘN Ở THÂN (virtual list), KHÔNG phải cả trang —
+        // đúng nhánh thứ hai của Rule 23.2.
+        const pageScroll = await page.evaluate(() => ({
+            sh: document.documentElement.scrollHeight,
+            ch: document.documentElement.clientHeight,
+        }))
+        expect(
+            pageScroll.sh,
+            'mở dialog làm CẢ TRANG cuộn dọc — thân dialog phải tự cuộn',
+        ).toBeLessThanOrEqual(pageScroll.ch + 1)
+        await step()
+        await dismiss('picker')
+    })
+
+    test('Rule 23.4 — đóng (F10) rồi mở lại: 回数 gõ dở KHÔNG sống sót', async () => {
+        // frm203014 là dialog dựng mới mỗi lần mở. Web: pack-selection-dialog.tsx
+        // reset `cntOverrides` ở transition open→false (guard prevOpen), và
+        // useClientSort có `resetOn: open`. Nếu state sống sót thì lần mở sau kế
+        // thừa 回数 của lần trước ⇒ F9 確定 đẩy sai số vào lưới.
+        const idx = await openAnyPicker()
+        const cell = pickerCntInput(0)
+        await expect(cell).toBeVisible({ timeout: 15000 })
+        const before = await cell.inputValue()
+
+        // Gõ một giá trị KHÁC giá trị mặc định để phép so có ý nghĩa.
+        const typed = before.trim() === '7' ? '5' : '7'
+        await cell.fill(typed)
+        await expect(cell).toHaveValue(typed)
+        await dismiss('picker')
+
+        await rows.nth(idx).click()
+        const again = await waitPickResult()
+        expect(again, 'mở lại cùng dòng phải ra picker như lần đầu').toBe('picker')
+        await expect(
+            pickerCntInput(0),
+            `回数 của lần mở trước (${typed}) sống sót sang lần mở sau`,
+        ).toHaveValue(before)
+        await step()
+        await dismiss('picker')
     })
 
     test('F9 確定 đẩy 処置 vào lưới đăng ký (mặc định BỎ QUA)', async () => {

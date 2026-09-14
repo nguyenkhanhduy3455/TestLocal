@@ -63,10 +63,10 @@ import { rows as gridRows } from '../_shared/virtual-grid'
  * đỏ thì các test sau bị skip. Page không do fixture `page` sinh ra nên KHÔNG có
  * trace/video tự động. Spec chỉ SELECT, không ghi DB.
  *
- * Rule 23: hộp thoại này CHƯA có đủ 4 testcase bắt buộc. `pack-sidepanel-handler.spec.ts`
- * chỉ phủ 23.3 (thông báo 「算定可能な処置はありません。」); còn thiếu 23.1 (con trỏ lúc
- * mở), 23.2 (thanh cuộn dọc thừa), 23.4 (đóng-mở lại reset ô 回数) — nợ, không thuộc
- * phạm vi file này (file này chỉ đo NỘI DUNG danh sách theo kỳ 改定).
+ * Rule 23: đủ 4 testcase bắt buộc của hộp thoại này nằm ở
+ * `pack-sidepanel-handler.spec.ts` (23.1 con trỏ lúc mở, 23.2 thanh cuộn, 23.3
+ * thông báo 「算定可能な処置はありません。」, 23.4 mở lại reset ô 回数). File này chỉ
+ * đo NỘI DUNG danh sách theo kỳ 改定.
  */
 
 // ─── Hằng số theo đúng tên hằng của source (Rule 21) ─────────────────────────
