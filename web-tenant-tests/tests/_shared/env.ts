@@ -40,6 +40,14 @@ export function trtDt(fallback: string): string {
 }
 
 /**
+ * 診療日 PHỤ, cho spec cần so HAI mốc thời gian trong cùng một lần chạy (vd cổng
+ * 改定: một ngày trước mốc, một ngày sau). `fallback` là mặc định RIÊNG của spec.
+ */
+export function trtDtPre(fallback: string): string {
+    return process.env.TEST_TRT_DT_PRE ?? fallback
+}
+
+/**
  * Cờ cho phép thao tác GHI THẬT xuống DB/BE (GUIDELINE Rule 18.1).
  *
  * 20 spec đang khai lại `process.env.TEST_ALLOW_SAVE === '1'`. Mặc định TẮT:
