@@ -125,8 +125,26 @@ const P2_SB = Number(process.env.TEST_P2_SB ?? 0)
 const DIS_CD_C = 100
 const DIS_SB_C2 = 2
 
-/** Ô 部位 seed: index 2 = 右上6 (bố cục 32 ô, `tooth-bui.ts:25`). */
-const BUI_SLOT = 2
+/**
+ * Ô 部位 seed, THEO TỪNG PHASE (bố cục 32 ô, `tooth-bui.ts:25`: 0-7 右上 8→1).
+ *
+ * ⚠️ 回数 phụ thuộc răng. `CalcCnt.getCalcCnt` (CommonChk gọi qua modMain.cs:650)
+ * đọc `unit` của 処置 rồi đếm trên 部位 — mà `170/0 抜髄(1根)` có `unit = 61`
+ * (１根管), tức chỉ đếm răng có ĐÚNG 1 chân (`func3xCnt`). Bệnh nhân 10 có
+ * 右上6 = 3 chân (`kon.ekon_3 = 3`) ⇒ 回数 = 0 ⇒ WinForm tính 234 × 0 = 0 点 VÀ
+ * bỏ luôn `Chk_ChkAuto` (frm203002.cs:5740 chặn ở 回数 ≥ 1). Đặt Phase 2 lên
+ * 右上6 thì mọi assert về chk_auto trở thành vô nghĩa, và app còn bung cảnh báo
+ * 「算定可能な部位がありません」 mỗi lượt chạy.
+ *
+ * Nên Phase 2 dùng 右上3 (index 5, răng nanh — `kon.ekon_6 = 1`, một chân) để
+ * 抜髄(1根) thật sự tính được. Phase 1 (`204/0`, `unit = 3` 顎単位) không phụ thuộc
+ * số chân nên giữ 右上6.
+ *
+ * Trường hợp 回数 = 0 được chốt riêng ở
+ * `treatment-grid/treatment-calc-cnt-parity.spec.ts`.
+ */
+const P1_BUI_SLOT = 2
+const P2_BUI_SLOT = 5
 const BUI_VAL = 1
 
 /**
@@ -274,8 +292,8 @@ test.describe('診療入力 — thứ tự 自動算定 ↔ カルテコメン�
     }
 
     /** ⚠️ Thứ tự BẮT BUỘC: ghi `siga` TRƯỚC khi mở màn. */
-    async function resetPhase(cd: number, sb: number) {
-        await writeSigaTeeth(Number(PAT_NO), { se: { [BUI_SLOT + 1]: SE_VITAL } })
+    async function resetPhase(cd: number, sb: number, buiSlot: number) {
+        await writeSigaTeeth(Number(PAT_NO), { se: { [buiSlot + 1]: SE_VITAL } })
         await purgeTestRows(cd, sb)
         await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
             {
@@ -284,8 +302,8 @@ test.describe('診療入力 — thứ tự 自動算定 ↔ カルテコメン�
                 trtPt: 0,
                 trtCnt: 0,
                 dspTrt: '',
-                bui: buiAt(BUI_SLOT, BUI_VAL),
-                dspBui: '右上6',
+                bui: buiAt(buiSlot, BUI_VAL),
+                dspBui: buiSlot === P1_BUI_SLOT ? '右上6' : '右上3',
                 disCd: [DIS_CD_C],
                 disSb: [DIS_SB_C2],
                 dspDis: 'Ｃ',
@@ -332,6 +350,10 @@ test.describe('診療入力 — thứ tự 自動算定 ↔ カルテコメン�
         await expect(trtPicker).toBeHidden({ timeout: 15_000 })
         await step()
 
+        // Sau 確定 con trỏ nằm ở ô 回 CỦA CHÍNH DÒNG vừa chốt, đang ở chế độ nhập với
+        // 回数 do CalcCnt tính (modMain.cs:650 → frm203016.cs:1531 ghi NGUYÊN VĂN).
+        // Cả hai phase đều chọn 部位 hợp với `unit` của 処置 nên ra 1; trường hợp 0
+        // (unit không hợp răng) nằm ở treatment-grid/treatment-calc-cnt-parity.spec.ts.
         const editing = page.locator('input:focus')
         await expect(editing, 'sau 確定 phải có ô 回 đang ở chế độ nhập').toHaveValue('1', {
             timeout: 20_000,
@@ -412,11 +434,11 @@ test.describe('診療入力 — thứ tự 自動算定 ↔ カルテコメン�
      * đã chạy thì sẽ đỏ vì timeout chứ không skip — một kiểu đỏ oan rất khó đọc.
      */
     const committed = new Map<string, string[]>()
-    async function ensureCommitted(cd: number, sb: number): Promise<string[]> {
+    async function ensureCommitted(cd: number, sb: number, buiSlot: number): Promise<string[]> {
         const key = `${cd}/${sb}`
         const done = committed.get(key)
         if (done) return done
-        await resetPhase(cd, sb)
+        await resetPhase(cd, sb, buiSlot)
         await commitTrigger(cd, sb)
         // Điền hết frm203048 đang xếp hàng (phase không có `*` thì trả mảng rỗng
         // sau một nhịp chờ ngắn — `fillPendingParamDialogs` tự thoát khi không thấy).
@@ -512,7 +534,7 @@ test.describe('診療入力 — thứ tự 自動算定 ↔ カルテコメン�
         const slotNm = displayName(slotMst!)
         const slotCmtNms = target!.cmts.filter((c) => c.dispNo > 0).map((c) => norm(c.cmtNm))
 
-        await ensureCommitted(P1_CD, P1_SB)
+        await ensureCommitted(P1_CD, P1_SB, P1_BUI_SLOT)
 
         const cells = await waitForRowsAround(triggerNm, [norm(slotNm), ...slotCmtNms])
 
@@ -557,7 +579,7 @@ test.describe('診療入力 — thứ tự 自動算定 ↔ カルテコメン�
             .map((m) => norm(displayName(m)))
         skipWithReason(slotNms.length === 0, 'không slot chk_auto nào có mst_trt hiệu lực')
 
-        await ensureCommitted(P1_CD, P1_SB)
+        await ensureCommitted(P1_CD, P1_SB, P1_BUI_SLOT)
         const cells = await waitForRowsAround(triggerNm, [...belowCmts, ...slotNms])
         const trtIdx = lastIdxOf(cells, norm(triggerNm))
 
@@ -608,7 +630,7 @@ test.describe('診療入力 — thứ tự 自動算定 ↔ カルテコメン�
 
         // Mỗi comment có `*` là một lần frm203048 (frmCmt3_PrmChk chạy cho TỪNG
         // outData, frm203002.cs:10038).
-        const confirmed = await ensureCommitted(P2_CD, P2_SB)
+        const confirmed = await ensureCommitted(P2_CD, P2_SB, P2_BUI_SLOT)
         expect(
             confirmed.length,
             `phải bung ${withParam.length} lần frm203048 (mỗi カルテコメント còn \`*\` một lần, ` +
@@ -647,7 +669,7 @@ test.describe('診療入力 — thứ tự 自動算定 ↔ カルテコメン�
         skipWithReason(placed.length === 0, 'không có dòng cmt_auto nào sinh dòng riêng')
 
         // Lưới của TC-3, cùng một cú Enter.
-        await ensureCommitted(P2_CD, P2_SB)
+        await ensureCommitted(P2_CD, P2_SB, P2_BUI_SLOT)
         const cells = (await ryoTexts()).map(norm)
         const trtIdx = lastIdxOf(cells, norm(triggerNm))
         expect(trtIdx, `không thấy dòng 処置 「${triggerNm}」`).toBeGreaterThanOrEqual(0)
@@ -693,7 +715,7 @@ test.describe('診療入力 — thứ tự 自動算定 ↔ カルテコメン�
             .map((m) => norm(displayName(m)))
         skipWithReason(slotNms.length === 0, `${P2_CD}/${P2_SB} không có slot chk_auto khả dụng`)
 
-        await ensureCommitted(P2_CD, P2_SB)
+        await ensureCommitted(P2_CD, P2_SB, P2_BUI_SLOT)
         const cells = await waitForRowsAround(triggerNm, [...below, ...slotNms])
         const trtIdx = lastIdxOf(cells, norm(triggerNm))
         const lastCmtIdx = Math.max(...below.map((n) => nearestIdxOf(cells, n, trtIdx)))
