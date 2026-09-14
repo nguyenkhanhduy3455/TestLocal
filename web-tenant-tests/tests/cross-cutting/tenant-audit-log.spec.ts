@@ -3,6 +3,7 @@ import { type Page } from '@playwright/test'
 import {
     type AuditRow,
     actionsOf,
+    actionsOn,
     actionsTotal,
     actionsTruncated,
     auditColumns,
@@ -15,8 +16,11 @@ import {
     SEED_PAT_NO_BASE,
     dbEnabled,
     deleteTestPatient,
+    deleteWaitRows,
+    ensureWaitRow,
     seedTestPatient,
     seedTreatmentRows,
+    withDb,
 } from '../_shared/db'
 import { allowSave, patNo, trtDt } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
@@ -173,6 +177,13 @@ skipWithReason(
 
 test.describe.configure({ mode: 'serial', retries: 0, timeout: 300_000 })
 
+/**
+ * Các bảng của bệnh nhân mà F9 一括保存 ghi qua change tracker, tức bộ ghi âm
+ * (`TenantChangeRecordingInterceptor`) bắt được. `trn_trn` và `wait` KHÔNG có ở đây:
+ * hai bảng đó do handler tự khai (xem TC-8).
+ */
+const RECORDER_TABLES = ['person', 'insurance', 'pat_info', 'yoyaku', 'siga', 'kon'] as const
+
 test.describe('監査ログ — tenant audit trail thực sự được ghi xuống t_<slug>.audit_log', () => {
     let page: Page
     let step: () => Promise<void>
@@ -182,6 +193,12 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
     let columns: string[] = []
     /** DB clock right before the first F9 — start of the "rows appended" window. */
     let sinceFirstSave: Date
+    /**
+     * Dòng 受付 do lần chạy này tạo, để `afterAll` xoá. null = không seed được
+     * (bệnh nhân đang được tiếp nhận thật thì `ensureWaitRow` dùng lại dòng của họ
+     * và KHÔNG cho xoá).
+     */
+    let seededWaitId: string | null = null
     /** The row TC-1 produced; every later test reads it. */
     let savedRow: AuditRow | null = null
 
@@ -290,6 +307,15 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
             )
         }
 
+        // Dòng 受付 phải có TRƯỚC F9 của TC-1: F9 xoá mềm nó (Wait.deleteWait) và TC-9
+        // đo chính action đó. `ensureWaitRow` dùng lại dòng có sẵn nếu bệnh nhân đang
+        // được tiếp nhận thật — lúc đó `created` false và afterAll KHÔNG được xoá.
+        const wait = await ensureWaitRow(Number(PAT_NO), null).catch((e: Error) => {
+            console.log(`seed dòng 受付 hỏng: ${e.message}`)
+            return null
+        })
+        if (wait?.created === true) seededWaitId = wait.id
+
         page = authedPage
         step = makeStep(page)
         // 「〜を算定しますか？」 only. NOT `alerts`: that handler dismisses anything with
@@ -304,6 +330,13 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
     test.afterAll(async () => {
         await disposeOverlays?.()
         await releaseSharedPage(page)
+        if (seededWaitId !== null) {
+            // Chỉ dòng do chính lần chạy này tạo. F9 đã xoá mềm nó, đây là xoá cứng cho
+            // sạch để lần chạy sau `ensureWaitRow` lại INSERT mới.
+            await deleteWaitRows([seededWaitId]).catch((e) =>
+                console.log(`dọn dòng 受付 hỏng: ${(e as Error).message}`),
+            )
+        }
         if (SELF_SEEDED) {
             // Wrapped: a cleanup failure must not mask a real test failure.
             await deleteTestPatient(Number(PAT_NO)).catch((e) =>
@@ -450,6 +483,131 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
      * KHÔNG kiểm được nhánh lồng từ e2e: chưa có call-site nào kích hoạt nó.
      * Nhánh đó do `AuditMetaJsonTests` (unit) phủ.
      */
+    /**
+     * Bảng nào của bệnh nhân bị GHI trong khoảng từ `since` tới giờ.
+     *
+     * Đọc `updated_at` của chính bảng nghiệp vụ, không đọc nhật ký — nên nó là
+     * nguồn độc lập để đối chiếu: "DB nói bảng này bị ghi, vậy vết có nhắc tới nó
+     * không?". Không lọc `deleted_at`: dòng bị xoá mềm cũng là dòng bị ghi.
+     *
+     * Tên bảng nội suy vào SQL, nhưng lấy từ đúng hằng `RECORDER_TABLES` bên dưới
+     * chứ không từ input nào.
+     */
+    async function patientTablesWrittenSince(patNo: number, since: Date): Promise<string[]> {
+        return withDb(async (c) => {
+            const hit: string[] = []
+            for (const t of RECORDER_TABLES) {
+                const r = await c.query<{ n: string }>(
+                    `SELECT count(*)::text AS n FROM ${t} WHERE pat_no = $1 AND updated_at >= $2`,
+                    [patNo, since],
+                )
+                if (Number(r.rows[0]!.n) > 0) hit.push(t)
+            }
+            return hit
+        })
+    }
+
+    /**
+     * Chốt phép gộp THEO BẢNG của `AuditActionSet.Merge`.
+     *
+     * F9 一括保存 tự khai `actions` cho `trn_trn` (ghi máy móc thì 1 dòng bị xoá
+     * thành 13 softdelete + 13 insert, không đọc được) và cho `wait` (xoá bằng
+     * UPDATE set-based nên bộ ghi âm không thấy). Nhưng cùng lần lưu đó còn ghi
+     * person / insurance / pat_info / yoyaku / siga (歯式) / kon (根数) — bộ ghi âm
+     * ĐÃ bắt được. Trước fix, danh sách thủ công thay thế TOÀN BỘ bản ghi âm nên
+     * sáu bảng kia bị vứt: một lần lưu làm sai 歯式 để lại vết không hề nhắc tới
+     * 歯式.
+     *
+     * Cách đo KHÔNG đụng dữ liệu: hỏi DB xem lần lưu vừa rồi thực sự ghi bảng nào,
+     * rồi bắt buộc mọi bảng đó phải có trong `actions`. Không ép bảng nào phải đổi
+     * (ví dụ `person.fs_visi_dt` là write-once, `insurance.med_ed_dt` chỉ đổi khi
+     * giá trị khác) nên nếu lần lưu này không đụng bảng phụ nào thì testcase nói
+     * thẳng ra và xanh — đúng chứ không giả xanh.
+     *
+     * Bản thân phép gộp còn được ghim chặt bằng unit test `AuditActionSetMergeTests`
+     * (9 case: hai đầu null, ghi đè theo bảng, thứ tự, không đếm trùng, Total khi
+     * bộ ghi âm đã cắt bớt, cap 1 lần).
+     */
+    test('TC-8 — bảng phụ mà lần lưu THỰC SỰ ghi phải có trong actions (gộp theo bảng)', async () => {
+        expect(savedRow, 'TC-1 chưa lấy được dòng audit').not.toBeNull()
+
+        const written = await patientTablesWrittenSince(Number(PAT_NO), sinceFirstSave)
+        const inTrail = new Set(actionsOf(savedRow!).map((a) => a.table))
+
+        console.log(
+            `bảng phụ DB báo bị ghi: ${written.join(', ') || '(không có)'} | ` +
+                `bảng có trong actions: ${[...inTrail].join(', ')}`,
+        )
+
+        if (written.length === 0) {
+            console.log(
+                'lần lưu này không đụng bảng phụ nào (fs_visi_dt là write-once, ' +
+                    'med_ed_dt chỉ đổi khi giá trị khác) ⇒ không có gì để đối chiếu',
+            )
+            await step()
+            return
+        }
+
+        for (const t of written) {
+            expect(
+                [...inTrail],
+                `DB cho thấy lần lưu này đã ghi '${t}' nhưng actions không nhắc tới. ` +
+                    'Danh sách thủ công của handler đang thay thế TOÀN BỘ bản ghi âm thay vì ' +
+                    'chỉ thay theo bảng — xem AuditActionSet.Merge.',
+            ).toContain(t)
+        }
+        await step()
+    })
+
+    /**
+     * `wait` (受付患者一覧 — hàng chờ tiếp nhận) phải có trong vết.
+     *
+     * WinForm `Wait.deleteWait` (Wait.cs:210-228, gọi từ modSave.cs:580) đưa bệnh
+     * nhân ra khỏi hàng chờ ngay khi đăng ký điều trị. Web port bằng
+     * `SoftDeleteAsync` — set-based `ExecuteUpdate`, KHÔNG qua change tracker — nên
+     * `TenantChangeRecordingInterceptor` không bao giờ thấy, mà handler cũng chưa
+     * từng tự khai ⇒ **không ai ghi lại**. Đây là bảng duy nhất của F9 mà cả hai
+     * đường đều mù.
+     *
+     * Dòng 受付 được seed ở `beforeAll` (trước F9 của TC-1), nên đây là điều kiện
+     * xác định chứ không phụ thuộc bệnh nhân có đang được tiếp nhận thật hay không.
+     */
+    test('TC-9 — xoá bệnh nhân khỏi hàng chờ (wait) phải để lại action softdelete', async () => {
+        expect(savedRow, 'TC-1 chưa lấy được dòng audit').not.toBeNull()
+        skipWithReason(
+            seededWaitId === null,
+            'không seed được dòng 受付 cho bệnh nhân test — không có gì để đo',
+        )
+
+        const waitActions = actionsOn(savedRow!, 'wait')
+
+        expect(
+            waitActions.length,
+            "actions không có action nào trên 'wait'. F9 xoá mềm dòng 受付 bằng " +
+                'SoftDeleteAsync (set-based) nên bộ ghi âm không thấy — handler phải tự khai ' +
+                `qua AuditActions.SoftDeleteStamps. actions=${JSON.stringify(actionsOf(savedRow!).map((a) => `${a.table}/${a.type}`))}`,
+        ).toBeGreaterThan(0)
+
+        const a = waitActions[0]!
+        expect(a.type, "action trên 'wait' phải là softdelete (dòng vẫn còn trong bảng)").toBe(
+            'softdelete',
+        )
+        // Cả hai phía phải có đủ 4 cột dấu: khôi phục thiếu updated_at thì dòng không
+        // trở về đúng trạng thái cũ (xem AuditActionTypes.SoftDelete).
+        for (const side of ['old', 'new'] as const) {
+            const cols = Object.keys(a[side] ?? {})
+            expect(
+                cols,
+                `phía '${side}' của softdelete 'wait' phải mang đủ 4 cột dấu, đang có ${JSON.stringify(cols)}`,
+            ).toEqual(
+                expect.arrayContaining(['deleted_at', 'deleted_by', 'updated_at', 'updated_by']),
+            )
+        }
+        // `old` là dòng đang sống ⇒ hai cột xoá phải là null, không phải vắng mặt.
+        expect(a.old, "phía 'old' phải giữ deleted_at: null").toHaveProperty('deleted_at', null)
+        await step()
+    })
+
     test('TC-7 — meta_json PHẲNG: field nghiệp vụ ở top level, không bị lồng dưới khoá `meta`', async () => {
         expect(savedRow, 'TC-1 chưa lấy được dòng audit').not.toBeNull()
         const meta = savedRow!.meta
