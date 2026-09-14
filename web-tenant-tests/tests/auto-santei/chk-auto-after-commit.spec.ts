@@ -136,7 +136,16 @@ const DIS_SB_C2 = 2
 const BUI_SLOT = 2
 const BUI_VAL = 1
 
-/** `siga.se` — 1 = 生活歯 (răng còn sống), 4 = 欠損 (đã mất). */
+/**
+ * `siga.se_*` của một 永久歯 — **0 = 生活歯**, 1..3 = 失活歯/分割歯, 4 = 欠損歯
+ * (`CommonChk.chkSiga`, CommonChk.cs:518-540).
+ *
+ * ⚠️ Tên hằng + chú thích cũ (「1 = 生活歯」) SAI: 1 là 失活歯. GIÁ TRỊ để nguyên 1 vì
+ * spec này đang xanh và chốt 抜歯 (179/2) có ghi nóng `siga`; đổi trạng thái xuất phát
+ * là việc riêng, phải chạy lại mới chốt được. Với 179/2 thì
+ * `mst_trt.seikatu = sikkatu = 0` nên `chkSiga` không chặn theo `se` ở cả hai giá trị.
+ * Xem chk-auto-comment-order.spec.ts (đã đổi về 0, khớp bộ FlaUI và default của cột).
+ */
 const SE_VITAL = 1
 
 /** Hạn chờ cho chuỗi chèn dòng sau 回 Enter (mỗi bảng một vòng request). */

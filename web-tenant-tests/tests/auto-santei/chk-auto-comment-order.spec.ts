@@ -129,8 +129,23 @@ const DIS_SB_C2 = 2
 const BUI_SLOT = 2
 const BUI_VAL = 1
 
-/** `siga.se` — 1 = 生活歯. */
-const SE_VITAL = 1
+/**
+ * `siga.se_*` của một 永久歯 — **0 = 生活歯**, 1..3 = 失活歯/分割歯, 4 = 欠損歯
+ * (`CommonChk.chkSiga`, CommonChk.cs:518-540; bản port BE
+ * `Ochacom.Domain/Services/Treatments/ToothConditionChecker.cs` ghi cùng miền giá trị,
+ * `SigaToothCondition.PermVital = 0`).
+ *
+ * ⚠️ 0 CŨNG là DEFAULT của cột và là trạng thái thật của bệnh nhân test trong DB dev
+ * (`se_1..se_32` đều 0), nên đây mới là trạng thái xuất phát "răng còn sống" đúng
+ * nghĩa. Trước đây spec đặt 1 kèm chú 「1 = 生活歯」 — sai: 1 là 失活歯, tức đúng cái
+ * trạng thái mà 抜髄 (170/176) TẠO RA sau khi chốt, nên Phase 2 đang 抜髄 một chiếc
+ * răng đã chết sẵn. Bộ FlaUI dùng 0 theo nguồn chân lý WinForm; giữ hai vế bằng nhau.
+ *
+ * Với 170/0 và 204/0 thì `mst_trt.seikatu = sikkatu = 0` nên `chkSiga` không chặn theo
+ * `se` ở cả hai giá trị — đổi 1 → 0 là trung tính về hành vi, chỉ để trạng thái xuất
+ * phát đúng nghĩa và khớp FlaUI.
+ */
+const SE_VITAL = 0
 
 const FOLLOWUP_TIMEOUT = 30_000
 const ALLOW_SAVE = allowSave
