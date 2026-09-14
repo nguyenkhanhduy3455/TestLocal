@@ -1,7 +1,13 @@
 import { type Locator, type Page } from '@playwright/test'
 
-import { dbEnabled, findMstTrt, findPacsWithTrtSlot, type MstTrtRow } from '../_shared/db'
-import { patNo, TODAY_ISO, trtDt } from '../_shared/env'
+import {
+    dbEnabled,
+    findMstTrt,
+    findPacsWithTrtSlot,
+    findTreInpFlg,
+    type MstTrtRow,
+} from '../_shared/db'
+import { patNo, trtDt } from '../_shared/env'
 import { openTreatmentEntry } from '../_shared/entry'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
@@ -39,6 +45,10 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *    query `FirstVisitDt`. Vì vậy spec ĐỌC CHÍNH query đó làm tiền đề, không đoán.
  *  - api/pac-trts-api.ts — `GET /tenant/pacs/treatments?PacCd&TrtDt&PatNo&FirstVisitDt&Bui&DisCd`,
  *    trả `{ data: PacTrtItemResponse[] }` với `trtCd/trtSb/trtNm/score/cnt/jihiFlg`.
+ *  - PacTrtResolver.cs — cột 処置名称 là `cct_nm` (カルテ名称) khi
+ *    `inp_config.tre_inp_flg == 1`, ngược lại là `trt_nm` (frm203014.cs:538-541).
+ *    Dev DB đang bật cờ này ⇒ dialog in 「歯科疾患管理料」 chứ không phải 「歯管」;
+ *    spec đọc cờ qua `findTreInpFlg()` rồi mới chọn cột để so.
  *  - components/pack-selection-dialog.tsx + cnt-cell.tsx — lưới dialog dùng
  *    `getRowKey = trtRowKey` ⇒ mỗi dòng có `data-testid="row-<trtCd>-<trtSb>"`,
  *    ô là `cell-trtCd / cell-trtSb / cell-trtNm / cell-score / cell-cnt`;
@@ -85,10 +95,15 @@ const REV_R08_06 = '2026-06-01'
 const PAT_NO = patNo('5')
 
 /**
- * 診療日 SAU 改定 令和8年6月 — mặc định HÔM NAY (env `TEST_TRT_DT`).
- * Đây là phía từng đỏ: 初診月 + sau 改定 ⇒ KHÔNG được thay, 歯管 phải còn.
+ * 診療日 SAU 改定 令和8年6月 — mặc định 2026-07-01 (env `TEST_TRT_DT`).
+ *
+ * Rule 18: KHÔNG dùng hôm nay. Tiền đề của bug là 初診月 + sau 改定, mà 初診日 do FE
+ * suy từ lưới; bệnh nhân 5 có 歯科初診料 (100-0) THẬT vào 2026-07-01 nên chỉ tháng
+ * 2026-07 mới dựng được đúng nhánh đó. Lấy hôm nay (2026-09) thì FE gửi
+ * `FirstVisitDt=2026-07-01` ⇒ khác tháng ⇒ test đi nhánh 「không phải 初診月」 và
+ * XANH cả khi chưa vá — đúng loại xanh giả TC-K2 phải chặn.
  */
-const TRT_DT_POST = trtDt(TODAY_ISO)
+const TRT_DT_POST = trtDt('2026-07-01')
 
 /**
  * 診療日 TRONG khung thay thế — mặc định 2025-12-23, ngày bệnh nhân 5 có
@@ -147,6 +162,11 @@ test.describe('パック処置選択 — cổng 改定 của 歯管 初診月 (f
     let pacsWithKanri: Awaited<ReturnType<typeof findPacsWithTrtSlot>> = []
     /** Các 枝番 của mã 116 trong bản master của từng 診療日. */
     const masterByDate = new Map<string, MstTrtRow[]>()
+    /** `inp_config.tre_inp_flg` — quyết định cột 処置名称 lấy `cct_nm` hay `trt_nm`. */
+    let treInpFlg = 0
+
+    /** Tên 処置 mà dialog PHẢI in cho một dòng master (frm203014.cs:538-541). */
+    const expectedNm = (m: MstTrtRow) => (treInpFlg === 1 ? m.cctNm : m.trtNm)
 
     const dialogRows = () => picker.locator('[data-testid^="row-"]')
     const cellOf = (rowKey: string, id: string) =>
@@ -262,6 +282,28 @@ test.describe('パック処置選択 — cổng 改定 của 歯管 初診月 (f
     }
 
     /**
+     * FE có thật sự báo 「tháng đang xem LÀ 初診月」 hay không, đọc từ query nó gửi.
+     *
+     * Hai testcase chính đều PHẢI ở nhánh `first-visit-month`: nhánh còn lại
+     * (không phải 初診月) không kích hoạt phép thay nên xanh cả khi chưa vá.
+     */
+    function assertedBranch(cap: PickCapture, expectDt: string): string {
+        const fv = new URL(cap.url).searchParams.get('FirstVisitDt')
+        if (fv === null) return 'no-first-visit'
+        return fv.slice(0, 7) === expectDt.slice(0, 7) ? 'first-visit-month' : 'other-month'
+    }
+
+    /** Thông báo chỉ đúng env cần đổi khi tiền đề 初診月 không dựng được. */
+    function bugPreconditionHint(cap: PickCapture, expectDt: string): string {
+        const fv = new URL(cap.url).searchParams.get('FirstVisitDt') ?? '(không gửi)'
+        return (
+            `chưa đo được tiền đề của bug: ${expectDt} KHÔNG phải 初診月 của bệnh nhân ` +
+            `${PAT_NO} (FE gửi FirstVisitDt=${fv}). Chọn 診療日 nằm trong tháng bệnh nhân ` +
+            'có 歯科初診料 (100-0) — xem doc-comment của TRT_DT_POST / TRT_DT_PRE.'
+        )
+    }
+
+    /**
      * Suy kỳ vọng từ CHÍNH query FE đã gửi + bản master của ngày đó, rồi assert.
      *
      * Trả về mô tả nhánh đã đi để testcase log lại — ba nhánh của
@@ -314,12 +356,14 @@ test.describe('パック処置選択 — cổng 改定 của 歯管 初診月 (f
         expect(keys, `lưới dialog thiếu dòng ${expectKey} (${branch})`).toContain(expectKey)
         expect(keys, `lưới dialog không được có ${otherKey} (${branch})`).not.toContain(otherKey)
 
-        // Tên phải khớp master của ĐÚNG bản đó — 「歯管」 vs 「歯管(初診月)」 là cách
-        // duy nhất nhìn từ UI biết BE lấy đúng bản master hay không.
+        // Tên phải khớp master của ĐÚNG bản đó — 「歯科疾患管理料」 vs
+        // 「歯科疾患管理料(初診月)」 là cách duy nhất nhìn từ UI biết BE lấy đúng bản
+        // master hay không. Cột nào (cct_nm / trt_nm) do tre_inp_flg quyết định.
         const shownNm = (await cellOf(expectKey, 'trtNm').innerText()).trim()
-        expect(shownNm.normalize('NFKC'), `処置名称 của ${expectKey} lệch mst_trt.trt_nm`).toBe(
-            inMaster.trtNm.normalize('NFKC'),
-        )
+        expect(
+            shownNm.normalize('NFKC'),
+            `処置名称 của ${expectKey} lệch master (tre_inp_flg=${treInpFlg})`,
+        ).toBe(expectedNm(inMaster).normalize('NFKC'))
 
         // 点数 trên lưới phải đúng bằng con số BE trả về; và phải > 0 (bản master
         // sai/thiếu sẽ ra 0). KHÔNG assert bằng score1: getTensu còn chọn
@@ -362,6 +406,7 @@ test.describe('パック処置選択 — cổng 改定 của 歯管 初診月 (f
             'div[class*="grid-cols-[42px_1fr]"][class*="cursor-pointer"]',
         )
 
+        treInpFlg = await findTreInpFlg()
         pacsWithKanri = await findPacsWithTrtSlot(KANRI_TRT_CD, KANRI_SB_NORMAL)
         for (const d of [TRT_DT_POST, TRT_DT_PRE]) {
             masterByDate.set(d, await findMstTrt(d, KANRI_TRT_CD))
@@ -388,12 +433,20 @@ test.describe('パック処置選択 — cổng 改定 của 歯管 初診月 (f
                 '→ không dựng được tiền đề',
         )
 
+        console.log(
+            `tre_inp_flg=${treInpFlg} ⇒ cột 処置名称 lấy ${treInpFlg === 1 ? 'cct_nm' : 'trt_nm'}`,
+        )
         for (const [d, rows] of masterByDate) {
             const has7 = rows.some((r) => r.trtSb === KANRI_SB_NORMAL)
             const has6 = rows.some((r) => r.trtSb === KANRI_SB_FIRST_VISIT)
             console.log(
                 `mst_trt@${d}: ` +
-                    rows.map((r) => `${r.trtCd}-${r.trtSb} 「${r.trtNm}」 ${r.score1}点`).join(' / ') +
+                    rows
+                        .map(
+                            (r) =>
+                                `${r.trtCd}-${r.trtSb} trt_nm=「${r.trtNm}」 cct_nm=「${r.cctNm}」 ${r.score1}点`,
+                        )
+                        .join(' / ') +
                     ` (có 116-7=${has7}, có 116-6=${has6})`,
             )
         }
@@ -423,21 +476,14 @@ test.describe('パック処置選択 — cổng 改定 của 歯管 初診月 (f
         const cap = await openPackWithKanri()
         dumpItems('POST', cap)
 
-        const q = new URL(cap.url).searchParams
-        // Tiền đề của bug: FE PHẢI gửi 初診日 cùng tháng. Không gửi (tháng đó không
-        // có 初診 nào, kể cả dòng 自動算定 chưa lưu) thì nhánh thay thế không được
-        // kích hoạt — expectKanriBranch vẫn assert, chỉ là nhánh 「giữ 116-7」.
-        if (q.get('FirstVisitDt') === null) {
-            console.log(
-                `CẢNH BÁO: ${TRT_DT_POST} không có 初診日 nào ở lưới → chưa đo được ĐÚNG ` +
-                    'tiền đề của bug (初診月 + sau 改定). Đặt TEST_TRT_DT vào tháng có 初診料.',
-            )
-        }
         const branch = await expectKanriBranch(cap, masterByDate.get(TRT_DT_POST) ?? [])
         // Sau 改定 thì dù có 初診月 cũng KHÔNG bao giờ được đi nhánh thay thế.
-        if (TRT_DT_POST >= REV_R08_06) {
-            expect(branch, 'sau 改定 令和8年6月 mà vẫn thay sang 116-6').toContain('giữ 116-7')
-        }
+        expect(branch, 'sau 改定 令和8年6月 mà vẫn thay sang 116-6').toContain('giữ 116-7')
+        // CHẶN XANH GIẢ: nhánh 「không phải 初診月」 xanh cả khi chưa vá, nên phải
+        // khẳng định là đã đo ĐÚNG tiền đề của bug (初診月 + sau 改定).
+        expect(assertedBranch(cap, TRT_DT_POST), bugPreconditionHint(cap, TRT_DT_POST)).toBe(
+            'first-visit-month',
+        )
         await dismissPicker()
         await step()
     })
@@ -460,15 +506,13 @@ test.describe('パック処置選択 — cổng 改定 của 歯管 初診月 (f
         const cap = await openPackWithKanri()
         dumpItems('PRE', cap)
 
-        const q = new URL(cap.url).searchParams
-        if (q.get('FirstVisitDt') === null) {
-            console.log(
-                `${TRT_DT_PRE} không có 初診日 ở lưới → nhánh đo được chỉ là 「giữ 116-7」. ` +
-                    'Đặt TEST_TRT_DT_PRE vào tháng bệnh nhân có 歯科初診料.',
-            )
-        }
         const branch = await expectKanriBranch(cap, masterByDate.get(TRT_DT_PRE) ?? [])
-        console.log(`PRE nhánh: ${branch}`)
+        expect(branch, 'trong khung 改定 + 初診月 mà KHÔNG thay sang 116-6').toContain(
+            'thay sang 116-6',
+        )
+        expect(assertedBranch(cap, TRT_DT_PRE), bugPreconditionHint(cap, TRT_DT_PRE)).toBe(
+            'first-visit-month',
+        )
         await dismissPicker()
         await step()
     })
