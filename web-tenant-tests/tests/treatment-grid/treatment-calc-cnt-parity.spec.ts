@@ -86,6 +86,13 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *       npx playwright test tests/treatment-grid/treatment-calc-cnt-parity.spec.ts
  *
  * Spec KHÔNG bấm F9 登録; cần `TEST_ALLOW_SAVE=1` vì có ghi nóng bảng `siga`.
+ *
+ * ⚠️ ĐỪNG chạy spec này với `--repeat-each`. Mỗi TC gọi `resetPatient()` (xoá +
+ * dựng lại CÙNG một bệnh nhân, kèm ghi nóng `kon`/`siga`) trên page dùng chung
+ * theo worker, nên các lượt lặp tranh nhau đúng hàng dữ liệu đó và đỏ ngẫu nhiên
+ * ở TC-1/TC-4 dù app làm đúng. Đã đo: 3 lượt chạy ĐƠN liên tiếp ⇒ 4/4 xanh cả ba,
+ * cùng lúc `--repeat-each=3` cho 7/12 … 11/12 tuỳ lượt. Muốn kiểm ổn định thì chạy
+ * lại cả file nhiều lần, đừng `--repeat-each`.
  */
 
 /**
@@ -266,17 +273,15 @@ test.describe('診療入力 — 回数 phải theo CalcCnt, không phải hằng
      * mốc giữa hai bước. Đã vấp: TC-2/TC-4 đỏ lần 1, xanh lần retry.
      */
     async function dismissAlerts(): Promise<void> {
+        // ⚠️ KHÔNG tự bấm OK ở đây. Chỗ BẤM là locator handler của
+        // `installOverlayHandlers({ alerts: true })`; hàm này chỉ ASSERT auto-retry để
+        // ÉP handler đó chạy. Bản trước tự click nên ba thứ cùng tranh một nút OK
+        // (handler + dismissAlerts + closeDialogs) ⇒ handler đóng alert trước, cú
+        // click gốc không còn nút để bấm ⇒ `locator.click: Timeout 15000ms`.
         const alert = page.locator('[role="alertdialog"]')
-        for (let i = 0; i < 5; i++) {
-            if ((await alert.count()) === 0) break
-            const ok = page.getByRole('button', { name: 'OK' })
-            if ((await ok.count()) > 0) await ok.first().click().catch(() => {})
-            else await page.keyboard.press('Enter').catch(() => {})
-            await expect(alert).toHaveCount(0, { timeout: 5_000 }).catch(() => {})
-        }
         await expect(alert, 'alert お茶コン không tắt — mọi click sau đó sẽ bị nuốt').toHaveCount(
             0,
-            { timeout: 15_000 },
+            { timeout: 20_000 },
         )
     }
 
@@ -313,20 +318,37 @@ test.describe('診療入力 — 回数 phải theo CalcCnt, không phải hằng
         await expect(trtPicker).toBeHidden({ timeout: 15_000 })
         await step()
 
-        // Sau 確定 con trỏ nằm ở ô 回 của chính dòng vừa chốt, đang ở chế độ nhập —
-        // giá trị trong đó CHÍNH LÀ số WinForm ghi vào grdRegi[4] (frm203016.cs:1531).
+        // Sau 確定, số trong ô 回 của dòng vừa chốt CHÍNH LÀ số WinForm ghi vào
+        // grdRegi[4] (frm203016.cs:1531).
         //
-        // ⚠️ ĐỪNG dùng `input:focus`: SingleChk có thể bung alert お茶コン
-        // (「算定可能な部位がありません」 — đúng và WinForm cũng cảnh báo) và alert đó
-        // cướp focus, nên `input:focus` trả về rỗng dù ô 回 vẫn đang mở. Đã vấp:
-        // TC-1/TC-2 đỏ lần 1, xanh lần retry. Neo vào chính ô 回 của lưới
-        // (`|4`, loại trừ ô của dòng 日計) và chờ alert tan trước.
+        // ⚠️ ĐỪNG neo vào `<input>` của ô 回. Hai lần trước đã thử: `input:focus`
+        // (alert お茶コン cướp focus) rồi `[data-grid-cell$="|4"] input` + dọn alert
+        // trước. Cả hai đều sai ở cùng một chỗ: chính cú bấm OK trên alert
+        // 「算定可能な部位がありません」 ĐÓNG ô 回 (đúng flow WinForm — MsgBox rồi editor
+        // đóng), nên sau `dismissAlerts()` thì editor không còn tồn tại và assert
+        // 「phải có ô 回 đang ở chế độ nhập」 đỏ TẤT ĐỊNH, dù app làm đúng.
+        //
+        // `tenKaiOfRow` đọc `input.value` khi editor còn mở và `textContent` khi đã
+        // chốt, nên nó đúng ở cả hai trạng thái — không còn phụ thuộc việc alert có
+        // bung hay không.
         await dismissAlerts()
-        const kaiEditor = page.locator('[data-grid-cell$="|4"] input:not([data-footer-cell])')
-        await expect(kaiEditor, 'sau 確定 phải có ô 回 đang ở chế độ nhập').toBeVisible({
-            timeout: 20_000,
-        })
-        return (await kaiEditor.inputValue()).trim()
+        let kai = ''
+        await expect
+            .poll(
+                async () => {
+                    const r = await tenKaiOfRow(norm(triggerNm))
+                    kai = r?.kai ?? ''
+                    return r !== null && kai !== ''
+                },
+                {
+                    timeout: 20_000,
+                    message:
+                        `sau 確定 phải thấy dòng 「${triggerNm}」 kèm ô 回 có giá trị ` +
+                        '(kể cả khi alert 算定可能な部位がありません đã đóng editor)',
+                },
+            )
+            .toBe(true)
+        return kai
     }
 
     /** Chờ lưới đứng yên sau khi Enter ô 回 (chuỗi cascade chạy xong). */
@@ -338,7 +360,13 @@ test.describe('診療入力 — 回数 phải theo CalcCnt, không phải hằng
         let prev = ''
         const deadline = Date.now() + SETTLE_TIMEOUT
         while (Date.now() < deadline && stable < 3) {
-            if ((await page.getByRole('dialog').count()) > 0) await closeDialogs(page, 2)
+            // Alert là việc của handler (xem dismissAlerts); closeDialogs bấm MỌI nút
+            // OK trên trang nên gọi nó khi alert đang mở là tự tranh chấp.
+            if ((await page.locator('[role="alertdialog"]').count()) > 0) {
+                await dismissAlerts()
+            } else if ((await page.getByRole('dialog').count()) > 0) {
+                await closeDialogs(page, 2)
+            }
             const now = JSON.stringify((await ryoTexts()).map(norm))
             stable = now === prev ? stable + 1 : 0
             prev = now
