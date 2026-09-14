@@ -415,6 +415,24 @@ public sealed class TestSettings
         [JsonPropertyName("soutyakuTrtSb")] public int SoutyakuTrtSb { get; set; } = 4;
 
         /// <summary>
+        /// <b>Phase 2</b> — 処置 có カルテコメント tự áp dụng mà text CÒN dấu <c>*</c>, để đo
+        /// nhánh <c>frmCmt3_PrmChk</c> → <c>frm203048</c> (frm203002.cs:10052).
+        ///
+        /// <para>Mặc định <b>170/0 抜髄(単根)</b> — TRÙNG <c>TEST_P2_CD/SB</c> của spec
+        /// Playwright <c>chk-auto-comment-order.spec.ts</c>. Master dev: 4 dòng
+        /// <c>CMTAUTO</c> (<c>disp_no</c> -2 / -1 / 3 / 4, hai dòng chứa <c>*</c>) và
+        /// <c>chkauto(170,0) → 310/2</c>.</para>
+        ///
+        /// <para>⚠️ <c>170</c> đi qua <c>frm203016.IregCodChk</c> case 170 ⇒ <c>SigaChg</c>
+        /// GHI NÓNG bảng <c>SIGA</c> lúc chốt (frm203016.cs:1032-1041), khác hẳn 204 của
+        /// Phase 1. Vì thế Phase 2 phải chụp — in ra — trả lại <c>SIGA</c>.</para>
+        /// </summary>
+        [JsonPropertyName("phase2TrtCd")] public int Phase2TrtCd { get; set; } = 170;
+
+        /// <summary>枝番 của <see cref="Phase2TrtCd"/>.</summary>
+        [JsonPropertyName("phase2TrtSb")] public int Phase2TrtSb { get; set; }
+
+        /// <summary>
         /// Cho phép XOÁ các dòng mang mã đem chốt + mã đi kèm + mã comment trong NGÀY test
         /// ở <c>OneTimeTearDown</c>. Hàng rào F22: chỉ chạy khi ngày đó KHÔNG có sẵn dòng
         /// nào mang các mã ấy trước lượt chạy.
@@ -1018,6 +1036,8 @@ public sealed class TestSettings
         Set("OCHA_CHK_AUTO_CASCADE_SOUTYAKU_TRT_CD", v => s.ChkAutoCascade.SoutyakuTrtCd = int.Parse(v));
         Set("OCHA_CHK_AUTO_CASCADE_SOUTYAKU_TRT_SB", v => s.ChkAutoCascade.SoutyakuTrtSb = int.Parse(v));
         Set("OCHA_CHK_AUTO_BRANCH_SEED", v => s.ChkAutoCascade.AllowBranchSeed = ToBool(v));
+        Set("OCHA_CHK_AUTO_P2_TRT_CD", v => s.ChkAutoCascade.Phase2TrtCd = int.Parse(v));
+        Set("OCHA_CHK_AUTO_P2_TRT_SB", v => s.ChkAutoCascade.Phase2TrtSb = int.Parse(v));
         Set("OCHA_PERIO_ALLOW_SETTING_CHANGE", v => s.PerioKensa.AllowSettingChange = ToBool(v));
         Set("OCHA_PERIO_DIS_CD", v => s.PerioKensa.DisCd = int.Parse(v));
         Set("OCHA_SINRYO_YM", v => s.VisitList.SinryoYm = v);

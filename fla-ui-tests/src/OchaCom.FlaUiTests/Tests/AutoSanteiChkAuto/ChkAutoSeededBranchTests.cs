@@ -292,8 +292,14 @@ public sealed class ChkAutoSeededBranchTests : UiTestBase
     // TCB3 ← §3b — dấu * mở パラメータダイアログ frm203048
     // ═════════════════════════════════════════════════════════════════════════
 
-    [Test, Order(3)]
-    [Description("TCB3 ← §3b — カルテコメント còn dấu * thì frmCmt3_PrmChk phải mở frm203048")]
+    /// <remarks>
+    /// <b>[Explicit] — <see cref="ChkAutoOrderPhase2Tests.TC3_Asterisk_Comment_Opens_Param_Dialog_Before_Writing"/>
+    /// đã phủ câu hỏi này bằng DỮ LIỆU THẬT (170/0, bốn dòng CMTAUTO trong đó hai dòng còn
+    /// <c>*</c>), và đó mới là vế parity đối ứng <c>TC-3</c> bên web.</b> Ca này chỉ còn ý
+    /// nghĩa khi master không còn dòng <c>*</c> nào — lúc đó vá tạm là đường duy nhất.
+    /// </remarks>
+    [Test, Order(3), Explicit]
+    [Description("TCB3 (dự phòng) — vá MST_CMT2 để ép dấu * ; ưu tiên Phase2.TC3 trên dữ liệu thật")]
     public void TCB3_Asterisk_In_Comment_Opens_Parameter_Dialog()
     {
         if (_hostCmt is null || _cmt2Before is null)
@@ -428,12 +434,19 @@ public sealed class ChkAutoSeededBranchTests : UiTestBase
             return null;
         }
 
-        var measure = _ops.CommitOnSeededRow(seeded, HostCd, HostSb, trace);
-        if (measure is null || !measure.Enter.Committed)
+        var raw = _ops.CommitOnSeededRow(seeded, HostCd, HostSb, trace);
+        if (raw is null || !raw.Enter.Committed)
         {
-            Log($"khong chot duoc {HostCd}/{HostSb}: {measure?.Enter.ToString() ?? "khong go duoc ma"}");
+            Log($"khong chot duoc {HostCd}/{HostSb}: {raw?.Enter.ToString() ?? "khong go duoc ma"}");
             return null;
         }
+
+        // 摘要選択 chan giua chung Chk_CmtAuto ⇒ khong tra loi thi Chk_ChkAuto khong chay
+        // va ca ca do oan cho app. Xem SummaryPickDialog.
+        var measure = raw;
+        if (new SummaryPickDialog(App, Screen.Window, _flow).Answer(trace) > 0)
+            measure = new AutoSanteiOps.EntryMeasure(raw.Enter, raw.Before, _ops.Grid.Snapshot(),
+                                                     raw.PointBefore, _ops.Grid.AllPointValue());
 
         Log($"đo được: {measure}");
         foreach (var r in measure.AddedRows) Log($"  + {r}");

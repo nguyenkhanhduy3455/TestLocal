@@ -46,6 +46,7 @@ UIAutomation, Win32 và một app desktop chạy trên máy khác.
 | F23 | Locator sửa ở `testsettings`, không sửa code | Cấu trúc |
 | F24 | `run.killOnSuccess` giết app giữa fixture | Cấu trúc |
 | F25 | Toàn quyền SSH vào `ochacom-win` — dùng thẳng, nhưng kiểm máy sống trước | Chạy từ xa |
+| F26 | Được ĐỌC tự do cả ba repo — WinForm, web, và spec bên kia | Cách làm việc |
 
 ---
 
@@ -138,6 +139,54 @@ người sau sẽ "sửa" nó cho hợp trực giác.
 ### F4 — Đổi MỘT thứ mỗi lượt chạy
 
 Một lượt chạy không chứng minh gì. Đổi hai thứ rồi xanh thì không biết thứ nào đã cứu.
+
+### F26 — Được ĐỌC tự do cả ba repo; nhưng ĐO thì chỉ đo vế của mình
+
+**Đọc là tự do.** Không cần hỏi trước khi mở bất cứ thứ gì trong:
+
+| Repo | Đường dẫn | Là gì |
+|---|---|---|
+| App WinForm | `userapp/src/OCHACOM` | nguồn chân lý (F3) |
+| App web | `userapp/ochacom-saas*` | bản port đang so |
+| Spec web | `../web-tenant-tests/` | vế Playwright của cặp parity |
+
+Đọc code web là cách rẻ nhất để biết **một nhánh đã được port chưa** — rẻ hơn nhiều so với
+dựng cả một lượt chạy giao diện rồi suy ngược từ kết quả.
+
+**Nhưng ba cái bẫy đi kèm, cả ba đều đã trả giá:**
+
+1. **Kiểm ĐÚNG nhánh.** Cùng lúc có nhiều bản checkout và chúng KHÁC nhau:
+
+   ```
+   ochacom-saas        [demo1]                        runChkAuto: đã port §1/§2/§5a/§4/§6
+   ochacom-saas-feat   [review-inp-chk-auto-parity]   bản mà báo cáo parity viết cho
+   ochacom-saas-fix    [dev]
+   ```
+
+   Đo được 2026-09-14: một báo cáo parity liệt kê 7 lỗi của `runChkAuto`, nhưng trên
+   `demo1` thì 5/7 đã được sửa từ trước. Kiểm nhầm nhánh là ra kết luận sai **theo cả hai
+   chiều**. Luôn in `git branch --show-current` + `git log --oneline -1` vào log trước khi
+   trích một dòng code web.
+
+2. **Đọc ≠ đo.** Thấy code có nhánh KHÔNG bằng nhánh đó chạy đúng; thấy code thiếu nhánh
+   KHÔNG bằng người dùng gặp lỗi — nhánh ấy có thể là **code chết** trên master hiện tại
+   (xem `Tests/AutoSanteiChkAuto/README.md` mục 7.3: 0/224 ô `chkauto` chạm tới
+   `case 202/549/179`). Kết luận 「có lệch」 vẫn phải dựa vào **số đo**, và số đo của bên
+   này là **WinForm**.
+
+3. **Đừng SỬA vế kia, và đừng kết luận thay nó khi nó đang được viết.** Vế Playwright có
+   người khác làm. `git add -A` đã từng cuốn nhầm file spec của họ vào commit của luồng
+   này (2026-09-14) — soi `git status` trước, chỉ `add` đúng file của mình.
+
+Báo cáo thì tách bạch ba mức, đừng trộn:
+
+```
+「đo được trên WinForm」   ← số đo của mình, chắc chắn
+「đọc thấy trong code web」 ← kèm nhánh + file:dòng
+「vế web đo ra gì」         ← kết quả spec bên kia, không phải suy đoán của mình
+```
+
+---
 
 ---
 

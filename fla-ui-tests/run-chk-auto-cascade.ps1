@@ -41,13 +41,25 @@
     Bật chkAutoCascade.allowBranchSeed — cho SỬA TẠM master DÙNG CHUNG (CHKAUTO,
     MST_CMT2). Chỉ ChkAutoSeededBranchTests cần. Fixture chụp — in ra — trả lại.
 
+.PARAMETER Phase
+    Chon cap parity theo phase — MOI PHASE MOT CU CHOT, vua tran 15 phut (F7):
+        -Phase 1   ChkAutoCascadeTests     TCC0 + TC1 + TC2 + TCX_*   (chot 204/0)
+        -Phase 2   ChkAutoOrderPhase2Tests TC0  + TC3 + TC4 + TC5     (chot 170/0)
+
+    Anh xa sang spec Playwright chk-auto-comment-order.spec.ts:
+        TC1 <- TC-1    TC2 <- TC-2    TC3 <- TC-3    TC4 <- TC-4    TC5 <- TC-5
+    TCC0 / TC0 / TCX_* / TCB* la phan FlaUI-only, ben web khong co.
+
 .EXAMPLE
     .\run-chk-auto-cascade.ps1 -Case TCC0                        # 1. re, chi hoi DB
-    .\run-chk-auto-cascade.ps1 -AllowSave                        # 2. ca cum TCC0..TCC5
-    .\run-chk-auto-cascade.ps1 -AllowSave -BranchSeed -Case TCB1 # 3. tung ca mot
+    .\run-chk-auto-cascade.ps1 -AllowSave -Phase 1               # 2. cap parity Phase 1
+    .\run-chk-auto-cascade.ps1 -AllowSave -Phase 2               # 3. cap parity Phase 2
+    .\run-chk-auto-cascade.ps1 -AllowSave -BranchSeed -Case TCB1 # 4. FlaUI-only, tung ca mot
 #>
 [CmdletBinding()]
 param(
+    [ValidateSet("", "1", "2")]
+    [string]$Phase = "",
     [string]$Case = "",
     [string]$Filter = "",
     [int]$StepMs = -1,
@@ -69,11 +81,16 @@ $ns = "OchaCom.FlaUiTests.Tests.AutoSanteiChkAuto"
 if ($Filter -ne "") {
     $parts = $Filter -split '\|' | ForEach-Object { "FullyQualifiedName~$ns&FullyQualifiedName~$($_.Trim())" }
     $filter = $parts -join '|'
+} elseif ($Phase -ne "") {
+    # Moi phase MOT cu chot => vua tran 15 phut cua wrapper (F7). Dung chay ca hai
+    # trong mot luot: do that 2026-09-14, mot cu chot ngon 5-8 phut tren may that.
+    $fixture = if ($Phase -eq "1") { "ChkAutoCascadeTests" } else { "ChkAutoOrderPhase2Tests" }
+    $filter = "FullyQualifiedName~$ns.$fixture"
+    if ($Case -ne "") { $filter = "$filter&FullyQualifiedName~$Case" }
 } elseif ($Case -ne "") {
     $filter = "FullyQualifiedName~$ns&FullyQualifiedName~$Case"
 } else {
-    # Mac dinh: CHI cum cascade tren du lieu that. Cum seeded branch phai goi ten
-    # tuong minh vi no sua master dung chung.
+    # Mac dinh: CHI Phase 1. Phase 2 va cum seeded branch phai goi ten tuong minh.
     $filter = "FullyQualifiedName~$ns.ChkAutoCascadeTests"
 }
 

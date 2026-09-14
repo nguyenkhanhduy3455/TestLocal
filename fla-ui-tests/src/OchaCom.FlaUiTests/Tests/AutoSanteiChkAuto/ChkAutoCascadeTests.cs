@@ -357,8 +357,8 @@ public sealed class ChkAutoCascadeTests : UiTestBase
     // ═════════════════════════════════════════════════════════════════════════
 
     [Test, Order(1)]
-    [Description("TCC1 — chốt 処置: mã đi kèm phải kéo theo カルテコメント CỦA CHÍNH NÓ (modMain.cs:1033)")]
-    public void TCC1_Companion_Brings_Its_Own_KarteComment()
+    [Description("TC1 ← TC-1 — ô chk_auto phải kéo theo カルテコメント CỦA CHÍNH NÓ (modMain.cs:1033)")]
+    public void TC1_ChkAuto_Slot_Brings_Its_Own_KarteComment()
     {
         using var trace = TestTrace.Begin();
         RequireMasterData();
@@ -368,11 +368,15 @@ public sealed class ChkAutoCascadeTests : UiTestBase
             $"Không thấy 部位病名行 vừa seed (病名 「{DisMark}」, ngày {TrtDate:yyyy-MM-dd}) ⇒ HARNESS " +
             "hỏng, sửa trước. Lưới đang có:\n  " + string.Join("\n  ", _flow.DescribeGrid(40)));
 
-        var measure = _ops.CommitOnSeededRow(seeded!, TrtCd, TrtSb, trace);
-        Assert.That(measure, Is.Not.Null,
+        var raw = _ops.CommitOnSeededRow(seeded!, TrtCd, TrtSb, trace);
+        Assert.That(raw, Is.Not.Null,
             "Không dựng được chỗ để gõ mã ⇒ HARNESS hỏng. Đọc _trace.log và ảnh bước cuối.");
-        Assert.That(measure!.Enter.Committed, Is.True,
-            $"Không chốt được 枝番 {TrtSb} của mã {TrtCd} trong 処置選択. {measure.Enter}");
+        Assert.That(raw!.Enter.Committed, Is.True,
+            $"Không chốt được 枝番 {TrtSb} của mã {TrtCd} trong 処置選択. {raw.Enter}");
+
+        // 摘要選択 là hộp thoại MODAL chặn giữa chừng Chk_CmtAuto ⇒ không trả lời thì
+        // Chk_ChkAuto không bao giờ chạy và cả fixture đổ oan cho app. Xem AnswerSummaryPicks.
+        var measure = AnswerSummaryPicks(raw, trace);
 
         _measure = measure;
         _afterCommit = measure.After.Where(AutoSanteiOps.EntryMeasure.IsData).ToList();
@@ -413,6 +417,25 @@ public sealed class ChkAutoCascadeTests : UiTestBase
             }
         });
 
+        // ── Vế THỨ HAI của TC-1 bên web: comment phải nằm DƯỚI CHÍNH ô đó ────
+        //    Web assert `cmtIdx > slotIdx`; ở đây dùng cùng quy tắc định vị (GridIndex).
+        var rows = measure.After.Where(AutoSanteiOps.EntryMeasure.IsData).ToList();
+        var trtAt = GridIndex.LastOf(rows, _trigger!);
+        var slotAt = GridIndex.NearestOf(rows, _companionMaster!, trtAt);
+        Assert.Multiple(() =>
+        {
+            foreach (var c in _companionCmts.Where(c => c.DispNo > 0))
+            {
+                var shown = _cmtNames.GetValueOrDefault($"{c.CmtCd}/{c.CmtSb}", c.CmtNm);
+                var at = GridIndex.Nearest(rows, shown, slotAt);
+                Assert.That(at, Is.GreaterThan(slotAt),
+                    $"カルテコメント 「{shown}」 của ô 「{_companionMaster.CctNm}」 phải nằm DƯỚI " +
+                    "chính ô đó (modMain.cs:1033 gọi Chk_CmtAuto cho ô vừa AddRow, rồi " +
+                    "frmCmt3_Set_Data2 chèn disp_no > 0 ngay dưới con trỏ).\n" +
+                    "  lưới: " + GridIndex.Describe(rows));
+            }
+        });
+
         // ── Mốc NGOÀI lưới (F12) ─────────────────────────────────────────────
         var expectedDelta = _trigger!.Score1 + _companionMaster!.Score1;
         Assert.That(measure.PointDelta, Is.EqualTo(expectedDelta),
@@ -427,8 +450,8 @@ public sealed class ChkAutoCascadeTests : UiTestBase
     // ═════════════════════════════════════════════════════════════════════════
 
     [Test, Order(2)]
-    [Description("TCC2 — §2: CMTAUTO.disp_no > 0 ⇒ comment nằm dưới 処置, và dòng chk_auto nằm DƯỚI comment")]
-    public void TCC2_ChkAuto_Row_Sits_Below_The_Comment()
+    [Description("TC2 ← TC-2 — dòng chk_auto phải nằm DƯỚI カルテコメント disp_no > 0 của 処置 gốc")]
+    public void TC2_ChkAuto_Row_Sits_Below_The_Comment()
     {
         RequireCommitted();
 
@@ -436,11 +459,11 @@ public sealed class ChkAutoCascadeTests : UiTestBase
         if (below.Count == 0)
             Assert.Ignore($"CMTAUTO({TrtCd},{TrtSb}) không có dòng disp_no > 0 — TCC0 đã nói rõ.");
 
-        var trtIdx = AutoSanteiOps.IndexOf(_afterCommit, _trigger!);
-        var compIdx = AutoSanteiOps.IndexOf(_afterCommit, _companionMaster!);
+        var trtIdx = GridIndex.LastOf(_afterCommit, _trigger!);
+        var compIdx = GridIndex.NearestOf(_afterCommit, _companionMaster!, trtIdx);
         Assert.That(trtIdx, Is.GreaterThanOrEqualTo(0), $"Không thấy dòng 処置 「{_trigger!.CctNm}」.");
         Assert.That(compIdx, Is.GreaterThanOrEqualTo(0),
-            $"Không thấy dòng mã đi kèm 「{_companionMaster!.CctNm}」 — TCC1 phải xanh trước.");
+            $"Không thấy dòng mã đi kèm 「{_companionMaster!.CctNm}」 — TC1 phải xanh trước.");
 
         Log("thứ tự lưới quanh cú chốt:");
         foreach (var (r, i) in _afterCommit.Select((r, i) => (r, i)).Where(t => t.i >= trtIdx - 1))
@@ -451,7 +474,7 @@ public sealed class ChkAutoCascadeTests : UiTestBase
             foreach (var c in below)
             {
                 var shown = _cmtNames.GetValueOrDefault($"{c.CmtCd}/{c.CmtSb}", c.CmtNm);
-                var idx = AutoSanteiOps.IndexByName(_afterCommit, shown);
+                var idx = GridIndex.Nearest(_afterCommit, shown, trtIdx);
                 Assert.That(idx, Is.GreaterThanOrEqualTo(0),
                     $"Không thấy カルテコメント 「{shown}」 ({c.CmtCd}/{c.CmtSb}) trên lưới ⇒ nhánh " +
                     "Chk_CmtAuto của CHÍNH mã gõ vào đã hỏng; TCC2 không kết luận được gì.");
@@ -481,25 +504,26 @@ public sealed class ChkAutoCascadeTests : UiTestBase
     // ═════════════════════════════════════════════════════════════════════════
 
     [Test, Order(3)]
-    [Description("TCC3 — §5a: mỗi mã đi kèm được Chk_CmtAuto NGAY sau khi chèn, nên comment bám liền nó")]
-    public void TCC3_Cascade_Comment_Sticks_To_Its_Own_Companion()
+    [Description("TCX-interleave (FlaUI-only, chặt hơn TC-1) — comment bám LIỀN KỀ ô chk_auto của nó")]
+    public void TCX_Cascade_Comment_Sticks_Right_Next_To_Its_Companion()
     {
         RequireCommitted();
 
         var own = _companionCmts.Where(c => c.MakesOwnRow).ToList();
         if (own.Count == 0) Assert.Ignore("mã đi kèm không có CMTAUTO sinh dòng riêng — TCC0 đã nói rõ.");
 
-        var compIdx = AutoSanteiOps.IndexOf(_afterCommit, _companionMaster!);
+        var anchor = GridIndex.LastOf(_afterCommit, _trigger!);
+        var compIdx = GridIndex.NearestOf(_afterCommit, _companionMaster!, anchor);
         Assert.That(compIdx, Is.GreaterThanOrEqualTo(0),
-            $"Không thấy dòng mã đi kèm 「{_companionMaster!.CctNm}」 — TCC1 phải xanh trước.");
+            $"Không thấy dòng mã đi kèm 「{_companionMaster!.CctNm}」 — TC1 phải xanh trước.");
 
         Assert.Multiple(() =>
         {
             foreach (var c in own)
             {
                 var shown = _cmtNames.GetValueOrDefault($"{c.CmtCd}/{c.CmtSb}", c.CmtNm);
-                var idx = AutoSanteiOps.IndexByName(_afterCommit, shown);
-                Assert.That(idx, Is.GreaterThanOrEqualTo(0), $"Không thấy 「{shown}」 — xem TCC1.");
+                var idx = GridIndex.Nearest(_afterCommit, shown, compIdx);
+                Assert.That(idx, Is.GreaterThanOrEqualTo(0), $"Không thấy 「{shown}」 — xem TC1.");
                 if (idx < 0) continue;
 
                 if (c.DispNo > 0)
@@ -523,8 +547,8 @@ public sealed class ChkAutoCascadeTests : UiTestBase
     // ═════════════════════════════════════════════════════════════════════════
 
     [Test, Order(4)]
-    [Description("TCC4 — Chk_ChkAuto_soutyaku: mflg = 1 ⇒ thoát sớm, cú chốt KHÔNG để lại dòng 装着料")]
-    public void TCC4_Soutyaku_Skips_When_Mflg_Is_One()
+    [Description("TCX-soutyaku (FlaUI-only) — mflg = 1 ⇒ Chk_ChkAuto_soutyaku thoát sớm, không có dòng 装着料")]
+    public void TCX_Soutyaku_Skips_When_Mflg_Is_One()
     {
         RequireCommitted();
 
@@ -549,9 +573,15 @@ public sealed class ChkAutoCascadeTests : UiTestBase
     // TCC5 — 装着料: ĐỐI CHỨNG mflg = 0 ⇒ CÓ dòng
     // ═════════════════════════════════════════════════════════════════════════
 
-    [Test, Order(5)]
-    [Description("TCC5 — ĐỐI CHỨNG: cùng đường nhập nhưng mflg = 0 ⇒ phải có dòng 装着料 tự chèn")]
-    public void TCC5_Soutyaku_Inserts_When_Mflg_Is_Zero()
+    /// <remarks>
+    /// <b>[Explicit] vì nó tốn CÚ CHỐT THỨ HAI.</b> Đo được 2026-09-14: trên máy thật một cú
+    /// chốt ngốn 5-8 phút (mỗi lần đọc lưới 30-40s), mà wrapper cắt ở 15 phút (F7). Chạy
+    /// chung cụm thì ca này bị cắt giữa chừng và để lại app ở trạng thái lệch.
+    /// Gọi tên tường minh khi cần: <c>-Case TCX_Soutyaku_Inserts</c>.
+    /// </remarks>
+    [Test, Order(5), Explicit]
+    [Description("TCX-soutyaku ĐỐI CHỨNG (FlaUI-only) — mflg = 0 ⇒ phải có dòng 装着料 tự chèn")]
+    public void TCX_Soutyaku_Inserts_When_Mflg_Is_Zero()
     {
         using var trace = TestTrace.Begin();
         RequireCommitted();
@@ -567,10 +597,11 @@ public sealed class ChkAutoCascadeTests : UiTestBase
         var seeded = _ops.SeededBuiRow(TrtDate.Day, ToothSelectDialog.DescribeSlot(BuiSlot), DisMark);
         Assert.That(seeded, Is.Not.Null, "Không còn thấy 部位病名行 seed ⇒ HARNESS hỏng.");
 
-        var measure = _ops.CommitOnSeededRow(seeded!, Settings.ChkAutoCascade.SoutyakuTrtCd,
-                                             Settings.ChkAutoCascade.SoutyakuTrtSb, trace);
+        var raw = _ops.CommitOnSeededRow(seeded!, Settings.ChkAutoCascade.SoutyakuTrtCd,
+                                         Settings.ChkAutoCascade.SoutyakuTrtSb, trace);
+        var measure = raw is null ? null : AnswerSummaryPicks(raw, trace);
         if (measure is null || !measure.Enter.Committed)
-            Assert.Ignore($"Không chốt được mã đối chứng {_soutyakuTrigger} ({measure?.Enter.ToString() ?? "không gõ được"}). " +
+            Assert.Ignore($"Không chốt được mã đối chứng {_soutyakuTrigger} ({raw?.Enter.ToString() ?? "không gõ được"}). " +
                           "補綴 thường đòi tiền đề riêng (形成 cùng răng, 病名 phù hợp) — đây là DỮ LIỆU, " +
                           "không phải app. TCC4 vẫn đứng một mình được, chỉ mất vế đối chứng.");
 
@@ -594,6 +625,27 @@ public sealed class ChkAutoCascadeTests : UiTestBase
 
     // ── Nội bộ ───────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Trả lời mọi hộp thoại 摘要選択 rồi ĐO LẠI lưới.
+    ///
+    /// <para>Không trả lời thì <c>Chk_ChkAuto</c> không bao giờ chạy và cả fixture đổ oan
+    /// cho app — xem <see cref="SummaryPickDialog"/> để biết đã trả giá thế nào.</para>
+    ///
+    /// <para>Đo LẠI là bắt buộc: mốc <c>After</c> mà <c>CommitOnSeededRow</c> chụp là mốc
+    /// lúc hộp thoại CÒN MỞ, tức trước khi cái đuôi chạy.</para>
+    /// </summary>
+    private AutoSanteiOps.EntryMeasure AnswerSummaryPicks(AutoSanteiOps.EntryMeasure m, TestTrace trace)
+    {
+        var answered = new SummaryPickDialog(App, Screen.Window, _flow).Answer(trace);
+        if (answered == 0) return m;
+
+        var after = _ops.Grid.Snapshot();
+        var point = _ops.Grid.AllPointValue();
+        Log($"đã trả lời {answered} hộp thoại 摘要選択 ⇒ đo lại: 月計 " +
+            $"{m.PointBefore?.ToString() ?? "?"} → {point?.ToString() ?? "?"}");
+        return new AutoSanteiOps.EntryMeasure(m.Enter, m.Before, after, m.PointBefore, point);
+    }
+
     private void RequireMasterData()
     {
         if (_trigger is null || _companion is null || _companionMaster is null)
@@ -601,14 +653,14 @@ public sealed class ChkAutoCascadeTests : UiTestBase
     }
 
     /// <summary>
-    /// TCC2..TCC5 đọc lại chính lưới của cú chốt trong TCC1 (TCC5 còn chốt thêm một mã nữa
+    /// TC2 và các TCX đọc lại chính lưới của cú chốt trong TCC1 (TCC5 còn chốt thêm một mã nữa
     /// TRÊN lưới đó). Một cú chốt tốn 2-3 phút giao diện, mà bốn câu hỏi này đều trả lời
     /// được từ cùng một cú — chạy riêng chúng là vô nghĩa.
     /// </summary>
     private void RequireCommitted()
     {
         if (!_committed || _afterCommit.Count == 0)
-            Assert.Ignore("TCC1 chưa chốt được 処置 — các TC sau đọc lại chính lưới của cú chốt đó. " +
-                          "Sửa TCC1 trước.");
+            Assert.Ignore("TC1 chưa chốt được 処置 — các TC sau đọc lại chính lưới của cú chốt đó. " +
+                          "Sửa TC1 trước.");
     }
 }

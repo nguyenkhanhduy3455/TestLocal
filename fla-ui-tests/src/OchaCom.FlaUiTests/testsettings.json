@@ -160,6 +160,9 @@
     "//soutyakuTrtCd": "254/4 FMC(パ･大) — DOI CHUNG cho nhanh 装着料自動算定. Cung keo 264/3, cung men = 0, nhung MST_SET096(254,4).mflg = 0 trong khi (204,0).mflg = 1. Khac dung MOT co => 「co/khong co dong 装着料」 quy duoc cho mflg. unit = 17 (大臼歯＋智歯) nen o 部位 phai la rang ham — autoSantei.buiSlot = 2 (右上6) thoa.",
     "soutyakuTrtCd": 254,
     "soutyakuTrtSb": 4,
+    "//phase2TrtCd": "PHASE 2 — 170/0 抜髄(単根), TRUNG TEST_P2_CD/SB cua spec Playwright chk-auto-comment-order.spec.ts. CMTAUTO(170,0) co 4 dong (disp_no -2/-1/3/4, hai dong chua '*') va chkauto(170,0) -> 310/2. CANH BAO: 170 di qua IregCodChk case 170 => SigaChg GHI NONG bang SIGA luc chot, khac han 204 cua Phase 1.",
+    "phase2TrtCd": 170,
+    "phase2TrtSb": 0,
     "//allowRowCleanup": "Xoa cac dong mang ma dem chot + ma di kem + ma comment TRONG NGAY test. Chi chay khi ngay do khong co san dong nao mang cac ma ay (hang rao F22).",
     "allowRowCleanup": true,
 

@@ -361,3 +361,94 @@ Chạy từ xa:
 Set-Content logs\command.txt "run-chk-auto-cascade.ps1 -AllowSave"
 schtasks /run /tn "FlaUI-Tests-Run"
 ```
+
+## 7.6. Đo được trên máy thật — 2026-09-14, bệnh nhân 10, 診療日 2026-08-03
+
+### ✅ Phase 1 (`204/0`) — 5/5 XANH
+
+```
+[15] 暫間固定(TFix)set(簡単)                 230 | 1   ← mã gõ vào
+[16] レジン連続冠固定法                         0 | 1   ┐ 摘要選択 (prgCmtAuto) —
+[17] 1回目(暫間固定)                           0 | 1   │ HAI hộp thoại, harness
+[18] 歯周外科手術の予定あり                      0 | 1   ┘ bấm 「F9 確定」
+[19] 0.3mm結紮線＋スーパーボンド                 0 | 1   ← CMTAUTO(204,0) disp_no 2
+[20] 装着材料料 (接着性レジンセメント・標準型)    17 | 1   ← chkauto → 264/3   ★ §2
+[21] ルーティングセメント                       0 | 1   ← CMTAUTO(264,3)     ★ §1
+```
+
+Ba khẳng định của báo cáo parity được xác nhận **trên máy thật**: tầng hai CÓ chạy (§1),
+dòng `chk_auto` nằm DƯỚI comment (§2), comment bám LIỀN KỀ ô của nó (§5a).
+
+> 🔥 **Bẫy đắt nhất của luồng này: 摘要選択 là hộp thoại MODAL chặn GIỮA CHỪNG `Chk_CmtAuto`.**
+> Lượt chạy đầu: lưới thêm đúng **1** dòng, 月計 **413 → 413 (Δ 0)** — nhìn y hệt 「app không
+> có 自動算定」, trong khi app chỉ đang đợi người trả lời. Xem `SummaryPickDialog`.
+
+### ⚠️ Phase 2 (`170/0`) — chọn SAI dữ liệu, và chính chỗ đó làm lộ một lệch parity
+
+```
+右上6 | Ｃ
+      | 自発痛（1）冷水痛（9）打診痛（9）          0 | 1   ← disp_no -2, TRÊN
+      | OA（ｺｰﾊﾟﾛﾝ）浸麻（歯科用ｵｰﾗ注Ct1.8ml）   0 | 1   ← disp_no -1, TRÊN
+      | 抜髄(単根)                             234 | 0   ← 回 = 0 ⇒ Chk_ChkAuto KHÔNG chạy
+      | リーマー＃9号まで拡大                     0 | 1   ← disp_no 3, DƯỚI
+      | ＮＣ＋洗浄 PO貼薬 キャビトン仮封           0 | 1   ← disp_no 4, DƯỚI
+      [日計 339点]                                      月計 413 → 413 (Δ 0)
+```
+
+`170/0` là `unit = 61` (1根管) mà 右上6 có `EKON3 = 3` ⇒ `func3xCnt(bui, 1, kon) = 0`
+(CalcCnt.cs). **WinForm ghi thẳng 回 = 0** (`frm203016.cs:1531` — `grdRegi[4] = selRec.intCnt`,
+KHÔNG có `|| 1`), và `回 = 0` đóng luôn cửa vào `Chk_ChkAuto` (frm203002.cs:5745).
+
+| | `TC0` | `TC3` | `TC4` | `TC5` |
+|---|---|---|---|---|
+| 2026-09-14 | ✅ | ✅ `frm203048` bung ĐÚNG 2 lần | ❌ **lỗi harness** | ⏸ không đo được |
+
+* `TC3` xanh vì `Chk_CmtAuto` chạy **cả khi 回 = 0** — nó nằm NGOÀI `if (trtCnt >= 1)`
+  (frm203002.cs:5739, 「回数が０の場合、コメント自動入力」).
+* `TC4` đỏ vì **harness đoán sai chuỗi**: lưới in `自発痛（1）…` chứ không phải `（9）` —
+  cụm `*` ĐẦU TIÊN không nhận `ParamFill`. Nhìn ảnh thì vị trí app đặt HOÀN TOÀN ĐÚNG
+  (`disp_no < 0` ở trên, `> 0` ở dưới). ⇒ sửa `ParamDialog`, đừng sửa assert.
+* `TC5` không có gì để đo: không dòng `chk_auto` nào được chèn.
+
+**⇒ Phải đổi Phase 2 sang `170/2 抜髄(3根以上)`** (`unit = 67` = 3根管+4根管, khớp răng 3 chân).
+Nó giữ nguyên MỌI thứ đang đo: cùng `chkauto → 310/2`, cùng 4 dòng `CMTAUTO` `no_chk = 1`,
+cùng hai dòng còn `*`, vẫn đủ cả `disp_no` âm lẫn dương. Đổi ở CẢ HAI vế
+(`chkAutoCascade.phase2TrtSb` ↔ `TEST_P2_SB`).
+
+### 🔴 LỆCH PARITY tìm được — nằm ở 回数, không nằm ở `chk_auto`
+
+| | WinForm | Web |
+|---|---|---|
+| ô 回 sau 確定 (`170/0` trên 右上6) | **0** | **1** |
+| dòng `chk_auto` `310/2` | không có | có (11 点) |
+
+```
+WinForm  frm203016.cs:1531              grdRegi[4] = selRec.intCnt         ← CalcCnt = 0 ⇒ ghi 0
+web FE   treatment-entry-detail.tsx:5253  pick.trtCnt > 0 ? pick.trtCnt : 1  ← 0 bị ép thành 1
+         (cùng mẫu ở :5303, :5419 — nhánh demo1)
+```
+
+BE web thì ĐÚNG: `CalcCntHelper.cs:119,125` port đủ `case 61` / `case 67` với
+`Func3x(bui, kon)`. BE trả `0`, **FE ghi đè thành 1**.
+
+Vế web không phải suy đoán — chính spec bên kia chứng minh: `commitTrigger()` assert
+`toHaveValue('1')` cho ô 回 sau 確定, và `TC-3` (đúng `170/0`) XANH.
+
+**Hệ quả:** thừa `234 + 11 = 245 点` cho một ca mà WinForm vốn từ chối tính ⇒ sai tiền thu
+và sai レセプト. Nặng hơn §1/§2/§5a, vì ba mục đó chỉ sai thứ tự hiển thị.
+
+> Chỗ này README mục 3b-2 đã NGỜ từ 2026-09-08 (「web chốt `trtCnt > 0 ? trtCnt : 1` — một
+> hằng số, trong khi WinForm là `CalcCnt` trên 部位」). 2026-09-14 mới có số đo hai vế.
+
+### Đối chiếu báo cáo parity 「web thiếu port runChkAuto」 ↔ nhánh `demo1`
+
+| § | Trên `demo1` |
+|---|---|
+| §1 hai nửa `Chk_CmtAuto` + tầng hai | **đã port** (`:5129-5131`) |
+| §2 thứ tự | **đã sửa** (`cursor: GridCursor` + `anchorPlacement: 'below'`) |
+| §5a interleave | **đã port** (cascade trong vòng `for`) |
+| §4 `dayRemap` | **đã dùng** (`remapDay(...)` trong request) |
+| §6 BE hardcode | **đã sửa** (`ResolveChkAutoHandler.cs:188-189`) |
+| §5b/5c/5d, §3 | thiếu **CÓ CHỦ Ý** — code web ghi 「NOT ported, both unreachable with the current 自動算定登録 master」 (`:5035-5042`), khớp đúng số đo của `TCC0` |
+
+Báo cáo mô tả đúng một bản CŨ HƠN: 5/7 đã sửa từ trước. ⚠️ Luôn kiểm ĐÚNG NHÁNH (F26).
