@@ -91,6 +91,12 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *    btnF9_Click (確定), web bê nguyên (Rule 10.4). Đóng bằng F10.
  * 3. So chuỗi phải NFKC CẢ HAI VẾ: DOM mang 半角 「ﾎﾞﾙﾀﾚﾝ」 còn master mang 全角
  *    「ボルタレン」, `hasText` chỉ chuẩn hoá khoảng trắng nên không khớp gì cả.
+ * 4. Lưới 診療入力 hiển thị CẢ THÁNG, không chỉ ngày đang thao tác. Bệnh nhân parity
+ *    đã có sẵn dòng 薬剤 cùng mã ở ngày khác (với 回数 đã lưu của ngày đó), nên phải
+ *    chụp khoá dòng TRƯỚC khi bấm F9 rồi chỉ soi các khoá MỚI. Đã vấp thật: chạy
+ *    2026-09-14 thì `cells.find(...)` vớ phải dòng 「ﾒｲｱｸﾄMS錠100mg 4T … 3日分」
+ *    (回数 3) đã lưu sẵn, trong khi dòng ガイド vừa chèn in đúng 「… 2日分」 — test đỏ
+ *    oan như thể 用量 lấy nhầm `mst_trt.g_cnt`.
  *
  * ═════════════════════════════════════════════════════════════════════════════
  * CHẠY
@@ -200,9 +206,21 @@ test.describe('診療入力 — ガイド確定 dựng ô 薬剤 nhiều dòng (
     /** Ô 療法・処置 của lưới đăng ký (RegiCol.ryo = 2). */
     const ryoCells = () => page.locator('[data-grid-cell$="|2"]')
 
-    /** Toàn bộ text ô 療法・処置, GIỮ NGUYÊN xuống dòng (ô 薬剤 là ô nhiều dòng). */
-    async function ryoTexts(): Promise<string[]> {
-        return ryoCells().evaluateAll((els) => els.map((e) => e.textContent ?? ''))
+    /**
+     * Ô 療法・処置 kèm KHOÁ DÒNG, GIỮ NGUYÊN xuống dòng (ô 薬剤 là ô nhiều dòng).
+     *
+     * `data-grid-cell` mang `<rowKey>|<col>`, mà với dòng của THÁNG hiện tại thì
+     * `rowKey` chính là `GridRow.id` (registration-table.tsx:410) — id sinh mới cho
+     * mỗi dòng FE chèn và giữ nguyên suốt phiên (lưới không nạp lại giữa chừng).
+     * Nhờ vậy phân biệt được dòng ガイド vừa chèn với dòng đã lưu sẵn trong tháng.
+     */
+    async function ryoEntries(): Promise<{ key: string; text: string }[]> {
+        return ryoCells().evaluateAll((els) =>
+            els.map((e) => ({
+                key: (e.getAttribute('data-grid-cell') ?? '').replace(/\|2$/, ''),
+                text: e.textContent ?? '',
+            })),
+        )
     }
 
     async function openTreatmentScreen() {
@@ -293,7 +311,7 @@ test.describe('診療入力 — ガイド確定 dựng ô 薬剤 nhiều dòng (
         }
         throw new Error(
             `không thấy ガイド ${GUID_CD} trong ${total} dòng đầu của tab ガイド — ` +
-                'đặt TEST_GUID_CD cho đúng master của tenant đang test',
+            'đặt TEST_GUID_CD cho đúng master của tenant đang test',
         )
     }
 
@@ -311,7 +329,7 @@ test.describe('診療入力 — ガイド確定 dựng ô 薬剤 nhiều dòng (
             await ok
                 .first()
                 .click({ timeout: 3000 })
-                .catch(() => {})
+                .catch(() => { })
             return true
         }
         const dialog = page.getByRole('dialog').first()
@@ -327,7 +345,7 @@ test.describe('診療入力 — ガイド確定 dựng ô 薬剤 nhiều dòng (
             await confirm
                 .first()
                 .click({ timeout: 3000 })
-                .catch(() => {})
+                .catch(() => { })
         } else {
             await page.keyboard.press('F10')
         }
@@ -345,22 +363,34 @@ test.describe('診療入力 — ガイド確定 dựng ô 薬剤 nhiều dòng (
      * đúng như vậy ở lần chạy đầu: lưới chỉ có 601, còn 602 kẹt sau dialog
      * 「長期収載品…」 của chính 601.
      *
-     * Trả về ảnh chụp text lưới ở vòng poll thành công.
+     * CHỈ soi các dòng MỚI (`key` không có trong `beforeKeys`). Lưới hiển thị CẢ
+     * THÁNG, mà bệnh nhân parity vốn đã có sẵn dòng 薬剤 cùng mã ở ngày khác — với
+     * 回数 đã lưu của ngày đó, không liên quan gì tới slot ガイド. Bỏ bộ lọc này thì
+     * `cells.find(...)` vớ đúng dòng cũ và test đỏ oan: chạy 2026-09-14 nó chấm phải
+     * dòng 「ﾒｲｱｸﾄMS錠100mg 4T … 3日分」 (回数 3) đã lưu sẵn, trong khi dòng ガイド vừa
+     * chèn ngay bên dưới in đúng 「… 2日分」.
+     *
+     * Trả về ảnh chụp text các DÒNG MỚI ở vòng poll thành công.
      */
-    async function waitForDrugRows(needles: readonly string[]): Promise<string[]> {
+    async function waitForDrugRows(
+        needles: readonly string[],
+        beforeKeys: ReadonlySet<string>,
+    ): Promise<string[]> {
         let last: string[] = []
         await expect
             .poll(
                 async () => {
                     await drainOneDialog()
-                    last = await ryoTexts()
+                    last = (await ryoEntries())
+                        .filter((e) => !beforeKeys.has(e.key))
+                        .map((e) => e.text)
                     return needles.filter((n) => !last.some((c) => norm(c).includes(n)))
                 },
                 {
                     timeout: CASCADE_DRAIN_TIMEOUT,
                     intervals: Array.from({ length: 60 }, () => 1000),
                     message:
-                        'Sau F9 確定 vẫn thiếu dòng 薬剤 trên lưới — vòng per-pick của ' +
+                        'Sau F9 確定 vẫn thiếu dòng 薬剤 MỚI trên lưới — vòng per-pick của ' +
                         'GuideSelectionDialog.onConfirm có thể đang kẹt ở một dialog mà ' +
                         'drainOneDialog() không đóng được.',
                 },
@@ -390,7 +420,7 @@ test.describe('診療入力 — ガイド確定 dựng ô 薬剤 nhiều dòng (
                     .getByRole('button', { name: 'F10 戻る' })
                     .first()
                     .click({ timeout: 3000 })
-                    .catch(() => {})
+                    .catch(() => { })
             },
             { times: 30 },
         )
@@ -421,7 +451,7 @@ test.describe('診療入力 — ガイド確定 dựng ô 薬剤 nhiều dòng (
     test.afterAll(async () => {
         await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)
         await disposeOverlays?.()
-        await page.removeLocatorHandler(karteCmtDialog).catch(() => {})
+        await page.removeLocatorHandler(karteCmtDialog).catch(() => { })
         await releaseSharedPage(page)
     })
 
@@ -429,7 +459,7 @@ test.describe('診療入力 — ガイド確定 dựng ô 薬剤 nhiều dòng (
         skipWithReason(
             drugSlots.length === 0,
             `ガイド ${GUID_CD} không có slot 薬剤 nào mang 用法 trong master của ngày ${TRT_DT} — ` +
-                'không có gì để đo, đặt TEST_GUID_CD sang ガイド khác',
+            'không có gì để đo, đặt TEST_GUID_CD sang ガイド khác',
         )
 
         // Con trỏ phải nằm trên 部位病名行 vừa seed: `focusedRowParts.bui` và
@@ -450,6 +480,11 @@ test.describe('診療入力 — ガイド確定 dựng ô 薬剤 nhiều dòng (
         await openGuide()
         await step()
 
+        // Chụp khoá của MỌI dòng đang có TRƯỚC khi chốt: lưới hiển thị cả tháng và
+        // bệnh nhân parity đã có sẵn dòng 薬剤 cùng mã ở ngày khác, nên chỉ những
+        // khoá MỚI mới là dòng do ガイド này chèn (xem waitForDrugRows).
+        const beforeKeys = new Set((await ryoEntries()).map((e) => e.key))
+
         // F9 確定 của frm203017 (btnF9_Click) → frmGuid2_Let_Data.
         await picker.getByRole('button', { name: /F9\s*確定/ }).click()
         await expect(picker).toBeHidden({ timeout: 30_000 })
@@ -459,7 +494,10 @@ test.describe('診療入力 — ガイド確定 dựng ô 薬剤 nhiều dòng (
         // `mst_trt.trt_nm` — nghĩa là nó tìm được dòng ở CẢ HAI trạng thái đúng/sai,
         // rồi mới phán xét nội dung. Bắt theo chuỗi ĐÚNG thì test đỏ với thông báo
         // 「không thấy dòng」 và che mất bug thật.
-        const cells = await waitForDrugRows(drugSlots.map((s) => norm(s.dgNm)))
+        const cells = await waitForDrugRows(
+            drugSlots.map((s) => norm(s.dgNm)),
+            beforeKeys,
+        )
         await step()
 
         for (const slot of drugSlots) {
@@ -472,10 +510,10 @@ test.describe('診療入力 — ガイド確定 dựng ô 薬剤 nhiều dòng (
             expect(
                 flat,
                 `Dòng 薬剤 ${slot.trtCd}/${slot.trtSb} thiếu dòng 用法.\n` +
-                    `  lưới in ra : ${JSON.stringify(cell)}\n` +
-                    `  WinForm    : 「${slot.dgNm}…」 + xuống dòng + 「${slot.usageNm}${slot.usageSupplInf} ${cnt}${unit}」\n` +
-                    `  mst_trt.trt_nm = 「${slot.trtNm}」 — trùng chuỗi trên lưới nghĩa là ` +
-                    'ガイド確定 đang bỏ qua ModSave.getDrugName (frm203016.cs:1463).',
+                `  lưới in ra : ${JSON.stringify(cell)}\n` +
+                `  WinForm    : 「${slot.dgNm}…」 + xuống dòng + 「${slot.usageNm}${slot.usageSupplInf} ${cnt}${unit}」\n` +
+                `  mst_trt.trt_nm = 「${slot.trtNm}」 — trùng chuỗi trên lưới nghĩa là ` +
+                'ガイド確定 đang bỏ qua ModSave.getDrugName (frm203016.cs:1463).',
             ).toContain(norm(slot.usageNm))
 
             // (2) Ô phải là ô NHIỀU DÒNG — combineDrugNms nối bằng '\n'.
@@ -489,8 +527,9 @@ test.describe('診療入力 — ガイド確定 dựng ô 薬剤 nhiều dòng (
             if (unit !== '') {
                 expect(
                     flat,
-                    `Dòng 薬剤 ${slot.trtCd}/${slot.trtSb} sai 用量: chờ 「${cnt}${unit}」 ` +
-                        `(pag_trt FLG4=${slot.flg4}/FLG6=${slot.flg6}), lưới in ${JSON.stringify(cell)}`,
+                    `Dòng 薬剤 ${slot.trtCd}/${slot.trtSb} do ガイド vừa chèn sai 用量: ` +
+                    `chờ 「${cnt}${unit}」 (pag_trt FLG4=${slot.flg4}/FLG6=${slot.flg6}), ` +
+                    `lưới in ${JSON.stringify(cell)}`,
                 ).toContain(`${cnt}${unit}`)
             }
         }
