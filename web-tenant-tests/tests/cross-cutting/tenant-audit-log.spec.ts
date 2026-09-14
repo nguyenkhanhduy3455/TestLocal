@@ -432,6 +432,45 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
         await step()
     })
 
+    /**
+     * Chốt hình dạng PHẲNG của meta_json.
+     *
+     * `AuditMetaJson.SerializeWithActions` đặt 3 khoá action ở TOP LEVEL, ngay cạnh
+     * các field nghiệp vụ. Nhánh mới (fix 2026-09-14) chỉ lồng cả meta xuống khoá
+     * `meta` khi KHÔNG đặt được 3 khoá đó ở top level — meta không serialize ra
+     * object, hoặc đã dùng sẵn một trong ba tên. Trước fix, hai trường hợp đó bị
+     * mất im lặng (cast `as JsonObject` rơi về object rỗng / khoá bị ghi đè).
+     *
+     * Mọi call-site hiện tại đều truyền anonymous object không đụng 3 tên đó, nên
+     * đường bình thường PHẢI vẫn phẳng. Testcase này là chốt chặn theo chiều đó:
+     * nếu một ngày `meta` xuất hiện thì hoặc fix bị áp sai điều kiện, hoặc handler
+     * đã bắt đầu truyền thứ không phải object — cả hai đều phải biết ngay, vì mọi
+     * spec khác (TC-3) đọc field nghiệp vụ ở top level.
+     *
+     * KHÔNG kiểm được nhánh lồng từ e2e: chưa có call-site nào kích hoạt nó.
+     * Nhánh đó do `AuditMetaJsonTests` (unit) phủ.
+     */
+    test('TC-7 — meta_json PHẲNG: field nghiệp vụ ở top level, không bị lồng dưới khoá `meta`', async () => {
+        expect(savedRow, 'TC-1 chưa lấy được dòng audit').not.toBeNull()
+        const meta = savedRow!.meta
+
+        expect(
+            Object.keys(meta),
+            'meta_json bị lồng xuống khoá `meta` — nhánh dự phòng của ' +
+                'AuditMetaJson.SerializeWithActions đã chạy, tức là handler truyền meta ' +
+                'KHÔNG phải object, hoặc meta đụng một trong ba tên đã dành riêng ' +
+                `(actions / actionsTotal / actionsTruncated). meta=${JSON.stringify(meta)}`,
+        ).not.toContain('meta')
+
+        // Cùng một dòng vừa mang field nghiệp vụ vừa mang bộ ba action — đó là điều
+        // khiến việc gộp ở một chỗ duy nhất có nghĩa.
+        expect(
+            Object.keys(meta),
+            `patNo phải nằm cạnh actionsTotal ở cùng một tầng. meta=${JSON.stringify(meta)}`,
+        ).toEqual(expect.arrayContaining(['patNo', 'actionsTotal']))
+        await step()
+    })
+
     test('TC-5 — meta_json mang bộ ba actions / actionsTotal / actionsTruncated đúng hợp đồng', async () => {
         expect(savedRow, 'TC-1 chưa lấy được dòng audit').not.toBeNull()
         const meta = savedRow!.meta
