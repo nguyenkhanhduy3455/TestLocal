@@ -143,6 +143,49 @@
     "multiTrtSb": 0
   },
 
+  "chkAutoCascade": {
+    "//": [
+      "Luong Tests/AutoSanteiChkAuto/ChkAutoCascadeTests — TANG THU HAI cua cai duoi.",
+      "Ma ma Chk_ChkAuto vua chen lai duoc dem qua Chk_CmtAuto mot lan nua (modMain.cs:1033)",
+      "nen no keo theo カルテコメント cua CHINH NO. Luong AutoSanteiChkAutoTests chi do tang MOT.",
+      "",
+      "Dung chung 部位/病名/vung seed voi autoSantei (cung o buiSlot, cung disCd/disSb),",
+      "chi 処置 dem chot la khac. Co ghi RIENG vi 204 KHONG di qua IregCodChk nen khong",
+      "dung 歯式 — chi can quyen seed 部位病名行 vao TRNTRN, khong can quyen ghi SIGA."
+    ],
+    "allowSave": false,
+    "//trtCd": "204/0 暫間固定(簡単) 230diem. chkauto(204,0) -> 264/3; CMTAUTO(204,0) = 1 dong 7551/0 disp_no 2 no_chk 1; CMTAUTO(264,3) = 1 dong 7510/4 disp_no 2 no_chk 1. unit = 3 (顎単位) nen CalcCnt tra >= 1 ke ca khi 部位 rong => khong dinh bay 「回 = 0」. Khong nam trong switch IregCodChk => khong ghi SIGA.",
+    "trtCd": 204,
+    "trtSb": 0,
+    "//soutyakuTrtCd": "254/4 FMC(パ･大) — DOI CHUNG cho nhanh 装着料自動算定. Cung keo 264/3, cung men = 0, nhung MST_SET096(254,4).mflg = 0 trong khi (204,0).mflg = 1. Khac dung MOT co => 「co/khong co dong 装着料」 quy duoc cho mflg. unit = 17 (大臼歯＋智歯) nen o 部位 phai la rang ham — autoSantei.buiSlot = 2 (右上6) thoa.",
+    "soutyakuTrtCd": 254,
+    "soutyakuTrtSb": 4,
+    "//allowRowCleanup": "Xoa cac dong mang ma dem chot + ma di kem + ma comment TRONG NGAY test. Chi chay khi ngay do khong co san dong nao mang cac ma ay (hang rao F22).",
+    "allowRowCleanup": true,
+
+    "//allowBranchSeed": [
+      "Cho phep SUA TAM MASTER DUNG CHUNG (CHKAUTO, MST_CMT2) — luong ChkAutoSeededBranchTests.",
+      "TCC0 do duoc: master hien tai KHONG co o chkauto nao dan toi 202/549/179 va khong ma di kem",
+      "nao mang men <> 0 => bon nhanh rieng cua Chk_ChkAuto la CODE CHET voi du lieu that. Muon biet",
+      "WinForm lam gi o do thi phai tam tro mot o chkauto vao ma can do.",
+      "Lam duoc vi chkauto KHONG cache: ChkAuto.getChkAutoData chay select moi o MOI lan Enter o 回.",
+      "Co RIENG, khong dung chung allowSave: co kia chi seed du lieu MOT benh nhan test, co nay dung",
+      "vao bang ca phong kham dung. Fixture chup — in ra — tra lai (F20)."
+    ],
+    "allowBranchSeed": false,
+    "//deadBranchTrtCd": "179/5 分割抜歯 — dung 枝番 ma `case 179` DINH bat. Legacy so Rows[0][2] (= trt_nm) voi \"5\" trong khi 枝番 nam o Rows[0][1] (CommonInp.cs:210-218), nen dieu kien LUON false. unit = 13 (永久歯大臼歯) hop voi o 部位 右上6; va trong IregCodChk, 枝番 = 5 KHONG goi SigaChg => khong ghi 歯式.",
+    "deadBranchTrtCd": 179,
+    "deadBranchTrtSb": 5,
+    "//dialogBranchTrtCd": "202/0 ＩＳ — DOI CHUNG cua deadBranch. `case 202` doc Rows[0][1], tuc DUNG cot trt_sb, nen voi 枝番 = 0 no mo 処置選択 that. Hai nhanh nam canh nhau trong cung switch, khac dung mot chi so cot. unit = 2 (口腔単位) nen 回数 luon >= 1.",
+    "dialogBranchTrtCd": 202,
+    "dialogBranchTrtSb": 0,
+    "//menBranchTrtCd": "326/2 光ＣＲ充(単純) — men = 1 => frm203035 面入力; unit = 1 (歯数) nen mot o 部位 la du.",
+    "menBranchTrtCd": 326,
+    "menBranchTrtSb": 2,
+    "//asteriskCmtText": "Chuoi tam ghi de vao MST_CMT2 cua カルテコメント thuoc ma chu nha, de ep frmCmt3_PrmChk mo frm203048. Phai chua it nhat mot dau * va vua trong varchar(60).",
+    "asteriskCmtText": "ﾃｽﾄ*ﾊﾟﾗﾒｰﾀ"
+  },
+
 
   "perioKensa": {
     "//": [

@@ -25,6 +25,7 @@ public sealed class TestSettings
     [JsonPropertyName("highNeeds")] public HighNeedsSection HighNeeds { get; set; } = new();
     [JsonPropertyName("sigaTooth")] public SigaToothSection SigaTooth { get; set; } = new();
     [JsonPropertyName("autoSantei")] public AutoSanteiSection AutoSantei { get; set; } = new();
+    [JsonPropertyName("chkAutoCascade")] public ChkAutoCascadeSection ChkAutoCascade { get; set; } = new();
     [JsonPropertyName("perioKensa")] public PerioKensaSection PerioKensa { get; set; } = new();
     [JsonPropertyName("visitList")] public VisitListSection VisitList { get; set; } = new();
     [JsonPropertyName("buiPrice")] public BuiPriceSection BuiPrice { get; set; } = new();
@@ -353,6 +354,134 @@ public sealed class TestSettings
 
         /// <summary>枝番 của <see cref="MultiTrtCd"/>.</summary>
         [JsonPropertyName("multiTrtSb")] public int MultiTrtSb { get; set; }
+    }
+
+    /// <summary>
+    /// Luồng <c>Tests/AutoSanteiChkAuto/ChkAutoCascadeTests</c> — <b>tầng thứ hai</b> của
+    /// cái đuôi: mã mà <c>Chk_ChkAuto</c> vừa chèn lại được đem qua <c>Chk_CmtAuto</c> lần
+    /// nữa (modMain.cs:1033), nên nó kéo theo カルテコメント của CHÍNH NÓ.
+    ///
+    /// <para>Dùng chung 部位/病名 với <see cref="AutoSanteiSection"/> (cùng ô 部位, cùng
+    /// 病名, cùng vùng seed) — chỉ 処置 đem chốt là khác. Nhưng có cờ ghi RIÊNG:
+    /// <see cref="AutoSanteiSection.AllowSave"/> mở đường ghi <c>SIGA</c> cho 抜歯, còn
+    /// luồng này chốt 204 暫間固定 — mã KHÔNG nằm trong switch của
+    /// <c>frm203016.IregCodChk</c> (frm203016.cs:1015-1100) nên <b>không đụng 歯式</b>,
+    /// chỉ cần quyền seed 部位病名行 vào <c>TRNTRN</c>.</para>
+    /// </summary>
+    public sealed class ChkAutoCascadeSection
+    {
+        /// <summary>
+        /// Cho phép seed 部位病名行 vào <c>TRNTRN</c> (vùng <c>disp_no &gt;= 9000</c> của
+        /// ĐÚNG ngày test) và dọn lại ở <c>OneTimeTearDown</c>. KHÔNG bấm F9.
+        /// Mặc định tắt ⇒ fixture tự Ignore TRƯỚC khi mở app.
+        /// </summary>
+        [JsonPropertyName("allowSave")] public bool AllowSave { get; set; }
+
+        /// <summary>
+        /// 処置 ĐEM CHỐT. Mặc định <b>204/0 暫間固定(簡単)</b> — chọn bằng cách soi DB, vì
+        /// nó là ô DUY NHẤT gom đủ bốn điều kiện để một cú chốt trả lời được cả hai câu:
+        /// <list type="bullet">
+        ///   <item><c>chkauto(204,0) → 264/3</c> (装着材料料), và <c>CMTAUTO(264,3)</c> có
+        ///     đúng MỘT dòng <c>no_chk = 1</c> ⇒ tầng hai TỰ ÁP DỤNG, không hỏi;</item>
+        ///   <item><c>CMTAUTO(204,0)</c> cũng đúng một dòng, <c>disp_no = 2 &gt; 0</c> ⇒
+        ///     comment nằm DƯỚI 処置 — điều kiện để đo được 「dòng chk_auto nằm trên hay
+        ///     dưới comment」;</item>
+        ///   <item><c>unit = 3</c> (顎単位) nên <c>CalcCnt.getCalcCnt</c> trả &gt;= 1 kể cả
+        ///     khi 部位 rỗng (CalcCnt.cs:63-76) ⇒ không dính bẫy 「回 = 0」;</item>
+        ///   <item>204 KHÔNG có trong switch của <c>IregCodChk</c> ⇒ không ghi <c>SIGA</c>.</item>
+        /// </list>
+        /// </summary>
+        [JsonPropertyName("trtCd")] public int TrtCd { get; set; } = 204;
+
+        /// <summary>枝番 của <see cref="TrtCd"/>.</summary>
+        [JsonPropertyName("trtSb")] public int TrtSb { get; set; }
+
+        /// <summary>
+        /// 処置 cho phép ĐỐI CHỨNG nhánh 装着料自動算定
+        /// (<c>ModMain.Chk_ChkAuto_soutyaku</c>, frm203002.cs:5750).
+        ///
+        /// <para>Mặc định <b>254/4 FMC(パ･大)</b>: cùng kéo <c>264/3</c> như
+        /// <see cref="TrtCd"/>, cùng <c>men = 0</c>, nhưng <c>MST_SET096(254,4).mflg = 0</c>
+        /// trong khi <c>(204,0).mflg = 1</c>. Hai mã chỉ khác nhau ĐÚNG cái cờ quyết định
+        /// nhánh đó chèn dòng hay thoát ngay (modMain.cs:1121) ⇒ 「có/không có dòng 装着料」
+        /// quy được cho <c>mflg</c> chứ không cho 「app chèn bừa」.</para>
+        ///
+        /// <para><c>unit = 17</c> (大臼歯＋智歯) nên phải dùng ô 部位 là một RĂNG HÀM —
+        /// <c>autoSantei.buiSlot = 2</c> (右上6) thoả.</para>
+        /// </summary>
+        [JsonPropertyName("soutyakuTrtCd")] public int SoutyakuTrtCd { get; set; } = 254;
+
+        /// <summary>枝番 của <see cref="SoutyakuTrtCd"/>.</summary>
+        [JsonPropertyName("soutyakuTrtSb")] public int SoutyakuTrtSb { get; set; } = 4;
+
+        /// <summary>
+        /// Cho phép XOÁ các dòng mang mã đem chốt + mã đi kèm + mã comment trong NGÀY test
+        /// ở <c>OneTimeTearDown</c>. Hàng rào F22: chỉ chạy khi ngày đó KHÔNG có sẵn dòng
+        /// nào mang các mã ấy trước lượt chạy.
+        /// </summary>
+        [JsonPropertyName("allowRowCleanup")] public bool AllowRowCleanup { get; set; } = true;
+
+        /// <summary>
+        /// Cho phép <b>SỬA TẠM MASTER DÙNG CHUNG</b> (<c>CHKAUTO</c>, <c>MST_CMT2</c>) để ép
+        /// <c>Chk_ChkAuto</c> đi vào những nhánh mà dữ liệu thật không bao giờ chạm tới —
+        /// xem <see cref="ChkAutoSeededBranchTests"/>.
+        ///
+        /// <para>Cờ RIÊNG, KHÔNG dùng chung <see cref="AllowSave"/>: cờ kia chỉ mở đường
+        /// seed 部位病名行 của MỘT bệnh nhân test, còn cờ này đụng vào bảng mà CẢ PHÒNG KHÁM
+        /// dùng. Fixture chụp nguyên trạng, IN RA STDOUT, và trả lại ở
+        /// <c>OneTimeTearDown</c> (F20). Mặc định tắt ⇒ tự Ignore TRƯỚC khi mở app.</para>
+        /// </summary>
+        [JsonPropertyName("allowBranchSeed")] public bool AllowBranchSeed { get; set; }
+
+        /// <summary>
+        /// Mã đem thử cho nhánh <c>case 179</c> (modMain.cs:1011-1020). Mặc định
+        /// <b>179/5 分割抜歯</b> — đúng 枝番 mà nhánh ấy ĐỊNH bắt.
+        ///
+        /// <para>Legacy viết <c>if (tblTrtSel.Rows[0][2].ToString() == "5")</c>, nhưng ô
+        /// <c>[2]</c> của <c>CommonInp.makeTable()</c> là <c>trt_nm</c> — 枝番 nằm ở ô
+        /// <c>[1]</c> (CommonInp.cs:210-218). Ở 《VB6》 cột 2 mới là 枝番; bản port giữ số cột
+        /// cũ trên bảng mới. Vì thế điều kiện LUÔN false và 処置選択 không bao giờ mở.</para>
+        ///
+        /// <para><c>unit = 13</c> (永久歯大臼歯) ⇒ hợp với ô 部位 右上6. Và trong
+        /// <c>IregCodChk</c>, nhánh <c>case 179</c> với <c>trtSb == 5</c> KHÔNG gọi
+        /// <c>SigaChg</c> (frm203016.cs:1032-1041) ⇒ <b>không ghi 歯式</b>.</para>
+        /// </summary>
+        [JsonPropertyName("deadBranchTrtCd")] public int DeadBranchTrtCd { get; set; } = 179;
+
+        /// <summary>枝番 của <see cref="DeadBranchTrtCd"/>.</summary>
+        [JsonPropertyName("deadBranchTrtSb")] public int DeadBranchTrtSb { get; set; } = 5;
+
+        /// <summary>
+        /// Mã đem thử cho nhánh <c>case 202</c> (modMain.cs:995-1003). Mặc định
+        /// <b>202/0 ＩＳ(30分まで)</b>: điều kiện ở đó đọc <c>Rows[0][1]</c> — ô <c>trt_sb</c>,
+        /// tức ĐÚNG cột — nên với 枝番 = 0 nó phải mở 処置選択 thật.
+        ///
+        /// <para>Cặp đối chứng hoàn hảo với <see cref="DeadBranchTrtCd"/>: hai nhánh cạnh
+        /// nhau trong cùng một <c>switch</c>, chỉ khác nhau ở chỗ một cái đọc đúng cột và
+        /// một cái đọc nhầm. <c>unit = 2</c> (口腔単位) nên 回数 luôn &gt;= 1.</para>
+        /// </summary>
+        [JsonPropertyName("dialogBranchTrtCd")] public int DialogBranchTrtCd { get; set; } = 202;
+
+        /// <summary>枝番 của <see cref="DialogBranchTrtCd"/>.</summary>
+        [JsonPropertyName("dialogBranchTrtSb")] public int DialogBranchTrtSb { get; set; }
+
+        /// <summary>
+        /// Mã đem thử cho nhánh 面入力 (frm203016.cs:1563). Mặc định <b>326/2 光ＣＲ充(単純)</b>
+        /// — <c>men = 1</c> ⇒ <c>frm203035</c> (面 = mặt răng), và <c>unit = 1</c> (歯数) nên
+        /// một ô 部位 là đủ.
+        /// </summary>
+        [JsonPropertyName("menBranchTrtCd")] public int MenBranchTrtCd { get; set; } = 326;
+
+        /// <summary>枝番 của <see cref="MenBranchTrtCd"/>.</summary>
+        [JsonPropertyName("menBranchTrtSb")] public int MenBranchTrtSb { get; set; } = 2;
+
+        /// <summary>
+        /// Chuỗi tạm ghi đè vào <c>MST_CMT2</c> của カルテコメント thuộc mã đem chốt, để ép
+        /// <c>frmCmt3_PrmChk</c> mở パラメータダイアログ <c>frm203048</c> (frm203002.cs:10056).
+        ///
+        /// <para>Phải chứa ít nhất một dấu <c>*</c> và vừa trong <c>varchar(60)</c>.</para>
+        /// </summary>
+        [JsonPropertyName("asteriskCmtText")] public string AsteriskCmtText { get; set; } = "ﾃｽﾄ*ﾊﾟﾗﾒｰﾀ";
     }
 
     /// <summary>
@@ -883,6 +1012,12 @@ public sealed class TestSettings
         Set("OCHA_AUTO_SANTEI_ALLOW_SAVE", v => s.AutoSantei.AllowSave = ToBool(v));
         Set("OCHA_AUTO_SANTEI_TRT_CD", v => s.AutoSantei.TrtCd = int.Parse(v));
         Set("OCHA_AUTO_SANTEI_TRT_SB", v => s.AutoSantei.TrtSb = int.Parse(v));
+        Set("OCHA_CHK_AUTO_CASCADE_ALLOW_SAVE", v => s.ChkAutoCascade.AllowSave = ToBool(v));
+        Set("OCHA_CHK_AUTO_CASCADE_TRT_CD", v => s.ChkAutoCascade.TrtCd = int.Parse(v));
+        Set("OCHA_CHK_AUTO_CASCADE_TRT_SB", v => s.ChkAutoCascade.TrtSb = int.Parse(v));
+        Set("OCHA_CHK_AUTO_CASCADE_SOUTYAKU_TRT_CD", v => s.ChkAutoCascade.SoutyakuTrtCd = int.Parse(v));
+        Set("OCHA_CHK_AUTO_CASCADE_SOUTYAKU_TRT_SB", v => s.ChkAutoCascade.SoutyakuTrtSb = int.Parse(v));
+        Set("OCHA_CHK_AUTO_BRANCH_SEED", v => s.ChkAutoCascade.AllowBranchSeed = ToBool(v));
         Set("OCHA_PERIO_ALLOW_SETTING_CHANGE", v => s.PerioKensa.AllowSettingChange = ToBool(v));
         Set("OCHA_PERIO_DIS_CD", v => s.PerioKensa.DisCd = int.Parse(v));
         Set("OCHA_SINRYO_YM", v => s.VisitList.SinryoYm = v);

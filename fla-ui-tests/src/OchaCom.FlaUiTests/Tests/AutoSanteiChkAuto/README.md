@@ -236,3 +236,128 @@ MST_TRT266 (áp dụng từ 2026-06-01):
   310/2 = OA+ｵｰﾗ注歯科用Ct 1.8mL / …ｶｰﾄﾘｯｼﾞ 料1.8mL  score1= 11 unit= 9 acc_unit=11 f1=1
   171/0 = 感根処(1根) / 感染根管処置(単根)            score1=160 unit=61 acc_unit= 9 f1=0
 ```
+
+---
+
+# 7. Tầng HAI của cái đuôi — kiểm lại bản đánh giá parity 「web thiếu port `runChkAuto`」
+
+Mục 1–6 ở trên đo **tầng MỘT**: chốt 処置 → `chkauto` kéo mã đi kèm xuống lưới.
+Hai fixture dưới đây đo cái đến **sau** đó, và đo bằng cách hỏi chính WinForm — không đọc
+code web rồi suy.
+
+> Runner: [`../../../../run-chk-auto-cascade.ps1`](../../../../run-chk-auto-cascade.ps1)
+> Fixture: `ChkAutoCascadeTests` (dữ liệu thật) · `ChkAutoSeededBranchTests` (seed master)
+
+## 7.1. Bản đánh giá nói gì, và ai trả lời
+
+| § | Khẳng định về WinForm | Đo ở đâu |
+|---|---|---|
+| §1 | `Chk_CmtAuto` chạy **cả hai nửa** (`prgCmtAuto` 摘要 + `CMTAUTO` → `frm203012` カルテ), và được gọi **lại** cho mã mà `chk_auto` vừa chèn (`modMain.cs:1033`) | `TCC1` |
+| §2 | `CMTAUTO.disp_no > 0` ⇒ comment nằm dưới 処置, và dòng `chk_auto` nằm **dưới comment** (`frm203002.cs:10164` kéo con trỏ xuống sau comment) | `TCC2` |
+| §5a | Vòng lặp **interleave**: chèn ô `i` → `Chk_CmtAuto` cho chính nó → mới sang ô `i+1` | `TCC3` |
+| §5b | `case 202` / `case 549` mở `frm203016`; web thiếu | `TCC0` (549) + `TCB2` (202) |
+| §5c | `case 179` so **nhầm cột** ⇒ 分割抜歯 chưa bao giờ được hỏi ⇒ web đang đúng | `TCC0` + `TCB1` |
+| §5d | `men = 1` → `frm203035`, `men = 2` → `frm902003`, chạy cả trên nhánh `Hide_Let_Trt_Data` | `TCC0` + `TCB4` |
+| §3 | `fixProc` cắt 300 byte + `frm203048` cho mỗi dấu `*` | `TCC0` (cắt) + `TCB3` (dấu `*`) |
+| — | (ngoài danh sách) `Chk_ChkAuto_soutyaku` 装着料 | `TCC4` + `TCC5` |
+
+§4 (`dayRemap`), §6 (BE hardcode) và §7 (web không có test nào) **không đo được ở đây** —
+chúng nói về code bên web, không về hành vi WinForm.
+
+## 7.2. Chữ ký bốn dòng — vì sao chọn 204/0
+
+`204/0 暫間固定(簡単)` là ô **duy nhất** trên master này gom đủ điều kiện để MỘT cú chốt trả
+lời được cả §1 lẫn §2:
+
+```
+chkauto(204,0) → 264/3 装着材料料              CMTAUTO(264,3) = 1 dòng 7510/4 disp_no 2 no_chk 1
+CMTAUTO(204,0) = 1 dòng 7551/0 disp_no 2 no_chk 1   (> 0 ⇒ comment nằm DƯỚI 処置)
+MST_TRT266: 204/0 unit = 3 (顎単位) ⇒ CalcCnt trả >= 1 KỂ CẢ khi 部位 rỗng (CalcCnt.cs:63-76)
+MST_SET096(204,0).mflg = 1  ⇒  Chk_ChkAuto_soutyaku thoát sớm, không có dòng 装着料 lạ
+204 KHÔNG nằm trong switch của IregCodChk ⇒ KHÔNG ghi SIGA  (khác hẳn 179 của mục 1-6)
+```
+
+Kỳ vọng, **tính từ master chứ không hardcode**:
+
+```
+  暫間固定(TFix)set(簡単)              230点   ← mã gõ vào
+  0.3mm結紮線＋ｽｰﾊﾟｰﾎﾞﾝﾄﾞ                0点   ← Chk_CmtAuto(204,0)      disp_no 2 ⇒ DƯỚI
+  装着材料料 (接着性ﾚｼﾞﾝｾﾒﾝﾄ・標準型)     17点   ← Chk_ChkAuto              ⇒ DƯỚI comment  ★§2
+  ルーティングセメント                    0点   ← Chk_CmtAuto(264,3)       ⇒ TẦNG HAI     ★§1
+  月計 tăng đúng 230 + 17 = 247
+```
+
+Bốn dòng đến từ **ba** lần gọi khác nhau trong cùng một cú Enter ô 回
+(`frm203002.cs:5738-5752`), nên mỗi dòng thiếu chỉ đúng một lần gọi hỏng — vì thế `TCC1` /
+`TCC2` / `TCC3` tách riêng chứ không assert một cục.
+
+## 7.3. Bốn nhánh CHẾT, và cách ép chúng chạy
+
+`TCC0` chỉ hỏi DB, và đó là phần **rẻ nhất nhưng nói nhiều nhất**:
+
+| Nhánh | Dữ liệu thật có chạm tới không |
+|---|---|
+| `case 202` / `case 549` / `case 179` / `case 333` | **Không** — không ô `chkauto` nào trỏ tới các mã đó |
+| `case 549` (thêm một tầng nữa) | Master của tháng **không có dòng 549 nào**, mà `Chk_ChkAuto` tra master TRƯỚC rồi mới vào `switch` (`modMain.cs:948-958`) ⇒ chết hai lần |
+| 面入力 (`men <> 0`) | **Không** — master có 26 mã `men = 1` nhưng không mã nào là mã đi kèm |
+| `fixProc` cắt 300 byte | **Không thể** — chữ đem cắt lấy từ `MST_CMT2.cmt_nm`, cột `varchar(60)` (`CmtAuto.getCmtAuto` trả `b.cmt_nm` qua `INNER JOIN`, `COMMON/DBAccess/CmtAuto.cs:79-84`) |
+| `frm203048` cho dấu `*` | **Có** — nhiều dòng `CMTAUTO` còn dấu `*` (`122/x`, `130/0`, `170/x`, `171/x`…) |
+
+Nghĩa là: 「web thiếu port các nhánh đó」 đúng **ở tầng code**, nhưng trên tenant này
+**không ai quan sát được lệch ấy ở runtime**. Còn nhánh cắt 300 byte thì chỉ sống trên
+đường **gõ tay** trong `frm203012`, không phải đường `chk_auto`.
+
+Muốn biết WinForm THẬT SỰ làm gì trong bốn nhánh chết ấy thì phải ép: `ChkAutoSeededBranchTests`
+tạm trỏ ô `chkauto` của 処置 chủ nhà sang mã cần đo rồi trả lại ngay.
+Làm được vì **`chkauto` không cache** — `ChkAuto.getChkAutoData` chạy một câu `select` mới ở
+MỖI lần Enter ô 回 (`COMMON/DBAccess/ChkAuto.cs:24-66`).
+
+| Ca | Vá gì | Kỳ vọng |
+|---|---|---|
+| `TCB1` | ô `chkauto` → `179/5 分割抜歯` | 処置選択 **KHÔNG** mở, dòng vẫn rơi xuống lưới ⇒ điều kiện `Rows[0][2] == "5"` là code chết (ô `[2]` là `trt_nm`, 枝番 nằm ở `[1]` — `CommonInp.cs:210-218`) |
+| `TCB2` | ô `chkauto` → `202/0 ＩＳ` | 処置選択 **CÓ** mở — nhánh cạnh bên đọc `Rows[0][1]`, tức đúng cột. **Vế đối chứng của TCB1** |
+| `TCB3` | `MST_CMT2` của comment ← chuỗi có dấu `*` | `frm203048` パラメータダイアログ mở |
+| `TCB4` | ô `chkauto` → mã `men = 1` | `frm203035` 面入力 mở |
+
+「Cửa sổ có mở không」 đo bằng `Infrastructure/WindowRecorder` — luồng nền CHỈ NHÌN, poll
+150ms. Cần vì `frm203016` với lưới một dòng **tự đóng trong chớp mắt**
+(`getViewData` → `defData(0)`, `frm203016.cs:390-394`): hỏi 「giờ nó có đang mở không」 sau
+khi thao tác xong thì luôn nhận 「không」, bất kể app có mở hay không.
+
+> ⚠️ Recorder là bằng chứng **một chiều**. Thấy ⇒ chắc chắn có mở. Không thấy ⇒ rất có thể
+> không mở, nhưng cũng có thể cửa sổ sống ngắn hơn một nhịp poll. Vì thế `TCB1` (assert
+> 「KHÔNG mở」) luôn đi kèm mốc thứ hai — **dòng vẫn rơi xuống lưới**, tức nhánh đã chạy tới
+> cuối mà không hỏi ai — và có `TCB2` làm vế đối chứng cho chính cái recorder.
+
+## 7.4. Ghi DB
+
+| Bảng | Ai đụng | Cờ | Trả lại |
+|---|---|---|---|
+| `TRNTRN` vùng `disp_no >= 9000`, ĐÚNG ngày test | cả hai fixture (seed 部位病名行) | `chkAutoCascade.allowSave` | `OneTimeTearDown` |
+| `CHKAUTO`, `MST_CMT2` — **master dùng chung cả phòng khám** | `ChkAutoSeededBranchTests` | `chkAutoCascade.allowBranchSeed` (RIÊNG) | ngay trong `finally` của từng ca, + `OneTimeTearDown` |
+| `SIGA` | **không ai** — 204 / 254 / 179**/5** đều không gọi `SigaChg` | — | — |
+| `MST_TRT*.use_cnt` | tăng 1 mỗi lần chèn (`frm203016.cs:1621`) | — | **không khôi phục** — bộ đếm học thói quen, không ảnh hưởng điểm/tiền |
+
+Nguyên trạng `CHKAUTO` + `MST_CMT2` được in ra stdout trong khối 「NGUYÊN TRẠNG」 **trước**
+lượt chạy: Ctrl+C giữa chừng thì dựng lại bằng tay theo khối đó.
+
+## 7.5. Lô chạy
+
+```powershell
+.\run-chk-auto-cascade.ps1 -Case TCC0                          # 1. RE — chi hoi DB, chay truoc tien
+.\run-chk-auto-cascade.ps1 -AllowSave                          # 2. ca cum TCC0..TCC5 (1 vong UI)
+.\run-chk-auto-cascade.ps1 -AllowSave -BranchSeed -Case TCB1    # 3. TUNG CA MOT (F7)
+.\run-chk-auto-cascade.ps1 -AllowSave -BranchSeed -Case TCB2
+.\run-chk-auto-cascade.ps1 -AllowSave -BranchSeed -Case TCB3
+.\run-chk-auto-cascade.ps1 -AllowSave -BranchSeed -Case TCB4
+```
+
+`TCC1..TCC5` dùng CHUNG một cú chốt (`TCC1` chốt, `TCC2-TCC4` đọc lại lưới đó) ⇒ chạy cả
+cụm, đừng chạy lẻ. `TCB1..TCB4` mỗi ca một cú chốt ⇒ chạy từng ca một, trần wrapper 15 phút.
+
+Chạy từ xa:
+
+```powershell
+Set-Content logs\command.txt "run-chk-auto-cascade.ps1 -AllowSave"
+schtasks /run /tn "FlaUI-Tests-Run"
+```
