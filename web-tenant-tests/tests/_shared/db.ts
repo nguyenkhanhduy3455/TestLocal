@@ -1533,6 +1533,57 @@ export async function findMstTrt(onDate: string, trtCd: number): Promise<MstTrtR
     })
 }
 
+// ─── pac_mst (処置パック) — パック nào chứa một mã 処置 ở slot nào ──────────────
+//
+// Vì sao cần: spec parity của パック処置選択 phải mở ĐÚNG パック có chứa mã đang đo
+// (vd 116-7 歯管). Cột 「No.」 trên tab パック là SỐ THỨ TỰ hiển thị chứ không phải
+// `pac_cd` (frm203002.cs:2033), nên không suy được từ DOM là パック nào chứa gì —
+// phải tra pac_mst. Trả về cả `pacNm` để spec click dòng THEO TÊN (ổn định hơn
+// theo chỉ số) và cả `pacCd` để đối chiếu với cụm 「パック番号」 của dialog.
+
+/** Số slot `dis_cd_NN` của một dòng pac_mst (frm203014 duyệt đủ 20). */
+const PAC_SLOT_COUNT = 20
+
+export interface PacWithSlot {
+    pacCd: number
+    pacNm: string
+    /** Vị trí slot (1..20) khớp (trtCd, trtSb) — thứ tự này cũng là thứ tự dialog in ra. */
+    slotIdx: number
+}
+
+/**
+ * Các パック đang hiệu lực có slot đúng bằng (`trtCd`, `trtSb`), sắp theo `pac_cd`.
+ * Mảng rỗng = tenant không có パック nào chứa mã đó ⇒ spec phải skip có lý do.
+ */
+export async function findPacsWithTrtSlot(
+    trtCd: number,
+    trtSb: number,
+): Promise<PacWithSlot[]> {
+    // Tên cột sinh từ chỉ số vòng lặp (không phải input người dùng) nên nội suy an toàn.
+    const slots = Array.from(
+        { length: PAC_SLOT_COUNT },
+        (_, i) => {
+            const nn = String(i + 1).padStart(2, '0')
+            return `(${i + 1}, p.dis_cd_${nn}, p.dis_sb_${nn})`
+        },
+    ).join(', ')
+    return withDb(async (c) => {
+        const r = await c.query<Record<string, unknown>>(
+            `SELECT p.pac_cd, p.pac_nm, s.idx
+               FROM view_pac_mst_active p
+               CROSS JOIN LATERAL (VALUES ${slots}) AS s(idx, dis_cd, dis_sb)
+              WHERE s.dis_cd = $1 AND s.dis_sb = $2
+              ORDER BY p.pac_cd, s.idx`,
+            [trtCd, trtSb],
+        )
+        return r.rows.map((row) => ({
+            pacCd: Number(row['pac_cd'] ?? 0),
+            pacNm: String(row['pac_nm'] ?? '').trim(),
+            slotIdx: Number(row['idx'] ?? 0),
+        }))
+    })
+}
+
 // ─── insurance (患者保険情報) — 枝番 có hiệu lực tại một 診療日 ────────────────
 //
 // WinForm `modPat.GetValidSubCode2` (modPat.cs:205-222) duyệt danh sách 枝番 theo
