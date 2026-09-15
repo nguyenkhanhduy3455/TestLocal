@@ -80,6 +80,15 @@ public sealed class MsgTblDialogTests : UiTestBase
     /// </summary>
     private const string NoSuchTreatmentName = "ZZZZZZZZ";
 
+    /// <summary>Nút bật/tắt dải phím Shift (BaseForm.Designer) — xem DrugPathBFlow.</summary>
+    private const string ShiftToggleId = "btnShift";
+
+    /// <summary>Nhãn nút F12 khi dải Shift ĐANG BẬT (frm203002.cs:971-981).</summary>
+    private const string ExitButtonText = "終了";
+
+    /// <summary>Tham số legacy truyền cho Q00004 ở chỗ này (frm203002.cs:981).</summary>
+    private const string ExitParam = "登録せずに";
+
     private MsgTblOracle _msg = null!;
 
     private static void Log(string line) => TestContext.Out.WriteLine(line);
@@ -216,8 +225,106 @@ public sealed class MsgTblDialogTests : UiTestBase
     }
 
     // ═════════════════════════════════════════════════════════════════════════
+    // TCM7 — Q00004 (Shift+F12 終了)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Test, Order(3)]
+    [Description("TCM7 — Q00004: dải Shift + F12 終了 hỏi trước khi thoát (trả lời HUỶ)")]
+    public void TCM7_Q00004_ExitConfirm_MatchesWebAndTable()
+    {
+        var expected = _msg.Render("Q00004", ExitParam);
+        var web = WebMsgSnapshot.Render("Q00004", ExitParam);
+
+        DrainDialogs("trước TCM7");
+
+        // ⚠️ Chỉ đường NÚT, KHÔNG gửi tổ hợp Shift+F12.
+        //
+        // ShiftFlg chỉ được đặt trong BaseForm.editButtonPanel — hoặc do btnShift, hoặc do
+        // Keys.ShiftKey ở KeyDown/KeyUp. Gửi tổ hợp thì thứ tự KeyDown giữa hai phím là
+        // chuyện của bộ gõ, sai nhịp một cái là F12 rơi vào nhánh 「メニュー」 và app rời
+        // khỏi 診療入力 — hỏng luôn các ca sau. Bấm nút thì không có chỗ cho nhầm lẫn.
+        var shiftWasOn = ToggleShiftBand(on: true);
+
+        try
+        {
+            // Tra THEO ID, tuyệt đối không Uia.Descendants trên cửa sổ này: lưới 処置 tới
+            // 2.864 dòng và cầu MSAA dựng phần tử cho từng dòng — một lượt duyệt sâu mất
+            // 10-20s và lần này ném thẳng COMException 「Operation timed out」 (đo 16:59).
+            // Cùng lý do mà KarteAutoCalcMenu tra btnF11 bằng FindChromeIdOrName.
+            var exit = KarteAutoCalcDialog.FindChromeIdOrName(Screen.Window, "btnF12", ExitButtonText)
+                       ?? throw new InvalidOperationException(
+                              $"không thấy nút 「{ExitButtonText}」 (btnF12) trên 診療入力 — " +
+                              "dải Shift có bật không?");
+
+            ClickPhysically(exit, $"nút 「{ExitButtonText}」 (= Shift+F12)");
+
+            var box = RequireDialog("Q00004 sau khi bấm 「終了」 trên dải Shift",
+                                    "Q00004 frm203002 shift-F12 shuuryou");
+            var buttons = MsgBoxWin32.ButtonCaptions(box.Hwnd);
+
+            LogKq(7, $"WinForm: {Txt.Vis(box.Raw)}  nút: {string.Join(" / ", buttons)}");
+            Log($"   MSGTBL: {Txt.Vis(expected)}   |   web: {Txt.Vis(web)}");
+
+            try
+            {
+                Assert.Multiple(() =>
+                {
+                    Assert.That(box.Raw, Is.EqualTo(expected),
+                        "frm203002.cs:981 gọi ShowOKCancelMsg(\"Q00004\", \"登録せずに\") ⇒ câu phải " +
+                        "đúng bằng row Q00004 render với tham số đó.");
+
+                    Assert.That(box.Raw, Is.EqualTo(web),
+                        $"…và phải TRÙNG KHÍT literal bản web ({WebMsgSnapshot.SourceFile}).");
+
+                    Assert.That(buttons, Is.EquivalentTo(new[] { "OK", "Cancel" }),
+                        "ShowOKCancelMsg ⇒ đúng hai nút (F16: nhãn theo ngôn ngữ Windows).");
+                });
+            }
+            finally
+            {
+                // KHÔNG dùng OK làm fallback: OK ở đây là Application.Exit() — app TẮT HẲN
+                // và mọi ca sau của cả lượt chạy chết theo.
+                if (!MsgBoxWin32.ClickButton(box.Hwnd, "キャンセル", "Cancel", "いいえ", "No"))
+                    throw new InvalidOperationException(
+                        $"KHÔNG bấm được nút huỷ trên {box}. Nút thật: " +
+                        string.Join(" / ", MsgBoxWin32.ButtonCaptions(box.Hwnd)) +
+                        ". Dừng lại thay vì bấm bừa — nút còn lại là THOÁT APP.");
+
+                Waits.Until(() => MsgBoxWin32.All(App.ProcessId).All(d => d.Hwnd != box.Hwnd),
+                    "hộp thoại đóng lại", TimeSpan.FromSeconds(10));
+            }
+        }
+        finally
+        {
+            if (!shiftWasOn) ToggleShiftBand(on: false);
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
     // Hạ tầng nhỏ dùng chung
     // ═════════════════════════════════════════════════════════════════════════
+
+    /// <summary>Bật/tắt dải phím Shift; trả về trạng thái TRƯỚC khi đụng vào.</summary>
+    private bool ToggleShiftBand(bool on)
+    {
+        // FindChromeIdOrName duyệt RỘNG và có trần 400 node, nên không lún vào lưới 処置.
+        // Uia.ById duyệt sâu và trên cửa sổ này nó ném COMException 「Operation timed out」
+        // (đo hai lượt, 16:59 và 17:06) — lưới có 2.864 dòng, cầu MSAA dựng phần tử cho
+        // từng dòng một.
+        var toggle = KarteAutoCalcDialog.FindChromeIdOrName(Screen.Window, ShiftToggleId, "OFF")
+                     ?? KarteAutoCalcDialog.FindChromeIdOrName(Screen.Window, ShiftToggleId, "ON");
+        if (toggle is null) return false;
+
+        var wasOn = Txt.Has(Txt.N(Uia.NameOf(toggle)), "ON");
+        if (wasOn == on) return wasOn;
+
+        Uia.MouseClick(toggle);
+        Thread.Sleep(600);
+        Log($"   dải Shift: 「{Txt.N(Uia.NameOf(toggle))}」");
+        return wasOn;
+    }
+
+
 
     /// <summary>
     /// Mở <c>frm203042</c> bằng ĐƯỜNG BÀN PHÍM: <c>F11</c> → <c>9</c> → <c>6</c>.

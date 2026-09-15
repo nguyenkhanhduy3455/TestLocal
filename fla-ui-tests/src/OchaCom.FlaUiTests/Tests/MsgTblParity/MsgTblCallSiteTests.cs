@@ -1,4 +1,6 @@
 using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Input;
+using FlaUI.Core.WindowsAPI;
 using NUnit.Framework;
 using OchaCom.FlaUiTests.App;
 using OchaCom.FlaUiTests.Infrastructure;
@@ -46,6 +48,20 @@ namespace OchaCom.FlaUiTests.Tests.MsgTblParity;
 /// </code>
 ///
 /// ═══════════════════════════════════════════════════════════════════════════════
+/// THỨ TỰ CHẠY CÓ Ý NGHĨA
+/// ═══════════════════════════════════════════════════════════════════════════════
+/// <c>TCC3</c>/<c>TCC4</c> (gõ 患者番号) chạy TRƯỚC <c>TCC1</c>/<c>TCC2</c>.
+///
+/// <para>Vì <c>TCC2</c> bấm 「F3 当月来患」 để mở 来患集計, và cú đó đổi luôn CHẾ ĐỘ XEM của
+/// 患者選択 sang danh sách 受付患者: lưới có dòng, một dòng được chọn, và ô 患者番号 bị
+/// RÀNG BUỘC vào dòng đó — gõ gì vào cũng bị đẩy về số của dòng. Đo 2026-09-15: TCC3 chạy
+/// sau TCC2 thì ô giữ nguyên 「3」 qua cả BackSpace lẫn gõ từng ký tự, và ảnh chụp lúc đỏ
+/// cho thấy dòng 患者番号 3 đang sáng xanh trong lưới.</para>
+///
+/// <para>Cùng một nguyên nhân với ca <c>Tc2</c> đang đỏ của <c>PatientSelectAssign</c>
+/// (「còn 「3」 sau 5 lượt BackSpace」) — không phải lỗi gõ phím.</para>
+///
+/// ═══════════════════════════════════════════════════════════════════════════════
 /// GHI DB — KHÔNG. Cả hai ca đều trả lời 「キャンセル」
 /// ═══════════════════════════════════════════════════════════════════════════════
 /// Hai hộp thoại này là cổng xác nhận đứng TRƯỚC hành động:
@@ -70,7 +86,11 @@ public sealed class MsgTblCallSiteTests : UiTestBase
     /// <summary>Tham số legacy truyền cho Q00039 — một DẤU CÁCH, không phải chuỗi rỗng (frm203046.cs:156).</summary>
     private const string PrinterParam = " ";
 
+    /// <summary>Số bệnh nhân KHÔNG tồn tại — nằm trong vùng test nên không đụng dữ liệu thật.</summary>
+    private const string UnknownPatNo = "990001";
+
     private MsgTblOracle _msg = null!;
+    private PatientProbeDb? _db;
     private Window _patSelect = null!;
 
     private static void Log(string line) => TestContext.Out.WriteLine(line);
@@ -86,13 +106,17 @@ public sealed class MsgTblCallSiteTests : UiTestBase
     }
 
     [OneTimeSetUp]
-    public void CallSiteOneTimeSetUp() => _patSelect = AppNavigator.OpenPatientSelect(App, Settings);
+    public void CallSiteOneTimeSetUp()
+    {
+        _db = PatientProbeDb.CreateOrNull(Settings);
+        _patSelect = AppNavigator.OpenPatientSelect(App, Settings);
+    }
 
     // ═════════════════════════════════════════════════════════════════════════
     // TCC1 — Q00049 (F7 会計作成)
     // ═════════════════════════════════════════════════════════════════════════
 
-    [Test, Order(1)]
+    [Test, Order(3)]
     [Description("TCC1 — Q00049: WinForm cảnh báo GHI ĐÈ và mặc định Cancel; bản web bỏ cả hai")]
     public void TCC1_Q00049_BulkAccounting_WarnsAboutOverwrite()
     {
@@ -169,7 +193,7 @@ public sealed class MsgTblCallSiteTests : UiTestBase
     // TCC2 — Q00039 (来患集計 F1 印刷)
     // ═════════════════════════════════════════════════════════════════════════
 
-    [Test, Order(2)]
+    [Test, Order(4)]
     [Description("TCC2 — Q00039: WinForm nói 「プリンタに」 và CÓ nhận tham số; bản web bỏ cả hai")]
     public void TCC2_Q00039_PrintPrompt_NamesThePrinter()
     {
@@ -253,8 +277,166 @@ public sealed class MsgTblCallSiteTests : UiTestBase
     }
 
     // ═════════════════════════════════════════════════════════════════════════
+    // TCC3 — E00005 (患者番号 không tồn tại)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Test, Order(1)]
+    [Description("TCC3 — E00005: 患者確定 với số bệnh nhân không tồn tại (không chạm DB)")]
+    public void TCC3_E00005_UnknownPatientNumber()
+    {
+        var expected = _msg.Render("E00005", "患者情報");
+        var web = WebMsgSnapshot.Render("E00005", "患者情報");
+
+        DrainDialogs("trước TCC3");
+
+        // ĐỔI VỀ CHẾ ĐỘ 患者検索 TRƯỚC KHI GÕ.
+        //
+        // Ở chế độ 受付一覧 / 当月来患, ô 患者番号 bị RÀNG BUỘC vào dòng đang chọn của lưới:
+        // gõ gì vào cũng bị đẩy về số của dòng. Ảnh lúc đỏ (16:45) cho thấy ô giữ 「3」 và
+        // dòng 患者番号 3 đang sáng xanh trong lưới 受付患者一覧. Cùng nguyên nhân với ca
+        // Tc2 đang đỏ của PatientSelectAssign.
+        //
+        // App dùng chung một phiên giữa các lượt chạy (attachIfRunning), nên chế độ xem là
+        // thứ lượt TRƯỚC để lại — không thể dựa vào thứ tự testcase trong fixture.
+        ClickBarButton(_patSelect, "btnF1", "患者検索");
+        Waits.Step();
+
+        SetPatNo(UnknownPatNo);
+        Uia.SendKey(Vk.End);          // 患者確定 (frm203001 — End hoặc F9)
+
+        var box = RequireDialog($"E00005 sau khi 患者確定 với số {UnknownPatNo}",
+                                "E00005 frm203001 patno-khong-ton-tai");
+        LogKq(3, $"WinForm: {Txt.Vis(box.Raw)}");
+        Log($"   MSGTBL: {Txt.Vis(expected)}   |   web: {Txt.Vis(web)}");
+
+        try
+        {
+            Assert.Multiple(() =>
+            {
+                Assert.That(box.Raw, Is.EqualTo(expected),
+                    "getLastPatInfo trả null ⇒ ShowWarningMsg(\"E00005\", \"患者情報\") " +
+                    "(frm203001.cs:672).");
+                Assert.That(box.Raw, Is.EqualTo(web),
+                    $"…và phải TRÙNG KHÍT literal bản web ({WebMsgSnapshot.SourceFile}).");
+            });
+        }
+        finally
+        {
+            DismissOk(box);
+            SetPatNo(Settings.Patient.PatNo);
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // TCC4 — E00027 (không nguồn nào cho 担当医)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Test, Order(2)]
+    [Description("TCC4 — E00027: bệnh nhân không có att_dr và combo Ｄｒ．trống")]
+    public void TCC4_E00027_NoDoctorSource()
+    {
+        var patNo = _db?.FindPatientWithoutDoctor();
+        if (patNo is null)
+            Assert.Ignore("dataset không có bệnh nhân nào att_dr ≤ 0 — không dựng được nhánh này.");
+
+        var expected = _msg.Render("E00027", "ドクター");
+        var web = WebMsgSnapshot.Render("E00027", "ドクター");
+
+        DrainDialogs("trước TCC4");
+        ClearDoctorCombo();
+        SetPatNo(patNo!.Value.ToString());
+        Uia.SendKey(Vk.End);
+
+        var box = RequireDialog($"E00027 sau khi 患者確定 với bệnh nhân {patNo} (att_dr ≤ 0)",
+                                "E00027 frm203001 khong-co-tan-dr");
+        LogKq(4, $"WinForm: {Txt.Vis(box.Raw)}");
+        Log($"   MSGTBL: {Txt.Vis(expected)}   |   web: {Txt.Vis(web)}");
+
+        try
+        {
+            Assert.Multiple(() =>
+            {
+                // Lưu ý nhãn là 「ドクター」 chứ KHÔNG phải 「Ｄｒ．」 (frm203001.cs:707).
+                Assert.That(box.Raw, Is.EqualTo(expected),
+                    "UserNo ≤ 0 ⇒ ShowWarningMsg(\"E00027\", \"ドクター\") (frm203001.cs:707). " +
+                    "Row E00027 có {0} XUẤT HIỆN HAI LẦN nên câu nhắc 「ドクター」 hai lượt.");
+                Assert.That(box.Raw, Is.EqualTo(web),
+                    $"…và phải TRÙNG KHÍT literal bản web ({WebMsgSnapshot.SourceFile}).");
+            });
+        }
+        finally
+        {
+            DismissOk(box);
+            SetPatNo(Settings.Patient.PatNo);
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
     // Hạ tầng nhỏ dùng chung
     // ═════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Đặt 患者番号 — click vật lý vào ô Edit BÊN TRONG combo rồi gõ TỪNG KÝ TỰ.
+    ///
+    /// <para>Không dùng <c>Uia.SetText</c> (nó mở đầu bằng <c>Focus()</c>, treo trên combo)
+    /// và không gõ cả chuỗi một phát (autocomplete nuốt phím sau ký tự đầu). Hai bài học
+    /// này trả giá ở TCR4 ngày 2026-09-15; fixture <c>PatientSelectAssign</c> chưa có
+    /// chúng nên <c>Tc2</c> của nó đỏ với 「còn 「3」 sau 5 lượt BackSpace」.</para>
+    /// </summary>
+    private void SetPatNo(string value)
+    {
+        var combo = Uia.RequireById(_patSelect, Settings.Locator("patSelPatNo"));
+        var edit = Uia.EditInside(combo);
+        var (x, y) = Uia.Center(edit);
+        Uia.LeftClickPhysical(x, y);
+        Waits.Step();
+
+        Keyboard.Press(VirtualKeyShort.END);
+        for (var i = 0; i < 20; i++) Keyboard.Press(VirtualKeyShort.BACK);
+        Waits.Step();
+
+        foreach (var ch in value)
+        {
+            Keyboard.Type(ch.ToString());
+            Thread.Sleep(70);
+        }
+        Waits.Step();
+
+        // ĐỌC CẢ HAI, vì hai loại combo của app trả lời ngược nhau:
+        //  · 発行済呼出し (frm203053): ComboBox.Value đúng, ô Edit bên trong trả về NHÃN
+        //  · 患者番号 (frm203001):     ComboBox.Value trả về MỤC ĐANG CHỌN (vd 「3」),
+        //                              chữ vừa gõ nằm ở ô Edit bên trong
+        //
+        // defData đọc cboPatNo.Text (frm203001.cs:645) — tức phần EDIT. Nên chỉ cần một
+        // trong hai khớp là chữ đã tới đúng chỗ app sẽ đọc.
+        var fromEdit = Txt.N(Uia.ValueOf(edit));
+        var fromCombo = Txt.N(Uia.ValueOf(combo));
+        var want = Txt.N(value);
+
+        if (fromEdit == want || fromCombo == want) return;
+
+        throw new InvalidOperationException(
+            $"gõ 患者番号 「{value}」 nhưng ô Edit đang giữ 「{fromEdit}」 và combo giữ " +
+            $"「{fromCombo}」. Dừng lại thay vì 患者確定: số sai thì mã bung ra cũng sai.");
+    }
+
+    /// <summary>Đưa combo Ｄｒ．về mục rỗng (index 0) để ép nhánh UserNo ≤ 0.</summary>
+    private void ClearDoctorCombo()
+    {
+        var combo = Uia.ById(_patSelect, Settings.Locator("patSelDr"));
+        if (combo is null) return;
+
+        var (x, y) = Uia.Center(combo);
+        Uia.LeftClickPhysical(x, y);
+        Waits.Step();
+        Keyboard.TypeSimultaneously(VirtualKeyShort.ALT, VirtualKeyShort.DOWN);
+        Thread.Sleep(300);
+        Keyboard.Press(VirtualKeyShort.HOME);
+        Thread.Sleep(150);
+        Keyboard.Press(VirtualKeyShort.ENTER);
+        Waits.Step();
+        Log($"   combo Ｄｒ．nay là 「{Txt.N(Uia.ValueOf(combo))}」");
+    }
 
     /// <summary>Nút đang giữ con trỏ NGAY KHI hộp thoại mở = nút mặc định (F16).</summary>
     private string FocusedName()
@@ -285,6 +467,18 @@ public sealed class MsgTblCallSiteTests : UiTestBase
     /// Trả lời 「không」. <b>KHÔNG có "OK" trong danh sách</b> — ở hai ca này bấm nhầm là
     /// chạy <c>calcAcc</c> / <c>printProc</c> thật (F16).
     /// </summary>
+    /// <summary>Đóng hộp thoại CHỈ CÓ nút OK (E00005 / E00027) và đợi nó biến mất.</summary>
+    private void DismissOk(MsgBoxWin32.Found box)
+    {
+        if (!MsgBoxWin32.ClickButton(box.Hwnd, "OK", "はい", "Yes"))
+            throw new InvalidOperationException(
+                $"không bấm được nút nào trên {box}. Nút thật: " +
+                string.Join(" / ", MsgBoxWin32.ButtonCaptions(box.Hwnd)));
+
+        Waits.Until(() => MsgBoxWin32.All(App.ProcessId).All(d => d.Hwnd != box.Hwnd),
+            "hộp thoại đóng lại", TimeSpan.FromSeconds(10));
+    }
+
     private void Cancel(MsgBoxWin32.Found box)
     {
         if (!MsgBoxWin32.ClickButton(box.Hwnd, "キャンセル", "Cancel", "いいえ", "No"))

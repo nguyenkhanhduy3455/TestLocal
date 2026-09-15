@@ -141,4 +141,81 @@ public sealed class MsgTblOracle
 
     /// <summary>Số row — dùng để khẳng định đang nói chuyện với đúng bảng, không phải bảng rỗng.</summary>
     public int RowCount() => All().Count;
+
+    /// <summary>Kết quả nhận diện: mã nào, và tham số nào đã được điền vào <c>{0}</c>.</summary>
+    public sealed record Identified(string Code, string Template, string Param);
+
+    /// <summary>
+    /// Ngược chiều của <see cref="Render"/>: cho một câu ĐÃ hiện trên màn hình, tìm xem nó
+    /// là mã nào.
+    ///
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// VÌ SAO CẦN
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// Các fixture có sẵn của repo (<c>PatientSelectAssign</c>, <c>InpP1Dialogs</c>,
+    /// <c>GuideSidePanel</c>…) đã bung sẵn hàng chục hộp thoại có mã, nhưng chúng KHÔNG
+    /// biết mình đang xem mã nào — chúng chỉ so chữ. Hàm này biến mỗi hộp thoại đó thành
+    /// một bằng chứng có nhãn, mà không phải sửa logic của fixture nào.
+    ///
+    /// <para><b>Ưu tiên khớp CHÍNH XÁC trước.</b> Chỉ khi không có row nào khớp nguyên
+    /// văn mới xét tới các row có <c>{0}</c>, và trong nhóm đó chọn row có phần CỐ ĐỊNH
+    /// DÀI NHẤT — vì row càng dài thì khả năng khớp nhầm càng thấp. Row rỗng nghĩa hoặc
+    /// đúng bằng <c>{0}</c> (E00100) bị loại hẳn: nó khớp với MỌI câu.</para>
+    /// </summary>
+    public Identified? IdentifyCode(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var text = raw.Replace("\r", "").Replace("\n", " ").Trim();
+
+        foreach (var (id, template) in All())
+            if (string.Equals(template, text, StringComparison.Ordinal))
+                return new Identified(id, template, "");
+
+        Identified? best = null;
+        var bestFixedLength = -1;
+
+        foreach (var (id, template) in All())
+        {
+            if (!template.Contains("{0}", StringComparison.Ordinal)) continue;
+
+            var parts = template.Split("{0}");
+            var fixedLength = parts.Sum(p => p.Length);
+            if (fixedLength == 0) continue;            // E00100 là 「{0}」 — khớp mọi thứ
+
+            // Các đoạn cố định phải xuất hiện ĐỦ và ĐÚNG THỨ TỰ; phần còn lại là tham số.
+            var pos = 0;
+            var ok = true;
+            var paramStart = -1;
+            var paramEnd = -1;
+
+            for (var i = 0; i < parts.Length; i++)
+            {
+                var seg = parts[i];
+                if (seg.Length == 0)
+                {
+                    if (i == 0) paramStart = 0;
+                    continue;
+                }
+
+                var at = text.IndexOf(seg, pos, StringComparison.Ordinal);
+                if (at < 0) { ok = false; break; }
+                if (i == 0 && at != 0) { ok = false; break; }   // đoạn đầu phải ở ĐẦU câu
+                if (paramStart < 0) paramStart = at + seg.Length;
+                else if (paramEnd < 0) paramEnd = at;
+                pos = at + seg.Length;
+            }
+
+            if (!ok || pos != text.Length && !template.EndsWith("{0}", StringComparison.Ordinal)) continue;
+            if (fixedLength <= bestFixedLength) continue;
+
+            var param = paramStart >= 0 && paramEnd > paramStart
+                ? text[paramStart..paramEnd]
+                : paramStart >= 0 && paramStart <= text.Length ? text[paramStart..] : "";
+
+            best = new Identified(id, template, param);
+            bestFixedLength = fixedLength;
+        }
+
+        return best;
+    }
 }

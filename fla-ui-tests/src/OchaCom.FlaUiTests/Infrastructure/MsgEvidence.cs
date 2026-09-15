@@ -161,6 +161,45 @@ public static class MsgEvidence
         return slug.Length <= 60 ? slug : slug[..60].TrimEnd('-');
     }
 
+    private static Tests.MsgTblParity.MsgTblOracle? _oracle;
+    private static bool _oracleTried;
+
+    /// <summary>
+    /// Chụp một hộp thoại mà chỗ gọi KHÔNG biết nó là mã nào — tự tra ngược MSGTBL.
+    ///
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// VÌ SAO CÓ BẢN "AUTO"
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// Repo này đã có hàng chục fixture bung hộp thoại có mã mà không hề biết mã
+    /// (<c>PatientSelectAssign</c>, <c>InpP1Dialogs</c>, <c>GuideSidePanel</c>…) — chúng
+    /// chỉ so chữ. Gọi hàm này một dòng ở chỗ chúng ĐÃ bắt được hộp thoại là biến mỗi
+    /// lượt chạy có sẵn thành bằng chứng có nhãn, KHÔNG phải sửa logic fixture nào.
+    ///
+    /// <para>Không tra ra mã thì vẫn chụp, dưới tiền tố <c>_</c> — ảnh vô danh còn hơn
+    /// không có ảnh, và tên file nói thẳng là chưa tra được.</para>
+    ///
+    /// <para>KHÔNG BAO GIỜ NÉM (kể cả khi không có DB): đây là việc phụ gắn vào fixture
+    /// của người khác, nó không được phép làm đỏ thứ đang đo.</para>
+    /// </summary>
+    public static string? CaptureAuto(MsgBoxWin32.Found? box, string where, string? defaultButton = null)
+    {
+        if (box is null) return null;
+        try
+        {
+            if (!_oracleTried)
+            {
+                _oracleTried = true;
+                var db = Tests.MsgTblParity.MsgTblOracle.CreateOrNull(TestSettings.Current);
+                if (db is not null && db.ProbeError() is null) _oracle = db;
+            }
+
+            var hit = _oracle?.IdentifyCode(box.Raw);
+            var label = hit is null ? $"_ {where}" : $"{hit.Code} {where}";
+            return Capture(box, label, hit?.Template, defaultButton);
+        }
+        catch { return null; }
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect { public int Left, Top, Right, Bottom; }
 

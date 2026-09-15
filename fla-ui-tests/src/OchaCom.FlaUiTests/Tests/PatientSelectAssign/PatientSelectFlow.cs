@@ -102,6 +102,12 @@ public sealed class PatientSelectFlow
 
             var dialog = FirstDialog();
             if (dialog is not null)
+                // Chụp RIÊNG hộp thoại làm bằng chứng parity. Một dòng, không đổi logic:
+                // MsgEvidence.CaptureAuto tự tra ngược MSGTBL để biết đây là mã nào, và
+                // không bao giờ ném. Nhờ nó, TC-PAT-1 (E00005) và TC-DR-3 (E00027) của
+                // fixture này góp ảnh vào msgtbl-evidence mà không phải viết ca mới.
+                MsgEvidence.CaptureAuto(MsgBoxWin32.First(_app.ProcessId), "frm203001 患者確定");
+
                 return new ConfirmResult(Dialogs.TextOf(dialog), dialog, null);
 
             Thread.Sleep(Waits.PollInterval);
