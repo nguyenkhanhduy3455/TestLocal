@@ -150,7 +150,7 @@ public sealed class MsgTblDialogTests : UiTestBase
     public void TCM6_E00003_Dialog_Differs_From_Web_Literal()
     {
         var expected = _msg.Render("E00003");
-        var web = WebMsgSnapshot.Diverging.Single(d => d.Code == "E00003").WebTemplate;
+        var web = WebMsgSnapshot.Render("E00003");
 
         using var trace = TestTrace.Begin();
         DrainDialogs("trước TCM6");
@@ -195,10 +195,11 @@ public sealed class MsgTblDialogTests : UiTestBase
                         "chữ WinForm hiện phải TRÙNG KHÍT row MSGTBL E00003 — đây là bằng chứng trực " +
                         "tiếp cho 「câu người dùng thấy」, không qua suy luận nào.");
 
-                    Assert.That(box.Raw, Is.Not.EqualTo(web),
-                        $"…và KHÁC câu bản web đang hiện ({WebMsgSnapshot.SourceFile}:" +
-                        $"{WebMsgSnapshot.Diverging.Single(d => d.Code == "E00003").Line}). " +
-                        "Bằng nhau ⇒ web đã sửa xong: chuyển E00003 sang WebMsgSnapshot.Matching.");
+                    // Trước ce245472d hai vế LỆCH (web: 「該当するデータがありません。」).
+                    // Nay phải TRÙNG — đây là assert parity thật sự, không còn là khoá hiện trạng.
+                    Assert.That(box.Raw, Is.EqualTo(web),
+                        $"chữ trên WinForm và literal web phải TRÙNG KHÍT ({WebMsgSnapshot.SourceFile}). " +
+                        "Lệch lại ⇒ hồi quy của bản sửa ce245472d.");
                 });
             }
             finally
@@ -295,7 +296,7 @@ public sealed class MsgTblDialogTests : UiTestBase
             // Chụp RIÊNG hộp thoại, trước mọi assert — ảnh phải có kể cả khi assert đỏ,
             // vì lúc đỏ mới là lúc cần nhìn nhất.
             var code = System.Text.RegularExpressions.Regex.Match(evidenceLabel, @"[EQI]\d{5}").Value;
-            var shot = MsgEvidence.Capture(box, evidenceLabel, _msg.Template(code));
+            var shot = MsgEvidence.Capture(box, evidenceLabel, _msg.Template(code), Txt.N(App.Automation.FocusedElement()?.Name));
             Log($"   ảnh hộp thoại: {shot ?? "(không chụp được)"}");
             return box;
         }

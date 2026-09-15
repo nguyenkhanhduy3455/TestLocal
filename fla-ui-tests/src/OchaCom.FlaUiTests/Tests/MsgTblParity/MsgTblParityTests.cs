@@ -135,38 +135,34 @@ public sealed class MsgTblParityTests
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // TCM2 — 16 mã đang lệch
+    // TCM2 — 16 chuỗi SAI cũ không được quay lại
     // ═════════════════════════════════════════════════════════════════════════
 
     [Test, Order(2)]
-    [Description("TCM2 — 16 mã đang lệch MSGTBL, lệch ĐÚNG như đã đo")]
-    public void TCM2_Known_Divergences_Are_Still_Exactly_These()
+    [Description("TCM2 — 16 mã sửa ở ce245472d: chuỗi cũ SAI không được xuất hiện lại")]
+    public void TCM2_Previously_Wrong_Strings_Never_Come_Back()
     {
+        // Bản chụp sáng 2026-09-15 ghi 16 mã lệch; commit ce245472d đã đưa cả 16 về giá
+        // trị row. Ca này không đo lại chuyện đó (TCM1 lo rồi) mà canh chiều NGƯỢC LẠI:
+        // chuỗi sai cũ quay lại nghĩa là bản sửa bị revert, hoặc có người "sửa cho xuôi
+        // tai" mà không biết row DB mới là nguồn.
         Assert.Multiple(() =>
         {
-            foreach (var d in WebMsgSnapshot.Diverging)
+            foreach (var r in WebMsgSnapshot.PreviouslyWrong)
             {
-                var db = _db.Template(d.Code);
+                var now = WebMsgSnapshot.Template(r.Code);
+                Assert.That(now, Is.Not.EqualTo(r.WrongTemplate),
+                    $"{r.Code} đã quay lại chuỗi SAI cũ {Txt.Vis(r.WrongTemplate)}. " +
+                    $"Row MSGTBL là {Txt.Vis(_db.Template(r.Code))} — sửa lại theo row, " +
+                    "đừng sửa theo trí nhớ.");
 
-                Assert.That(db, Is.EqualTo(d.DbTemplate),
-                    $"{d.Code}: row MSGTBL đã ĐỔI so với lúc chụp ({WebMsgSnapshot.TakenOn}).\n" +
-                    $"        đã đo = {Txt.Vis(d.DbTemplate)}\n" +
-                    $"        bây giờ = {Txt.Vis(db)}");
-
-                Assert.That(d.WebTemplate, Is.Not.EqualTo(db),
-                    $"{d.Code} ({WebMsgSnapshot.SourceFile}:{d.Line}) nay ĐÃ KHỚP MSGTBL — tin tốt.\n" +
-                    $"        ⇒ chuyển mã này từ WebMsgSnapshot.Diverging sang Matching rồi chạy lại.");
+                Assert.That(now, Is.EqualTo(_db.Template(r.Code)),
+                    $"{r.Code} phải bằng row MSGTBL ({WebMsgSnapshot.SourceFile}).");
             }
         });
 
-        LogKq(2, $"{WebMsgSnapshot.Diverging.Count} mã vẫn lệch MSGTBL:");
-        foreach (var d in WebMsgSnapshot.Diverging)
-        {
-            Log($"   {d.Code}  ({WebMsgSnapshot.SourceFile}:{d.Line})");
-            Log($"      DB  = {Txt.Vis(d.DbTemplate)}");
-            Log($"      web = {Txt.Vis(d.WebTemplate)}");
-            Log($"      → {d.Why}");
-        }
+        LogKq(2, $"{WebMsgSnapshot.PreviouslyWrong.Count} chuỗi sai cũ đều đã biến mất, " +
+                 "và 16 mã đó nay bằng row MSGTBL.");
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -184,21 +180,22 @@ public sealed class MsgTblParityTests
         // E00100 có row đúng bằng 「{0}」 ⇒ nhánh 1 của getMsg thay {0} bằng tham số ⇒ câu
         // hiện ra CHÍNH LÀ tham số. Người port nhặt câu đã render đó về gán cho E00007.
         const string bodyPassedToE00100AtFrm201045 = "選択するデータがありません。";
-        var webE00007 = WebMsgSnapshot.Diverging.Single(d => d.Code == "E00007").WebTemplate;
+        var webE00007 = WebMsgSnapshot.Template("E00007")!;
 
         Assert.Multiple(() =>
         {
             Assert.That(_db.Template("E00100"), Is.EqualTo("{0}"),
                 "E00100 phải là 「{0}」 — đó là lý do nó hoạt động như 「túi đựng chữ tự do」.");
 
-            Assert.That(_db.Render("E00100", bodyPassedToE00100AtFrm201045),
-                Is.EqualTo(webE00007),
-                "chuỗi web đang gán cho E00007 phải TRÙNG KHÍT kết quả render của " +
-                "ShowWarningMsg(\"E00100\", …) tại frm201045.cs:298 — đó là bằng chứng nó bị " +
-                "nhặt nhầm từ đó, chứ không phải diễn đạt lại row E00007.");
+            // Trước ce245472d, chuỗi web của E00007 TRÙNG KHÍT kết quả render của
+            // ShowWarningMsg("E00100", …) ở frm201045.cs:298 — bằng chứng nó bị nhặt nhầm
+            // từ đó. Nay đã sửa, nên ca này canh chiều ngược: đừng nhặt lại.
+            Assert.That(webE00007, Is.Not.EqualTo(_db.Render("E00100", bodyPassedToE00100AtFrm201045)),
+                "E00007 lại đang mang BODY của E00100 ở frm201045.cs:298 thay vì row E00007. " +
+                "Đó là lỗi SAI MÃ, sửa wording không giải quyết được.");
 
-            Assert.That(_db.Template("E00007"), Is.Not.EqualTo(webE00007),
-                "…và KHÔNG phải row E00007 thật.");
+            Assert.That(webE00007, Is.EqualTo(_db.Template("E00007")),
+                "…E00007 phải bằng row E00007 thật.");
         });
 
         // ── E00020: web đã gỡ (commit 1e5afabb7). Chốt lại rằng chuỗi cũ không thuộc mã nào ──
@@ -247,8 +244,7 @@ public sealed class MsgTblParityTests
             if (template is null) continue;
 
             var dbWantsParam = template.Contains("{0}", StringComparison.Ordinal);
-            var arity = WebMsgSnapshot.Matching.FirstOrDefault(m => m.Code == code)?.Arity
-                        ?? WebMsgSnapshot.Diverging.First(d => d.Code == code).Arity;
+            var arity = WebMsgSnapshot.Matching.First(m => m.Code == code).Arity;
 
             if (dbWantsParam && arity == 0) offenders.Add($"{code} (DB có {{0}}, web nhận 0 tham số)");
             if (!dbWantsParam && arity > 0 && code != "E00100")
@@ -260,11 +256,11 @@ public sealed class MsgTblParityTests
             ? "mọi mã có {0} đều có tham số bên web."
             : "lệch chữ ký: " + string.Join(" / ", offenders));
 
-        Assert.That(offenders, Is.EqualTo(new[] { "Q00039 (DB có {0}, web nhận 0 tham số)" }),
-            "Q00039 là ca DUY NHẤT đã biết: row là 「{0}プリンタに用紙をセットしてください。」 và legacy CÓ " +
-            "truyền tham số (frm203046.cs:156, CommonNikei.cs:272/329/343/359, frm305004.cs:462/541), " +
-            "trong khi web khai 0 tham số và cắt luôn cụm 「プリンタに」. Danh sách đổi ⇒ có mã mới " +
-            "lệch chữ ký, hoặc Q00039 đã được sửa — cập nhật ca này theo hướng tương ứng.");
+        Assert.That(offenders, Is.Empty,
+            "Không mã nào được lệch chữ ký. Q00039 từng là ca duy nhất — row là " +
+            "「{0}プリンタに用紙をセットしてください。」 và legacy CÓ truyền tham số (frm203046.cs:156, " +
+            "CommonNikei.cs:272/329/343/359, frm305004.cs:462/541) trong khi web khai 0 tham số và " +
+            "cắt luôn cụm 「プリンタに」 — đã sửa ở ce245472d. Danh sách có tên trở lại ⇒ hồi quy.");
 
         Assert.Multiple(() =>
         {

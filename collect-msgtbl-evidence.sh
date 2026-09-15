@@ -40,6 +40,18 @@ import csv, os, sys, datetime
 
 out = sys.argv[1]
 
+ACCEPT = {'ok', 'はい', 'yes'}
+DECLINE = {'cancel', 'キャンセル', 'いいえ', 'no'}
+
+
+def kind(label):
+    """Nut mac dinh thuoc nhom nao: dong y / tu choi / khac."""
+    t = (label or '').strip().lower()
+    if t in ACCEPT: return 'accept'
+    if t in DECLINE: return 'decline'
+    return t
+
+
 def read(side):
     path = os.path.join(out, side, 'manifest.tsv')
     if not os.path.exists(path):
@@ -60,14 +72,19 @@ lines = [
     f'Dựng lúc {datetime.datetime.now():%Y-%m-%d %H:%M}. '
     f'{len(win)} mã có ảnh WinForm, {len(web)} mã có ảnh web.',
     '',
-    '**Cách đọc cột 「khớp」**: so theo KHUÔN MSGTBL, không so nguyên câu. Khuôn được cắt ',
+    '**Cột 「nút」** so phần HÀNH VI: SỐ nút và NÚT MẶC ĐỊNH (mđ). Nhãn nút thì không so ',
+    'vì WinForm lấy theo ngôn ngữ Windows (OK/Cancel) còn web tự đặt — nhưng số nút và ',
+    'nút mặc định thì phải khớp: Q00049 mặc định Cancel chính là cách legacy nói ',
+    '「thao tác này ghi đè, đừng Enter vội」.',
+    '',
+    '**Cách đọc cột 「chữ」**: so theo KHUÔN MSGTBL, không so nguyên câu. Khuôn được cắt ',
     'ở `{0}` thành các đoạn cố định; vế web phải chứa ĐỦ các đoạn đó, đúng thứ tự. ',
     'Làm vậy vì cùng một mã, hai call-site truyền tham số khác nhau — `E00002` ở tab 個別 ',
     'là 「個別入力のコード」 còn ở 患者登録 là 「保険者番号」 — so nguyên câu thì ra "lệch" ',
     'trong khi cả hai đều đúng. Trống một vế = lượt chạy bên đó chưa phủ mã này.',
     '',
-    '| Mã | khớp | WinForm | web | ảnh |',
-    '|---|---|---|---|---|',
+    '| Mã | chữ | nút | WinForm | web | nút win → web | ảnh |',
+    '|---|---|---|---|---|---|---|',
 ]
 
 same = diff = only = 0
@@ -99,8 +116,30 @@ for code in codes:
     if w: shots.append(f'[win](win/{w["file"]})')
     if b: shots.append(f'[web](web/{b["file"]})')
 
+    # Cot HANH VI: bo nut + nut mac dinh. So chuoi khong bao gio thay duoc phan nay —
+    # Q00049 tung dung chu nhung web mac dinh OK con WinForm mac dinh Cancel.
+    def shape(row):
+        if not row: return ''
+        btns = (row.get('buttons') or '').replace('|', '/')
+        dflt = (row.get('default') or '').strip()
+        return f'{btns} (mđ {dflt})' if dflt else btns
+
+    sw, sb = shape(w), shape(b)
+    if w and b:
+        bw = [x for x in (w.get('buttons') or '').split('|') if x]
+        bb = [x for x in (b.get('buttons') or '').split('|') if x]
+        same_n = len(bw) == len(bb)
+        # So Y NGHIA cua nut mac dinh, khong so NHAN: WinForm lay nhan theo NGON NGU
+        # WINDOWS (OK/Cancel) con web tu dat (OK/キャンセル). 「Cancel」 va 「キャンセル」 la
+        # CUNG MOT nut — so chuoi thi ra lech gia.
+        same_d = kind(w.get('default')) == kind(b.get('default'))
+        bmark = '✔' if (same_n and same_d) else '✘'
+    else:
+        bmark = '—'
+
     lines.append(
-        f'| `{code}` | {mark} | {wt or "—"} | {bt or "—"} | {" · ".join(shots) or "—"} |'
+        f'| `{code}` | {mark} | {bmark} | {wt or "—"} | {bt or "—"} | '
+        f'{sw or "—"} → {sb or "—"} | {" · ".join(shots) or "—"} |'
     )
 
 lines += [

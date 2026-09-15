@@ -82,6 +82,10 @@ public sealed class MsgTblReferralTests : UiTestBase
 
     private MsgTblOracle _msg = null!;
     private ReferralTemplateDb? _db;
+
+    /// <summary>診療入力 (frm203002) — cửa sổ mang dải phím Shift, tự đòi lại ở OneTimeSetUp.</summary>
+    private Window _entry = null!;
+
     private Window _referral = null!;
 
     private static void Log(string line) => TestContext.Out.WriteLine(line);
@@ -102,6 +106,18 @@ public sealed class MsgTblReferralTests : UiTestBase
         _db = ReferralTemplateDb.CreateOrNull(Settings, Settings.Referral.AllowSave);
 
         DrainBlockingDialogs("trước khi mở 紹介状");
+
+        // KHÔNG tin vào Screen.Window của nền chung.
+        //
+        // Chạy RIÊNG fixture này thì Screen.Window đúng là 診療入力. Nhưng trong một lượt
+        // chạy CẢ BỘ (-WithUi), fixture trước (MsgTblCallSiteTests) cố ý đứng lại ở
+        // 患者選択 (NavigatesToTreatmentEntry = false), và app dùng chung một phiên —
+        // nên cửa sổ mà nền chung trao cho fixture này có thể là frm203001, màn KHÔNG có
+        // dải phím Shift. Đo 2026-09-15: cả 4 ca TCR đỏ ở OneTimeSetUp với
+        // 「Quá 4s mà không thấy btnShift」, trong khi chạy riêng thì 4/4 xanh.
+        //
+        // Tự đòi lại 診療入力 là xong: hàm này trả về ngay nếu đang ở đó sẵn.
+        _entry = AppNavigator.OpenTreatmentEntry(App, Settings);
         _referral = OpenReferral();
     }
 
@@ -159,8 +175,7 @@ public sealed class MsgTblReferralTests : UiTestBase
     public void TCR2_E00022_AtenaOverByteLimit_DiffersFromWeb()
     {
         var expected = _msg.Render("E00022", "宛名");
-        var web = WebMsgSnapshot.Diverging.Single(d => d.Code == "E00022")
-                                .WebTemplate.Replace("{0}", "宛名", StringComparison.Ordinal);
+        var web = WebMsgSnapshot.Render("E00022", "宛名");
 
         var atena = Uia.RequireById(_referral, AtenaBoxId);
         var before = Uia.ValueOf(atena);
@@ -188,9 +203,10 @@ public sealed class MsgTblReferralTests : UiTestBase
                     "WinForm dùng 「文字数が越えています」 — đây là vế mà bản web viết lại thành " +
                     "「桁数が長すぎます」.");
 
-                Assert.That(box.Raw, Is.Not.EqualTo(web),
-                    "hai vế phải còn khác nhau — bằng nhau ⇒ web đã sửa xong, chuyển E00022 sang " +
-                    $"WebMsgSnapshot.Matching ({WebMsgSnapshot.SourceFile}).");
+                // Trước ce245472d web viết 「宛名の桁数が長すぎます。」.
+                Assert.That(box.Raw, Is.EqualTo(web),
+                    $"chữ WinForm và literal web phải TRÙNG KHÍT ({WebMsgSnapshot.SourceFile}). " +
+                    "Lệch lại ⇒ hồi quy của bản sửa ce245472d.");
             });
         }
         finally
@@ -328,17 +344,20 @@ public sealed class MsgTblReferralTests : UiTestBase
     private Window OpenReferral()
     {
         var already = App.Window(ReferralId)
-                      ?? KarteAutoCalcDialog.FindDialogWindow(App, ReferralId, ReferralTitle, Screen.Window);
+                      ?? KarteAutoCalcDialog.FindDialogWindow(App, ReferralId, ReferralTitle, _entry);
         if (already is not null) return already;
 
-        var toggle = Uia.RequireById(Screen.Window, ShiftToggleId);
+        var toggle = Uia.ById(_entry, ShiftToggleId)
+                     ?? throw new InvalidOperationException(
+                            $"không thấy nút dải Shift 「{ShiftToggleId}」 trên cửa sổ " +
+                            $"「{Txt.N(_entry.Title)}」 ({_entry.AutomationId}). Đây có phải 診療入力 không?");
         if (!Txt.Has(Txt.N(Uia.NameOf(toggle)), "ON"))
         {
             Uia.MouseClick(toggle);
             Thread.Sleep(600);
         }
 
-        var button = Uia.Descendants(Screen.Window).FirstOrDefault(
+        var button = Uia.Descendants(_entry).FirstOrDefault(
                          e => Uia.ControlTypeOf(e) == FlaUI.Core.Definitions.ControlType.Button &&
                               Txt.Has(Uia.NameOf(e), ReferralTitle))
                      ?? throw new InvalidOperationException(
@@ -348,7 +367,7 @@ public sealed class MsgTblReferralTests : UiTestBase
 
         return Waits.TryFor(
                    () => App.Window(ReferralId)
-                         ?? KarteAutoCalcDialog.FindDialogWindow(App, ReferralId, ReferralTitle, Screen.Window),
+                         ?? KarteAutoCalcDialog.FindDialogWindow(App, ReferralId, ReferralTitle, _entry),
                    TimeSpan.FromSeconds(15))
                ?? throw new TimeoutException(
                       "bấm 「紹介状」 rồi nhưng frm203053 không mở sau 15s. MỞ ẢNH trong " +
@@ -501,7 +520,7 @@ public sealed class MsgTblReferralTests : UiTestBase
         if (box is not null)
         {
             var code = System.Text.RegularExpressions.Regex.Match(evidenceLabel, @"[EQI]\d{5}").Value;
-            var shot = MsgEvidence.Capture(box, evidenceLabel, _msg.Template(code));
+            var shot = MsgEvidence.Capture(box, evidenceLabel, _msg.Template(code), Txt.N(App.Automation.FocusedElement()?.Name));
             Log($"   ảnh hộp thoại: {shot ?? "(không chụp được)"}");
             return box;
         }

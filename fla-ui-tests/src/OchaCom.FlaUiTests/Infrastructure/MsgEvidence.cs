@@ -72,7 +72,14 @@ public static class MsgEvidence
     /// nhau (E00002 ở 個別 là 「個別入力のコード」, ở 患者登録 là 「保険者番号」) — so
     /// nguyên câu thì ra "lệch" trong khi cả hai đều ĐÚNG.
     /// </param>
-    public static string? Capture(MsgBoxWin32.Found box, string what, string? template = null)
+    /// <param name="defaultButton">
+    /// Nhãn nút MẶC ĐỊNH (nút đang giữ con trỏ ngay khi hộp thoại mở). UIA không phơi ra
+    /// thuộc tính này, nhưng Win32 giao tiêu điểm cho nó — nên chỗ gọi đọc
+    /// <c>FocusedElement</c> rồi truyền vào đây. Đây là phần HÀNH VI mà so chuỗi không
+    /// thấy được: Q00049 để mặc định 「Cancel」 chính là cách legacy nói 「nguy hiểm」.
+    /// </param>
+    public static string? Capture(MsgBoxWin32.Found box, string what, string? template = null,
+                                  string? defaultButton = null)
     {
         try
         {
@@ -97,7 +104,7 @@ public static class MsgEvidence
                 bitmap.Save(path, ImageFormat.Png);
             }
 
-            AppendManifest(dir, code, box, Path.GetFileName(path), what, template);
+            AppendManifest(dir, code, box, Path.GetFileName(path), what, template, defaultButton);
             return path;
         }
         catch
@@ -113,7 +120,8 @@ public static class MsgEvidence
     /// ngoặc, còn TAB thì không bao giờ xuất hiện trong thân MessageBox.
     /// </summary>
     private static void AppendManifest(string dir, string code, MsgBoxWin32.Found box,
-                                       string fileName, string what, string? template)
+                                       string fileName, string what, string? template,
+                                       string? defaultButton)
     {
         var path = Path.Combine(dir, "manifest.tsv");
         var buttons = string.Join("|", MsgBoxWin32.ButtonCaptions(box.Hwnd));
@@ -129,10 +137,10 @@ public static class MsgEvidence
             // cột đầu tiên khiến mọi bộ đọc TSV thấy tên cột là "\ufeffcode".
             using var writer = new StreamWriter(path, append: true, new UTF8Encoding(false));
             if (isNew)
-                writer.WriteLine("code\tside\traw\ttemplate\ttitle\tbuttons\tfile\twhat\tcaptured_at");
+                writer.WriteLine("code\tside\traw\ttemplate\ttitle\tbuttons\tdefault\tfile\twhat\tcaptured_at");
             writer.WriteLine(string.Join('\t',
                 code, "win", raw, (template ?? "").Replace("\r", "").Replace("\n", "\\n"),
-                box.Title, buttons, fileName, what,
+                box.Title, buttons, defaultButton ?? "", fileName, what,
                 DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)));
         }
     }

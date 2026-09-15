@@ -98,7 +98,7 @@ public sealed class MsgTblCallSiteTests : UiTestBase
     {
         var template = _msg.Template("Q00049")
                        ?? throw new InvalidOperationException("MSGTBL không có row Q00049.");
-        var web = WebMsgSnapshot.Diverging.Single(d => d.Code == "Q00049").WebTemplate;
+        var webTemplate = WebMsgSnapshot.Template("Q00049")!;
 
         DrainDialogs("trước TCC1");
         ClickBarButton(_patSelect, "btnF7", "会計作成");
@@ -110,7 +110,7 @@ public sealed class MsgTblCallSiteTests : UiTestBase
 
         LogKq(1, $"WinForm hiện: {Txt.Vis(box.Raw)}");
         Log($"   row MSGTBL    : {Txt.Vis(template)}");
-        Log($"   literal web   : {Txt.Vis(web)}");
+        Log($"   literal web   : {Txt.Vis(webTemplate)}");
         Log($"   nút           : {string.Join(" / ", buttons)}   (mặc định: 「{defaultButton}」)");
 
         try
@@ -142,9 +142,11 @@ public sealed class MsgTblCallSiteTests : UiTestBase
                 Assert.That(box.Raw, Does.Contain("一括作成"),
                     "WinForm nói 「一括作成」 (tạo cả kỳ), bản web chỉ nói 「作成」.");
 
-                Assert.That(box.Raw, Is.Not.EqualTo(web.Replace("{0}", box.Raw[..^suffix.Length])),
-                    $"câu WinForm và câu web phải còn khác nhau — bằng nhau ⇒ web đã sửa xong, " +
-                    $"chuyển Q00049 sang WebMsgSnapshot.Matching. ({WebMsgSnapshot.SourceFile})");
+                // Trước ce245472d bản web cắt mất 「一括」 và trọn câu cảnh báo ghi đè.
+                // Nay phải trùng khít với cùng tham số.
+                Assert.That(box.Raw, Is.EqualTo(WebMsgSnapshot.Render("Q00049", box.Raw[..^suffix.Length])),
+                    $"chữ WinForm và literal web phải TRÙNG KHÍT ({WebMsgSnapshot.SourceFile}). " +
+                    "Lệch lại ⇒ hồi quy của bản sửa ce245472d.");
 
                 // ── Nút mặc định: thứ chỉ đo được ở giao diện ─────────────────
                 Assert.That(buttons, Is.EquivalentTo(new[] { "OK", "Cancel" }),
@@ -173,7 +175,7 @@ public sealed class MsgTblCallSiteTests : UiTestBase
     {
         var template = _msg.Template("Q00039")
                        ?? throw new InvalidOperationException("MSGTBL không có row Q00039.");
-        var web = WebMsgSnapshot.Diverging.Single(d => d.Code == "Q00039").WebTemplate;
+        var web = WebMsgSnapshot.Render("Q00039", PrinterParam);
         var expected = _msg.Render("Q00039", PrinterParam);
 
         DrainDialogs("trước TCC2");
@@ -216,13 +218,14 @@ public sealed class MsgTblCallSiteTests : UiTestBase
                         "WinForm nói rõ 「(máy in X) プリンタに」. Bản web cắt cụm này nên câu mất chỗ " +
                         "cần đặt giấy — với phòng khám có nhiều máy in thì đó là thông tin chính.");
 
-                    Assert.That(box.Raw, Is.Not.EqualTo(web),
-                        "câu WinForm và câu web phải còn khác nhau — bằng nhau ⇒ web đã sửa xong, " +
-                        $"chuyển Q00039 sang WebMsgSnapshot.Matching. ({WebMsgSnapshot.SourceFile})");
+                    // Trước ce245472d web khai 0 tham số và cắt cụm 「プリンタに」.
+                    Assert.That(box.Raw, Is.EqualTo(web),
+                        $"chữ WinForm và literal web (render với cùng tham số 「{PrinterParam}」) phải " +
+                        $"TRÙNG KHÍT ({WebMsgSnapshot.SourceFile}). Lệch lại ⇒ hồi quy.");
 
-                    Assert.That(template, Does.Contain("{0}"),
-                        "row Q00039 CÓ {0} ⇒ chữ ký bên web phải nhận tham số. Hiện web khai 0 tham số " +
-                        "— xem MsgTblParityTests.TCM4.");
+                    Assert.That(WebMsgSnapshot.Matching.First(m => m.Code == "Q00039").Arity,
+                        Is.GreaterThan(0),
+                        "row Q00039 CÓ {0} ⇒ chữ ký bên web phải nhận tham số — xem TCM4.");
 
                     Assert.That(buttons, Is.EquivalentTo(new[] { "OK", "Cancel" }),
                         "ShowOKCancelMsg ⇒ đúng hai nút (F16: nhãn theo ngôn ngữ Windows).");
@@ -268,7 +271,7 @@ public sealed class MsgTblCallSiteTests : UiTestBase
         {
             // Chụp RIÊNG hộp thoại, TRƯỚC mọi assert — ảnh phải có kể cả khi assert đỏ.
             var code = System.Text.RegularExpressions.Regex.Match(evidenceLabel, @"[EQI]\d{5}").Value;
-            var shot = MsgEvidence.Capture(box, evidenceLabel, _msg.Template(code));
+            var shot = MsgEvidence.Capture(box, evidenceLabel, _msg.Template(code), FocusedName());
             Log($"   ảnh hộp thoại: {shot ?? "(không chụp được)"}");
             return box;
         }
