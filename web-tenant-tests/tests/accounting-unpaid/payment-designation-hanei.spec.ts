@@ -352,6 +352,9 @@ test.describe('入金指定 — F キー đợi 反映 rồi mới chốt', () =
         page.off('request', onRequest)
         page.off('response', onResponse)
         await closeChain().catch(() => {})
+        // Để mọi POST của chuỗi F8 đáp xong rồi mới xoá — nếu không, một request
+        // còn đang bay sẽ ghi lại dòng vừa xoá và để sót dữ liệu test.
+        await page.waitForLoadState('networkidle').catch(() => {})
         if (seeded) {
             // F8 sinh dòng `unpaid` — `deleteTestPatient` không đụng bảng đó.
             await withDb((c) => c.query(`DELETE FROM unpaid WHERE pat_no = $1`, [PAT_NO])).catch(

@@ -217,7 +217,17 @@ test.describe('枝番 (pat_br) — tháng bắc qua 2 枝番', () => {
     test.afterAll(async () => {
         // Page dùng chung cả worker → listener KHÔNG tự mất, phải gỡ tay (Rule 19.1).
         page.off('response', onResponse)
-        if (seeded) await deleteTestPatient(PAT_NO).catch(() => {})
+        // Để mọi POST của chuỗi F8 đáp xong rồi mới xoá — nếu không, một request
+        // còn đang bay sẽ ghi lại dòng vừa xoá và để sót dữ liệu test.
+        await page.waitForLoadState('networkidle').catch(() => {})
+        if (seeded) {
+            // Spec này không chạy F8, nhưng xoá cho chắc: `deleteTestPatient`
+            // không đụng bảng `unpaid`.
+            await withDb((c) =>
+                c.query(`DELETE FROM unpaid WHERE pat_no = $1`, [PAT_NO]),
+            ).catch(() => {})
+            await deleteTestPatient(PAT_NO).catch(() => {})
+        }
         await disposeOverlays?.()
         await releaseSharedPage(page)
     })

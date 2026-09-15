@@ -270,6 +270,9 @@ test.describe('会計キャッシュ — 未収金 không được phục vụ t
     test.afterAll(async () => {
         // Page dùng chung cả worker → listener KHÔNG tự mất, phải gỡ tay (Rule 19.1).
         page.off('request', onRequest)
+        // Để mọi POST của chuỗi F8 đáp xong rồi mới xoá — nếu không, một request
+        // còn đang bay sẽ ghi lại dòng vừa xoá và để sót dữ liệu test.
+        await page.waitForLoadState('networkidle').catch(() => {})
         if (seeded) {
             await withDb(async (c) => {
                 await c.query(`DELETE FROM unpaid WHERE pat_no = $1`, [PAT_NO])
@@ -367,6 +370,15 @@ test.describe('会計キャッシュ — 未収金 không được phục vụ t
                 '(→ unpaid.rece_amt) seed từ chính con số này',
         ).toBe(expected)
 
+        // F10 戻る KHÔNG dừng chuỗi — outcome `back` vẫn chạy tiếp tới insert-unpaid.
+        // Phải chờ POST đó đáp, nếu không `afterAll` xoá `unpaid` trước khi dòng mới
+        // được ghi và để sót lại đúng một dòng trong dải test (đã gặp thật).
         await btn(nyukin(), /F10\s*戻る/).first().click()
+        await page
+            .waitForResponse(
+                (r) => INSERT_UNPAID_URL.test(r.url()) && r.request().method() === 'POST',
+                { timeout: 30_000 },
+            )
+            .catch(() => null)
     })
 })
