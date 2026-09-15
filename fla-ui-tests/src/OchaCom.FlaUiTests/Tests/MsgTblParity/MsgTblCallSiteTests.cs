@@ -103,7 +103,8 @@ public sealed class MsgTblCallSiteTests : UiTestBase
         DrainDialogs("trước TCC1");
         ClickBarButton(_patSelect, "btnF7", "会計作成");
 
-        var box = RequireDialog("Q00049 sau khi bấm 「F7 会計作成」");
+        var box = RequireDialog("Q00049 sau khi bấm 「F7 会計作成」",
+                                "Q00049 frm203001 F7 kaikei-sakusei");
         var buttons = MsgBoxWin32.ButtonCaptions(box.Hwnd);
         var defaultButton = FocusedName();
 
@@ -192,7 +193,8 @@ public sealed class MsgTblCallSiteTests : UiTestBase
         {
             ClickBarButton(summary, "btnF1", "印刷");
 
-            var box = RequireDialog("Q00039 sau khi bấm 「F1 印刷」 trong 来患集計");
+            var box = RequireDialog("Q00039 sau khi bấm 「F1 印刷」 trong 来患集計",
+                                    "Q00039 frm203046 F1 insatsu");
             var buttons = MsgBoxWin32.ButtonCaptions(box.Hwnd);
 
             LogKq(2, $"WinForm hiện: {Txt.Vis(box.Raw)}");
@@ -259,10 +261,17 @@ public sealed class MsgTblCallSiteTests : UiTestBase
     }
 
     /// <summary>Chờ hộp thoại với deadline NGẮN (F2) — nó bung ngay trong handler của cú bấm.</summary>
-    private MsgBoxWin32.Found RequireDialog(string what)
+    private MsgBoxWin32.Found RequireDialog(string what, string evidenceLabel)
     {
         var box = Waits.TryFor(() => MsgBoxWin32.First(App.ProcessId), TimeSpan.FromSeconds(8));
-        if (box is not null) return box;
+        if (box is not null)
+        {
+            // Chụp RIÊNG hộp thoại, TRƯỚC mọi assert — ảnh phải có kể cả khi assert đỏ.
+            var code = System.Text.RegularExpressions.Regex.Match(evidenceLabel, @"[EQI]\d{5}").Value;
+            var shot = MsgEvidence.Capture(box, evidenceLabel, _msg.Template(code));
+            Log($"   ảnh hộp thoại: {shot ?? "(không chụp được)"}");
+            return box;
+        }
 
         throw new TimeoutException(
             $"không thấy {what} sau 8s. Ảnh chụp từng bước đã có trong artifacts/screenshots — " +

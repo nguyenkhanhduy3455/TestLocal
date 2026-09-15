@@ -53,6 +53,7 @@ import { type Page } from '@playwright/test'
 import { dbEnabled, withDb } from '../_shared/db'
 import { openTreatmentEntry } from '../_shared/entry'
 import { allowSave, patNo, trtDt } from '../_shared/env'
+import { captureMsg } from '../_shared/msgtbl'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
@@ -167,6 +168,10 @@ test.describe('MSGTBL parity — 紹介状 xoá template báo I00003', () => {
         })
         const text = ((await dlg.innerText().catch(() => '')) || '').replace(/\s+/g, ' ').trim()
         console.log(`[${what}] 「${text}」`)
+        // Spec này có helper RIÊNG (hộp thoại của 紹介状 nằm trong DraggableDialog nên
+        // phải tự lấy gốc), nên phải gọi captureMsg tay — bản dùng chung ở
+        // _shared/msgtbl.ts đã gọi sẵn bên trong nextDialogText.
+        await captureMsg(dlg, what, text)
         return text
     }
 

@@ -213,6 +213,9 @@ public sealed class MsgTblProbeTests : UiTestBase
         Log($"      nút        : {buttons}");
         Log($"      nút mặc định (đang giữ con trỏ): 「{focused}」");
 
+        var shot = MsgEvidence.Capture(box, $"{expectedCode} probe", _msg?.Template(expectedCode));
+        Log($"      ảnh        : {shot ?? "(không chụp được)"}");
+
         var template = _msg?.Template(expectedCode);
         if (template is not null) Log($"      row MSGTBL {expectedCode} : {Txt.Vis(template)}");
 

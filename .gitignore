@@ -22,3 +22,7 @@ blob-report/
 # commit một trang toàn ảnh vỡ, lại còn đổi mỗi lượt chạy vì có timestamp.
 fkey-shots/
 capture-results/
+
+# Ảnh bằng chứng của bộ MSGTBL (collect-msgtbl-evidence.sh gom về đây). Sinh lại được
+# bằng một lượt chạy, và index.md có đóng dấu giờ nên mỗi lượt lại diff toàn file.
+msgtbl-evidence/

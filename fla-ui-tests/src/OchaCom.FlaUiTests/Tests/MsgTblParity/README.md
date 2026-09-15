@@ -114,6 +114,34 @@ Ba mã đáng lo hơn phần còn lại, vì phần bị cắt mang thông tin n
 
 ---
 
+## 1b. Bằng chứng bằng ẢNH — để người khác tự xác nhận
+
+Mỗi lần một hộp thoại được bắt, cả hai vế chụp **riêng cái hộp thoại đó** (không phải cả
+màn hình) và ghi kèm nguyên văn vào manifest:
+
+```
+msgtbl-evidence/
+  win/<MÃ>__<chỗ bung>.png    ảnh MessageBox WinForm, cắt theo #32770   (Infrastructure/MsgEvidence.cs)
+  web/<MÃ>__<chỗ bung>.png    ảnh hộp thoại web, cắt theo locator       (tests/_shared/msgtbl.ts)
+  {win,web}/manifest.tsv      mã ⇥ nguyên văn ⇥ khuôn MSGTBL ⇥ nút ⇥ ảnh ⇥ giờ
+  index.md                    bảng đối chiếu hai vế, có ✔/✘
+```
+
+```bash
+./collect-msgtbl-evidence.sh            # kéo vế win từ ochacom-win rồi dựng index.md
+./collect-msgtbl-evidence.sh --no-fetch # chỉ dựng lại index từ cái đang có
+```
+
+Ảnh chụp **trước khi assert chạy**, nên lượt đỏ cũng có ảnh — lúc đỏ mới là lúc cần nhìn.
+Ảnh cắt riêng nên nặng 4–25 KB thay vì 2 MB của ảnh toàn desktop.
+
+**Cột 「khớp」 so theo KHUÔN, không so nguyên câu.** Khuôn MSGTBL được cắt ở `{0}` thành
+các đoạn cố định; vế web phải chứa đủ các đoạn ấy, đúng thứ tự. Phải làm vậy vì cùng một
+mã, hai call-site truyền tham số khác nhau: `E00002` ở tab 個別 là 「個別入力のコード」
+còn ở 患者登録 là 「保険者番号」 — so nguyên câu thì ra "lệch" trong khi cả hai đều đúng.
+
+---
+
 ## 2. Vì sao phải đo lại, và đo bằng gì
 
 Audit dựa trên `legacy/DB/MSGTBL.sql` — file nay **không còn** trên máy nào. Không có nó,

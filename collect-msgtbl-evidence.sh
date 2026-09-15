@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+#
+# Gom BẰNG CHỨNG BẰNG ẢNH của hai vế MSGTBL về MỘT thư mục, rồi dựng bảng đối chiếu.
+#
+#   msgtbl-evidence/
+#     win/<MÃ>__<chỗ bung>.png   ảnh hộp thoại WinForm, đã cắt   (MsgEvidence.cs)
+#     web/<MÃ>__<chỗ bung>.png   ảnh hộp thoại web,     đã cắt   (_shared/msgtbl.ts)
+#     index.md                   bảng: mã | chữ win | chữ web | khớp? | hai ảnh
+#
+# Vế web do Playwright ghi thẳng vào đây khi chạy trên máy này. Vế win nằm trên
+# ochacom-win nên script kéo về bằng scp.
+#
+# Dùng:
+#   ./collect-msgtbl-evidence.sh              # kéo win về rồi dựng index
+#   ./collect-msgtbl-evidence.sh --no-fetch   # chỉ dựng lại index từ cái đang có
+#
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OUT="${MSGTBL_EVIDENCE_ROOT:-$HERE/msgtbl-evidence}"
+HOST="${OCHA_WIN_HOST:-ochacom-win}"
+REMOTE="${OCHA_WIN_EVIDENCE:-C:/TCG/TestLocal/fla-ui-tests/src/OchaCom.FlaUiTests/bin/Debug/net8.0-windows/artifacts/msgtbl-evidence/win}"
+FETCH=1
+[[ "${1:-}" == "--no-fetch" ]] && FETCH=0
+
+mkdir -p "$OUT/win" "$OUT/web"
+
+if [[ $FETCH -eq 1 ]]; then
+    echo "→ kéo ảnh vế WinForm từ $HOST"
+    # -O: scp mới dùng SFTP và chết trên đường dẫn Windows có dấu \; -O ép về giao thức cũ.
+    if scp -O -q "$HOST:$REMOTE/*" "$OUT/win/" 2>/dev/null; then
+        echo "  ok"
+    else
+        echo "  ⚠ không kéo được — chạy '.\\run-msgtbl-parity.ps1 -WithUi' và '-CallSite' trên $HOST trước."
+    fi
+fi
+
+python3 - "$OUT" <<'PY'
+import csv, os, sys, datetime
+
+out = sys.argv[1]
+
+def read(side):
+    path = os.path.join(out, side, 'manifest.tsv')
+    if not os.path.exists(path):
+        return {}
+    rows = {}
+    with open(path, encoding='utf-8-sig') as f:
+        for r in csv.DictReader(f, delimiter='\t'):
+            # Lần chạy SAU đè lần trước: manifest chỉ nối thêm, không tự cắt.
+            rows[r['code']] = r
+    return rows
+
+win, web = read('win'), read('web')
+codes = sorted(set(win) | set(web))
+
+lines = [
+    '# MSGTBL — bằng chứng bằng ảnh, hai vế WinForm / web',
+    '',
+    f'Dựng lúc {datetime.datetime.now():%Y-%m-%d %H:%M}. '
+    f'{len(win)} mã có ảnh WinForm, {len(web)} mã có ảnh web.',
+    '',
+    '**Cách đọc cột 「khớp」**: so theo KHUÔN MSGTBL, không so nguyên câu. Khuôn được cắt ',
+    'ở `{0}` thành các đoạn cố định; vế web phải chứa ĐỦ các đoạn đó, đúng thứ tự. ',
+    'Làm vậy vì cùng một mã, hai call-site truyền tham số khác nhau — `E00002` ở tab 個別 ',
+    'là 「個別入力のコード」 còn ở 患者登録 là 「保険者番号」 — so nguyên câu thì ra "lệch" ',
+    'trong khi cả hai đều đúng. Trống một vế = lượt chạy bên đó chưa phủ mã này.',
+    '',
+    '| Mã | khớp | WinForm | web | ảnh |',
+    '|---|---|---|---|---|',
+]
+
+same = diff = only = 0
+for code in codes:
+    w, b = win.get(code), web.get(code)
+    wt = (w or {}).get('raw', '').replace('\\n', ' ')
+    bt = (b or {}).get('raw', '')
+
+    if w and b:
+        tpl = (w.get('template') or '').replace('\\n', ' ')
+        if tpl:
+            # Cắt khuôn ở {0}: vế web phải chứa đủ các đoạn cố định, ĐÚNG THỨ TỰ.
+            ok, pos = True, 0
+            for seg in (p for p in tpl.split('{0}') if p):
+                at = bt.find(seg, pos)
+                if at < 0:
+                    ok = False
+                    break
+                pos = at + len(seg)
+        else:
+            ok = wt in bt
+        mark = '✔' if ok else '✘'
+        same, diff = same + (1 if ok else 0), diff + (0 if ok else 1)
+    else:
+        mark = '—'
+        only += 1
+
+    shots = []
+    if w: shots.append(f'[win](win/{w["file"]})')
+    if b: shots.append(f'[web](web/{b["file"]})')
+
+    lines.append(
+        f'| `{code}` | {mark} | {wt or "—"} | {bt or "—"} | {" · ".join(shots) or "—"} |'
+    )
+
+lines += [
+    '',
+    f'**Tổng: {same} khớp · {diff} lệch · {only} mới có một vế.**',
+    '',
+    'Ảnh của mỗi vế là ảnh CẮT RIÊNG hộp thoại, chụp ngay trước khi assert chạy — nên có ',
+    'kể cả ở lượt đỏ.',
+]
+
+path = os.path.join(out, 'index.md')
+with open(path, 'w', encoding='utf-8') as f:
+    f.write('\n'.join(lines) + '\n')
+
+print(f'→ {path}')
+print(f'   {same} khớp · {diff} lệch · {only} mới có một vế')
+PY
+
+echo "→ thư mục báo cáo: $OUT"

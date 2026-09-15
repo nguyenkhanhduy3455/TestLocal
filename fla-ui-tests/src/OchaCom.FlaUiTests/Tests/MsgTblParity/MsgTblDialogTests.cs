@@ -114,7 +114,8 @@ public sealed class MsgTblDialogTests : UiTestBase
         Uia.SetText(kobetu.CodeBox, NonIntegerCode);
         ClickPhysically(kobetu.SearchButton, "nút 検索 của tab 個別");
 
-        var box = RequireDialog($"E00002 sau khi gõ 「{NonIntegerCode}」 vào ô ｺｰﾄﾞ");
+        var box = RequireDialog($"E00002 sau khi gõ 「{NonIntegerCode}」 vào ô ｺｰﾄﾞ",
+                                "E00002 frm203002 kobetu code 174-0");
         LogKq(5, $"WinForm hiện: {Txt.Vis(box.Raw)}");
         Log($"   row MSGTBL render: {Txt.Vis(expected)}");
         Log($"   literal web      : {Txt.Vis(web)}");
@@ -179,7 +180,8 @@ public sealed class MsgTblDialogTests : UiTestBase
             KarteAutoCalcDialog.ClickModalOpener(search!, trace);
             trace.Step("bam 検索");
 
-            var box = RequireDialog("E00003 sau khi 検索 ra 0 件");
+            var box = RequireDialog("E00003 sau khi 検索 ra 0 件",
+                                    "E00003 frm203042 kensaku 0ken");
             LogKq(6, $"WinForm hiện: {Txt.Vis(box.Raw)}");
             Log($"   row MSGTBL   : {Txt.Vis(expected)}");
             Log($"   literal web  : {Txt.Vis(web)}");
@@ -285,10 +287,18 @@ public sealed class MsgTblDialogTests : UiTestBase
     /// nào ở giữa. Chờ lâu hơn không mua thêm thông tin — nó chỉ đổi 「biết sau 8 giây」
     /// thành 「biết sau vài phút」.</para>
     /// </summary>
-    private MsgBoxWin32.Found RequireDialog(string what)
+    private MsgBoxWin32.Found RequireDialog(string what, string evidenceLabel)
     {
         var box = Waits.TryFor(() => MsgBoxWin32.First(App.ProcessId), TimeSpan.FromSeconds(8));
-        if (box is not null) return box;
+        if (box is not null)
+        {
+            // Chụp RIÊNG hộp thoại, trước mọi assert — ảnh phải có kể cả khi assert đỏ,
+            // vì lúc đỏ mới là lúc cần nhìn nhất.
+            var code = System.Text.RegularExpressions.Regex.Match(evidenceLabel, @"[EQI]\d{5}").Value;
+            var shot = MsgEvidence.Capture(box, evidenceLabel, _msg.Template(code));
+            Log($"   ảnh hộp thoại: {shot ?? "(không chụp được)"}");
+            return box;
+        }
 
         throw new TimeoutException(
             $"không thấy {what} sau 8s. Ảnh chụp từng bước đã có sẵn trong artifacts\\screenshots — " +
