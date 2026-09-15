@@ -75,6 +75,7 @@ param(
     [switch]$PatientEntry,
     [switch]$Wizard,
     [switch]$AllowSave,
+    [switch]$AllowSeed,
     [string]$Case = "",
     [int]$StepMs = -1,
     [ValidateSet("Debug", "Release")]
@@ -87,6 +88,7 @@ $project = Join-Path $PSScriptRoot "src\OchaCom.FlaUiTests\OchaCom.FlaUiTests.cs
 if ($StepMs -ge 0) { $env:OCHA_STEP_MS = "$StepMs" }
 # Bien moi truong dat trong phien SSH KHONG truyen sang Scheduled Task — phai di qua day.
 if ($AllowSave) { $env:OCHA_REFERRAL_ALLOW_SAVE = "1" }
+if ($AllowSeed) { $env:OCHA_TEST_PATIENT_ALLOW_SEED = "1" }
 
 $ns = "OchaCom.FlaUiTests.Tests.MsgTblParity"
 

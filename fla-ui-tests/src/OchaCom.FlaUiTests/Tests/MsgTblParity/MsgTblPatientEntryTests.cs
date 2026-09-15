@@ -1,7 +1,11 @@
 using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Input;
+using FlaUI.Core.WindowsAPI;
 using NUnit.Framework;
 using OchaCom.FlaUiTests.App;
 using OchaCom.FlaUiTests.Infrastructure;
+using OchaCom.FlaUiTests.Tests.KarteAutoCalc;
+using MouseButton = FlaUI.Core.Input.MouseButton;
 
 namespace OchaCom.FlaUiTests.Tests.MsgTblParity;
 
@@ -30,11 +34,43 @@ namespace OchaCom.FlaUiTests.Tests.MsgTblParity;
 /// <see cref="SeededPatientTestBase"/> và mỗi mã một tiền đề riêng — để lô sau.</para>
 ///
 /// ═══════════════════════════════════════════════════════════════════════════════
-/// KHÔNG CÓ ĐƯỜNG NÀO GHI ĐƯỢC
+/// VIỆC CÒN DỞ — ĐỌC TRƯỚC KHI CHẠY
 /// ═══════════════════════════════════════════════════════════════════════════════
-/// F9 trên màn này CÓ ghi thật nếu kiểm tra qua hết. Cả hai ca ở đây cố ý làm hỏng
-/// <c>氏名（漢字）</c> nên <c>chkInputDataMain</c> dừng tại chỗ và trả <c>false</c> —
-/// <b>không câu lệnh ghi nào chạy</b>. Thêm hai lớp nữa:
+/// <b>E00010 và E00012 ĐÃ chụp được</b> (ảnh trong <c>msgtbl-evidence/win/</c>, lượt
+/// 2026-09-15 16:xx) khi fixture còn chạy trên bệnh nhân của <c>testsettings</c>. Sau khi
+/// chuyển sang bệnh nhân SEED thì <b>gõ chữ không vào được ô 氏名（漢字）</b> nữa: F9 bung
+/// 「患者データは、変更されていません。保存しますか？」 — tức app thấy form KHÔNG đổi gì.
+///
+/// <para><b>Nghi can</b>: 患者登録 có MỘT tab cho mỗi 枝番 (<c>tabMain</c>, mỗi tab một
+/// user-control <c>InsurerInfo</c> riêng ⇒ NHIỀU control cùng tên <c>txtName</c>).
+/// <c>Uia.RequireById</c> trả về cái ĐẦU TIÊN tìm thấy, rất có thể là tab đang ẩn. Bước
+/// tiếp theo: chọn tab đang hiển thị trước, hoặc tìm <c>txtName</c> BÊN TRONG tab đang
+/// chọn, rồi bỏ <c>[Explicit]</c>.</para>
+///
+/// <para>Cũng đừng tin <c>Uia.ValueOf</c> trên ô này: nó trả về NHÃN chứ không phải chữ
+/// đang gõ (báo 「院長 休診」 kể cả sau 240 nhịp BackSpace). Bằng chứng đáng tin là HỘP
+/// THOẠI bung ra.</para>
+///
+/// ═══════════════════════════════════════════════════════════════════════════════
+/// CHẠY TRÊN BỆNH NHÂN SEED, KHÔNG PHẢI BỆNH NHÂN THẬT
+/// ═══════════════════════════════════════════════════════════════════════════════
+/// Fixture kế thừa <see cref="SeededPatientTestBase"/>: nó dựng một bệnh nhân MỚI
+/// (<c>PAT_NO ≥ 990000</c>, clone từ một hồ sơ thật), trỏ <c>patient.patNo</c> sang đó,
+/// và xoá sạch ở <c>OneTimeTearDown</c>.
+///
+/// <para>⚠️ <b>Đây là bài học trả giá bằng dữ liệu thật.</b> Bản đầu chạy thẳng trên bệnh
+/// nhân của <c>testsettings</c>. Ngày 2026-09-15, một cú F9 rơi vào form đang mở sẵn của
+/// bệnh nhân KHÁC (số 3) với 氏名 đã bị nối chuỗi — chuỗi đó tình cờ hợp lệ (có dấu cách,
+/// dưới 100 byte) nên <c>chkInputDataMain</c> QUA và app GHI THẬT:
+/// <c>INSURANCE.PAT_NM</c> thành 「院長　休テストカンジナマエ」 và <c>PAT_KN</c> bị chắp
+/// thêm rác. Phải sửa tay bằng SQL. Với bệnh nhân seed thì cùng lỗi ấy chỉ làm bẩn một
+/// hồ sơ dùng-một-lần, và nó bị xoá ngay sau lượt chạy.</para>
+///
+/// ═══════════════════════════════════════════════════════════════════════════════
+/// VÀ VẪN KHÔNG ĐỂ ĐƯỜNG NÀO GHI ĐƯỢC
+/// ═══════════════════════════════════════════════════════════════════════════════
+/// F9 trên màn này CÓ ghi thật nếu kiểm tra qua hết. Mọi ca ở đây cố ý làm hỏng đúng một
+/// trường nên <c>chkInputDataMain</c> dừng tại chỗ và trả <c>false</c>. Thêm hai lớp nữa:
 ///
 /// <list type="number">
 ///   <item><description>Chụp giá trị <c>txtName</c> trước, trả lại sau MỖI ca.</description></item>
@@ -58,9 +94,10 @@ namespace OchaCom.FlaUiTests.Tests.MsgTblParity;
 /// </summary>
 [TestFixture]
 [NonParallelizable]
+[Explicit("CHƯA chạy xanh trên bệnh nhân seed — xem 「VIỆC CÒN DỞ」 ở doc-comment")]
 [Category("msgtbl-parity")]
 [CancelAfter(900_000)]
-public sealed class MsgTblPatientEntryTests : UiTestBase
+public sealed class MsgTblPatientEntryTests : SeededPatientTestBase
 {
     /// <summary>Fixture đứng ở 患者選択 — 患者登録 mở từ đó bằng 「F2 患者情報」 (frm203001.cs:331).</summary>
     protected override bool NavigatesToTreatmentEntry => false;
@@ -69,6 +106,12 @@ public sealed class MsgTblPatientEntryTests : UiTestBase
 
     /// <summary>氏名（漢字） trong user-control <c>InsurerInfo</c> (InsurerInfo.cs:648).</summary>
     private const string NameBoxId = "txtName";
+
+    /// <summary>診療開始日 (InsurerInfo.cs: errorItem.med_start_dt → dtMedStart).</summary>
+    private const string MedStartDateId = "dtMedStart";
+
+    /// <summary>患者情報有効日 (errorItem.br_dt → dtBr).</summary>
+    private const string BranchDateId = "dtBr";
 
     /// <summary>Tên KHÔNG có dấu cách ⇒ E00010. Toàn giác để không chạm E00011.</summary>
     private const string NoSpaceName = "テストカンジナマエ";
@@ -89,7 +132,10 @@ public sealed class MsgTblPatientEntryTests : UiTestBase
     private static void Log(string line) => TestContext.Out.WriteLine(line);
     private static void LogKq(string code, string line) => Log($"=== KQ-{code} === {line}");
 
-    protected override string? FixturePreflightSkipReason()
+    /// <summary>
+    /// Base đã lo cờ <c>testPatient.allowSeed</c>; ở đây chỉ kiểm thêm MSGTBL.
+    /// </summary>
+    protected override string? SeededFixtureSkipReason()
     {
         var db = MsgTblOracle.CreateOrNull(TestSettings.Current);
         if (db is null) return "db.enabled = false hoặc thiếu chuỗi kết nối — không đọc được MSGTBL.";
@@ -118,7 +164,7 @@ public sealed class MsgTblPatientEntryTests : UiTestBase
             if (_patEntry is null || _nameBefore.Length == 0) return;
             var box = Uia.ById(_patEntry, NameBoxId);
             if (box is null) return;
-            Uia.SetText(box, _nameBefore);
+            SetName(_nameBefore);
             Log($"đã trả 氏名（漢字） về 「{Txt.N(Uia.ValueOf(box))}」 (KHÔNG bấm F9 ⇒ không ghi gì).");
         }
         catch (Exception e) { Log($"⚠ không trả lại được 氏名: {e.Message}"); }
@@ -155,7 +201,7 @@ public sealed class MsgTblPatientEntryTests : UiTestBase
         finally
         {
             DismissOk(dialog);
-            Uia.SetText(box, _nameBefore);
+            SetName(_nameBefore);
         }
     }
 
@@ -200,7 +246,124 @@ public sealed class MsgTblPatientEntryTests : UiTestBase
         finally
         {
             DismissOk(dialog);
-            Uia.SetText(box, _nameBefore);
+            SetName(_nameBefore);
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // TCE3 — Q00009 (診療開始日 trống)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Test, Order(3)]
+    [Description("TCE3 — Q00009「診療開始日」: ô trống thì F9 hỏi có lấy ngày hôm nay không")]
+    public void TCE3_Q00009_EmptyTreatmentStartDate()
+    {
+        var expected = _msg.Render("Q00009", "診療開始日");
+        var web = WebMsgSnapshot.Render("Q00009", "診療開始日");
+
+        DrainDialogs("trước TCE3");
+        var saved = ClearDate(MedStartDateId, "診療開始日");
+        try
+        {
+            var box = PressF9AndRequireDialog("Q00009 sau khi xoá 診療開始日",
+                                              "Q00009 frm201001 F9 med-start-trong");
+            LogKq("Q00009", $"WinForm: {Txt.Vis(box.Raw)}");
+            Log($"   MSGTBL: {Txt.Vis(expected)}   |   web: {Txt.Vis(web)}");
+
+            try
+            {
+                Assert.Multiple(() =>
+                {
+                    Assert.That(box.Raw, Is.EqualTo(expected),
+                        "med_st_dt rỗng ⇒ ShowOKCancelMsg(\"Q00009\", \"診療開始日\") " +
+                        "(frm201001.cs:2324).");
+                    Assert.That(box.Raw, Is.EqualTo(web),
+                        $"…và phải TRÙNG KHÍT literal bản web ({WebMsgSnapshot.SourceFile}).");
+                    Assert.That(MsgBoxWin32.ButtonCaptions(box.Hwnd),
+                        Is.EquivalentTo(new[] { "OK", "Cancel" }),
+                        "ShowOKCancelMsg ⇒ hai nút (F16: nhãn theo ngôn ngữ Windows).");
+                });
+            }
+            finally
+            {
+                // HUỶ: trả lời OK là app TỰ ĐIỀN ngày hôm nay vào ô rồi đi tiếp chuỗi kiểm
+                // tra — và nếu qua hết thì F9 GHI THẬT (frm201001.cs:2326).
+                CancelDialog(box);
+
+                // Sau Cancel, app bung tiếp E00001「診療開始日」 rồi return false — dẹp nốt.
+                DrainDialogs("sau khi huỷ Q00009");
+            }
+        }
+        finally
+        {
+            RestoreDate(MedStartDateId, saved, "診療開始日");
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // TCE4 — Q00010 (患者情報有効日 trống)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Test, Order(4)]
+    [Description("TCE4 — Q00010「患者情報有効日」: ô trống thì F9 hỏi có lấy 診療開始日 không")]
+    public void TCE4_Q00010_EmptyPatientInfoValidDate()
+    {
+        var expected = _msg.Render("Q00010", "患者情報有効日");
+        var web = WebMsgSnapshot.Render("Q00010", "患者情報有効日");
+
+        // CHỈ xoá 患者情報有効日, GIỮ 診療開始日 — cổng Q00009「診療開始日」 đứng TRƯỚC
+        // (frm201001.cs:2322 vs :2337), xoá cả hai thì không bao giờ tới được Q00010.
+        DrainDialogs("trước TCE4");
+        var saved = ClearDate(BranchDateId, "患者情報有効日");
+        try
+        {
+            var box = PressF9AndRequireDialog("Q00010 sau khi xoá 患者情報有効日",
+                                              "Q00010 frm201001 F9 br-dt-trong");
+            LogKq("Q00010", $"WinForm: {Txt.Vis(box.Raw)}");
+            Log($"   MSGTBL: {Txt.Vis(expected)}   |   web: {Txt.Vis(web)}");
+
+            try
+            {
+                Assert.Multiple(() =>
+                {
+                    Assert.That(box.Raw, Is.Not.EqualTo(_msg.Render("Q00009", "診療開始日")),
+                        "bung Q00009「診療開始日」 nghĩa là ô 診療開始日 cũng đang trống — cổng đó " +
+                        "đứng TRƯỚC, sửa dữ liệu test chứ đừng sửa assert.");
+
+                    Assert.That(box.Raw, Is.EqualTo(expected),
+                        "br_dt rỗng ⇒ ShowOKCancelMsg(\"Q00010\", \"患者情報有効日\") " +
+                        "(frm201001.cs:2339).");
+                    Assert.That(box.Raw, Is.EqualTo(web),
+                        $"…và phải TRÙNG KHÍT literal bản web ({WebMsgSnapshot.SourceFile}).");
+                });
+            }
+            finally
+            {
+                // HUỶ ⇒ app hỏi tiếp Q00009「患者情報有効日」 (frm201001.cs:2349) — chụp luôn,
+                // đây là chỗ DUY NHẤT mã Q00009 xuất hiện với nhãn 「患者情報有効日」.
+                CancelDialog(box);
+
+                var second = Waits.TryFor(() => MsgBoxWin32.First(App.ProcessId), TimeSpan.FromSeconds(8));
+                if (second is not null)
+                {
+                    var shot = MsgEvidence.Capture(second, "Q00009 frm201001 F9 br-dt-trong-lan2",
+                                                   _msg.Template("Q00009"),
+                                                   Txt.N(App.Automation.FocusedElement()?.Name));
+                    LogKq("Q00009#2", $"WinForm: {Txt.Vis(second.Raw)}  (ảnh: {shot ?? "—"})");
+
+                    Assert.That(second.Raw, Is.EqualTo(_msg.Render("Q00009", "患者情報有効日")),
+                        "huỷ Q00010 ⇒ app hỏi tiếp Q00009 với nhãn 「患者情報有効日」 " +
+                        "(frm201001.cs:2349).");
+
+                    CancelDialog(second);
+                }
+
+                DrainDialogs("sau khi huỷ Q00010/Q00009");
+            }
+        }
+        finally
+        {
+            RestoreDate(BranchDateId, saved, "患者情報有効日");
         }
     }
 
@@ -208,10 +371,110 @@ public sealed class MsgTblPatientEntryTests : UiTestBase
     // Hạ tầng
     // ═════════════════════════════════════════════════════════════════════════
 
+    /// <summary>Ba ô của một <c>CustomDate</c>: 年 / 月 / 日.</summary>
+    private sealed record DateParts(string Year, string Month, string Day);
+
+    /// <summary>
+    /// Xoá rỗng một ô ngày <c>CustomDate</c> và trả lại giá trị CŨ để khôi phục.
+    ///
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// XOÁ XONG PHẢI DỜI FOCUS
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// <c>CustomDate</c> chỉ dựng lại <c>SelDate</c> trong <c>CustomDate_Leave</c>
+    /// (CustomDate.cs:692-710). Ba ô con trên màn hình trống ngay sau khi xoá, nhưng
+    /// <c>ins.med_st_dt</c> mà <c>chkInputDataMain</c> đọc vẫn là ngày CŨ cho tới khi
+    /// control mất focus — F9 khi ấy sẽ KHÔNG hỏi gì và ca test kết luận ngược.
+    /// </summary>
+    private DateParts ClearDate(string dateControlId, string what)
+    {
+        var date = KarteAutoCalcDialog.FindChromeIdOrName(_patEntry, dateControlId, what)
+                   ?? throw new InvalidOperationException(
+                          $"không thấy ô ngày 「{what}」 ({dateControlId}) trên 患者登録.");
+
+        var saved = new DateParts(ReadPart(date, "txtYear"), ReadPart(date, "txtMonth"), ReadPart(date, "txtDay"));
+        Log($"   {what} nguyên trạng: {saved.Year}/{saved.Month}/{saved.Day}");
+
+        foreach (var part in new[] { "txtYear", "txtMonth", "txtDay" }) WritePart(date, part, "");
+
+        // Dời focus để CustomDate_Leave chạy.
+        Keyboard.Press(VirtualKeyShort.TAB);
+        Waits.Step();
+        return saved;
+    }
+
+    private void RestoreDate(string dateControlId, DateParts saved, string what)
+    {
+        try
+        {
+            var date = KarteAutoCalcDialog.FindChromeIdOrName(_patEntry, dateControlId, what);
+            if (date is null) { Log($"   ⚠ không tìm lại được ô 「{what}」 để khôi phục."); return; }
+
+            WritePart(date, "txtYear", saved.Year);
+            WritePart(date, "txtMonth", saved.Month);
+            WritePart(date, "txtDay", saved.Day);
+            Keyboard.Press(VirtualKeyShort.TAB);
+            Waits.Step();
+            Log($"   đã trả {what} về {saved.Year}/{saved.Month}/{saved.Day} (KHÔNG bấm F9 ⇒ không ghi).");
+        }
+        catch (Exception e) { Log($"   ⚠ không khôi phục được 「{what}」: {e.Message}"); }
+    }
+
+    private static string ReadPart(AutomationElement date, string id)
+    {
+        var box = KarteAutoCalcDialog.FindChromeIdOrName(date, id, id);
+        return box is null ? "" : Txt.N(Uia.ValueOf(box));
+    }
+
+    /// <summary>Ghi một ô con của CustomDate: double-click bôi đen rồi gõ đè (hoặc Delete nếu rỗng).</summary>
+    private static void WritePart(AutomationElement date, string id, string value)
+    {
+        var box = KarteAutoCalcDialog.FindChromeIdOrName(date, id, id);
+        if (box is null) return;
+
+        var (x, y) = Uia.Center(box);
+        if (x <= 0 && y <= 0) return;
+
+        Mouse.MoveTo(x, y);
+        Mouse.DoubleClick(MouseButton.Left);
+        Waits.Step();
+
+        if (value.Length == 0) Keyboard.Press(VirtualKeyShort.DELETE);
+        else Keyboard.Type(value);
+    }
+
+    private void CancelDialog(MsgBoxWin32.Found box)
+    {
+        if (!MsgBoxWin32.ClickButton(box.Hwnd, "キャンセル", "Cancel", "いいえ", "No"))
+            throw new InvalidOperationException(
+                $"KHÔNG bấm được nút huỷ trên {box}. Nút thật: " +
+                string.Join(" / ", MsgBoxWin32.ButtonCaptions(box.Hwnd)) +
+                ". Dừng lại thay vì bấm bừa — OK ở đây là app tự điền ngày rồi đi tiếp.");
+
+        Waits.Until(() => MsgBoxWin32.All(App.ProcessId).All(d => d.Hwnd != box.Hwnd),
+            "hộp thoại đóng lại", TimeSpan.FromSeconds(10));
+    }
+
     private Window OpenPatientEntry()
     {
+        // KHÔNG dùng lại cửa sổ đang mở sẵn.
+        //
+        // App dùng chung một phiên giữa các lượt chạy (attachIfRunning), nên frm201001 có
+        // thể đang mở cho một bệnh nhân KHÁC — lượt 17:47 nó đang là 「院長 休診」 (bệnh
+        // nhân 3) trong khi fixture tưởng mình đang ở bệnh nhân của testsettings. Hệ quả:
+        // 氏名 nguyên trạng đọc ra sai, ca test sửa nhầm hồ sơ người khác, và F9 bung
+        // 「患者データは、変更されています。保存しますか？」 thay vì mã đang đo.
+        //
+        // Đóng rồi mở lại từ 患者選択 thì luôn đúng bệnh nhân. Trả lời 「いいえ」 cho câu hỏi
+        // lưu — KHÔNG lưu thứ gì mà lượt trước để lại dở.
         var already = App.Window(PatEntryId);
-        if (already is not null) return already;
+        if (already is not null)
+        {
+            Log("frm201001 đang mở sẵn (có thể của bệnh nhân khác) — đóng rồi mở lại.");
+            ClickBarButton(already, "btnF10", "戻る");
+            Waits.Step();
+            DrainDialogs("khi đóng 患者登録 cũ");
+            Waits.TryUntil(() => App.Window(PatEntryId) is null, TimeSpan.FromSeconds(10));
+        }
 
         var patNoBox = Uia.ById(_patSelect, Settings.Locator("patSelPatNo"))
                        ?? throw new InvalidOperationException("không thấy ô 患者番号 trên 患者選択.");
@@ -225,16 +488,59 @@ public sealed class MsgTblPatientEntryTests : UiTestBase
                       "artifacts/screenshots ra xem trước khi chạy lại (F1/F2).");
     }
 
+    /// <summary>
+    /// Đặt 氏名（漢字）: XOÁ SẠCH bằng END + BackSpace rồi mới gõ.
+    ///
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// VÌ SAO KHÔNG DÙNG Uia.SetText
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// <c>Uia.SetText</c> chọn-rồi-xoá bằng <c>Ctrl+A</c> + <c>Delete</c>, mà WinForms
+    /// TextBox KHÔNG nhận Ctrl+A làm 全選択 (quirk cũ — <c>PatientSelectScreen</c> đã ghi
+    /// lại từ 2026-08-27). Hệ quả: chữ mới NỐI vào chữ cũ.
+    ///
+    /// <para>TCE1/TCE2 vẫn xanh với nó, nhưng xanh NHỜ MAY: chuỗi nối vẫn thiếu dấu cách
+    /// (E00010) và vẫn quá 100 byte (E00012). Cái giá trả ở ca SAU — ô để lại nửa giác lẫn
+    /// toàn giác, và F9 của TCE3 bung <b>E00011</b>「全角／半角文字が混在しています」, một
+    /// hộp thoại chỉ có nút OK nên không huỷ được (đo 17:47 và 17:52).</para>
+    ///
+    /// <para>Double-click cũng sai ở ô này: nó chỉ chọn MỘT TỪ, nên tên có dấu cách
+    /// 「院長 休診」 chỉ bị thay chữ cuối.</para>
+    /// </summary>
     private AutomationElement SetName(string value)
     {
         var box = Uia.RequireById(_patEntry, NameBoxId);
-        Uia.SetText(box, value);
+
+        // Focus() chứ KHÔNG click vật lý.
+        //
+        // Uia.SetText (vốn dùng Focus) đưa được phím tới ô này — TCE1/TCE2 từng xanh nhờ
+        // nó. Click vật lý thì KHÔNG: lượt 18:0x, 4 lượt × 60 BackSpace mà ô vẫn nguyên
+        // 「院長 休診」, tức không một phím nào tới nơi. Giữ Focus của SetText, chỉ thay
+        // phần XOÁ (Ctrl+A không ăn trên WinForms TextBox).
+        box.Focus();
+        Thread.Sleep(80);
+
+        // ⚠️ KHÔNG gate vào việc đọc lại ô này.
+        //
+        // Uia.ValueOf trên control này trả về NHÃN chứ không phải chữ đang gõ: nó báo
+        // 「院長 休診」 kể cả sau 240 nhịp BackSpace, trong khi chính lượt đó E00010 vẫn bung
+        // đúng — tức chữ CÓ vào. Bản trước dựng guard 「xoá tới khi đọc ra rỗng」 và guard
+        // ấy chặn nhầm một thao tác đang chạy đúng, làm đỏ cả bốn ca (18:0x).
+        //
+        // Bằng chứng thật là HỘP THOẠI bung ra: mỗi ca đã có assert rằng mã hiện lên đúng
+        // là mã nó đo, và TCE2 còn chặn riêng E00010/E00011 — sai trạng thái ô là đỏ ở đó,
+        // không cần đoán qua một phép đọc không đáng tin.
+        Keyboard.Press(VirtualKeyShort.END);
+        for (var i = 0; i < 80; i++) Keyboard.Press(VirtualKeyShort.BACK);
         Waits.Step();
 
-        var actual = Txt.N(Uia.ValueOf(box));
-        if (actual != Txt.N(value))
-            Log($"   ⚠ ô 氏名 đang giữ 「{actual}」 chứ không phải cái vừa đặt — " +
-                "có thể MaxLength cắt bớt; đọc kỹ mã bung ra trước khi tin kết quả.");
+        if (value.Length > 0)
+        {
+            Keyboard.Type(value);
+            Waits.Step();
+        }
+
+        Log($"   氏名 sau khi đặt: ô đọc ra 「{Txt.N(Uia.ValueOf(box))}」 " +
+            "(phép đọc này KHÔNG đáng tin — xem doc-comment)");
         return box;
     }
 
@@ -281,6 +587,8 @@ public sealed class MsgTblPatientEntryTests : UiTestBase
             var box = MsgBoxWin32.First(App.ProcessId);
             if (box is null) return;
             Log($"dọn hộp thoại {when}: {Txt.Vis(box.Raw)}");
+            // 「いいえ」/「キャンセル」 TRƯỚC, OK là đường cuối: câu hay gặp ở đây là
+            // 「患者データは、変更されています。保存しますか？」 — trả lời OK/はい là GHI THẬT.
             if (!MsgBoxWin32.ClickButton(box.Hwnd, "いいえ", "No", "キャンセル", "Cancel", "OK"))
                 return;
             Waits.Until(() => MsgBoxWin32.All(App.ProcessId).All(d => d.Hwnd != box.Hwnd),
