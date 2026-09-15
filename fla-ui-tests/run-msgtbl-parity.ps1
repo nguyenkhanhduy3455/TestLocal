@@ -42,6 +42,16 @@
     KHONG ghi gi: ca hai hop thoai deu la cong xac nhan dung TRUOC hanh dong va
     fixture luon tra loi 「キャンセル」.
 
+.PARAMETER AllowSave
+    Bat referral.allowSave — cho TCR4 GHI THAT mot dong SHOUKAI_TMP (ten
+    ZZ-PARITY-TEST) roi xoa bang chinh F3 cua app, va vet lai bang SQL o
+    OneTimeTearDown. Khong bat thi TCR4 tu Ignore, TCR1..TCR3 van chay.
+
+.PARAMETER Referral
+    Chay TCR0 — PROBE man 紹介状 (frm203053, Shift+F3). Chup E00001 va E00022.
+    KHONG ghi gi: E00001 dung truoc khi cham DB, con E00022 bung TU chkInputData —
+    ham nay chay TRUOC insertTemplatedata nen hong kiem tra la khong co dong nao duoc ghi.
+
 .PARAMETER Probe
     Chay TCM9 — PROBE [Explicit] mo man 患者登録 (frm201001) va do ra o/nut/cay UIA.
     CHI DOC, khong bam 登録. Day la buoc chuan bi cho 14 ma con lai nam o man do.
@@ -61,6 +71,8 @@ param(
     [switch]$WithUi,
     [switch]$CallSite,
     [switch]$Probe,
+    [switch]$Referral,
+    [switch]$AllowSave,
     [string]$Case = "",
     [int]$StepMs = -1,
     [ValidateSet("Debug", "Release")]
@@ -71,11 +83,15 @@ $ErrorActionPreference = "Stop"
 $project = Join-Path $PSScriptRoot "src\OchaCom.FlaUiTests\OchaCom.FlaUiTests.csproj"
 
 if ($StepMs -ge 0) { $env:OCHA_STEP_MS = "$StepMs" }
+# Bien moi truong dat trong phien SSH KHONG truyen sang Scheduled Task — phai di qua day.
+if ($AllowSave) { $env:OCHA_REFERRAL_ALLOW_SAVE = "1" }
 
 $ns = "OchaCom.FlaUiTests.Tests.MsgTblParity"
 
 if ($Case -ne "") {
     $filter = "FullyQualifiedName~$ns&FullyQualifiedName~$Case"
+} elseif ($Referral) {
+    $filter = "FullyQualifiedName~$ns&FullyQualifiedName~Referral"
 } elseif ($Probe) {
     $filter = "FullyQualifiedName~$ns.MsgTblProbeTests"
 } elseif ($CallSite) {
@@ -103,7 +119,7 @@ Write-Host "=== Sau khi chay, doc theo thu tu nay ===" -ForegroundColor Yellow
 Write-Host "1. msgtbl-parity-KQ.txt                        - cac dong === KQ-n === (bang doi chieu)"
 Write-Host "2. TestResults\msgtbl-parity.trx               - ket qua (UTF-8, doc tieng Nhat duoc)"
 Write-Host "   Log console MAT dau tieng Nhat — doc .trx, dung doc console (F9)."
-if ($WithUi -or $Probe -or $CallSite) {
+if ($WithUi -or $Probe -or $CallSite -or $Referral) {
     $artifacts = Join-Path $PSScriptRoot "src\OchaCom.FlaUiTests\bin\$Configuration\net8.0-windows\artifacts"
     Write-Host "3. $artifacts\screenshots\<ten test>\*.png     - anh SAU TUNG BUOC"
 }

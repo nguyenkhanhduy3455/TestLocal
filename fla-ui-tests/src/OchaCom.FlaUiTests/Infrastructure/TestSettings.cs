@@ -28,6 +28,7 @@ public sealed class TestSettings
     [JsonPropertyName("chkAutoCascade")] public ChkAutoCascadeSection ChkAutoCascade { get; set; } = new();
     [JsonPropertyName("testPatient")] public TestPatientSection TestPatient { get; set; } = new();
     [JsonPropertyName("packDialog")] public PackDialogSection PackDialog { get; set; } = new();
+    [JsonPropertyName("referral")] public ReferralSection Referral { get; set; } = new();
     [JsonPropertyName("perioKensa")] public PerioKensaSection PerioKensa { get; set; } = new();
     [JsonPropertyName("visitList")] public VisitListSection VisitList { get; set; } = new();
     [JsonPropertyName("buiPrice")] public BuiPriceSection BuiPrice { get; set; } = new();
@@ -545,6 +546,22 @@ public sealed class TestSettings
     /// 「F10 戻る」 — nên nó không có cờ ghi chung. Chỉ ca 「pack rỗng」 cần đặt 歯式 để ép
     /// <c>chkSiga</c> loại hết item, và ca đó nằm sau <see cref="AllowSigaSetup"/>.</para>
     /// </summary>
+    /// <summary>Luồng <c>Tests/MsgTblParity</c> — màn 紹介状 (frm203053).</summary>
+    public sealed class ReferralSection
+    {
+        /// <summary>
+        /// Cho phép bấm <b>F2 登録</b> để GHI THẬT một dòng <c>SHOUKAI_TMP</c> rồi xoá đi.
+        ///
+        /// <para>Chỉ ca TCR4 cần — ca đó đo chuyện 「WinForm có báo gì sau khi lưu/xoá
+        /// không」, mà câu hỏi đó chỉ trả lời được bằng cách lưu thật. Tắt thì TCR4 tự
+        /// Ignore, TCR1..TCR3 (chỉ đọc) vẫn chạy.</para>
+        ///
+        /// <para>Dòng ghi ra mang tên <c>ZZ-PARITY-TEST</c> và bị vét ở
+        /// <c>OneTimeTearDown</c> bằng SQL, không nhờ vào giao diện (F22).</para>
+        /// </summary>
+        [JsonPropertyName("allowSave")] public bool AllowSave { get; set; }
+    }
+
     public sealed class PackDialogSection
     {
         /// <summary>
@@ -1147,6 +1164,7 @@ public sealed class TestSettings
         Set("OCHA_DRUG_RELOAD_DISP_NO", v => s.DrugRowReload.DispNo = int.Parse(v));
         Set("OCHA_DRUG_RELOAD_TRT_CD", v => s.DrugRowReload.TrtCd = int.Parse(v));
         Set("OCHA_DRUG_RELOAD_PATH_B_TRT_CD", v => s.DrugRowReload.PathBTrtCd = int.Parse(v));
+        Set("OCHA_REFERRAL_ALLOW_SAVE", v => s.Referral.AllowSave = ToBool(v));
 
         static void Set(string name, Action<string> apply)
         {
