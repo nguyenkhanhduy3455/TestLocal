@@ -1,5 +1,6 @@
 using FlaUI.Core.AutomationElements;
 using NUnit.Framework;
+using OchaCom.FlaUiTests.App;
 using OchaCom.FlaUiTests.Infrastructure;
 using OchaCom.FlaUiTests.Tests.KarteAutoCalc;
 
@@ -35,6 +36,12 @@ namespace OchaCom.FlaUiTests.Tests.MsgTblParity;
 ///         kỳ vọng: hộp thoại == row DB 「該当データがありません。」
 ///                  và KHÁC literal web 「該当するデータがありません。」
 /// </code>
+///
+/// <para><b>TCM7 chạy CUỐI CÙNG, có chủ ý.</b> Nó bấm 「終了」 của dải Shift — nút mà trả
+/// lời OK là <c>Application.Exit()</c>. Ca đó trả lời 「キャンセル」 và vẫn xanh, nhưng đo
+/// được lượt 18:0x: ca chạy NGAY SAU nó thấy app KHÔNG CÒN CỬA SỔ NÀO (danh sách top-level
+/// rỗng). Thứ có khả năng tắt cả ứng dụng thì để sau cùng, đừng để nó kéo theo các ca
+/// khác.</para>
 ///
 /// <para>Chỉ có TCM6 thì mọi lệch đều có thể đổ cho 「cách đọc hộp thoại của test sai」.
 /// TCM5 là seed đối chứng: cùng một cách đọc, cùng một cách render, nhưng ra KHỚP. Sau đó
@@ -88,6 +95,10 @@ public sealed class MsgTblDialogTests : UiTestBase
 
     /// <summary>Tham số legacy truyền cho Q00004 ở chỗ này (frm203002.cs:981).</summary>
     private const string ExitParam = "登録せずに";
+
+    /// <summary>必要病名登録 — submenu オプション mục &amp;3 (frm203002.Designer.cs:2858).</summary>
+    private const string RestrictDisId = "frm203036";
+    private const string RestrictDisTitle = "必要病名";
 
     private MsgTblOracle _msg = null!;
 
@@ -228,7 +239,7 @@ public sealed class MsgTblDialogTests : UiTestBase
     // TCM7 — Q00004 (Shift+F12 終了)
     // ═════════════════════════════════════════════════════════════════════════
 
-    [Test, Order(3)]
+    [Test, Order(9)]
     [Description("TCM7 — Q00004: dải Shift + F12 終了 hỏi trước khi thoát (trả lời HUỶ)")]
     public void TCM7_Q00004_ExitConfirm_MatchesWebAndTable()
     {
@@ -301,8 +312,139 @@ public sealed class MsgTblDialogTests : UiTestBase
     }
 
     // ═════════════════════════════════════════════════════════════════════════
+    // TCM8 — Q00047 (必要病名登録, CSV出力)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Test, Order(3)]
+    [Explicit("CHƯA chạy xanh — frm203036 mở được nhưng fixture không tìm ra cửa sổ; xem doc-comment")]
+    [Description("TCM8 — Q00047: 「F1 CSV出力」 của 必要病名登録 hỏi trước khi xuất (trả lời HUỶ)")]
+    public void TCM8_Q00047_CsvExportConfirm()
+    {
+        var expected = _msg.Render("Q00047");
+        var web = WebMsgSnapshot.Render("Q00047");
+
+        using var trace = TestTrace.Begin();
+        DrainDialogs("trước TCM8");
+
+        // ĐÒI LẠI 診療入力 trước đã.
+        //
+        // TCM6 đóng frm203042 bằng KarteAutoCalcDialog.Close — hàm đó tìm btnF10 CỦA
+        // DIALOG, không thấy thì gửi thẳng phím F10. Nếu dialog đã tự đóng, cú F10 ấy rơi
+        // vào 診療入力 và đẩy app LÙI một màn; vài nhịp như vậy là ra tới menu rồi thoát
+        // hẳn. Đo lượt 18:1x: tới TCM8 thì desktop chỉ còn Taskbar/PowerShell — app không
+        // còn cửa sổ nào.
+        //
+        // OpenTreatmentEntry trả về ngay nếu đang ở đó sẵn, và mở lại nếu không.
+        trace.Do("doi lai man 診療入力", () => AppNavigator.OpenTreatmentEntry(App, Settings));
+
+        var form = trace.Do("mo frm203036 必要病名登録 bang ban phim",
+            () => OpenOptionSubmenu(trace, 3, RestrictDisId, RestrictDisTitle, "必要病名登録"));
+
+        try
+        {
+            // 検索 trước để lưới CÓ dòng: lưới rỗng thì F1 rẽ sang E00003 (frm203036.cs:157)
+            // chứ không tới được Q00047 (:162).
+            var search = KarteAutoCalcDialog.FindChromeIdOrName(form, "btnSearch", "検索");
+            if (search is not null)
+            {
+                KarteAutoCalcDialog.ClickModalOpener(search, trace);
+                Waits.Step();
+                DrainDialogs("sau khi 検索");
+            }
+
+            var csv = KarteAutoCalcDialog.FindChromeIdOrName(form, "btnF1", "CSV")
+                      ?? throw new InvalidOperationException(
+                             "không thấy nút 「F1」 (CSV出力) trên frm203036.");
+            KarteAutoCalcDialog.ClickModalOpener(csv, trace);
+
+            var box = RequireDialog("Q00047 sau khi bấm 「F1 CSV出力」", "Q00047 frm203036 csv-shutsuryoku");
+            LogKq(8, $"WinForm: {Txt.Vis(box.Raw)}");
+            Log($"   MSGTBL: {Txt.Vis(expected)}   |   web: {Txt.Vis(web)}");
+
+            try
+            {
+                Assert.Multiple(() =>
+                {
+                    Assert.That(box.Raw, Is.Not.EqualTo(_msg.Render("E00003")),
+                        "bung E00003 nghĩa là lưới đang RỖNG — 検索 chưa ra dòng nào, nên F1 rẽ " +
+                        "sang nhánh khác (frm203036.cs:157) và chưa tới được Q00047.");
+
+                    Assert.That(box.Raw, Is.EqualTo(expected),
+                        "Q00047 không nhận tham số (frm203036.cs:162) ⇒ câu phải đúng bằng row MSGTBL.");
+
+                    Assert.That(box.Raw, Is.EqualTo(web),
+                        $"…và phải TRÙNG KHÍT literal bản web ({WebMsgSnapshot.SourceFile}).");
+                });
+            }
+            finally
+            {
+                // HUỶ: OK là mở hộp chọn file rồi XUẤT THẬT (frm203036.cs:168).
+                if (!MsgBoxWin32.ClickButton(box.Hwnd, "キャンセル", "Cancel", "いいえ", "No"))
+                    throw new InvalidOperationException(
+                        $"KHÔNG bấm được nút huỷ trên {box}. Nút thật: " +
+                        string.Join(" / ", MsgBoxWin32.ButtonCaptions(box.Hwnd)));
+
+                Waits.Until(() => MsgBoxWin32.All(App.ProcessId).All(d => d.Hwnd != box.Hwnd),
+                    "hộp thoại đóng lại", TimeSpan.FromSeconds(10));
+            }
+        }
+        finally
+        {
+            try { KarteAutoCalcDialog.Close(App, form); }
+            catch (Exception e) { Log($"không đóng được frm203036: {e.Message}"); }
+            DrainDialogs("sau TCM8");
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
     // Hạ tầng nhỏ dùng chung
     // ═════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Tìm cửa sổ theo TIÊU ĐỀ trên toàn desktop, KHÔNG lọc theo processId.
+    ///
+    /// <para><c>KarteAutoCalcDialog.FindDialogWindow</c> lọc theo <c>app.ProcessId</c>, và
+    /// phép lọc đó trả về RỖNG ở đây: lượt 18:0x liệt kê cửa sổ của app ra được đúng con
+    /// số không, trong khi ảnh chụp cho thấy 「必要病名一覧」 đang mở rành rành. Nghĩa là cửa
+    /// sổ ấy KHÔNG thuộc processId mà <c>OchaApp</c> đang giữ — app legacy này tách module
+    /// thành nhiều tiến trình.</para>
+    /// </summary>
+    private static Window? FindWindowAnywhere(string titleFragment)
+    {
+        try
+        {
+            foreach (var w in OchaApp.SharedAutomation.GetDesktop().FindAllChildren())
+            {
+                try
+                {
+                    if (!Txt.Has(w.Name, titleFragment)) continue;
+                    return w.AsWindow();
+                }
+                catch { /* cửa sổ vừa đóng giữa chừng */ }
+            }
+        }
+        catch { /* desktop bận */ }
+        return null;
+    }
+
+    /// <summary>
+    /// Liệt kê cửa sổ top-level của app — để thông báo lỗi nói được TÊN THẬT của cửa sổ
+    /// đang mở, thay vì bắt người đọc đi đoán AutomationId.
+    /// </summary>
+    private string DescribeAppWindows()
+    {
+        try
+        {
+            var names = OchaApp.SharedAutomation.GetDesktop().FindAllChildren()
+                .Select(w =>
+                {
+                    string id; try { id = w.AutomationId; } catch { id = "?"; }
+                    return $"「{Txt.N(w.Name)}」(id={id})";
+                });
+            return string.Join(", ", names);
+        }
+        catch (Exception e) { return $"(không liệt kê được: {e.Message})"; }
+    }
 
     /// <summary>Bật/tắt dải phím Shift; trả về trạng thái TRƯỚC khi đụng vào.</summary>
     private bool ToggleShiftBand(bool on)
@@ -351,13 +493,26 @@ public sealed class MsgTblDialogTests : UiTestBase
     /// như <c>KarteAutoCalcDialog.MenuItemId</c> đang ghi — thêm một lý do đường UIA ở đó
     /// không bao giờ khớp theo AutomationId.</para>
     /// </summary>
-    private Window OpenCmtAutoListByKeyboard(TestTrace trace)
+    private Window OpenCmtAutoListByKeyboard(TestTrace trace) =>
+        OpenOptionSubmenu(trace, 6, KarteAutoCalcDialog.ListId, KarteAutoCalcDialog.ListTitleFragment,
+                          "コメント自動入力登録");
+
+    /// <summary>
+    /// Mở một mục của submenu 「&amp;9 オプション」 bằng bàn phím: <c>F11</c> → <c>9</c> → chữ số.
+    ///
+    /// <para>Mọi mục đều khai phím tắt bằng <c>&amp;</c> trong designer (frm203002.Designer.cs):
+    /// <c>&amp;1 チェック項目設定</c>, <c>&amp;2 処置入力設定</c>, <c>&amp;3 必要病名登録</c>,
+    /// <c>&amp;4 自動算定登録</c>, <c>&amp;5 処置自動入力登録</c>,
+    /// <c>&amp;6 コメント自動入力登録</c>, <c>&amp;7 合計点数入力登録</c>,
+    /// <c>&amp;8 チェックルール登録</c>.</para>
+    /// </summary>
+    private Window OpenOptionSubmenu(TestTrace trace, int digit, string formId, string titleFragment,
+                                     string what)
     {
-        var already = KarteAutoCalcDialog.FindDialogWindow(
-            App, KarteAutoCalcDialog.ListId, KarteAutoCalcDialog.ListTitleFragment);
+        var already = KarteAutoCalcDialog.FindDialogWindow(App, formId, titleFragment);
         if (already is not null)
         {
-            trace.Note("frm203042 da mo san — dung lai");
+            trace.Note($"{formId} da mo san — dung lai");
             return already;
         }
 
@@ -371,21 +526,28 @@ public sealed class MsgTblDialogTests : UiTestBase
         Thread.Sleep(400);
         Uia.SendKey(Vk.Digit(9));
         Thread.Sleep(400);
-        Uia.SendKey(Vk.Digit(6));
-        trace.Step("F11 → 9 (オプション) → 6 (コメント自動入力登録)");
+        Uia.SendKey(Vk.Digit(digit));
+        trace.Step($"F11 → 9 (オプション) → {digit} ({what})");
 
-        var list = Waits.TryFor(
-            () => KarteAutoCalcDialog.FindDialogWindow(
-                      App, KarteAutoCalcDialog.ListId, KarteAutoCalcDialog.ListTitleFragment),
-            TimeSpan.FromSeconds(12));
-
-        if (list is not null) return list;
+        // 30s chứ không 12s, và lục CẢ bên trong 診療入力.
+        //
+        // Ảnh chụp lượt 17:57 cho thấy 「必要病名一覧」 ĐÃ mở nhưng còn đang vẽ dở (cửa sổ
+        // trắng, chưa có control nào) — 12 giây không đủ cho nó dựng xong. Và không phải
+        // form nào cũng là top-level: frm203046 từng là form CON nằm trong cây UIA của
+        // frm203001.
+        var form = Waits.TryFor(
+            () => KarteAutoCalcDialog.FindDialogWindow(App, formId, titleFragment)
+                  ?? KarteAutoCalcDialog.FindDialogWindow(App, formId, titleFragment, Screen.Window)
+                  ?? FindWindowAnywhere(titleFragment),
+            TimeSpan.FromSeconds(30));
+        if (form is not null) return form;
 
         throw new TimeoutException(
-            "F11 → 9 → 6 không mở được frm203042 sau 12s. MỞ ẢNH trong artifacts\\screenshots ra " +
-            "xem TRƯỚC khi chạy lại (F1/F2): popup có bung không, đang dừng ở mục nào, có hộp " +
-            "thoại nào chắn không. Hộp thoại đang mở lúc này: " +
-            (MsgBoxWin32.TextOfAll(App.ProcessId) is { Length: > 0 } t ? t : "(không có)"));
+            $"F11 → 9 → {digit} không mở được {formId} ({what}) sau 30s. MỞ ẢNH trong " +
+            "artifacts/screenshots ra xem TRƯỚC khi chạy lại (F1/F2). " +
+            "Hộp thoại đang mở: " +
+            (MsgBoxWin32.TextOfAll(App.ProcessId) is { Length: > 0 } t ? t : "(không có)") +
+            ". Cửa sổ của app đang mở: " + DescribeAppWindows());
     }
 
     /// <summary>
