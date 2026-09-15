@@ -365,8 +365,42 @@ test.describe('診療入力 — 回数 phải theo CalcCnt, không phải hằng
         return kai
     }
 
-    /** Chờ lưới đứng yên sau khi Enter ô 回 (chuỗi cascade chạy xong). */
-    async function settleAfterKaiEnter() {
+    /**
+     * Chờ lưới đứng yên sau khi Enter ô 回 (chuỗi cascade chạy xong).
+     *
+     * `requireEditor` — CHỜ ô 回 hiện ra VÀ nhận focus trước khi gõ Enter.
+     *
+     * Vì sao phải có cờ này: cascade chỉ được arm trong `commitCellEdit` ở nhánh
+     * `col === RegiCol.kai && viaEnter` (treatment-entry-detail.tsx), tức cú Enter
+     * phải tới ĐÚNG handler của editor ô 回. Editor đó chỉ hiện ra vài trăm ms sau
+     * 確定, nên một cú `page.keyboard.press('Enter')` sớm sẽ rơi vào khoảng trống:
+     * dòng không chốt, `armCascade` không chạy, và CẢ chuỗi
+     * cmt-autos → chk-auto không bao giờ được gửi.
+     *
+     * Đã đo bằng log request: lượt ĐỎ dừng ngay sau `check-single`, không hề có
+     * `cmt-autos/cascade`; snapshot lúc đó cho thấy ô 回 vẫn mở, `[active]`, giá trị
+     * "1" — tức `commitCellEdit` chưa bao giờ được gọi cho ô đó.
+     *
+     * CHỈ TC-4 bật cờ này. TC-1..TC-3 cố tình đặt 処置 lên răng sai số chân nên alert
+     * お茶コン bung ra và chính cú bấm OK ĐÓNG editor — ở đó chờ editor là chờ mãi.
+     */
+    async function settleAfterKaiEnter(requireEditor = false) {
+        if (requireEditor) {
+            const kaiEditor = page.locator('[data-grid-cell$="|4"] input:not([data-footer-cell])')
+            await expect(kaiEditor, 'ô 回 không mở ra sau 確定 nên Enter sẽ mất').toHaveCount(1, {
+                timeout: 20_000,
+            })
+            await expect
+                .poll(() => kaiEditor.evaluate((el) => el === document.activeElement), {
+                    timeout: 10_000,
+                    message: 'ô 回 mở nhưng không nhận focus → Enter không chốt dòng',
+                })
+                .toBe(true)
+        }
+        return settleAfterKaiEnterInner()
+    }
+
+    async function settleAfterKaiEnterInner() {
         // ⚠️ Phải CHỜ ô 回 nhận focus rồi mới Enter. Sau khi alert お茶コン đóng, focus
         // về ô 回 TRỄ; `page.keyboard.press('Enter')` trần bắn trước đó thì không chốt
         // dòng ⇒ Chk_ChkAuto không chạy ⇒ TC-4 đỏ với 「không có dòng 自動算定」 trong khi
@@ -514,7 +548,9 @@ test.describe('診療入力 — 回数 phải theo CalcCnt, không phải hằng
                 'vì app đúng.',
         ).toBe('1')
 
-        await settleAfterKaiEnter()
+        // requireEditor: TC này là TC DUY NHẤT cần cú Enter thật sự chốt dòng, vì chỉ
+        // nó assert chuỗi 自動算定 phía sau.
+        await settleAfterKaiEnter(true)
 
         skipWithReason(slotNms.length === 0, 'không có slot chk_auto để đối chứng')
 

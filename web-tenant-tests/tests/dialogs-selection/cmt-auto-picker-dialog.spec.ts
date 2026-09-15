@@ -3,7 +3,7 @@
  *
  * MỘT DIALOG = MỘT FILE. Trước đây dialog này bị chẻ làm hai spec: một lo phím
  * Enter ở window level, một lo 4 hành vi frm203012 mới port. Cùng dialog, cùng
- * `cmt-auto-picker-dialog.tsx`, cùng bệnh nhân 10, cùng một tiền đề khó dựng
+ * `cmt-auto-picker-dialog.tsx`, cùng một tiền đề khó dựng
  * (`expectAutoPickerOpened`) — sửa dialog này lẽ ra chỉ nên mở một file.
  *
  * Bản gType.Cult (F6, mở từ frm203011) là dialog KHÁC, ở
@@ -13,22 +13,121 @@
  * riêng — hai bên bắt dialog theo hai cách khác nhau, đó là chủ ý (xem chú thích
  * trong từng khối) chứ không phải trùng lặp.
  *
- * ⚠️ TIỀN ĐỀ CHUNG: dialog chỉ TỰ BẬT khi (患者, ngày) CHƯA có 処置 nào được lưu —
- * `AutoSantei` không chạy thì không sinh queue 自動表示. Cách chạy lại khi ngày đã
- * "bẩn" ghi ở `_shared/auto-picker-precondition.ts`.
+ * ⚠️ TIỀN ĐỀ CHUNG: dialog chỉ TỰ BẬT khi `AutoSantei` chạy, mà nó có HAI cửa:
+ *   1. `runAutoSantei` bỏ qua NGÀY đã có 処置 đã lưu (`dayHasRows`).
+ *   2. Queue 自動表示 sinh ra từ 歯科疾患管理料 (116/7) — khoản 月一回 — nên chỉ cần
+ *      MỘT ngày khác trong THÁNG đã tính nó là ngày test không còn gì để hỏi,
+ *      AutoSantei ra bộ 再診 trần và dialog không bao giờ bật.
+ *
+ * ─── DỮ LIỆU: SPEC TỰ DỰNG, KHÔNG MƯỢN ─────────────────────────────────────
+ * Mỗi khối `beforeAll` dựng RIÊNG một bệnh nhân trong dải `SEED_PAT_NO_BASE`
+ * (person + insurance + siga + kon) + ĐÚNG MỘT dòng 歯科再診料 (110) đặt ở
+ * `TRT_DT - 7 ngày`; `afterAll` xoá hẳn cả bệnh nhân.
+ *
+ * ⚠️ Vì sao KHÔNG để bệnh nhân trắng tinh: registration 116/7 có `jiki = 2` =
+ * 「再診月一回」, mà `PassesJiki` (GetAutoSantei2Handler.cs) bỏ qua nó khi
+ * `isFirstVisitMonth` — tức khi lưới tháng có dòng 初診 (100/107). Bệnh nhân trắng
+ * tinh thì AutoSantei bill 初診 ⇒ 歯管 KHÔNG chạy ⇒ không có dialog. Dòng 110 seed
+ * sẵn làm hai việc cùng lúc:
+ *   • `latest_visit` (TreatmentQueries.cs, chỉ đếm ActualDayTrtCds =
+ *     100/107/110/111/333) lùi lại 7 ngày ⇒ `ComputeIsInitialVisitEligible` trả
+ *     false ⇒ ngày test là 再診, không có prompt 「歯科初診料を算定しますか？」.
+ *   • Nó KHÔNG phải 100/107 nên tháng vẫn không có 初診, và KHÔNG phải 116/7 nên
+ *     `MonthHasCode` vẫn false ⇒ 歯管 chạy, sinh queue 自動表示.
+ * Đặt ở ngày khác TRT_DT nên cũng không đóng cửa 1 (`dayHasRows`).
+ *
+ * Vì sao bỏ bệnh nhân 10: bản cũ bám 患者 10 + "hôm nay". Chỉ cần một spec khác
+ * (hoặc chính lần chạy trước) để lại 処置 ở BẤT KỲ ngày nào trong tháng là cửa 2
+ * đóng. Đo ngày 2026-09-14: 患者 10 có 15 dòng ở ngày 11 → ngày 14 chỉ sinh 5 dòng
+ * 再診, không dialog — hai testcase đỏ vì dữ liệu chứ không vì code.
+ *
+ * KHÔNG seed 部位病名行: registration 116/7 trong `mst_trt_auto` không có 必要病名 /
+ * 必要処置 (dis_req = trt_req = 0) nên không cần; mà seed bất kỳ dòng nào vào ĐÚNG
+ * ngày test lại đóng cửa 1.
+ *
+ * ⇒ Spec CÓ GHI DB (chỉ bệnh nhân của chính nó) nên cần `TEST_DB=1`; không có cờ
+ *   thì cả file skip.
  */
 
 import { expect, test, type Page } from '@playwright/test'
 import { expectAutoPickerOpened } from '../_shared/auto-picker-precondition'
+import {
+  SEED_PAT_NO_BASE,
+  dbEnabled,
+  deleteTestPatient,
+  seedTestPatient,
+  seedTreatmentRows,
+} from '../_shared/db'
 import { TODAY_ISO, patNo, trtDt } from '../_shared/env'
 import { makeStep } from '../_shared/step'
 import { ADMIN_USER, JA } from '../_shared/test-data'
 
+// GUIDELINE Rule 18 — skip phải nói rõ lý do; "không chạy" khác hẳn "chạy và pass".
+test.skip(
+  !dbEnabled,
+  'Cần TEST_DB=1: spec tự dựng bệnh nhân test (person/insurance/siga/kon) rồi xoá hẳn, ' +
+    'thay vì mượn bệnh nhân có sẵn mà tháng của nó có thể đã tính 歯科疾患管理料.',
+)
+
+/**
+ * 歯科再診料 — một trong `MonthlyVisitSummaryCodes.ActualDayTrtCds`, tức dòng mang
+ * mã này ĐƯỢC tính là 「lần khám gần nhất」 khi BE quyết 初診 hay 再診.
+ */
+const PRIOR_VISIT_TRT_CD = 110
+/** Lùi bao nhiêu ngày: chỉ cần < 1 tháng để 初診 hết hợp lệ, và khác 0 để không trùng ngày test. */
+const PRIOR_VISIT_OFFSET_DAYS = 7
+
+/**
+ * Lùi một ngày ISO đi `days` ngày. Tự ghép chuỗi chứ KHÔNG dùng `toISOString()`:
+ * hàm đó đổi sang UTC nên ở múi giờ +09 sẽ trả về ngày hôm trước.
+ */
+function isoMinusDays(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00`)
+  d.setDate(d.getDate() - days)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/**
+ * Dựng lại bệnh nhân từ số 0 rồi đặt đúng một lần khám trước — xem khối
+ * 「DỮ LIỆU: SPEC TỰ DỰNG」 ở đầu file.
+ */
+async function seedReExaminationPatient(patNoNum: number, trtDtIso: string): Promise<void> {
+  await seedTestPatient({ patNo: patNoNum })
+  await seedTreatmentRows(patNoNum, isoMinusDays(trtDtIso, PRIOR_VISIT_OFFSET_DAYS), [
+    { trtCd: PRIOR_VISIT_TRT_CD, trtSb: 0, trtCnt: 1, trtPt: 59, dspTrt: '歯科再診料' },
+  ])
+}
+
 // ═══ nguyên văn từ cmt-auto-picker-enter.spec.ts (đã gộp vào file này) ═════════════════════════════════════
 test.describe('Enter ở window level', () => {
 
-const PAT_NO = patNo('10')
+/**
+ * Bệnh nhân của khối này — TỰ DỰNG trong dải `SEED_PAT_NO_BASE` (990000+), xem
+ * khối 「DỮ LIỆU: SPEC TỰ DỰNG」 ở đầu file. Số riêng, không khối/spec nào khác
+ * biết, nên tiền đề không thể bị ai làm bẩn. `TEST_PAT_NO` vẫn ghi đè để soi tay.
+ */
+const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 41))
+/** Ghi đè bằng `TEST_PAT_NO` sang bệnh nhân thật thì KHÔNG seed và KHÔNG xoá. */
+const SELF_SEEDED = Number(PAT_NO) >= SEED_PAT_NO_BASE
+/** "Hôm nay" là an toàn: bệnh nhân được dựng lại từ số 0 trước mỗi lần chạy. */
 const TRT_DT = trtDt(TODAY_ISO)
+
+test.beforeAll(async () => {
+  if (!SELF_SEEDED) return
+  // Dựng lại từ số 0 (helper tự xoá trước khi insert) + 1 lần khám trước ⇒ ngày
+  // test là 再診 và tháng chưa tính 歯管 ⇒ 116/7 chắc chắn sinh queue 自動表示.
+  await seedReExaminationPatient(Number(PAT_NO), TRT_DT)
+})
+
+test.afterAll(async () => {
+  if (!SELF_SEEDED) return
+  // Dọn HẲN: person/insurance/siga/kon + mọi 処置行 mà testcase vừa tạo. Bọc catch
+  // để lỗi dọn dẹp không che mất lỗi thật của testcase.
+  await deleteTestPatient(Number(PAT_NO)).catch((e) =>
+    console.log(`dọn bệnh nhân test ${PAT_NO} hỏng: ${(e as Error).message}`),
+  )
+})
 
 const dialog = (page: Page) => page.getByRole('dialog')
 const header = (page: Page, label: string) =>
@@ -55,8 +154,9 @@ test('カルテ記載選択 — Enter window-level (TC-1/2/3/4)', async ({ page 
 
   await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
 
-  // Confirm 「歯科初診料を算定しますか？」 phải bấm Yes thì AutoSantei mới chạy →
-  // mới sinh queue 自動表示 → mới có カルテ記載選択.
+  // Bệnh nhân seed là 再診 (có lần khám 7 ngày trước) nên prompt 「歯科初診料を算定
+  // しますか？」 KHÔNG hiện. Giữ nhánh này để `TEST_PAT_NO` trỏ tay sang bệnh nhân
+  // khác vẫn chạy được.
   const shoshinConfirm = page.getByRole('button', { name: 'Yes' })
   await shoshinConfirm.waitFor({ state: 'visible', timeout: 30000 }).catch(() => { })
   if (await shoshinConfirm.count()) await shoshinConfirm.click()
@@ -202,8 +302,32 @@ test('カルテ記載選択 — Enter window-level (TC-1/2/3/4)', async ({ page 
 // ═══ nguyên văn từ cmt-auto-picker-parity.spec.ts (đã gộp vào file này) ════════════════════════════════════
 test.describe('F1 部位 / getAsta / btnDummy / End・ESC 確定', () => {
 
-const PAT_NO = patNo('10')
+/**
+ * Bệnh nhân của khối này — TỰ DỰNG trong dải `SEED_PAT_NO_BASE` (990000+), xem
+ * khối 「DỮ LIỆU: SPEC TỰ DỰNG」 ở đầu file. Số riêng, không khối/spec nào khác
+ * biết, nên tiền đề không thể bị ai làm bẩn. `TEST_PAT_NO` vẫn ghi đè để soi tay.
+ */
+const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 42))
+/** Ghi đè bằng `TEST_PAT_NO` sang bệnh nhân thật thì KHÔNG seed và KHÔNG xoá. */
+const SELF_SEEDED = Number(PAT_NO) >= SEED_PAT_NO_BASE
+/** "Hôm nay" là an toàn: bệnh nhân được dựng lại từ số 0 trước mỗi lần chạy. */
 const TRT_DT = trtDt(TODAY_ISO)
+
+test.beforeAll(async () => {
+  if (!SELF_SEEDED) return
+  // Dựng lại từ số 0 (helper tự xoá trước khi insert) + 1 lần khám trước ⇒ ngày
+  // test là 再診 và tháng chưa tính 歯管 ⇒ 116/7 chắc chắn sinh queue 自動表示.
+  await seedReExaminationPatient(Number(PAT_NO), TRT_DT)
+})
+
+test.afterAll(async () => {
+  if (!SELF_SEEDED) return
+  // Dọn HẲN: person/insurance/siga/kon + mọi 処置行 mà testcase vừa tạo. Bọc catch
+  // để lỗi dọn dẹp không che mất lỗi thật của testcase.
+  await deleteTestPatient(Number(PAT_NO)).catch((e) =>
+    console.log(`dọn bệnh nhân test ${PAT_NO} hỏng: ${(e as Error).message}`),
+  )
+})
 
 /**
  * CSS chứ không `getByRole('dialog')`: Radix AlertDialog gọi `hideOthers` khi
@@ -276,9 +400,8 @@ test('カルテ記載選択 自動表示 — F1 部位 / getAsta / btnDummy / En
 
   await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
 
-  // Phải bấm Yes cho 「歯科初診料を算定しますか？」 thì AutoSantei mới chạy → mới
-  // sinh hàng đợi 自動表示 → mới có カルテ記載選択. (Ngược hẳn với
-  // dialogs-selection/karte-selection-dialog.spec.ts: ở đó phải bấm No để KHỎI bung dialog này.)
+  // Bệnh nhân seed là 再診 nên prompt 「歯科初診料を算定しますか？」 KHÔNG hiện —
+  // giữ nhánh này cho trường hợp trỏ tay `TEST_PAT_NO` sang bệnh nhân khác.
   const shoshinConfirm = page.getByRole('button', { name: 'Yes' })
   await shoshinConfirm.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {})
   if (await shoshinConfirm.count()) await shoshinConfirm.click()
