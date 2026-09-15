@@ -52,7 +52,12 @@ import {
     seedTreatmentRows,
     withDb,
 } from '../_shared/db'
-import { GRID_LOAD_TIMEOUT, allowSave } from '../_shared/env'
+import {
+    GRID_LOAD_ATTEMPTS,
+    GRID_LOAD_TIMEOUT,
+    GRID_RELOAD_TIMEOUT,
+    allowSave,
+} from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
@@ -88,25 +93,76 @@ test.describe('枝番 (pat_br) — tháng bắc qua 2 枝番', () => {
     let disposeOverlays: (() => Promise<void>) | undefined
     let seeded = false
 
-    async function readMonthlyCopayments(): Promise<DayLine[]> {
-        const waiter = page.waitForResponse((r) => MONTHLY_COPAYMENTS_URL.test(r.url()), {
-            timeout: GRID_LOAD_TIMEOUT,
-        })
-        await page.goto(`/treatments/${PAT_NO}?trtDt=${DT_BR2}`, { waitUntil: 'domcontentloaded' })
-        const res = await waiter
-        const body = (await res.json()) as { data?: { days?: DayLine[] } }
-        await expect(page.getByText('合計:').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
-        return (body.data?.days ?? []).map((d) => ({
+    /** 日計 của lần `monthly-copayments` gần nhất + số thứ tự để biết đã có lần mới. */
+    let lastDays: DayLine[] | null = null
+    let daysSeq = 0
+    const onResponse = async (res: import('@playwright/test').Response) => {
+        if (!MONTHLY_COPAYMENTS_URL.test(res.url())) return
+        const body = (await res.json().catch(() => null)) as
+            | { data?: { days?: DayLine[] } }
+            | null
+        if (!body?.data?.days) return
+        lastDays = body.data.days.map((d) => ({
             day: Number(d.day),
             insScore: Number(d.insScore),
             insPrice: Number(d.insPrice),
         }))
+        daysSeq++
+    }
+
+    /**
+     * 日計 của cả tháng, đọc thẳng từ response `monthly-copayments`.
+     *
+     * `openOn` phải KHÁC nhau giữa các lần gọi trong cùng một lượt chạy:
+     * `monthlyCopaymentItem` khoá theo `{ patNo, trtDt }` với `staleTime` 30s, nên mở
+     * lại đúng ngày cũ thì react-query phục vụ từ cache và KHÔNG có request nào để
+     * chờ — lần chạy đầu đã treo 60s ở đúng chỗ này. Đổi sang một ngày khác trong
+     * CÙNG tháng là đủ (handler tự nới ra cả tháng nên `days` không đổi).
+     */
+    /**
+     * Mở 診療入力 ở `openOn`, thử lại vài lần. Cần retry vì đây là Vite **dev**
+     * server VÀ vì sau F9 登録 app tự điều hướng rời màn — lượt goto ngay sau đó đã
+     * gặp thật cảnh trang trắng.
+     */
+    async function openEntry(openOn: string): Promise<void> {
+        for (let attempt = 1; attempt <= GRID_LOAD_ATTEMPTS; attempt++) {
+            await page.goto(`/treatments/${PAT_NO}?trtDt=${openOn}`, {
+                waitUntil: 'domcontentloaded',
+            })
+            const ok = await page
+                .getByText('合計:')
+                .first()
+                .waitFor({ state: 'visible', timeout: GRID_RELOAD_TIMEOUT })
+                .then(() => true)
+                .catch(() => false)
+            if (ok) return
+            console.log(`lưới chưa hiện (lần ${attempt}/${GRID_LOAD_ATTEMPTS}) — tải lại`)
+        }
+        await expect(page.getByText('合計:').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
+    }
+
+    /**
+     * 日計 của cả tháng.
+     *
+     * Body được đọc NGAY trong listener chứ không giữ `Response` rồi `json()` sau:
+     * `openEntry` có thể goto lại (retry) và điều hướng làm Chromium vứt body của
+     * response cũ — đã gặp thật: `Protocol error (Network.getResponseBody): No
+     * resource with given identifier found`.
+     */
+    async function readMonthlyCopayments(openOn: string): Promise<DayLine[]> {
+        const before = daysSeq
+        await openEntry(openOn)
+        await expect
+            .poll(() => daysSeq, { timeout: GRID_LOAD_TIMEOUT })
+            .toBeGreaterThan(before)
+        return lastDays ?? []
     }
 
     test.beforeAll(async ({ authedPage }) => {
         page = authedPage
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
+        page.on('response', onResponse)
 
         if (!dbEnabled || !allowSave) return
 
@@ -159,6 +215,8 @@ test.describe('枝番 (pat_br) — tháng bắc qua 2 枝番', () => {
     })
 
     test.afterAll(async () => {
+        // Page dùng chung cả worker → listener KHÔNG tự mất, phải gỡ tay (Rule 19.1).
+        page.off('response', onResponse)
         if (seeded) await deleteTestPatient(PAT_NO).catch(() => {})
         await disposeOverlays?.()
         await releaseSharedPage(page)
@@ -169,7 +227,7 @@ test.describe('枝番 (pat_br) — tháng bắc qua 2 枝番', () => {
         skipWithReason(!allowSave, 'TEST_ALLOW_SAVE chưa bật — spec này dựng/xoá bệnh nhân test')
         if (!dbEnabled || !allowSave) return
 
-        const days = await readMonthlyCopayments()
+        const days = await readMonthlyCopayments(DT_BR2)
         console.log(`monthly-copayments: ${JSON.stringify(days)}`)
         await step()
 
@@ -205,9 +263,28 @@ test.describe('枝番 (pat_br) — tháng bắc qua 2 枝番', () => {
 
         // Màn hình mở ở DT_BR2 ⇒ 枝番 theo 診療日 của MÀN HÌNH là 2. Bản cũ đóng số 2
         // lên mọi dòng của tháng, xoá mất 枝番 1 của ngày 4.
-        await page.goto(`/treatments/${PAT_NO}?trtDt=${DT_BR2}`, { waitUntil: 'domcontentloaded' })
-        await expect(page.getByText('合計:').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
+        await openEntry(DT_BR2)
+
+        // ⚠️ PHẢI chờ CHÍNH các dòng 処置 hiện ra, không chỉ chờ footer 合計.
+        // Lần chạy đầu bấm F9 ngay sau khi thấy 合計: — lúc đó `currentRows` còn rỗng,
+        // và bulk-save xoá mềm cả tháng rồi chèn lại 0 dòng ⇒ trn_trn trống trơn,
+        // testcase báo "mất dòng" trong khi lỗi là ở chính spec.
+        for (const nm of ['E2E 枝番1', 'E2E 枝番2']) {
+            await expect(
+                page.getByText(nm).first(),
+                `dòng "${nm}" chưa lên lưới — F9 lúc này sẽ lưu một tháng RỖNG`,
+            ).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
+        }
         await step()
+
+        // Soi luôn payload để khi đỏ biết ngay là lưới rỗng hay 枝番 sai.
+        let savedRows: { day: number; patBr?: number }[] = []
+        const capture = (req: import('@playwright/test').Request) => {
+            if (!BULK_SAVE_URL.test(req.url()) || req.method() !== 'POST') return
+            const b = req.postDataJSON() as { rows?: { day: number; patBr?: number }[] } | null
+            savedRows = b?.rows ?? []
+        }
+        page.on('request', capture)
 
         const saved = page
             .waitForResponse(
@@ -229,8 +306,11 @@ test.describe('枝番 (pat_br) — tháng bắc qua 2 枝番', () => {
             break
         }
         const res = await saved
-        skipWithReason(res === null, 'F9 không gửi bulk-save (lưới không dirty / bị cổng chặn)')
+        page.off('request', capture)
+        expect(res, 'F9 không gửi bulk-save (lưới không dirty / bị cổng chặn)').not.toBeNull()
         if (res === null) return
+        console.log(`bulk-save gửi ${savedRows.length} dòng: ${JSON.stringify(savedRows.map((r) => ({ day: r.day, patBr: r.patBr })))}`)
+        expect(savedRows.length, 'F9 gửi lưới RỖNG — spec bấm quá sớm, không phải lỗi app').toBeGreaterThan(0)
         await step()
 
         const rows = await withDb(async (c) => {
@@ -263,7 +343,9 @@ test.describe('枝番 (pat_br) — tháng bắc qua 2 枝番', () => {
         skipWithReason(!allowSave, 'TEST_ALLOW_SAVE chưa bật')
         if (!dbEnabled || !allowSave) return
 
-        const days = await readMonthlyCopayments()
+        // Ngày KHÁC lần trước (xem doc của readMonthlyCopayments).
+        const days = await readMonthlyCopayments(DT_BR1)
+        console.log(`monthly-copayments sau F9: ${JSON.stringify(days)}`)
         const d1 = days.find((d) => d.day === DAY_BR1)
         const d2 = days.find((d) => d.day === DAY_BR2)
         expect(d1, `ngày ${DAY_BR1} biến mất sau khi lưu`).toBeDefined()

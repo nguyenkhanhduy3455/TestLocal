@@ -18,6 +18,18 @@
  *     lines.Add(new(KmCd: accCode, Score: dayInsScore, ClaimAmt: insPrice, …))
  *     // dayInsScore = tổng unitOverrides (MỚI) — claim_amt = insPriceOverride (CŨ)
  *
+ * ─── DỮ LIỆU: spec TỰ DỰNG, tự dọn ───────────────────────────────────────────
+ * Không mượn bệnh nhân có sẵn. Lần chạy đầu đã cho thấy vì sao: mặc định trỏ vào
+ * hôm nay, 12138 không có 処置 nào của ngày đó ⇒ cả 4 testcase SKIP, nhìn như
+ * "pass" mà thật ra chưa đo gì. Bệnh nhân riêng + 処置 tự seed thì mọi lượt chạy
+ * đều xuất phát từ đúng một trạng thái.
+ *
+ * `bur_rate` PHẢI đặt tay: `seedTestPatient` để NULL ⇒ 一部負担金 = 0 ⇒
+ * `insLineNonEmpty` false ⇒ không có dòng `unpaid` nào ⇒ spec mất đối tượng đo.
+ *
+ * Dọn dẹp ở `afterAll`: `unpaid` của bệnh nhân này (F8 sinh ra) rồi
+ * `deleteTestPatient` (person/insurance/siga/kon/trn_trn).
+ *
  * ─── FACT lấy từ source (Rule 21) ────────────────────────────────────────────
  *  - components/payment-designation-dialog.tsx
  *      · `HANEI_DEBOUNCE_MS = 200`.
@@ -33,32 +45,47 @@
  *    từ outcome của dialog, áp dụng cho CẢ register / unspecified / back.
  *  - Dialog chỉ bung khi `accConfig.receRcvFlg === 1` → spec vá response thật.
  *
- * ─── Chạy ────────────────────────────────────────────────────────────────────
  * `serial` + page dùng chung (Rule 19): thứ tự test có ý nghĩa, chạy lẻ một test
  * ở giữa sẽ fail. Không có trace/video tự động.
- *
- * Mặc định trỏ vào bệnh nhân + ngày CÓ 処置 của tháng hiện hành (Rule 18); chưa
- * chắc dataset nào cũng có → có `TEST_PAT_NO` / `TEST_TRT_DT` để chỉnh.
- * Testcase GHI DB (bấm 登録 thật) nằm sau `TEST_ALLOW_SAVE=1` (Rule 18.1).
  */
 
 import { type Locator, type Page, type Route } from '@playwright/test'
 
-import { dbEnabled, withDb } from '../_shared/db'
-import { GRID_LOAD_TIMEOUT, allowSave, patNo, trtDt } from '../_shared/env'
+import {
+    SEED_PAT_NO_BASE,
+    dbEnabled,
+    deleteTestPatient,
+    seedTestPatient,
+    seedTreatmentRows,
+    withDb,
+} from '../_shared/db'
+import {
+    GRID_LOAD_ATTEMPTS,
+    GRID_LOAD_TIMEOUT,
+    GRID_RELOAD_TIMEOUT,
+    TODAY_ISO,
+    allowSave,
+    trtDt,
+} from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
 
-const PAT_NO = patNo('12138')
-const TRT_DT = trtDt(new Date().toISOString().slice(0, 10))
+/** Bệnh nhân riêng của spec này — +5 để không đụng spec seed khác. */
+const PAT_NO = Number(process.env.TEST_PAT_NO ?? SEED_PAT_NO_BASE + 5)
+/** Ngày test = hôm nay ⇒ luôn nằm trong tháng hiện hành của lưới. */
+const TRT_DT = trtDt(TODAY_ISO)
+/** 負担割合 của bệnh nhân seed — khác 0 để 一部負担金 > 0 (xem doc đầu file). */
+const BUR_RATE = 30
 
 const ACC_CONFIG_URL = /\/tenant\/master\/acc-config(\?|$)/
 const RECOMPUTE_URL = /\/tenant\/treatment\/accounting\/recompute-copayment(\?|$)/
 const INSERT_UNPAID_URL = /\/tenant\/treatment\/accounting\/insert-unpaid(\?|$)/
 
-/** Cột 日 của lưới (treatment-entry-shared RegiCol.day). */
+/** Cột 日 của lưới (treatment-entry-shared RegiCol.day = 0). */
 const COL_DAY = 0
+/** Dòng của tháng CŨ (read-only) có key dạng `<recordIdx>-<itemIdx>`. */
+const HISTORY_KEY_RE = /^\d+-\d+$/
 /** Ô 検査 — hàng thứ 4 trong UNIT_ROW_LABELS. */
 const UNIT_IDX_KENSA = 3
 
@@ -71,6 +98,9 @@ test.describe('入金指定 — F キー đợi 反映 rồi mới chốt', () =
     let page: Page
     let step: () => Promise<void>
     let disposeOverlays: (() => Promise<void>) | undefined
+    let seeded = false
+    let onRequest: (req: import('@playwright/test').Request) => void
+    let onResponse: (res: import('@playwright/test').Response) => Promise<void>
 
     const recomputeCalls: RecomputeCall[] = []
     const insertCalls: InsertCall[] = []
@@ -91,10 +121,20 @@ test.describe('入金指定 — F キー đợi 反映 rồi mới chốt', () =
     /**
      * 14 ô 保険点数 — CSS chứ không `filter({ hasNot })`: ô 入金指定額 cùng role
      * `spinbutton` và `hasNot` xét HẬU DUỆ, mà `<input>` không có hậu duệ nên lọc
-     * kiểu đó không loại được gì (Rule 12.1). Selector này bám cấu trúc thật
-     * (`type="number"` + `id` của ô 入金指定額), không bám class Tailwind.
+     * kiểu đó không loại được gì (Rule 12.1).
      */
     const moneyBoxes = () => nyukin().locator('input[type="number"]:not(#txt-inp-payment)')
+
+    /** Lần 反映 ứng với ĐÚNG tổng điểm `score` — chờ tới khi response của nó về. */
+    async function recomputeFor(score: number): Promise<RecomputeCall> {
+        await expect
+            .poll(() => recomputeCalls.filter((c) => c.customInsScore === score).length, {
+                timeout: 15_000,
+            })
+            .toBeGreaterThan(0)
+        const hit = recomputeCalls.filter((c) => c.customInsScore === score)
+        return hit[hit.length - 1]!
+    }
 
     const appeared = async (loc: Locator, ms: number) =>
         loc
@@ -115,33 +155,71 @@ test.describe('入金指定 — F キー đợi 反映 rồi mới chốt', () =
         }
     }
 
+    /**
+     * Mở 診療入力. Thử lại tới `GRID_LOAD_ATTEMPTS` lần: đây là Vite **dev** server và
+     * đã gặp thật một lần trang trắng giữa suite (lượt goto ngay sau khi chuỗi F8
+     * điều hướng sang 窓口精算). Idiom này đã có sẵn trong repo cho đúng cảnh đó.
+     */
     async function openEntry() {
-        await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
+        for (let attempt = 1; attempt <= GRID_LOAD_ATTEMPTS; attempt++) {
+            await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, {
+                waitUntil: 'domcontentloaded',
+            })
+            const ok = await page
+                .getByText('合計:')
+                .first()
+                .waitFor({ state: 'visible', timeout: GRID_RELOAD_TIMEOUT })
+                .then(() => true)
+                .catch(() => false)
+            if (ok) {
+                await drainSantei()
+                return
+            }
+            console.log(`lưới chưa hiện (lần ${attempt}/${GRID_LOAD_ATTEMPTS}) — tải lại`)
+        }
         await expect(page.getByText('合計:').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
         await drainSantei()
+    }
+
+    /**
+     * Key của một dòng thuộc 会計対象日.
+     *
+     * ⚠️ PHẢI chờ ô 日 đầu tiên hiện ra rồi mới `evaluateAll`: `evaluateAll` là ảnh
+     * chụp tức thời, KHÔNG auto-wait (Rule 10.8). Lần chạy đầu của spec này trượt
+     * đúng ở đây — lưới chưa vẽ xong nên danh sách rỗng và testcase tự SKIP với lý
+     * do "không có dòng nào của ngày X", nghe như lỗi dữ liệu.
+     */
+    async function findDayRowKey(): Promise<string | null> {
+        const cells = page.locator(`[data-grid-cell$="|${COL_DAY}"]`)
+        await expect(cells.first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
+
+        const raw = await cells.evaluateAll((els) =>
+            els.map((e) => ({
+                key: (e.getAttribute('data-grid-cell') ?? '').replace(/\|\d+$/, ''),
+                text: (e.textContent ?? '').trim(),
+            })),
+        )
+        const wantDay = String(Number(TRT_DT.slice(8, 10)))
+        let carried = ''
+        const seen: string[] = []
+        for (const r of raw) {
+            if (r.key.includes(':')) continue // dòng 日計 footer
+            if (HISTORY_KEY_RE.test(r.key)) continue // tháng cũ, read-only
+            // Lưới bỏ trống số ngày ở các dòng lặp lại → cộng dồn (BẪY 1).
+            if (/^\d+$/.test(r.text)) carried = String(Number(r.text))
+            if (carried === '') continue
+            seen.push(carried)
+            if (carried === wantDay) return r.key
+        }
+        console.log(`cột 日 đang có: [${[...new Set(seen)].join(', ')}] — cần ${wantDay}`)
+        return null
     }
 
     /** Đặt con trỏ vào một dòng của 会計対象日 rồi F8 cho tới khi 入金指定 bung. */
     async function openNyukinViaF8(): Promise<boolean> {
         await openEntry()
 
-        const wantDay = String(Number(TRT_DT.slice(8, 10)))
-        const rows = await page.locator(`[data-grid-cell$="|${COL_DAY}"]`).evaluateAll((els) =>
-            els.map((e) => ({
-                key: (e.getAttribute('data-grid-cell') ?? '').replace(/\|\d+$/, ''),
-                text: (e.textContent ?? '').trim(),
-            })),
-        )
-        let carried = ''
-        let targetKey: string | null = null
-        for (const r of rows) {
-            if (r.key.includes(':')) continue
-            if (/^\d+$/.test(r.text)) carried = String(Number(r.text))
-            if (carried === wantDay) {
-                targetKey = r.key
-                break
-            }
-        }
+        const targetKey = await findDayRowKey()
         if (targetKey === null) return false
 
         await page.locator(`[data-grid-cell="${targetKey}|${COL_DAY}"]`).click()
@@ -151,25 +229,39 @@ test.describe('入金指定 — F キー đợi 反映 rồi mới chốt', () =
         await page.keyboard.press('F8')
 
         // Trả lời mọi cổng đứng TRƯỚC 入金指定 (modAcc.LetAccData2).
-        for (let i = 0; i < 8; i++) {
-            if (await nyukin().isVisible().catch(() => false)) return true
-            const gates: [Locator, string | RegExp][] = [
-                [checkGate(), 'OK'],
-                [dirtyGate(), 'No'],
-                [dateGate(), 'OK'],
-                [createGate(), /^(No|いいえ)$/],
-                [chgAccGate(), /^(No|いいえ)$/],
+        //
+        // ⚠️ Phải chờ BẤT KỲ hộp nào, không phải riêng 入金指定. Bản đầu của spec chờ
+        // đúng `nyukin()`, nên khi 会計前チェック bung trước thì hết 15s rồi thoát vòng
+        // và kết luận nhầm là "chuỗi F8 không chạy".
+        const anyBox = page.locator('[role="dialog"], [role="alertdialog"]')
+        const handled: string[] = []
+        for (let i = 0; i < 12; i++) {
+            if (await nyukin().isVisible().catch(() => false)) {
+                console.log(`chuỗi F8 đã qua: [${handled.join(' → ')}] → 入金指定`)
+                return true
+            }
+            if (!(await appeared(anyBox, 15_000))) break
+
+            const gates: [string, Locator, string | RegExp][] = [
+                ['会計前チェック', checkGate(), 'OK'],
+                ['処置データ変更', dirtyGate(), 'No'],
+                ['日付チェック', dateGate(), 'OK'],
+                ['未精算作成', createGate(), /^(No|いいえ)$/],
+                ['計上', chgAccGate(), /^(No|いいえ)$/],
             ]
             let acted = false
-            for (const [box, name] of gates) {
+            for (const [nm, box, name] of gates) {
                 if (await box.isVisible().catch(() => false)) {
                     await btn(box, name).first().click()
+                    handled.push(nm)
                     acted = true
                     break
                 }
             }
-            if (!acted && !(await appeared(nyukin(), 15_000))) break
+            // Hộp lạ (算定 v.v.) — để overlay handler dọn, vòng sau xét lại.
+            if (!acted) await drainSantei()
         }
+        console.log(`chuỗi F8 dừng lại sau: [${handled.join(' → ')}] — 入金指定 KHÔNG bung`)
         return await nyukin().isVisible().catch(() => false)
     }
 
@@ -197,6 +289,22 @@ test.describe('入金指定 — F キー đợi 反映 rồi mới chốt', () =
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
 
+        if (dbEnabled && allowSave) {
+            await seedTestPatient({ patNo: PAT_NO, accRate: BUR_RATE })
+            await withDb((c) =>
+                c.query(`UPDATE insurance SET bur_rate = $2, acc_rate = $2 WHERE pat_no = $1`, [
+                    PAT_NO,
+                    BUR_RATE,
+                ]),
+            )
+            await seedTreatmentRows(PAT_NO, TRT_DT, [
+                { trtCd: 110, trtPt: 45, dspTrt: 'E2E 歯科再診料' },
+                { trtCd: 400, trtPt: 100, dspTrt: 'E2E 検査' },
+            ])
+            seeded = true
+            console.log(`đã seed bệnh nhân ${PAT_NO}, 2 dòng 処置 ngày ${TRT_DT}`)
+        }
+
         // 会計設定 — chỉ ép ĐÚNG một trường, giữ nguyên phần còn lại của response thật.
         await page.route(ACC_CONFIG_URL, async (route: Route) => {
             const res = await route.fetch()
@@ -209,49 +317,62 @@ test.describe('入金指定 — F キー đợi 反映 rồi mới chốt', () =
             })
         })
 
-        page.on('request', (req) => {
+        onRequest = (req) => {
             if (req.method() !== 'POST') return
-            if (RECOMPUTE_URL.test(req.url())) {
-                const b = req.postDataJSON() as { customInsScore?: number } | null
-                recomputeCalls.push({ customInsScore: Number(b?.customInsScore ?? -1), insPrice: -1 })
-            }
-            if (INSERT_UNPAID_URL.test(req.url())) {
-                const b = req.postDataJSON() as InsertCall | null
-                insertCalls.push({
-                    insPriceOverride: b?.insPriceOverride ?? null,
-                    unitOverrides: b?.unitOverrides ?? null,
-                })
-            }
-        })
-        page.on('response', async (res) => {
+            if (!INSERT_UNPAID_URL.test(req.url())) return
+            const b = req.postDataJSON() as InsertCall | null
+            insertCalls.push({
+                insPriceOverride: b?.insPriceOverride ?? null,
+                unitOverrides: b?.unitOverrides ?? null,
+            })
+        }
+        page.on('request', onRequest)
+        // 反映 ghép request↔response NGAY TẠI response, đọc body của chính
+        // `res.request()`. Bản đầu đẩy request vào mảng rồi để response điền vào
+        // "phần tử cuối" — hai lần 反映 chồng nhau là điền nhầm ô, và assert đọc phải
+        // `insPrice = -1` của ô chưa kịp điền.
+        onResponse = async (res) => {
             if (!RECOMPUTE_URL.test(res.url())) return
+            const req = res.request()
+            if (req.method() !== 'POST') return
+            const rb = req.postDataJSON() as { customInsScore?: number } | null
             const body = (await res.json().catch(() => null)) as
                 | { data?: { insPrice?: number } }
                 | null
-            const slot = recomputeCalls[recomputeCalls.length - 1]
-            if (slot && body?.data) slot.insPrice = Number(body.data.insPrice ?? -1)
-        })
+            recomputeCalls.push({
+                customInsScore: Number(rb?.customInsScore ?? -1),
+                insPrice: Number(body?.data?.insPrice ?? -1),
+            })
+        }
+        page.on('response', onResponse)
     })
 
     test.afterAll(async () => {
+        // Page dùng chung cả worker → listener KHÔNG tự mất, phải gỡ tay (Rule 19.1).
+        page.off('request', onRequest)
+        page.off('response', onResponse)
         await closeChain().catch(() => {})
+        if (seeded) {
+            // F8 sinh dòng `unpaid` — `deleteTestPatient` không đụng bảng đó.
+            await withDb((c) => c.query(`DELETE FROM unpaid WHERE pat_no = $1`, [PAT_NO])).catch(
+                () => {},
+            )
+            await deleteTestPatient(PAT_NO).catch(() => {})
+        }
         await disposeOverlays?.()
         await releaseSharedPage(page) // ⚠️ KHÔNG page.close()
     })
 
     test('TC-HANEI-1 — 登録 (F9) ngay sau khi gõ: claim_amt và score CÙNG thế hệ', async () => {
-        skipWithReason(
-            !allowSave,
-            'TEST_ALLOW_SAVE chưa bật — 登録 ghi thật xuống unpaid nên không chạy mặc định',
-        )
-        if (!allowSave) return
+        skipWithReason(!dbEnabled, 'TEST_DB_* chưa cấu hình — spec tự dựng bệnh nhân nên cần DB')
+        skipWithReason(!allowSave, 'TEST_ALLOW_SAVE chưa bật — 登録 ghi thật xuống unpaid')
+        if (!dbEnabled || !allowSave) return
 
         recomputeCalls.length = 0
         insertCalls.length = 0
 
         const opened = await openNyukinViaF8()
-        skipWithReason(!opened, `lưới không có dòng nào của ngày ${TRT_DT} — đổi TEST_TRT_DT`)
-        if (!opened) return
+        expect(opened, '入金指定 không bung — xem log cột 日 ở trên').toBe(true)
 
         await expect(moneyBoxes().nth(UNIT_IDX_KENSA)).toBeVisible({ timeout: 15_000 })
         await step()
@@ -263,37 +384,38 @@ test.describe('入金指定 — F キー đợi 反映 rồi mới chốt', () =
 
         // Dialog chỉ đóng SAU khi 反映 xong — đó chính là hành vi đang đo.
         await expect(nyukin()).toBeHidden({ timeout: 20_000 })
-
-        await expect
-            .poll(() => insertCalls.length, { timeout: 20_000 })
-            .toBeGreaterThan(0)
+        await expect.poll(() => insertCalls.length, { timeout: 20_000 }).toBeGreaterThan(0)
 
         expect(recomputeCalls.length, '反映 phải chạy ít nhất 1 lần trước khi chốt').toBeGreaterThan(0)
-        const last = recomputeCalls[recomputeCalls.length - 1]!
         const ins = insertCalls[insertCalls.length - 1]!
 
-        expect(last.customInsScore, '反映 phải gửi tổng 14 ô SAU khi gõ').toBe(300)
         expect(
             ins.unitOverrides?.[UNIT_IDX_KENSA],
             'insert-unpaid phải mang đúng ô 検査 vừa gõ',
         ).toBe(300)
+        // 14 ô KHÔNG bắt đầu từ 0: chúng seed từ `summary.unitScores` (port
+        // modAcc.Get_AccUnit) nên đã mang điểm của 処置 trong ngày. Bất biến cần chốt
+        // là "一部負担金 gửi lên chính là kết quả của lần 反映 ứng với BỘ Ô ĐANG GỬI",
+        // chứ không phải một con số tuyệt đối.
+        const unitSum = (ins.unitOverrides ?? []).reduce((a, b) => a + b, 0)
+        const matching = await recomputeFor(unitSum)
         expect(
             ins.insPriceOverride,
-            '一部負担金 gửi lên phải là số của LẦN 反映 CUỐI — không phải số cũ trước khi gõ. ' +
-                'Lệch ở đây nghĩa là unpaid.score và unpaid.claim_amt khác thế hệ nhau.',
-        ).toBe(last.insPrice)
+            '一部負担金 gửi lên phải là số của lần 反映 ứng với đúng bộ 14 ô này — không ' +
+                'phải số cũ trước khi gõ. Lệch ở đây nghĩa là unpaid.score và ' +
+                'unpaid.claim_amt khác thế hệ nhau.',
+        ).toBe(matching.insPrice)
     })
 
     test('TC-HANEI-2 — 指定なし (F1) cũng đợi 反映', async () => {
-        skipWithReason(!allowSave, 'TEST_ALLOW_SAVE chưa bật')
-        if (!allowSave) return
+        skipWithReason(!dbEnabled || !allowSave, 'cần TEST_DB_* + TEST_ALLOW_SAVE')
+        if (!dbEnabled || !allowSave) return
 
         recomputeCalls.length = 0
         insertCalls.length = 0
 
         const opened = await openNyukinViaF8()
-        skipWithReason(!opened, 'không mở được 入金指定 lần 2')
-        if (!opened) return
+        expect(opened, 'không mở được 入金指定 lần 2').toBe(true)
 
         await expect(moneyBoxes().nth(0)).toBeVisible({ timeout: 15_000 })
         await moneyBoxes().nth(0).fill('150')
@@ -303,16 +425,21 @@ test.describe('入金指定 — F キー đợi 反映 rồi mới chốt', () =
         await expect(nyukin()).toBeHidden({ timeout: 20_000 })
         await expect.poll(() => insertCalls.length, { timeout: 20_000 }).toBeGreaterThan(0)
 
-        const last = recomputeCalls[recomputeCalls.length - 1]!
         const ins = insertCalls[insertCalls.length - 1]!
         expect(ins.unitOverrides?.[0]).toBe(150)
-        expect(ins.insPriceOverride, 'F1 dùng chung buildBaseOutcome với F9').toBe(last.insPrice)
+        const unitSum = (ins.unitOverrides ?? []).reduce((a, b) => a + b, 0)
+        const matching = await recomputeFor(unitSum)
+        expect(ins.insPriceOverride, 'F1 dùng chung buildBaseOutcome với F9').toBe(
+            matching.insPrice,
+        )
     })
 
     test('TC-HANEI-3 — 反映 lỗi mạng: dialog Ở NGUYÊN, không ghi unpaid', async () => {
+        skipWithReason(!dbEnabled || !allowSave, 'cần TEST_DB_* + TEST_ALLOW_SAVE')
+        if (!dbEnabled || !allowSave) return
+
         const opened = await openNyukinViaF8()
-        skipWithReason(!opened, 'không mở được 入金指定 lần 3')
-        if (!opened) return
+        expect(opened, 'không mở được 入金指定 lần 3').toBe(true)
 
         await expect(moneyBoxes().nth(UNIT_IDX_KENSA)).toBeVisible({ timeout: 15_000 })
 
@@ -336,32 +463,65 @@ test.describe('入金指定 — F キー đợi 反映 rồi mới chốt', () =
         await closeChain()
     })
 
-    test('TC-HANEI-4 — unpaid: score và claim_amt của dòng vừa ghi khớp nhau', async () => {
-        skipWithReason(!dbEnabled, 'TEST_DB_* chưa cấu hình — bỏ phần đối chiếu DB')
-        skipWithReason(!allowSave, 'TEST_ALLOW_SAVE chưa bật')
+    test('TC-HANEI-4 — unpaid: score bằng tổng 14 ô đã gõ', async () => {
+        skipWithReason(!dbEnabled || !allowSave, 'cần TEST_DB_* + TEST_ALLOW_SAVE')
         if (!dbEnabled || !allowSave) return
 
-        const ins = insertCalls.find((c) => c.unitOverrides !== null)
-        skipWithReason(ins === undefined, 'chưa có lượt 登録 nào ở các TC trên để đối chiếu')
-        if (ins === undefined) return
+        // Tự chạy MỘT lượt của riêng mình thay vì đọc ké kết quả của TC trước:
+        // TC-3 kết thúc ngay sau cú F10 戻る nên POST insert-unpaid của nó có thể còn
+        // đang bay, và mỗi lượt F8 lại `clear-unpaid` xoá dòng của lượt trước — đọc
+        // ké là chắc chắn bập bênh.
+        insertCalls.length = 0
+        const opened = await openNyukinViaF8()
+        expect(opened, 'không mở được 入金指定 lần 4').toBe(true)
 
-        const rows = await withDb(async (c) => {
-            const r = await c.query<{ score: string; claim_amt: string }>(
-                `SELECT score, claim_amt FROM unpaid
-                  WHERE pat_no = $1 AND trt_dt = $2 AND deleted_at IS NULL
-                  ORDER BY trt_cnt`,
-                [Number(PAT_NO), TRT_DT],
+        await expect(moneyBoxes().nth(UNIT_IDX_KENSA)).toBeVisible({ timeout: 15_000 })
+        await moneyBoxes().nth(UNIT_IDX_KENSA).fill('250')
+        await btn(nyukin(), /F9\s*登録/).first().click()
+        await expect(nyukin()).toBeHidden({ timeout: 20_000 })
+
+        // Mốc tin cậy là RESPONSE của bước ghi, không phải việc dialog đóng.
+        await page
+            .waitForResponse(
+                (r) => INSERT_UNPAID_URL.test(r.url()) && r.request().method() === 'POST',
+                { timeout: 30_000 },
             )
-            return r.rows.map((x) => ({ score: Number(x.score), claimAmt: Number(x.claim_amt) }))
-        })
-        skipWithReason(rows.length === 0, 'F8 không sinh dòng unpaid nào (mọi khoản = 0)')
-        if (rows.length === 0) return
+            .catch(() => null)
 
+        const ins = insertCalls[insertCalls.length - 1]
+        expect(ins, 'lượt này không gọi insert-unpaid').toBeDefined()
+        if (!ins) return
         const expectedScore = (ins.unitOverrides ?? []).reduce((a, b) => a + b, 0)
+
+        const readRows = async () =>
+            withDb(async (c) => {
+                const r = await c.query<{ trt_dt: string; score: string; claim_amt: string }>(
+                    `SELECT trt_dt::text AS trt_dt, score, claim_amt FROM unpaid
+                      WHERE pat_no = $1 AND deleted_at IS NULL
+                      ORDER BY trt_cnt`,
+                    [PAT_NO],
+                )
+                return r.rows.map((x) => ({
+                    trtDt: x.trt_dt.slice(0, 10),
+                    score: Number(x.score),
+                    claimAmt: Number(x.claim_amt),
+                }))
+            })
+
+        await expect
+            .poll(async () => (await readRows()).length, { timeout: 15_000 })
+            .toBeGreaterThan(0)
+
+        const rows = await readRows()
         console.log(`unpaid đọc được: ${JSON.stringify(rows)} — kỳ vọng score ${expectedScore}`)
         expect(
             rows.some((r) => r.score === expectedScore),
-            'unpaid.score phải bằng tổng 14 ô đã gõ (InsertUnpaidHandler: Score = dayInsScore)',
+            `unpaid.score phải bằng tổng 14 ô đã gõ (${expectedScore}) — ` +
+                'InsertUnpaidHandler: Score = dayInsScore = unitScores.Sum()',
+        ).toBe(true)
+        expect(
+            rows.some((r) => r.score === expectedScore && r.claimAmt === ins.insPriceOverride),
+            'claim_amt của CHÍNH dòng đó phải là 一部負担金 gửi kèm — hai cột cùng thế hệ',
         ).toBe(true)
     })
 })
