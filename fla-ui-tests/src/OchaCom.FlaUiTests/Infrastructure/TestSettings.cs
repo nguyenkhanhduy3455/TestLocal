@@ -26,6 +26,8 @@ public sealed class TestSettings
     [JsonPropertyName("sigaTooth")] public SigaToothSection SigaTooth { get; set; } = new();
     [JsonPropertyName("autoSantei")] public AutoSanteiSection AutoSantei { get; set; } = new();
     [JsonPropertyName("chkAutoCascade")] public ChkAutoCascadeSection ChkAutoCascade { get; set; } = new();
+    [JsonPropertyName("testPatient")] public TestPatientSection TestPatient { get; set; } = new();
+    [JsonPropertyName("packDialog")] public PackDialogSection PackDialog { get; set; } = new();
     [JsonPropertyName("perioKensa")] public PerioKensaSection PerioKensa { get; set; } = new();
     [JsonPropertyName("visitList")] public VisitListSection VisitList { get; set; } = new();
     [JsonPropertyName("buiPrice")] public BuiPriceSection BuiPrice { get; set; } = new();
@@ -418,10 +420,18 @@ public sealed class TestSettings
         /// <b>Phase 2</b> — 処置 có カルテコメント tự áp dụng mà text CÒN dấu <c>*</c>, để đo
         /// nhánh <c>frmCmt3_PrmChk</c> → <c>frm203048</c> (frm203002.cs:10052).
         ///
-        /// <para>Mặc định <b>170/0 抜髄(単根)</b> — TRÙNG <c>TEST_P2_CD/SB</c> của spec
+        /// <para>Mặc định <b>170/2 抜髄(3根以上)</b> — TRÙNG <c>TEST_P2_CD/SB</c> của spec
         /// Playwright <c>chk-auto-comment-order.spec.ts</c>. Master dev: 4 dòng
-        /// <c>CMTAUTO</c> (<c>disp_no</c> -2 / -1 / 3 / 4, hai dòng chứa <c>*</c>) và
-        /// <c>chkauto(170,0) → 310/2</c>.</para>
+        /// <c>CMTAUTO</c> (<c>disp_no</c> -2 / -1 / 2 / 2, hai dòng chứa <c>*</c>) và
+        /// <c>chkauto(170,2) → 310/2</c>.</para>
+        ///
+        /// <para>⚠️ <b>KHÔNG dùng 枝番 0.</b> <c>170/0 抜髄(1根)</c> là <c>unit = 61</c>
+        /// (1根管), mà ô 部位 của cặp parity là 右上6 — răng BA chân (<c>KON.EKON3 = 3</c>).
+        /// <c>func3xCnt(bui, 1, kon)</c> chỉ đếm răng đúng 1 根管 ⇒ trả 0 ⇒ WinForm ghi
+        /// <c>回 = 0</c> (frm203016.cs:1531) ⇒ <c>Chk_ChkAuto</c> bị đóng cửa ngay ở
+        /// <c>frm203002.cs:5745</c> và KHÔNG dòng 自動算定 nào được chèn. Đo được
+        /// 2026-09-14: 月計 413 → 413, Δ = 0. 枝番 2 là <c>unit = 67</c> (3根管＋4根管),
+        /// khớp răng ba chân, và giữ nguyên mọi thứ khác đang đo.</para>
         ///
         /// <para>⚠️ <c>170</c> đi qua <c>frm203016.IregCodChk</c> case 170 ⇒ <c>SigaChg</c>
         /// GHI NÓNG bảng <c>SIGA</c> lúc chốt (frm203016.cs:1032-1041), khác hẳn 204 của
@@ -430,7 +440,7 @@ public sealed class TestSettings
         [JsonPropertyName("phase2TrtCd")] public int Phase2TrtCd { get; set; } = 170;
 
         /// <summary>枝番 của <see cref="Phase2TrtCd"/>.</summary>
-        [JsonPropertyName("phase2TrtSb")] public int Phase2TrtSb { get; set; }
+        [JsonPropertyName("phase2TrtSb")] public int Phase2TrtSb { get; set; } = 2;
 
         /// <summary>
         /// Cho phép XOÁ các dòng mang mã đem chốt + mã đi kèm + mã comment trong NGÀY test
@@ -500,6 +510,73 @@ public sealed class TestSettings
         /// <para>Phải chứa ít nhất một dấu <c>*</c> và vừa trong <c>varchar(60)</c>.</para>
         /// </summary>
         [JsonPropertyName("asteriskCmtText")] public string AsteriskCmtText { get; set; } = "ﾃｽﾄ*ﾊﾟﾗﾒｰﾀ";
+    }
+
+    /// <summary>
+    /// <see cref="TestPatientDb"/> — dựng bệnh nhân test MỚI HOÀN TOÀN rồi xoá sạch.
+    ///
+    /// <para>Cờ RIÊNG vì nó ghi vào bảng HỒ SƠ BỆNH NHÂN, không phải dữ liệu 処置 của
+    /// một luồng. Mọi thao tác đều bị chặn trong vùng
+    /// <c>PAT_NO &gt;= <see cref="TestPatientDb.TestPatNoBase"/></c>.</para>
+    /// </summary>
+    public sealed class TestPatientSection
+    {
+        /// <summary>
+        /// Cho phép dựng/xoá bệnh nhân trong vùng test. Mặc định tắt ⇒ mọi luồng dùng
+        /// bệnh nhân seed tự Ignore TRƯỚC khi mở app.
+        /// </summary>
+        [JsonPropertyName("allowSeed")] public bool AllowSeed { get; set; }
+
+        /// <summary>
+        /// <c>PAT_NO</c> của bệnh nhân MẪU đem clone. 0 = tự chọn bằng
+        /// <see cref="TestPatientDb.FindTemplatePatNo"/> (bệnh nhân thật đầu tiên có đủ
+        /// hồ sơ). Đặt tay khi muốn một hồ sơ cụ thể — ví dụ bệnh nhân mẫu mặc định có
+        /// tới 5 dòng <c>INSURANCE</c> và 51 dòng <c>TRN_STATUS</c>, hồ sơ dày đó có thể
+        /// làm nhiễu luồng đang đo.
+        /// </summary>
+        [JsonPropertyName("templatePatNo")] public int TemplatePatNo { get; set; }
+    }
+
+    /// <summary>
+    /// Luồng <c>Tests/PackDialog</c> — tab <b>パック</b> của side panel 診療入力: chốt một
+    /// pack phải bung <c>frm203014 パック処置選択</c> với đúng các item.
+    ///
+    /// <para><b>Luồng này KHÔNG chốt item nào xuống lưới 処置</b> — mọi ca đóng dialog bằng
+    /// 「F10 戻る」 — nên nó không có cờ ghi chung. Chỉ ca 「pack rỗng」 cần đặt 歯式 để ép
+    /// <c>chkSiga</c> loại hết item, và ca đó nằm sau <see cref="AllowSigaSetup"/>.</para>
+    /// </summary>
+    public sealed class PackDialogSection
+    {
+        /// <summary>
+        /// Pack đem thử — <c>PACMST.PAC_CD</c>. Mặc định <b>830 前装冠ｓｅｔ</b>: pack DUY NHẤT
+        /// trên master dev mang ô <c>252/0</c> hoặc <c>252/2</c>, tức pack duy nhất chạm được
+        /// nhánh thay mã 「ＭＴ(Ｂｒ) ⇒ 252/20, 252/21」 (frm203014.cs:455-467).
+        ///
+        /// <para>⚠️ Đây là MÃ pack, KHÔNG phải số thứ tự trên lưới. Thứ tự lưới do
+        /// <c>USE_CNT</c>/<c>IntelliPac</c> quyết định và đổi sau mỗi lần dùng — xem
+        /// <see cref="PackTabFlow"/>.</para>
+        /// </summary>
+        [JsonPropertyName("pacCd")] public int PacCd { get; set; } = 830;
+
+        /// <summary>
+        /// Tên pack — đường tìm DỰ PHÒNG khi cột mã bị ẩn (<c>mbolHideRowFlg</c> tắt cột
+        /// <c>PackCod</c>, frm203002.cs:2691).
+        /// </summary>
+        [JsonPropertyName("pacNm")] public string PacNm { get; set; } = "前装冠";
+
+        /// <summary>
+        /// Pack cho ca 「mọi item bị loại ⇒ 算定可能な処置はありません」. Mặc định
+        /// <b>804 感染根処 １根</b> — chỉ MỘT ô 処置 (<c>171/0</c>), nên chỉ cần một điều kiện
+        /// 歯式 là loại sạch lưới.
+        /// </summary>
+        [JsonPropertyName("emptyPacCd")] public int EmptyPacCd { get; set; } = 804;
+
+        /// <summary>
+        /// Cho phép đặt <c>SIGA</c> để ép <c>chkSiga</c> loại hết item của
+        /// <see cref="EmptyPacCd"/>. Cờ RIÊNG, mặc định tắt ⇒ ca đó tự Ignore.
+        /// Fixture chụp — in ra — trả lại (F20).
+        /// </summary>
+        [JsonPropertyName("allowSigaSetup")] public bool AllowSigaSetup { get; set; }
     }
 
     /// <summary>
@@ -1038,6 +1115,11 @@ public sealed class TestSettings
         Set("OCHA_CHK_AUTO_BRANCH_SEED", v => s.ChkAutoCascade.AllowBranchSeed = ToBool(v));
         Set("OCHA_CHK_AUTO_P2_TRT_CD", v => s.ChkAutoCascade.Phase2TrtCd = int.Parse(v));
         Set("OCHA_CHK_AUTO_P2_TRT_SB", v => s.ChkAutoCascade.Phase2TrtSb = int.Parse(v));
+        Set("OCHA_TEST_PATIENT_ALLOW_SEED", v => s.TestPatient.AllowSeed = ToBool(v));
+        Set("OCHA_TEST_PATIENT_TEMPLATE", v => s.TestPatient.TemplatePatNo = int.Parse(v));
+        Set("OCHA_PACK_PAC_CD", v => s.PackDialog.PacCd = int.Parse(v));
+        Set("OCHA_PACK_EMPTY_PAC_CD", v => s.PackDialog.EmptyPacCd = int.Parse(v));
+        Set("OCHA_PACK_ALLOW_SIGA_SETUP", v => s.PackDialog.AllowSigaSetup = ToBool(v));
         Set("OCHA_PERIO_ALLOW_SETTING_CHANGE", v => s.PerioKensa.AllowSettingChange = ToBool(v));
         Set("OCHA_PERIO_DIS_CD", v => s.PerioKensa.DisCd = int.Parse(v));
         Set("OCHA_SINRYO_YM", v => s.VisitList.SinryoYm = v);

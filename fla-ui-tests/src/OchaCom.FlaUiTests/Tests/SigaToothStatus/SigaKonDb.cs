@@ -230,6 +230,21 @@ public sealed class SigaKonDb
                   Enumerable.Range(1, 20).ToDictionary(i => i, _ => SnVital));
     }
 
+    /// <summary>
+    /// Đặt TOÀN BỘ 永久歯 về 欠損歯 và TOÀN BỘ 乳歯 về 欠損歯.
+    ///
+    /// <para>Dùng để ép <c>CommonChk.chkSiga</c> LOẠI mọi mã có <c>kesson = 9</c>
+    /// (CommonChk.cs:538-542) — cách sạch nhất dựng cảnh 「lưới không còn item nào」 mà
+    /// không phải đụng vào master. Xem <c>PackDialogTests.TCP5</c>.</para>
+    /// </summary>
+    public void ResetSigaToMissing(int patNo)
+    {
+        RequireWrite("ResetSigaToMissing");
+        WriteSiga(patNo,
+                  Enumerable.Range(1, 32).ToDictionary(i => i, _ => SeMissing),
+                  Enumerable.Range(1, 20).ToDictionary(i => i, _ => SnMissing));
+    }
+
     /// <summary>Trả <c>SIGA</c> về đúng ảnh chụp (đủ 52 cột, y như <c>Restore_Siga</c>).</summary>
     public void RestoreSiga(int patNo, SigaSnapshot snap)
     {

@@ -160,9 +160,21 @@
     "//soutyakuTrtCd": "254/4 FMC(パ･大) — DOI CHUNG cho nhanh 装着料自動算定. Cung keo 264/3, cung men = 0, nhung MST_SET096(254,4).mflg = 0 trong khi (204,0).mflg = 1. Khac dung MOT co => 「co/khong co dong 装着料」 quy duoc cho mflg. unit = 17 (大臼歯＋智歯) nen o 部位 phai la rang ham — autoSantei.buiSlot = 2 (右上6) thoa.",
     "soutyakuTrtCd": 254,
     "soutyakuTrtSb": 4,
-    "//phase2TrtCd": "PHASE 2 — 170/0 抜髄(単根), TRUNG TEST_P2_CD/SB cua spec Playwright chk-auto-comment-order.spec.ts. CMTAUTO(170,0) co 4 dong (disp_no -2/-1/3/4, hai dong chua '*') va chkauto(170,0) -> 310/2. CANH BAO: 170 di qua IregCodChk case 170 => SigaChg GHI NONG bang SIGA luc chot, khac han 204 cua Phase 1.",
+    "//phase2TrtCd": [
+      "PHASE 2 — 170/2 抜髄(3根以上), TRUNG TEST_P2_CD/SB cua spec Playwright",
+      "chk-auto-comment-order.spec.ts. CMTAUTO(170,2) co 4 dong (disp_no -2/-1/2/2, hai dong",
+      "chua '*') va chkauto(170,2) -> 310/2.",
+      "",
+      "KHONG dung 枝番 0: 170/0 la unit = 61 (1根管) ma o 部位 cua cap parity la 右上6 —",
+      "rang BA chan (KON.EKON3 = 3). func3xCnt(bui, 1, kon) tra 0 => WinForm ghi 回 = 0",
+      "(frm203016.cs:1531) => Chk_ChkAuto bi dong cua o frm203002.cs:5745 va KHONG dong",
+      "自動算定 nao duoc chen. Do duoc 2026-09-14: 月計 413 -> 413, delta = 0.",
+      "",
+      "CANH BAO: 170 di qua IregCodChk case 170 => SigaChg GHI NONG bang SIGA luc chot,",
+      "khac han 204 cua Phase 1."
+    ],
     "phase2TrtCd": 170,
-    "phase2TrtSb": 0,
+    "phase2TrtSb": 2,
     "//allowRowCleanup": "Xoa cac dong mang ma dem chot + ma di kem + ma comment TRONG NGAY test. Chi chay khi ngay do khong co san dong nao mang cac ma ay (hang rao F22).",
     "allowRowCleanup": true,
 
@@ -189,6 +201,38 @@
     "asteriskCmtText": "ﾃｽﾄ*ﾊﾟﾗﾒｰﾀ"
   },
 
+
+  "testPatient": {
+    "//": [
+      "TestPatientDb — dung benh nhan test MOI HOAN TOAN roi xoa sach.",
+      "Moi thao tac bi chan trong vung PAT_NO >= 990000 (du lieu that co max = 18282).",
+      "Co RIENG vi no ghi vao bang HO SO BENH NHAN, khong phai du lieu 処置 cua mot luong."
+    ],
+    "allowSeed": false,
+    "//templatePatNo": "PAT_NO cua benh nhan MAU dem clone. 0 = tu chon (benh nhan that dau tien co du ho so). Dat tay khi muon ho so cu the — benh nhan mau mac dinh co toi 5 dong INSURANCE va 51 dong TRN_STATUS, ho so day do co the lam nhieu luong dang do.",
+    "templatePatNo": 0
+  },
+
+  "packDialog": {
+    "//": [
+      "Luong Tests/PackDialog — tab パック (tab 3) cua side panel 診療入力.",
+      "Chot mot pack => frm203002.grdPack_CellDoubleClick (:6771) => frm203014 パック処置選択.",
+      "",
+      "Luong nay KHONG chot item nao xuong luoi 処置 — moi ca dong dialog bang 「F10 戻る」 —",
+      "nen no KHONG co co ghi chung. Chi ca 「pack rong」 can dat 歯式 va nam sau allowSigaSetup.",
+      "",
+      "⚠️ Tac dung phu KHONG khoi phuc: mo pack lam app tang PACMST.USE_CNT (hoc thoi quen",
+      "dung). No chi doi THU TU luoi khi Ocha.xml bat IntelliPac — khong anh huong diem/tien."
+    ],
+    "//pacCd": "MA pack (PACMST.PAC_CD), KHONG phai so thu tu tren luoi. 830 前装冠ｓｅｔ la pack DUY NHAT tren master dev mang o 252/0 hoac 252/2 — tuc pack duy nhat cham duoc nhanh doi ma 「ＭＴ(Ｂｒ) => 252/20, 252/21」 (frm203014.cs:455-467).",
+    "pacCd": 830,
+    "//pacNm": "Duong tim DU PHONG khi cot ma bi an (mbolHideRowFlg tat cot PackCod, frm203002.cs:2691).",
+    "pacNm": "前装冠",
+    "//emptyPacCd": "Pack cho ca 「moi item bi loai => 算定可能な処置はありません」. 804 感染根処 １根 chi co MOT o 処置 (171/0) nen chi can mot dieu kien 歯式 la loai sach luoi.",
+    "emptyPacCd": 804,
+    "//allowSigaSetup": "Cho phep dat SIGA ve 欠損歯 de ep chkSiga loai het item. Co RIENG, mac dinh tat => TCP5 tu Ignore. Fixture chup — in ra — tra lai (F20).",
+    "allowSigaSetup": false
+  },
 
   "perioKensa": {
     "//": [
@@ -398,6 +442,13 @@
 
     "//guideTab": "Tab 「ガイド」 của frm203002 — luồng Tests/GuideSidePanel.",
     "guideTabItem": "ガイド",
+    "//packTabItem": "Tab 「パック」 — tab thu 3 cua SSTab1 (tabPagePack, frm203002.Designer.cs:1639).",
+    "packTabItem": "パック",
+    "//packGrid": "Luoi danh sach pack (frm203002.Designer.cs:161). Cot: PackNum / PackCod / PackNam. ⚠️ THU TU DONG khong on dinh — sap theo USE_CNT DESC khi IntelliPac bat, nguoc lai theo PAC_SB. Tim pack theo MA hoac TEN, dung theo so dong.",
+    "packGrid": "grdPack",
+    "//packSelNo": "O 選択№ cua tab パック (:1657). Enter o day = chot pack dang sang.",
+    "packSelNo": "txtPackSentakuNo",
+
     "//byoukenTabItem": "Tab 「病検」 — tab RẺ nhất để rời khỏi ガイド. KHÔNG dùng 個別: lưới 個別 giữ nguyên master ~1.7k dòng nên mọi FindFirstDescendant sau đó timeout (đo được 2026-08-27).",
     "byoukenTabItem": "病検",
     "//guideGrid": "Lưới 2 cột 「№」/「名称」 (frm203002.Designer.cs:1592). ReadOnly, FullRowSelect.",
