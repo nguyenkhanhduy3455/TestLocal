@@ -20,7 +20,7 @@ Bên `web-tenant-tests` có 4 spec `*msgtbl*` phủ 15 mã. Vế WinForm tương
 | `fkey-menu/msgtbl-treatment-list-parity` | Q00049, Q00039 | `MsgTblCallSiteTests` TCC1/TCC2 | ✔ **đo xong 2026-09-15, 2/2 xanh** |
 | `patient-select/msgtbl-date-insurer-parity` | Q00009 ×2, Q00010, E00002 | 患者登録 `frm201001` | ⏳ có bản đồ màn hình (TCM9), cần bệnh nhân seed |
 | `patient-select/msgtbl-register-f9-parity` | E00010, E00012, E00016, E00017, E00022, Q00012, Q00013, Q00014 | 患者登録 `frm201001` F9 登録 | ⏳ như trên |
-| `dialogs-management/referral-letter-msgtbl-parity` | I00003, Q00002, Q00003, I00001, E00001 | 紹介状 `frm203053` (Shift+F3 từ frm203002) | ⏳ chưa probe |
+| `dialogs-management/referral-letter-msgtbl-parity` | I00003, Q00002, Q00003, I00001, E00001 | `MsgTblReferralTests` TCR1–TCR4 | ✔ **đo xong 2026-09-15, 4/4 xanh — và nó ĐẢO NGƯỢC câu hỏi, xem mục 1c** |
 
 **Vì sao cần vế WinForm khi đã có `MsgTblParityTests`.** Fixture đó so BẢNG (row MSGTBL ↔
 literal web). Nó không trả lời được hai câu mà parity hỏng thật sự hay nằm ở đó:
@@ -111,6 +111,35 @@ Ba mã đáng lo hơn phần còn lại, vì phần bị cắt mang thông tin n
   CommonNikei.cs:272/329/343/359, frm305004.cs:462/541), nhưng hàm web khai **0 tham số**
   và cắt luôn cụm 「プリンタに」. `TCM4` là bất biến chung bắt loại lỗi này, Q00039 là
   ngoại lệ duy nhất được ghi nhận.
+
+---
+
+## 1c. 紹介状: bốn hộp thoại bản web có mà WinForm KHÔNG có
+
+Spec web phủ `Q00002` → `I00001` (lưu), `Q00003` → `I00003` (xoá) và `E00001`. Nhưng
+`frm203053` chỉ phát **bốn** mã, và không có bốn mã kia:
+
+```
+E00001  :157 / :177   combo 発行済呼出し rỗng khi F2/F3
+E00022  :663..:699    7 chỗ, trong chkInputData
+Q00019  :192          xác nhận IN
+E00026  :556          in hỏng
+
+F2 登録 :148-155      insertTemplatedata → makeTemplateCombo   KHÔNG hỏi, KHÔNG báo
+F3 削除 :168-174      deleteTemplatedata → makeTemplateCombo   KHÔNG hỏi, KHÔNG báo
+```
+
+`TCR4` chứng minh sự im lặng đó bằng quan sát — lưu thật, xoá thật, đếm hộp thoại:
+
+```
+F2 登録 → hộp thoại: (không có)   SHOUKAI_TMP +1 dòng
+F3 削除 → hộp thoại: (không có)   SHOUKAI_TMP −1 dòng, tổng trở lại như cũ
+```
+
+Nghĩa là `Q00002/I00001/Q00003/I00003` ở bản web **không phải bốn hộp thoại sai chữ mà
+là bốn hộp thoại WinForm không có**. Cuộc điều tra I00002→I00003 trả lời đúng câu hỏi
+nhỏ (mã nào hợp với nhánh xoá) nhưng bỏ lỡ câu lớn: ở chính màn này, WinForm im lặng.
+Đây là quyết định sản phẩm chứ không phải lỗi port — nhưng phải biết thì mới quyết được.
 
 ---
 

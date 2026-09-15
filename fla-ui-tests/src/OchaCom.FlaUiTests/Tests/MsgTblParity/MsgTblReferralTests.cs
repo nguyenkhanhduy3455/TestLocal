@@ -238,34 +238,25 @@ public sealed class MsgTblReferralTests : UiTestBase
     // ═════════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// ⚠️ <b>CHƯA CHẠY XANH LẦN NÀO</b> — mang <c>[Explicit]</c> để không treo cả fixture.
+    /// Ca này GHI THẬT, và đường đi tới lúc nó xanh để lại ba bài học đã nằm trong code:
     ///
-    /// <para>Trạng thái đo được 2026-09-15, ba lượt:</para>
     /// <list type="number">
-    ///   <item><description>13:34 — <see cref="SetTemplateName"/> ném vì gõ
-    ///     「ZZ-PARITY-TEST」 mà combo chỉ nhận 「Z」. <b>Guard làm đúng việc</b>: nó chặn
-    ///     trước khi bấm F2, nên KHÔNG có dòng rác nào được ghi.</description></item>
-    ///   <item><description>13:37 và 14:01 — <b>TREO</b> ở <c>Uia.SetText</c> trên
-    ///     ComboBox. Hàm đó mở đầu bằng <c>e.Focus()</c> (Uia.cs:139), một lời gọi UIA
-    ///     ĐỒNG BỘ, và trên combo này nó không trả về. Đã bỏ đường đó, nhưng lượt sau vẫn
-    ///     đứng — chưa xác định được chết ở đâu vì <c>TestContext.Out</c> của NUnit chỉ
-    ///     XẢ KHI TESTCASE KẾT THÚC, tức treo là mù hẳn. Nay đã thay bằng
-    ///     <see cref="TestTrace"/> (ghi thẳng ra <c>_trace.log</c> từng dòng) — lượt tới
-    ///     sẽ chỉ đúng chỗ.</description></item>
+    ///   <item><description><b>Gõ vào combo phải gõ TỪNG KÝ TỰ.</b>
+    ///     <c>Keyboard.Type("ZZ-PARITY-TEST")</c> một phát chỉ vào được chữ 「Z」 đầu —
+    ///     autocomplete bung danh sách và nuốt các phím sau. Guard đọc-lại trong
+    ///     <see cref="SetTemplateName"/> chặn được cú F2 hỏng đó, nên không có dòng rác
+    ///     nào bị ghi.</description></item>
+    ///   <item><description><b>Chọn item phải chọn BẰNG PHÍM.</b> <c>item.Select()</c>
+    ///     của UIA đổi chữ trên combo nhưng KHÔNG đổi <c>SelectedValue</c> — mà F3 xoá
+    ///     theo đúng <c>SelectedValue</c> (frm203053.cs:172). Lượt 14:24: F3 chạy, không
+    ///     báo lỗi, và xoá TRẮNG 0 dòng. May là xoá trượt chứ không xoá nhầm.</description></item>
+    ///   <item><description><b>Treo thì đừng đọc <c>TestContext.Out</c>.</b> NUnit chỉ
+    ///     xả stdout khi testcase KẾT THÚC, nên hai lượt treo đầu mù hoàn toàn. Ca này
+    ///     dùng <see cref="TestTrace"/> — ghi thẳng ra <c>_trace.log</c> từng dòng, và
+    ///     chính nó chỉ ra bước nào đang đứng.</description></item>
     /// </list>
-    ///
-    /// <para><b>Việc còn lại</b>: chạy <c>-Referral -AllowSave</c>, đọc
-    /// <c>artifacts/screenshots/TCR4_.../_trace.log</c> để biết dòng cuối cùng chạy được,
-    /// rồi xử đúng chỗ đó. Nhiều khả năng là <c>combo.AsComboBox().Items</c> trong
-    /// <see cref="SelectTemplateName"/> — cũng là một lời gọi UIA đồng bộ, và
-    /// <c>PatientSelectScreen</c> đã có sẵn ghi chú về chuyện đọc Items của combo rất đắt.</para>
-    ///
-    /// <para>Điều ca này định chứng minh <b>đã chắc từ source</b>: <c>btnF2_Click</c>
-    /// (:148-155) và <c>btnF3_Click</c> (:168-174) gọi thẳng insert/delete rồi dựng lại
-    /// combo, không có <c>MsgDialog</c> nào ở giữa. Nó chỉ còn thiếu vế QUAN SÁT.</para>
     /// </summary>
     [Test, Order(4)]
-    [Explicit("CHƯA chạy xanh — treo ở thao tác combo; xem doc-comment trước khi chạy")]
     [Description("TCR4 — F2 登録 rồi F3 削除: WinForm KHÔNG hỏi và KHÔNG báo gì (GHI DB)")]
     public void TCR4_SaveThenDelete_ShowsNoDialogAtAll()
     {
@@ -449,18 +440,59 @@ public sealed class MsgTblReferralTests : UiTestBase
     {
         var combo = Uia.RequireById(_referral, TemplateComboId);
 
-        // Đọc Items là lời gọi UIA đồng bộ và combo này vừa được app dựng lại
-        // (makeTemplateCombo chạy ngay sau insert) — log trước để lượt treo sau còn biết
-        // nó chết ở đâu.
-        trace.Note($"doc danh sach 発行済呼出し de chon 「{value}」…");
-        var items = combo.AsComboBox().Items;
-        trace.Note($"co {items.Length} muc");
-        var item = items.FirstOrDefault(i => Txt.Same(i.Text, value))
-                   ?? throw new InvalidOperationException(
-                          $"không thấy 「{value}」 trong danh sách 発行済呼出し. Đang có: " +
-                          string.Join(" / ", items.Select(i => i.Text)));
-        item.Select();
+        // ═══════════════════════════════════════════════════════════════════
+        // CHỌN BẰNG BÀN PHÍM, KHÔNG BẰNG UIA SelectionItem
+        // ═══════════════════════════════════════════════════════════════════
+        // F3 xoá theo `comboBox2.SelectedValue` (frm203053.cs:172), KHÔNG theo chữ đang
+        // hiện. Lượt 14:24 gọi `item.Select()` của UIA: chữ trên combo đổi đúng, F3 chạy
+        // (không ra E00001, tức Text khác rỗng) — nhưng XOÁ TRẮNG 0 dòng. Nghĩa là
+        // `SelectedValue` không hề đổi theo: UIA đặt selection ở tầng accessibility mà
+        // không đi qua đường binding của WinForms.
+        //
+        // May là nó xoá trượt chứ không xoá NHẦM: tổng số dòng giữ nguyên 4 (3 của người
+        // khác + 1 của test). Nếu SelectedValue tình cờ trỏ vào ID có thật thì lượt đó đã
+        // xoá mất template của người khác.
+        //
+        // Đường đúng là mở danh sách rồi đi bằng phím mũi tên — hệt luật F13 của bộ này:
+        // gõ phím thì mới qua cùng đường mà người dùng đi.
+        trace.Note($"mo danh sach 発行済呼出し de chon 「{value}」");
+
+        var edit = Uia.EditInside(combo);
+        var (x, y) = Uia.Center(edit);
+        Uia.LeftClickPhysical(x, y);
         Waits.Step();
+
+        Keyboard.TypeSimultaneously(VirtualKeyShort.ALT, VirtualKeyShort.DOWN);
+        Thread.Sleep(300);
+
+        // Đi từ đầu danh sách xuống, dừng khi chữ trên combo khớp. Trần 30 là hàng rào
+        // chống lặp vô hạn, KHÔNG phải số mục thật.
+        Keyboard.Press(VirtualKeyShort.HOME);
+        Thread.Sleep(150);
+
+        var found = false;
+        for (var i = 0; i < 30; i++)
+        {
+            var now = Txt.N(Uia.ValueOf(combo));
+            if (now == Txt.N(value)) { found = true; break; }
+            Keyboard.Press(VirtualKeyShort.DOWN);
+            Thread.Sleep(120);
+        }
+
+        if (!found)
+        {
+            Keyboard.Press(VirtualKeyShort.ESCAPE);
+            throw new InvalidOperationException(
+                $"không dò được 「{value}」 trong danh sách 発行済呼出し sau 30 nhịp mũi tên. " +
+                $"Combo đang giữ 「{Txt.N(Uia.ValueOf(combo))}」. Dừng ở đây thay vì bấm F3: " +
+                "F3 xoá theo SelectedValue, chọn sai là xoá NHẦM template của người khác.");
+        }
+
+        // ENTER chốt lựa chọn ⇒ WinForms mới bắn SelectedIndexChanged và cập nhật
+        // SelectedValue. Thiếu bước này là lặp lại đúng lỗi của lượt 14:24.
+        Keyboard.Press(VirtualKeyShort.ENTER);
+        Waits.Step();
+        trace.Note($"da chon, combo dang giu 「{Txt.N(Uia.ValueOf(combo))}」");
     }
 
     private MsgBoxWin32.Found RequireDialog(string what, string evidenceLabel)
