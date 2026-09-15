@@ -23,6 +23,8 @@
 
         TCM5  DOI CHUNG GIAO DIEN — E00002 tren tab 個別: hop thoai == row DB == web
         TCM6  E00003 tren frm203042: hop thoai == row DB, KHAC literal web
+        TCC1  Q00049 frm203001 F7 会計作成 — canh bao GHI DE + mac dinh Cancel
+        TCC2  Q00039 来患集計 F1 印刷 — 「プリンタに」 + co nhan tham so
 
     TCM5 la seed doi chung. Khong co no thi 「web khac DB」 con co the do cach doc
     hop thoai cua test sai; co no roi thi con so cua TCM6 moi co nghia.
@@ -34,6 +36,12 @@
     KHONG ghi DB: TCM5 bi InputCheckKobe chan truoc khi search, TCM6 chi 検索 roi
     dong bang F10 戻る. Khong ca nao bam F9 登録.
 
+.PARAMETER CallSite
+    Chi chay MsgTblCallSiteTests — TCC1/TCC2, ve WinForm cua spec Playwright
+    fkey-menu\msgtbl-treatment-list-parity.spec.ts (Q00049 va Q00039).
+    KHONG ghi gi: ca hai hop thoai deu la cong xac nhan dung TRUOC hanh dong va
+    fixture luon tra loi 「キャンセル」.
+
 .PARAMETER Probe
     Chay TCM9 — PROBE [Explicit] mo man 患者登録 (frm201001) va do ra o/nut/cay UIA.
     CHI DOC, khong bam 登録. Day la buoc chuan bi cho 14 ma con lai nam o man do.
@@ -44,12 +52,14 @@
 .EXAMPLE
     .\run-msgtbl-parity.ps1                  # 1. chi DB, vai giay
     .\run-msgtbl-parity.ps1 -WithUi          # 2. them hai ca hop thoai that
-    .\run-msgtbl-parity.ps1 -Probe           # 3. PROBE 患者登録
+    .\run-msgtbl-parity.ps1 -CallSite        # 3. TCC1/TCC2 — Q00049 + Q00039
+    .\run-msgtbl-parity.ps1 -Probe           # 4. PROBE 患者登録 + hai call-site tren
     .\run-msgtbl-parity.ps1 -Case TCM2       # 4. rieng bang 16 ma lech
 #>
 [CmdletBinding()]
 param(
     [switch]$WithUi,
+    [switch]$CallSite,
     [switch]$Probe,
     [string]$Case = "",
     [int]$StepMs = -1,
@@ -68,6 +78,8 @@ if ($Case -ne "") {
     $filter = "FullyQualifiedName~$ns&FullyQualifiedName~$Case"
 } elseif ($Probe) {
     $filter = "FullyQualifiedName~$ns.MsgTblProbeTests"
+} elseif ($CallSite) {
+    $filter = "FullyQualifiedName~$ns.MsgTblCallSiteTests"
 } elseif ($WithUi) {
     $filter = "FullyQualifiedName~$ns&FullyQualifiedName!~MsgTblProbeTests"
 } else {
@@ -91,7 +103,7 @@ Write-Host "=== Sau khi chay, doc theo thu tu nay ===" -ForegroundColor Yellow
 Write-Host "1. msgtbl-parity-KQ.txt                        - cac dong === KQ-n === (bang doi chieu)"
 Write-Host "2. TestResults\msgtbl-parity.trx               - ket qua (UTF-8, doc tieng Nhat duoc)"
 Write-Host "   Log console MAT dau tieng Nhat — doc .trx, dung doc console (F9)."
-if ($WithUi -or $Probe) {
+if ($WithUi -or $Probe -or $CallSite) {
     $artifacts = Join-Path $PSScriptRoot "src\OchaCom.FlaUiTests\bin\$Configuration\net8.0-windows\artifacts"
     Write-Host "3. $artifacts\screenshots\<ten test>\*.png     - anh SAU TUNG BUOC"
 }

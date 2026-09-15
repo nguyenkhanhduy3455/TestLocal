@@ -3,10 +3,35 @@
 Trả lời đúng một câu hỏi: **mấy câu thông báo mà audit nói là sai — có sai thật không?**
 
 ```powershell
-.\run-msgtbl-parity.ps1            # 1. chỉ DB, vài giây, KHÔNG mở app
-.\run-msgtbl-parity.ps1 -WithUi    # 2. thêm hai ca bung hộp thoại thật
-.\run-msgtbl-parity.ps1 -Probe     # 3. PROBE 患者登録 (chỉ đọc)
+.\run-msgtbl-parity.ps1             # 1. chỉ DB, vài giây, KHÔNG mở app
+.\run-msgtbl-parity.ps1 -WithUi     # 2. thêm hai ca bung hộp thoại thật
+.\run-msgtbl-parity.ps1 -CallSite   # 3. TCC1/TCC2 — Q00049 + Q00039 tại call-site
+.\run-msgtbl-parity.ps1 -Probe      # 4. PROBE 患者登録 + hai call-site trên
 ```
+
+---
+
+## 0. Đối chiếu với bộ Playwright
+
+Bên `web-tenant-tests` có 4 spec `*msgtbl*` phủ 15 mã. Vế WinForm tương ứng:
+
+| Spec Playwright | Mã | Vế WinForm | Trạng thái |
+|---|---|---|---|
+| `fkey-menu/msgtbl-treatment-list-parity` | Q00049, Q00039 | `MsgTblCallSiteTests` TCC1/TCC2 | ✔ **đo xong 2026-09-15, 2/2 xanh** |
+| `patient-select/msgtbl-date-insurer-parity` | Q00009 ×2, Q00010, E00002 | 患者登録 `frm201001` | ⏳ có bản đồ màn hình (TCM9), cần bệnh nhân seed |
+| `patient-select/msgtbl-register-f9-parity` | E00010, E00012, E00016, E00017, E00022, Q00012, Q00013, Q00014 | 患者登録 `frm201001` F9 登録 | ⏳ như trên |
+| `dialogs-management/referral-letter-msgtbl-parity` | I00003, Q00002, Q00003, I00001, E00001 | 紹介状 `frm203053` (Shift+F3 từ frm203002) | ⏳ chưa probe |
+
+**Vì sao cần vế WinForm khi đã có `MsgTblParityTests`.** Fixture đó so BẢNG (row MSGTBL ↔
+literal web). Nó không trả lời được hai câu mà parity hỏng thật sự hay nằm ở đó:
+
+1. **tình huống này bung mã NÀO** — chọn nhầm mã thì chuỗi vẫn "đúng" theo bảng mà người
+   dùng vẫn đọc sai câu (đúng vụ I00002/I00003 của 紹介状);
+2. **WinForm truyền THAM SỐ gì vào `{0}`** — bảng chỉ có khuôn, câu người dùng thấy là
+   khuôn đã điền.
+
+Thêm một thứ chỉ đo được ở giao diện: **nút mặc định**. UIA không phơi ra, Win32 thì có
+(F16) — và với Q00049 đó là chi tiết có nghĩa.
 
 ---
 
@@ -127,8 +152,33 @@ TCM5  ĐỐI CHỨNG GIAO DIỆN — E00002 trên 個別 tab: hộp thoại == r
       DB == literal web                                              (mở app)
 TCM6  E00003 trên frm203042: hộp thoại == row DB, KHÁC literal web   (mở app)
 
-TCM9  PROBE [Explicit] — mở 患者登録, đổ ô/nút/cây UIA               (mở app)
+TCC1  Q00049 — frm203001 「F7 会計作成」: câu có cảnh báo GHI ĐÈ, nút
+      mặc định là Cancel; bản web bỏ cả hai                        (mở app)
+TCC2  Q00039 — 来患集計 「F1 印刷」: câu có 「プリンタに」 và CÓ điền
+      tham số " "; bản web bỏ cả hai                                (mở app)
+
+TCM9  PROBE [Explicit] — Q00049/Q00039 nguyên văn + bản đồ 患者登録  (mở app)
 ```
+
+### Đo được tại call-site (2026-09-15, TCC1/TCC2 xanh)
+
+```
+Q00049  frm203001.cs:430
+  WinForm : 令和08年09月15日の会計データを一括作成します。
+            既に入力済の会計データは全て上書きされます。実行してよろしいですか？
+  {0}     : 「令和08年09月15日」  (_dtTrtDt.getWareki())
+  nút     : OK / Cancel — mặc định CANCEL (MessageBoxDefaultButton.Button2)
+  web     : {0}の会計データを作成します。よろしいですか？
+
+Q00039  frm203046.cs:156
+  WinForm : 「 プリンタに用紙をセットしてください。」   ← dấu cách đầu = tham số " "
+  nút     : OK / Cancel — mặc định OK
+  web     : 用紙をセットして下さい。
+```
+
+Dấu cách đầu câu của Q00039 là bằng chứng trực tiếp rằng `{0}` CÓ được điền — chỉ là
+legacy điền bằng một chuỗi trống nghĩa. Bản web khai 0 tham số nên không có chỗ nào để
+điền tên máy in.
 
 ### Vì sao TCM1 và TCM5 tồn tại
 
@@ -208,4 +258,5 @@ Ngoài ra, hai vế còn chưa đo:
 | `WebMsgSnapshot.cs` | ảnh chụp 40 literal của `ja-msgtbl.ts` + chuỗi DB đo cùng lúc |
 | `MsgTblParityTests.cs` | TCM0–TCM4 — chỉ DB, không mở app |
 | `MsgTblDialogTests.cs` | TCM5–TCM6 — bung hộp thoại thật |
-| `MsgTblProbeTests.cs` | TCM9 `[Explicit]` — probe 患者登録 |
+| `MsgTblCallSiteTests.cs` | TCC1–TCC2 — đo Q00049/Q00039 tại chính call-site |
+| `MsgTblProbeTests.cs` | TCM9 `[Explicit]` — probe Q00049/Q00039 + bản đồ 患者登録 |
