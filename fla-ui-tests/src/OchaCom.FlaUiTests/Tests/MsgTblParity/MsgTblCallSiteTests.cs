@@ -1,6 +1,7 @@
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Input;
 using FlaUI.Core.WindowsAPI;
+using MouseButton = FlaUI.Core.Input.MouseButton;
 using NUnit.Framework;
 using OchaCom.FlaUiTests.App;
 using OchaCom.FlaUiTests.Infrastructure;
@@ -323,7 +324,7 @@ public sealed class MsgTblCallSiteTests : UiTestBase
         finally
         {
             DismissOk(box);
-            SetPatNo(Settings.Patient.PatNo);
+            RestorePatNo();
         }
     }
 
@@ -367,7 +368,7 @@ public sealed class MsgTblCallSiteTests : UiTestBase
         finally
         {
             DismissOk(box);
-            SetPatNo(Settings.Patient.PatNo);
+            RestorePatNo();
         }
     }
 
@@ -388,11 +389,16 @@ public sealed class MsgTblCallSiteTests : UiTestBase
         var combo = Uia.RequireById(_patSelect, Settings.Locator("patSelPatNo"));
         var edit = Uia.EditInside(combo);
         var (x, y) = Uia.Center(edit);
-        Uia.LeftClickPhysical(x, y);
-        Waits.Step();
 
-        Keyboard.Press(VirtualKeyShort.END);
-        for (var i = 0; i < 20; i++) Keyboard.Press(VirtualKeyShort.BACK);
+        // DOUBLE-CLICK để BÔI ĐEN rồi gõ đè, KHÔNG dùng END + BackSpace.
+        //
+        // Ô này chống lại mọi kiểu xoá-rồi-gõ: Ctrl+A thì WinForms TextBox không nhận
+        // (quirk cũ, PatientSelectScreen đã ghi), còn END + 20×BackSpace thì có lúc ăn có
+        // lúc không — lượt 17:31 ô giữ nguyên 「990001」 qua cả 3 lần thử. Double-click
+        // chọn trọn con số, và ký tự gõ tiếp theo thay thế vùng chọn: một thao tác, không
+        // phụ thuộc bao nhiêu ký tự đang có.
+        Mouse.MoveTo(x, y);
+        Mouse.DoubleClick(MouseButton.Left);
         Waits.Step();
 
         foreach (var ch in value)
@@ -418,6 +424,36 @@ public sealed class MsgTblCallSiteTests : UiTestBase
         throw new InvalidOperationException(
             $"gõ 患者番号 「{value}」 nhưng ô Edit đang giữ 「{fromEdit}」 và combo giữ " +
             $"「{fromCombo}」. Dừng lại thay vì 患者確定: số sai thì mã bung ra cũng sai.");
+    }
+
+    /// <summary>
+    /// Trả ô 患者番号 về số của <c>testsettings</c>. KHÔNG ném khi thất bại.
+    ///
+    /// <para>Đây là việc DỌN DẸP, không phải thứ đang đo. Lượt 17:28 ca TCC3 đã chụp được
+    /// E00005 và assert xong, rồi đỏ ở đúng dòng khôi phục — báo cáo thành 「TCC3 failed」
+    /// trong khi điều nó đo đã đúng. Một ca test không được phép hỏng vì bước dọn.</para>
+    ///
+    /// <para>Ô này khó dọn vì sau E00005 app tự <c>cboPatNo.Focus()</c> (frm203001.cs:673)
+    /// và giữ nguyên chữ cũ; thử vài lượt, không được thì ghi cảnh báo rồi đi tiếp.</para>
+    /// </summary>
+    private void RestorePatNo()
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                SetPatNo(Settings.Patient.PatNo);
+                return;
+            }
+            catch (Exception e)
+            {
+                Log($"   (lần {attempt + 1}) chưa trả được 患者番号 về 「{Settings.Patient.PatNo}」: {e.Message}");
+                Waits.Step();
+            }
+        }
+
+        Log($"   ⚠ KHÔNG trả được 患者番号 về 「{Settings.Patient.PatNo}」 — ca sau tự đặt lại số " +
+            "của nó nên không ảnh hưởng, nhưng app đang để lại số của ca này trên màn hình.");
     }
 
     /// <summary>Đưa combo Ｄｒ．về mục rỗng (index 0) để ép nhánh UserNo ≤ 0.</summary>
