@@ -103,6 +103,7 @@ public sealed class ParamDialog
             var dialog = Waits.TryFor(Open, TimeSpan.FromSeconds(i == 0 ? 20 : 8));
             if (dialog is null) break;
 
+            var confirmedText = "";
             var box = Uia.ById(dialog, ValueBoxId);
             if (box is null)
             {
@@ -116,6 +117,21 @@ public sealed class ParamDialog
             var filled = Filled(raw);
             trace.Step($"frm203048 lan {i + 1}: 「{raw}」 → 「{filled}」 roi F9 確定");
             Uia.SetText(box, filled);
+
+            // ĐỌC LẠI ô sau khi ghi — đừng tin là SetValue đã ăn.
+            //
+            // Đo được 2026-09-14: lưới in ra 「自発痛（1）冷水痛（9）打診痛（9）」 trong khi
+            // harness tưởng mình đã ghi 「…（9）…（9）…（9）」, và TC4 đỏ vì chuỗi kỳ vọng
+            // trượt — đỏ OAN cho app, vị trí app đặt hoàn toàn đúng. `frm203048_Shown`
+            // gọi getAsta(text, 0) nên cụm `*` ĐẦU đang bị BÔI ĐEN lúc ta ghi đè
+            // (frm203048.cs:116), và đó là nghi can số một.
+            //
+            // Ghi nguyên văn cái app ĐANG GIỮ vào trace: lần đỏ sau không phải đoán nữa.
+            var actual = Uia.ValueOf(box);
+            if (!string.Equals(actual, filled, StringComparison.Ordinal))
+                trace.Note($"⚠ o nhap KHONG khop cai vua ghi: dinh ghi 「{filled}」 " +
+                           $"nhung o dang giu 「{actual}」 — dong roi xuong luoi se theo cai SAU.");
+            confirmedText = actual.Length > 0 ? actual : filled;
 
             var button = dialog.FindAllDescendants(cf => cf.ByControlType(ControlType.Button))
                                .FirstOrDefault(b => Txt.Has(Uia.NameOf(b), ConfirmButton));
@@ -135,7 +151,7 @@ public sealed class ParamDialog
                 break;
             }
 
-            confirmed.Add(filled);
+            confirmed.Add(confirmedText);
         }
         return confirmed;
     }
