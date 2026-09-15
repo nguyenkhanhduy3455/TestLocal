@@ -72,6 +72,7 @@ param(
     [switch]$CallSite,
     [switch]$Probe,
     [switch]$Referral,
+    [switch]$PatientEntry,
     [switch]$AllowSave,
     [string]$Case = "",
     [int]$StepMs = -1,
@@ -90,6 +91,8 @@ $ns = "OchaCom.FlaUiTests.Tests.MsgTblParity"
 
 if ($Case -ne "") {
     $filter = "FullyQualifiedName~$ns&FullyQualifiedName~$Case"
+} elseif ($PatientEntry) {
+    $filter = "FullyQualifiedName~$ns.MsgTblPatientEntryTests"
 } elseif ($Referral) {
     $filter = "FullyQualifiedName~$ns&FullyQualifiedName~Referral"
 } elseif ($Probe) {
@@ -119,7 +122,7 @@ Write-Host "=== Sau khi chay, doc theo thu tu nay ===" -ForegroundColor Yellow
 Write-Host "1. msgtbl-parity-KQ.txt                        - cac dong === KQ-n === (bang doi chieu)"
 Write-Host "2. TestResults\msgtbl-parity.trx               - ket qua (UTF-8, doc tieng Nhat duoc)"
 Write-Host "   Log console MAT dau tieng Nhat — doc .trx, dung doc console (F9)."
-if ($WithUi -or $Probe -or $CallSite -or $Referral) {
+if ($WithUi -or $Probe -or $CallSite -or $Referral -or $PatientEntry) {
     $artifacts = Join-Path $PSScriptRoot "src\OchaCom.FlaUiTests\bin\$Configuration\net8.0-windows\artifacts"
     Write-Host "3. $artifacts\screenshots\<ten test>\*.png     - anh SAU TUNG BUOC"
 }
