@@ -35,13 +35,14 @@ FUNC = {
     'ShowOKCancelMsg':    ('？ hỏi', 'OK|Cancel'),
     'ShowYesNoMsg':       ('？ hỏi', 'Yes|No'),
     'ShowYesNoCancelMsg': ('？ hỏi', 'Yes|No|Cancel'),
+    'ShoRetryCancelMsg':  ('？ hỏi', 'Retry|Cancel'),   # tên hàm thiếu chữ 'w' — của legacy
 }
 STYLE = {'Critical': '✕ đỏ', 'Exclamation': '⚠ vàng', 'Information': 'ⓘ xanh',
          'Question': '？ hỏi', 'Error': '✕ đỏ', 'Warning': '⚠ vàng'}
 
 METHOD = re.compile(
     r'^\s*(?:public|private|protected|internal)\s[\w<>\[\],\s]*?\b(\w+)\s*\([^;]*$')
-CALL = re.compile(r'MsgDialog\.(Show\w+Msg)\s*\(')
+CALL = re.compile(r'MsgDialog\.(Show\w+Msg|ShoRetryCancelMsg)\s*\(')
 
 
 def read_msgtbl(path=None):
@@ -123,11 +124,37 @@ def scan(src, db):
                     blob = '\n'.join(lines[i:i + 4])
                     args = split_args(blob[blob.index(c.group(0)) + len(c.group(0)):])
                     func = c.group(1)
+
+                    # ShowFreeMsg(strMsg, msgButton, msgIcon) — đối số ĐẦU là CHỮ, không
+                    # phải mã (MsgDialog.cs:219). Icon và nút lấy thẳng từ hai đối số sau.
+                    if func == 'ShowFreeMsg':
+                        lit = re.match(r'^"(.*)"$', args[0], re.S) if args else None
+                        ic = re.search(r'MessageBoxIcon\.(\w+)', blob)
+                        bt = re.search(r'MessageBoxButtons\.(\w+)', blob)
+                        rows.append(dict(kind='free', file=rel, line=i + 1,
+                                         screen=os.path.splitext(fn)[0], method=method,
+                                         func=func, code='', para='',
+                                         icon=STYLE.get(ic.group(1), 'không icon') if ic else 'không icon',
+                                         buttons=bt.group(1) if bt else 'OK',
+                                         default='Button1 (ngầm)',
+                                         text=lit.group(1) if lit else '⟨chuỗi ghép lúc chạy⟩'))
+                        continue
+
                     icon, buttons = FUNC.get(func, ('?', '?'))
 
                     code_raw = args[0] if args else ''
                     cm = re.match(r'^"([A-Z]\d{5})"$', code_raw)
-                    code = cm.group(1) if cm else f'⟨biến {code_raw[:20]}⟩'
+                    # Mã viết SAI trong legacy (vd "E0026" — thiếu một chữ số). MSGTBL
+                    # không có row ⇒ rơi vào nhánh 3 của getMsg: tham số thành CẢ câu.
+                    bad = re.match(r'^"([A-Z]\d{1,4})"$', code_raw)
+                    # Mã RỖNG ("" / string.Empty) là cách gọi CỐ Ý: getMsg không tra được
+                    # row nào nên tham số trở thành TOÀN BỘ câu (MsgDialog.cs:207). Đây là
+                    # 「chữ tự do」, không phải chỗ hỏng.
+                    empty = code_raw in ('""', 'string.Empty', '""))')
+                    code = ('' if empty
+                            else cm.group(1) if cm
+                            else f'⚠ MÃ SAI {bad.group(1)}' if bad
+                            else f'⟨biến {code_raw[:20]}⟩')
 
                     para, para_note = '', ''
                     if len(args) > 1:
@@ -143,7 +170,8 @@ def scan(src, db):
                         default = dm.group(1) + ' (khai rõ)'
 
                     text = (render(db, code, para) if cm
-                            else f'⟨không render được: mã là biến⟩')
+                            else para if (empty or bad) and para
+                            else '⟨không render được: mã là biến⟩')
                     if para_note:
                         text = text.replace('{0}', f'⟨{para_note}⟩') if '{0}' in (db.get(code) or '') \
                                else f'{text} ⟨+{para_note}⟩'
@@ -160,8 +188,10 @@ def scan(src, db):
                     styles = re.findall(r'MsgBoxStyle\.(\w+)|MessageBoxIcon\.(\w+)', line)
                     names = [a or b for a, b in styles]
                     icons = [STYLE[n] for n in names if n in STYLE]
+                    # OkOnly / OKCancel là kiểu NÚT, không phải icon. Không style icon nào
+                    # ⇒ MessageBox KHÔNG có icon (và không kêu tiếng nào).
                     asks = [n for n in names if n in ('YesNo', 'OKCancel', 'YesNoCancel')]
-                    icon = icons[0] if icons else '?'
+                    icon = icons[0] if icons else 'không icon'
                     # 「hộp hỏi màu vàng」 = YesNo/OKCancel KÈM Exclamation hoặc Critical.
                     # Đây là thứ primitive bên web chưa diễn tả được: nó luôn ra ？ xanh.
                     # YesNo + Question thì chỉ là hộp hỏi bình thường, KHÔNG đánh dấu.

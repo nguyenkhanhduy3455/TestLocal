@@ -201,9 +201,9 @@ msgbox	エラーが発生しました。	⚠ vàng	OK	Button1 (ngầm)	frm203002
 msgtbl	当月以外の操作はできません。	✕ đỏ	OK	Button1 (ngầm)	frm203002	IDM_DateChg_Click	INP/Forms/frm203002.cs	8040	ShowErrorMsg	E00100	当月以外の操作はできません。
 msgbox	ドクター変更	？ hỏi	YesNo	Button1 (ngầm)	frm203002	lblDrLabel_Click	INP/Forms/frm203002.cs	8116	Question|YesNo		
 msgbox	衛生士変更	？ hỏi	YesNo	Button1 (ngầm)	frm203002	lblEiseisiLabel_Click	INP/Forms/frm203002.cs	8174	Question|YesNo		
-msgtbl	⟨không render được: mã là biến⟩	✕ đỏ	OK	Button1 (ngầm)	frm203002	OQSsiquc01req	INP/Forms/frm203002.cs	10251	ShowErrorMsg	⟨biến string.Empty⟩	オンライン資格確認医療扶助ライセンスが有りません。" + Environment.NewLine +\n                                                             "または、医療扶助対象外の公費負担者番号です。
-msgtbl	⟨không render được: mã là biến⟩ ⟨+strMsg⟩	ⓘ xanh	OK	Button1 (ngầm)	frm203002	OQSsiquc01req	INP/Forms/frm203002.cs	10374	ShowInfoMsg	⟨biến string.Empty⟩	strMsg
-msgtbl	⟨không render được: mã là biến⟩ ⟨+strMsg⟩	✕ đỏ	OK	Button1 (ngầm)	frm203002	OQSsiquc01req	INP/Forms/frm203002.cs	10378	ShowErrorMsg	⟨biến string.Empty⟩	strMsg
+msgtbl	オンライン資格確認医療扶助ライセンスが有りません。" + Environment.NewLine +\n                                                             "または、医療扶助対象外の公費負担者番号です。	✕ đỏ	OK	Button1 (ngầm)	frm203002	OQSsiquc01req	INP/Forms/frm203002.cs	10251	ShowErrorMsg		オンライン資格確認医療扶助ライセンスが有りません。" + Environment.NewLine +\n                                                             "または、医療扶助対象外の公費負担者番号です。
+msgtbl	⟨không render được: mã là biến⟩ ⟨+strMsg⟩	ⓘ xanh	OK	Button1 (ngầm)	frm203002	OQSsiquc01req	INP/Forms/frm203002.cs	10374	ShowInfoMsg		strMsg
+msgtbl	⟨không render được: mã là biến⟩ ⟨+strMsg⟩	✕ đỏ	OK	Button1 (ngầm)	frm203002	OQSsiquc01req	INP/Forms/frm203002.cs	10378	ShowErrorMsg		strMsg
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm203002	OQSsiquc01req	INP/Forms/frm203002.cs	10384	ShowErrorMsg	E00100	OQSsiquc01res.MessageBody.ProcessingResu
 msgtbl	該当データがありません。	✕ đỏ	OK	Button1 (ngầm)	frm203036	btnF1_Click	INP/Forms/frm203036.cs	157	ShowErrorMsg	E00003	
 msgtbl	CSV出力してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm203036	btnF1_Click	INP/Forms/frm203036.cs	162	ShowOKCancelMsg	Q00047	
@@ -223,15 +223,15 @@ msgtbl	登録してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)
 msgtbl	日付が間違っています。	✕ đỏ	OK	Button1 (ngầm)	frm203022	btnF9_Click	INP/Forms/frm203022.cs	124	ShowErrorMsg	E00002	日付
 msgtbl	印刷に失敗しました。	✕ đỏ	OK	Button1 (ngầm)	frm203022	printProc	INP/Forms/frm203022.cs	615	ShowErrorMsg	E00026	印刷
 msgtbl	システムエラーです。 ⟨+ex.Message⟩	✕ đỏ	OK	Button1 (ngầm)	frm203022	entryProc	INP/Forms/frm203022.cs	714	ShowErrorMsg	E99999	ex.Message
-msgbox	ライセンス認証が出来ませんでした。サポートセンターへ問い合わせて下さい。	?	OK	Button1 (ngầm)	modLicence	LicenceErr	INP/Lib/modLicence.cs	249	OkOnly		
-msgbox	オンライン請求のライセンス認証が出来ませんでした。サポートセンターへ問い合わせて下さい。	?	OK	Button1 (ngầm)	modLicence	LicenceErr	INP/Lib/modLicence.cs	251	OkOnly		
-msgbox	入力日付がライセンス期限を超えています。サポートセンターへ問い合わせて下さい。	?	OK	Button1 (ngầm)	modLicence	LicenceErr	INP/Lib/modLicence.cs	257	OkOnly		
-msgbox	入力日付がオンライン請求のライセンス期限を超えています。サポートセンターへ問い合わせて下さい。	?	OK	Button1 (ngầm)	modLicence	LicenceErr	INP/Lib/modLicence.cs	259	OkOnly		
+msgbox	ライセンス認証が出来ませんでした。サポートセンターへ問い合わせて下さい。	không icon	OK	Button1 (ngầm)	modLicence	LicenceErr	INP/Lib/modLicence.cs	249	OkOnly		
+msgbox	オンライン請求のライセンス認証が出来ませんでした。サポートセンターへ問い合わせて下さい。	không icon	OK	Button1 (ngầm)	modLicence	LicenceErr	INP/Lib/modLicence.cs	251	OkOnly		
+msgbox	入力日付がライセンス期限を超えています。サポートセンターへ問い合わせて下さい。	không icon	OK	Button1 (ngầm)	modLicence	LicenceErr	INP/Lib/modLicence.cs	257	OkOnly		
+msgbox	入力日付がオンライン請求のライセンス期限を超えています。サポートセンターへ問い合わせて下さい。	không icon	OK	Button1 (ngầm)	modLicence	LicenceErr	INP/Lib/modLicence.cs	259	OkOnly		
 msgbox	該当処置はありません。	⚠ vàng	OK	Button1 (ngầm)	modMain	GetTrtmas	INP/Lib/modMain.cs	280	Exclamation		
 msgbox	該当処置はありません。	⚠ vàng	OK	Button1 (ngầm)	modMain	GetTrtmas	INP/Lib/modMain.cs	480	Exclamation		
 msgbox	該当処置はありません。	⚠ vàng	OK	Button1 (ngầm)	modMain	GetTrtmasCod	INP/Lib/modMain.cs	596	Exclamation		
 msgtbl	以前の印象データが見つかりません。コード999は入力できません。	✕ đỏ	OK	Button1 (ngầm)	modMain	Misoutyaku	INP/Lib/modMain.cs	1824	ShowErrorMsg	E00100	以前の印象データが見つかりません。コード999は入力できません。
-msgtbl	⟨không render được: mã là biến⟩ ⟨+"レセプト設定が「☑患者情報をレセプト摘要欄に印字する」となっています。\n\n⟩	⚠ vàng	OK	Button1 (ngầm)	modMain	pGetPersonalInfoFrmMain	INP/Lib/modMain.cs	2241	ShowWarningMsg	⟨biến ""⟩	"レセプト設定が「☑患者情報をレセプト摘要欄に印字する」となっています。\n\n
+msgtbl	⟨không render được: mã là biến⟩ ⟨+"レセプト設定が「☑患者情報をレセプト摘要欄に印字する」となっています。\n\n⟩	⚠ vàng	OK	Button1 (ngầm)	modMain	pGetPersonalInfoFrmMain	INP/Lib/modMain.cs	2241	ShowWarningMsg		"レセプト設定が「☑患者情報をレセプト摘要欄に印字する」となっています。\n\n
 msgbox	P部位と欠損部位が重複しています。残根上の義歯の摘要を入力しますか？	？ hỏi + ⚠ vàng	YesNo	Button1 (ngầm)	modMain	chk724a	INP/Lib/modMain.cs	2406	Exclamation|YesNo|DefaultButton2		
 msgtbl	システムエラーです。 ⟨+ex.Message⟩	✕ đỏ	OK	Button1 (ngầm)	modMain	ChkKesson	INP/Lib/modMain.cs	2959	ShowErrorMsg	E99999	ex.Message
 msgtbl		⚠ vàng	OK	Button1 (ngầm)	SingleChk	SingleChk	INP/Lib/SingleChk.cs	45	ShowWarningMsg	W00100	checkData.info
@@ -239,31 +239,31 @@ msgbox	患者情報の患者有効開始日等を確認してください。	✕
 msgbox	診療入力枝番確認	✕ đỏ	OK	Button1 (ngầm)	modTrnSubcode	Upd_TrnSubcode	INP/Lib/modTrnSubcode.cs	142	Error		
 msgbox	変更しました。	ⓘ xanh	OK	Button1 (ngầm)	modTrnSubcode	Upd_TrnSubcode	INP/Lib/modTrnSubcode.cs	187	Information		
 msgbox	 + CDate(CommonInp._patInfoTarget.person.birthDate).Day + 	ⓘ xanh	OK	Button1 (ngầm)	modPat	OldChk_inLoad	INP/Lib/modPat.cs	251	Information		
-msgbox	レントゲンソフト（Adrplus）の起動が出来ませんでした。	?	OK	Button1 (ngầm)	NEOPremium	AdrStart	INP/Lib/NEOPremium.cs	418	OkOnly		
+msgbox	レントゲンソフト（Adrplus）の起動が出来ませんでした。	không icon	OK	Button1 (ngầm)	NEOPremium	AdrStart	INP/Lib/NEOPremium.cs	418	OkOnly		
 msgtbl	該当データがありません。	ⓘ xanh	OK	Button1 (ngầm)	modBulkAcc	calcAcc	INP/Lib/modBulkAcc.cs	63	ShowInfoMsg	E00003	
 msgtbl	会計データ作成に失敗しました。	✕ đỏ	OK	Button1 (ngầm)	modBulkAcc	calcAcc	INP/Lib/modBulkAcc.cs	87	ShowErrorMsg	E00026	会計データ作成
 msgbox	会計処理を行う日の行にカーソルを合わせてください。	⚠ vàng	OK	Button1 (ngầm)	modAcc	LetAccData2	INP/Lib/modAcc.cs	382	Exclamation		
-msgbox	会計処理を行う日が本日でありません。よろしいですか。	?	OK	Button1 (ngầm)	modAcc	LetAccData2	INP/Lib/modAcc.cs	388	OkCancel		
-msgtbl	⟨không render được: mã là biến⟩ ⟨+strMeg⟩	？ hỏi	Yes|No	Button2 (khai rõ)	modAcc	LetAccData2	INP/Lib/modAcc.cs	562	ShowYesNoMsg	⟨biến string.Empty⟩	strMeg
-msgtbl	⟨không render được: mã là biến⟩ ⟨+strMeg⟩	？ hỏi	Yes|No	Button2 (khai rõ)	modAcc	LetAccData2	INP/Lib/modAcc.cs	581	ShowYesNoMsg	⟨biến string.Empty⟩	strMeg
-msgtbl	⟨không render được: mã là biến⟩ ⟨+strMeg⟩	？ hỏi	Yes|No	Button1 (khai rõ)	modAcc	LetAccData2	INP/Lib/modAcc.cs	733	ShowYesNoMsg	⟨biến string.Empty⟩	strMeg
+msgbox	会計処理を行う日が本日でありません。よろしいですか。	không icon	OK	Button1 (ngầm)	modAcc	LetAccData2	INP/Lib/modAcc.cs	388	OkCancel		
+msgtbl	⟨không render được: mã là biến⟩ ⟨+strMeg⟩	？ hỏi	Yes|No	Button2 (khai rõ)	modAcc	LetAccData2	INP/Lib/modAcc.cs	562	ShowYesNoMsg		strMeg
+msgtbl	⟨không render được: mã là biến⟩ ⟨+strMeg⟩	？ hỏi	Yes|No	Button2 (khai rõ)	modAcc	LetAccData2	INP/Lib/modAcc.cs	581	ShowYesNoMsg		strMeg
+msgtbl	⟨không render được: mã là biến⟩ ⟨+strMeg⟩	？ hỏi	Yes|No	Button1 (khai rõ)	modAcc	LetAccData2	INP/Lib/modAcc.cs	733	ShowYesNoMsg		strMeg
 msgtbl	システムエラーです。 ⟨+ex.Message⟩	✕ đỏ	OK	Button1 (ngầm)	modAcc	LetAccData2	INP/Lib/modAcc.cs	790	ShowErrorMsg	E99999	ex.Message
-msgtbl	⟨không render được: mã là biến⟩ ⟨+sb.ToString()⟩	？ hỏi	Yes|No	Button1 (khai rõ)	modAcc	ChgAccData	INP/Lib/modAcc.cs	956	ShowYesNoMsg	⟨biến string.Empty⟩	sb.ToString()
+msgtbl	⟨không render được: mã là biến⟩ ⟨+sb.ToString()⟩	？ hỏi	Yes|No	Button1 (khai rõ)	modAcc	ChgAccData	INP/Lib/modAcc.cs	956	ShowYesNoMsg		sb.ToString()
 msgbox	起動ファイルが見つかりません	✕ đỏ	OK	Button1 (ngầm)	modPicture	pLinkDentAView	INP/Lib/modPicture.cs	250	Critical		
 msgbox	画像ファイルが見つかりません	✕ đỏ	OK	Button1 (ngầm)	modPicture	pLinkDentAView	INP/Lib/modPicture.cs	261	Critical		
 msgbox	起動ファイルが見つかりません	✕ đỏ	OK	Button1 (ngầm)	modPicture	pLinkCDR	INP/Lib/modPicture.cs	310	Critical		
 msgbox	 ファイルが見つかりません。	✕ đỏ	OK	Button1 (ngầm)	modPicture	pLinkTW	INP/Lib/modPicture.cs	456	Critical		
 msgbox	Trophy Windows インストールされていません。	✕ đỏ	OK	Button1 (ngầm)	modPicture	pLinkTW	INP/Lib/modPicture.cs	465	Critical		
 msgbox	指定月の処置、または過去の処置はありません。	ⓘ xanh	OK	Button1 (ngầm)	modHfg2	GetTrnRs2	INP/Lib/modHfg2.cs	344	Information		
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MstCmtPackDetailData[0].com_nm + " " + c⟩	？ hỏi	Yes|No	Button2 (khai rõ)	CmtAuto	getTrtDtLast	INP/Lib/CmtAuto.cs	1745	ShowYesNoMsg	⟨biến string.Empty⟩	MstCmtPackDetailData[0].com_nm + " " + c
-msgtbl	⟨không render được: mã là biến⟩ ⟨+strMsg⟩	？ hỏi	Yes|No|Cancel	Button1 (ngầm)	modSave	SaveChangesAndExit	INP/Lib/modSave.cs	110	ShowYesNoCancelMsg	⟨biến ""⟩	strMsg
-msgtbl	⟨không render được: mã là biến⟩	？ hỏi	Yes|No|Cancel	Button1 (ngầm)	modSave	ExitWithoutSaving	INP/Lib/modSave.cs	179	ShowYesNoCancelMsg	⟨biến ""⟩	処置データは変更されています。保存しますか？
+msgtbl	⟨không render được: mã là biến⟩ ⟨+MstCmtPackDetailData[0].com_nm + " " + c⟩	？ hỏi	Yes|No	Button2 (khai rõ)	CmtAuto	getTrtDtLast	INP/Lib/CmtAuto.cs	1745	ShowYesNoMsg		MstCmtPackDetailData[0].com_nm + " " + c
+msgtbl	⟨không render được: mã là biến⟩ ⟨+strMsg⟩	？ hỏi	Yes|No|Cancel	Button1 (ngầm)	modSave	SaveChangesAndExit	INP/Lib/modSave.cs	110	ShowYesNoCancelMsg		strMsg
+msgtbl	処置データは変更されています。保存しますか？	？ hỏi	Yes|No|Cancel	Button1 (ngầm)	modSave	ExitWithoutSaving	INP/Lib/modSave.cs	179	ShowYesNoCancelMsg		処置データは変更されています。保存しますか？
 msgbox	処置データ更新	⚠ vàng	OK	Button1 (ngầm)	modSave	SaveData	INP/Lib/modSave.cs	532	Exclamation|OkOnly		
 msgbox	処置データ更新	？ hỏi	YesNo	Button1 (ngầm)	modSave	SaveData	INP/Lib/modSave.cs	551	Question|YesNo|DefaultButton2		
 msgbox	エラーが発生しました。	✕ đỏ	OK	Button1 (ngầm)	modSave	SaveData	INP/Lib/modSave.cs	671	Critical		
-msgtbl	⟨không render được: mã là biến⟩ ⟨+trt_nm + "を算定しますか？"⟩	？ hỏi	Yes|No|Cancel	Button1 (ngầm)	modSave	AutoSantei	INP/Lib/modSave.cs	3069	ShowYesNoCancelMsg	⟨biến ""⟩	trt_nm + "を算定しますか？"
-msgtbl	⟨không render được: mã là biến⟩ ⟨+trt_nm + "を算定しますか？"⟩	？ hỏi	Yes|No	Button2 (khai rõ)	modSave	AutoSantei	INP/Lib/modSave.cs	3104	ShowYesNoMsg	⟨biến ""⟩	trt_nm + "を算定しますか？"
-msgtbl	⟨không render được: mã là biến⟩ ⟨+trt_nm + "を算定しますか？"⟩	？ hỏi	Yes|No	Button2 (khai rõ)	modSave	AutoSantei	INP/Lib/modSave.cs	3176	ShowYesNoMsg	⟨biến ""⟩	trt_nm + "を算定しますか？"
+msgtbl	⟨không render được: mã là biến⟩ ⟨+trt_nm + "を算定しますか？"⟩	？ hỏi	Yes|No|Cancel	Button1 (ngầm)	modSave	AutoSantei	INP/Lib/modSave.cs	3069	ShowYesNoCancelMsg		trt_nm + "を算定しますか？"
+msgtbl	⟨không render được: mã là biến⟩ ⟨+trt_nm + "を算定しますか？"⟩	？ hỏi	Yes|No	Button2 (khai rõ)	modSave	AutoSantei	INP/Lib/modSave.cs	3104	ShowYesNoMsg		trt_nm + "を算定しますか？"
+msgtbl	⟨không render được: mã là biến⟩ ⟨+trt_nm + "を算定しますか？"⟩	？ hỏi	Yes|No	Button2 (khai rõ)	modSave	AutoSantei	INP/Lib/modSave.cs	3176	ShowYesNoMsg		trt_nm + "を算定しますか？"
 msgbox	著しく歯科診療が困難な患者に対する加算を算定しますか？	？ hỏi	YesNo	Button1 (ngầm)	modSave	AutoSantei	INP/Lib/modSave.cs	3442	Question|YesNo		
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	modSave	CSqlDate	INP/Lib/modSave.cs	5621	ShowErrorMsg	E88888	ex.Message
 msgtbl	印刷対象が選択されていません。	✕ đỏ	OK	Button1 (ngầm)	frm304001	btnF1_Click	RCP/Forms/frm304001.cs	121	ShowErrorMsg	E00021	印刷対象
@@ -276,13 +276,13 @@ msgtbl	患者番号が間違っています。	✕ đỏ	OK	Button1 (ngầm)	frm
 msgtbl	検索処理を中断しました。	⚠ vàng	OK	Button1 (ngầm)	frm304001	searchProc	RCP/Forms/frm304001.cs	546	ShowWarningMsg	W00002	
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm304001	searchProc	RCP/Forms/frm304001.cs	551	ShowErrorMsg	E99999	
 msgtbl	印刷用データがありません。	✕ đỏ	OK	Button1 (ngầm)	frm304001	printAll	RCP/Forms/frm304001.cs	957	ShowErrorMsg	E00024	印刷用データ
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm304001	printAll	RCP/Forms/frm304001.cs	971	ShowFreeMsg	⟨biến "ＲＩｎ点数に誤りがあります。153点、⟩	MessageBoxButtons.OK
+free	⟨chuỗi ghép lúc chạy⟩	⚠ vàng	OK	Button1 (ngầm)	frm304001	printAll	RCP/Forms/frm304001.cs	971	ShowFreeMsg		
 msgbox	患者番号：	⚠ vàng	OK	Button1 (ngầm)	frm304001	printAll	RCP/Forms/frm304001.cs	973	Warning		
 msgtbl	プリンタにレセプト用紙をセットしてください。	？ hỏi	OK|Cancel	Button1 (ngầm)	frm304001	print	RCP/Forms/frm304001.cs	999	ShowOKCancelMsg	Q00033	レセプト
 msgtbl	印刷に失敗しました。	✕ đỏ	OK	Button1 (ngầm)	frm304001	print	RCP/Forms/frm304001.cs	1087	ShowErrorMsg	E00026	印刷
 msgtbl	開始ページが入力されていません。	✕ đỏ	OK	Button1 (ngầm)	frm304002	btnF9_Click	RCP/Forms/frm304002.cs	107	ShowErrorMsg	E00001	開始ページ
 msgtbl	印刷用データがありません。	✕ đỏ	OK	Button1 (ngầm)	CommonPrint	directPrint	RCP/Lib/CommonPrint.cs	71	ShowErrorMsg	E00024	印刷用データ
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	CommonPrint	directPrint	RCP/Lib/CommonPrint.cs	93	ShowFreeMsg	⟨biến "歯管点数に誤りがあります。110点→1⟩	MessageBoxButtons.OK
+free	⟨chuỗi ghép lúc chạy⟩	⚠ vàng	OK	Button1 (ngầm)	CommonPrint	directPrint	RCP/Lib/CommonPrint.cs	93	ShowFreeMsg		
 msgbox	患者番号：	⚠ vàng	OK	Button1 (ngầm)	CommonPrint	directPrint	RCP/Lib/CommonPrint.cs	95	Warning		
 msgtbl	印刷に失敗しました。	✕ đỏ	OK	Button1 (ngầm)	CommonPrint	directPrint	RCP/Lib/CommonPrint.cs	140	ShowErrorMsg	E00026	印刷
 msgtbl	削除データが選択されていません。	✕ đỏ	OK	Button1 (ngầm)	frm503006	btnF8_Click	SYOHO/Forms/frm503006.cs	102	ShowErrorMsg	E00021	削除データ
@@ -293,7 +293,7 @@ msgtbl	コードには600～699を入力して下さい。	✕ đỏ	OK	Button1 
 msgtbl	処置マスタに入力されたコードがありません。	✕ đỏ	OK	Button1 (ngầm)	frm503006	txtDisSb_Leave	SYOHO/Forms/frm503006.cs	234	ShowErrorMsg	E00024	処置マスタに入力されたコード
 msgtbl	システムエラーです。 ⟨+ex.Message⟩	✕ đỏ	OK	Button1 (ngầm)	frm503006	entryProc	SYOHO/Forms/frm503006.cs	372	ShowErrorMsg	E99999	ex.Message
 msgtbl	システムエラーです。 ⟨+ex.Message⟩	✕ đỏ	OK	Button1 (ngầm)	frm503006	deleteProc	SYOHO/Forms/frm503006.cs	406	ShowErrorMsg	E99999	ex.Message
-msgtbl	⟨không render được: mã là biến⟩	⚠ vàng	OK	Button1 (ngầm)	frm503002	frm503002_Shown	SYOHO/Forms/frm503002.cs	137	ShowWarningMsg	⟨biến ""⟩	処方せん印刷用プリンタ設定が可能になりました。プリンタ設定がない場合、その他帳票印刷用プリンタから処方せんを印刷します。\n" +\n            "お茶コンメニューの「ハードウェア設定」よりプリンタ設定してください。
+msgtbl	処方せん印刷用プリンタ設定が可能になりました。プリンタ設定がない場合、その他帳票印刷用プリンタから処方せんを印刷します。\n" +\n            "お茶コンメニューの「ハードウェア設定」よりプリンタ設定してください。	⚠ vàng	OK	Button1 (ngầm)	frm503002	frm503002_Shown	SYOHO/Forms/frm503002.cs	137	ShowWarningMsg		処方せん印刷用プリンタ設定が可能になりました。プリンタ設定がない場合、その他帳票印刷用プリンタから処方せんを印刷します。\n" +\n            "お茶コンメニューの「ハードウェア設定」よりプリンタ設定してください。
 msgtbl	印刷してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm503002	btnF5_Click	SYOHO/Forms/frm503002.cs	183	ShowOKCancelMsg	Q00019	
 msgtbl	印刷に失敗しました。	✕ đỏ	OK	Button1 (ngầm)	frm503002	printProc	SYOHO/Forms/frm503002.cs	873	ShowErrorMsg	E00026	印刷
 msgtbl	データが選択されていません。	⚠ vàng	OK	Button1 (ngầm)	frm503005	btnF9_Click	SYOHO/Forms/frm503005.cs	166	ShowWarningMsg	E00007	
@@ -354,7 +354,7 @@ msgtbl	本日入金が０円です。このまま登録してよろしいです�
 msgtbl	登録してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm204002	F9Proc	SEISAN/Forms/frm204002.cs	1166	ShowOKCancelMsg	Q00001	
 msgtbl	QRｺｰﾄﾞ請求明細書に失敗しました。	✕ đỏ	OK	Button1 (ngầm)	frm204002	F9Proc	SEISAN/Forms/frm204002.cs	1215	ShowErrorMsg	E00026	QRｺｰﾄﾞ請求明細書
 msgbox	⟨chuỗi ghép lúc chạy⟩	？ hỏi	OK	Button1 (ngầm)	frm204002	F9Proc	SEISAN/Forms/frm204002.cs	1221	Question		
-msgtbl	⟨không render được: mã là biến⟩	？ hỏi	Yes|No|Cancel	Button1 (khai rõ)	frm204002	F9Proc	SEISAN/Forms/frm204002.cs	1223	ShowYesNoCancelMsg	⟨biến ""⟩	入金区分を選択してください。"　+ Environment.NewLine +\n                     "　口座１：「はい」"　+ Environment.NewLine +\n                     "　口座３：「いいえ」"　+ Environment.NewLine +\n                     "　その他：「キャンセル」
+msgtbl	入金区分を選択してください。"　+ Environment.NewLine +\n                     "　口座１：「はい」"　+ Environment.NewLine +\n                     "　口座３：「いいえ」"　+ Environment.NewLine +\n                     "　その他：「キャンセル」	？ hỏi	Yes|No|Cancel	Button1 (khai rõ)	frm204002	F9Proc	SEISAN/Forms/frm204002.cs	1223	ShowYesNoCancelMsg		入金区分を選択してください。"　+ Environment.NewLine +\n                     "　口座１：「はい」"　+ Environment.NewLine +\n                     "　口座３：「いいえ」"　+ Environment.NewLine +\n                     "　その他：「キャンセル」
 msgtbl	領収書印刷に失敗しました。	✕ đỏ	OK	Button1 (ngầm)	frm204002	F9Proc	SEISAN/Forms/frm204002.cs	1230	ShowErrorMsg	E00026	領収書印刷
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm204002	F9Proc	SEISAN/Forms/frm204002.cs	1262	ShowErrorMsg	E99999	
 msgtbl	領収書印刷に失敗しました。	✕ đỏ	OK	Button1 (ngầm)	frm204002	F9Proc	SEISAN/Forms/frm204002.cs	1278	ShowErrorMsg	E00026	領収書印刷
@@ -364,7 +364,7 @@ msgtbl	登録せずに終了してよろしいですか？	？ hỏi	OK|Cancel	B
 msgtbl	登録せずに終了してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm204002	btnF11_Click	SEISAN/Forms/frm204002.cs	1374	ShowOKCancelMsg	Q00004	登録せずに
 msgtbl	お茶コン終了してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm204002	btnF12_Click	SEISAN/Forms/frm204002.cs	1391	ShowOKCancelMsg	Q00004	お茶コン
 msgtbl	登録せずに終了してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm204002	btnF12_Click	SEISAN/Forms/frm204002.cs	1401	ShowOKCancelMsg	Q00004	登録せずに
-msgtbl	⟨không render được: mã là biến⟩	？ hỏi	Yes|No	Button2 (khai rõ)	frm204002	calcTotal	SEISAN/Forms/frm204002.cs	2273	ShowYesNoMsg	⟨biến string.Empty⟩	軽減税率を適用しますか？
+msgtbl	軽減税率を適用しますか？	？ hỏi	Yes|No	Button2 (khai rõ)	frm204002	calcTotal	SEISAN/Forms/frm204002.cs	2273	ShowYesNoMsg		軽減税率を適用しますか？
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm204002	endProc	SEISAN/Forms/frm204002.cs	2688	ShowErrorMsg	E99999	
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm204002	printProc	SEISAN/Forms/frm204002.cs	4285	ShowErrorMsg	E99999	
 msgtbl	⟨không render được: mã là biến⟩	✕ đỏ	OK	Button1 (ngầm)	frm204002	lblMed_Click	SEISAN/Forms/frm204002.cs	4377	ShowErrorMsg	⟨biến "E204002"⟩	処方せんがありません。
@@ -525,8 +525,8 @@ msgtbl	該当データがありません。	✕ đỏ	OK	Button1 (ngầm)	frm601
 msgtbl	該当データがありません。	✕ đỏ	OK	Button1 (ngầm)	frm601004	defData	CHKRULE/Forms/frm601004.cs	226	ShowErrorMsg	E00003	
 msgtbl	印刷してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm207004	btnF1_Click	NIKEI/Forms/frm207004.cs	350	ShowOKCancelMsg	Q00019	
 msgtbl	EXCEL出力してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm207004	btnF2_Click	NIKEI/Forms/frm207004.cs	361	ShowOKCancelMsg	Q00020	
-msgtbl	⟨không render được: mã là biến⟩ ⟨+EditControl.editDateToString(acc_dt, "gg⟩	？ hỏi	Yes|No	Button1 (ngầm)	frm207004	btnF4_Click	NIKEI/Forms/frm207004.cs	404	ShowYesNoMsg	⟨biến string.Empty⟩	EditControl.editDateToString(acc_dt, "gg
-msgtbl	⟨không render được: mã là biến⟩	？ hỏi	Yes|No	Button1 (ngầm)	frm207004	btnF4_Click	NIKEI/Forms/frm207004.cs	468	ShowYesNoMsg	⟨biến string.Empty⟩	未収金現在残高へ０円に設定しますか？
+msgtbl	⟨không render được: mã là biến⟩ ⟨+EditControl.editDateToString(acc_dt, "gg⟩	？ hỏi	Yes|No	Button1 (ngầm)	frm207004	btnF4_Click	NIKEI/Forms/frm207004.cs	404	ShowYesNoMsg		EditControl.editDateToString(acc_dt, "gg
+msgtbl	未収金現在残高へ０円に設定しますか？	？ hỏi	Yes|No	Button1 (ngầm)	frm207004	btnF4_Click	NIKEI/Forms/frm207004.cs	468	ShowYesNoMsg		未収金現在残高へ０円に設定しますか？
 msgtbl	システムエラーです。 ⟨+ex.Message⟩	✕ đỏ	OK	Button1 (ngầm)	frm207004	btnF4_Click	NIKEI/Forms/frm207004.cs	496	ShowErrorMsg	E99999	ex.Message
 msgtbl	対象期間が間違っています。	✕ đỏ	OK	Button1 (ngầm)	frm207004	chkDate	NIKEI/Forms/frm207004.cs	573	ShowErrorMsg	E00002	対象期間
 msgtbl	対象期間が間違っています。	✕ đỏ	OK	Button1 (ngầm)	frm207004	chkDate	NIKEI/Forms/frm207004.cs	578	ShowErrorMsg	E00002	対象期間
@@ -600,7 +600,7 @@ msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	OQSControl	s
 msgtbl	システムエラーです。ファイルが見つかりません。	✕ đỏ	OK	Button1 (ngầm)	OQSControl	ProcessResponseFiles	OQS/Lib/OQSControl.cs	2860	ShowErrorMsg	E88888	ファイルが見つかりません。
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	OQSControl	ProcessResponseFiles	OQS/Lib/OQSControl.cs	2905	ShowErrorMsg	E88888	ex.Message + Environment.NewLine + fileP
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	OQSControl	showMsgErrorExtensionErrFile	OQS/Lib/OQSControl.cs	2937	ShowErrorMsg	E00100	content
-msgtbl	⟨không render được: mã là biến⟩	✕ đỏ	OK	Button1 (ngầm)	OQSControl	getReferenceNumberRegistrationInfo	OQS/Lib/OQSControl.cs	2973	ShowErrorMsg	⟨biến string.Empty⟩	オンライン資格確認医療扶助ライセンスが有りません。" + Environment.NewLine +\n                                                             "または、医療扶助対象外の公費負担者番号です。
+msgtbl	オンライン資格確認医療扶助ライセンスが有りません。" + Environment.NewLine +\n                                                             "または、医療扶助対象外の公費負担者番号です。	✕ đỏ	OK	Button1 (ngầm)	OQSControl	getReferenceNumberRegistrationInfo	OQS/Lib/OQSControl.cs	2973	ShowErrorMsg		オンライン資格確認医療扶助ライセンスが有りません。" + Environment.NewLine +\n                                                             "または、医療扶助対象外の公費負担者番号です。
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	OQSsihvd01	setOQSsihvd01reqXml	OQS/Lib/OQSsihvd01.cs	219	ShowErrorMsg	E88888	ex.Message
 msgtbl	サーバーからの応答待機をキャンセルしました。	⚠ vàng	OK	Button1 (ngầm)	OQSsihvd01	setOQSsihvd01reqXml	OQS/Lib/OQSsihvd01.cs	240	ShowWarningMsg	W00100	サーバーからの応答待機をキャンセルしました。
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	OQSsihvd01	setOQSsihvd01reqXml	OQS/Lib/OQSsihvd01.cs	246	ShowErrorMsg	E99999	
@@ -690,7 +690,7 @@ msgtbl	登録が完了しました。	ⓘ xanh	OK	Button1 (ngầm)	frm902003	sav
 msgtbl	登録に失敗しました。	✕ đỏ	OK	Button1 (ngầm)	frm902003	saveBrSample	COMMON/Forms/frm902003.cs	1064	ShowErrorMsg	E00026	登録
 msgtbl	システムエラーです。XMLファイル（" + xmlFullPath + "）の読み込みに失敗しました。\r\n\r\nXMLファイルの内容を確認してください。	✕ đỏ	OK	Button1 (ngầm)	XmlControl		COMMON/Lib/XmlControl.cs	253	ShowErrorMsg	E88888	XMLファイル（" + xmlFullPath + "）の読み込みに失敗しました。\r\n\r\nXMLファイルの内容を確認してください。
 msgtbl	資格取得日(有効開始日)の範囲外です。\r\n患者番号：	✕ đỏ	OK	Button1 (ngầm)	Check	Upd_TrnSubcode_chk	COMMON/Lib/Check.cs	8097	ShowErrorMsg	E00054	patNo.ToString()
-msgtbl	⟨không render được: mã là biến⟩	⚠ vàng	OK	Button1 (ngầm)	EditSort	getSortInfo	COMMON/Lib/EditSort.cs	1480	ShowWarningMsg	⟨biến ""⟩	患者登録データに誤りがあります。患者登録データを確認後、再実行してください。\n\n" +\n                                       "　患者番号[" + EditControl.editStringToInt(dt.Rows[i]["pat_no"].ToString()) +　"]" +\n                                       "　枝番[" + EditControl.editStringToInt(dt.Rows[i]["pat_sb"].ToString()) + "]
+msgtbl	患者登録データに誤りがあります。患者登録データを確認後、再実行してください。\n\n" +\n                                       "　患者番号[" + EditControl.editStringToInt(dt.Rows[i]["pat_no"].ToString()) +　"]" +\n                                       "　枝番[" + EditControl.editStringToInt(dt.Rows[i]["pat_sb"].ToString()) + "]	⚠ vàng	OK	Button1 (ngầm)	EditSort	getSortInfo	COMMON/Lib/EditSort.cs	1480	ShowWarningMsg		患者登録データに誤りがあります。患者登録データを確認後、再実行してください。\n\n" +\n                                       "　患者番号[" + EditControl.editStringToInt(dt.Rows[i]["pat_no"].ToString()) +　"]" +\n                                       "　枝番[" + EditControl.editStringToInt(dt.Rows[i]["pat_sb"].ToString()) + "]
 msgtbl	システムエラーです。管理者へご連絡ください。	✕ đỏ	OK	Button1 (ngầm)	formControl	showFormFromDLL	COMMON/Lib/formControl.cs	344	ShowErrorMsg	E00100	システムエラーです。管理者へご連絡ください。
 msgtbl	システムエラーです。管理者へご連絡ください。	✕ đỏ	OK	Button1 (ngầm)	formControl	showFormFromDLL	COMMON/Lib/formControl.cs	353	ShowErrorMsg	E00100	システムエラーです。管理者へご連絡ください。
 msgtbl	患者情報一括作成が完了しました。	ⓘ xanh	OK	Button1 (ngầm)	CoopRoentgen	coopDataInit	COMMON/Lib/CoopRoentgen.cs	293	ShowInfoMsg	I00005	患者情報一括作成
@@ -699,7 +699,7 @@ msgtbl	システムエラーです。レントゲンソフト連携に失敗し�
 msgtbl	システムエラーです。診療支援システム連携に失敗しました。\r\n\r\n[" + ex.Message + "]	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	coopData	COMMON/Lib/CoopRoentgen.cs	340	ShowErrorMsg	E88888	診療支援システム連携に失敗しました。\r\n\r\n[" + ex.Message + "]
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	createData_Naomi	COMMON/Lib/CoopRoentgen.cs	501	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
 msgtbl	よろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	CoopRoentgen	createData_Naomi	COMMON/Lib/CoopRoentgen.cs	513	ShowYesNoMsg	Q00100	fileNm + "が既に存在します。" + Environment.NewLi
-msgtbl	⟨không render được: mã là biến⟩	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_Naomi	COMMON/Lib/CoopRoentgen.cs	550	ShowErrorMsg	⟨biến "E0026"⟩	レントゲンソフト連携
+msgtbl	レントゲンソフト連携	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_Naomi	COMMON/Lib/CoopRoentgen.cs	550	ShowErrorMsg	⚠ MÃ SAI E0026	レントゲンソフト連携
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_Naomi	COMMON/Lib/CoopRoentgen.cs	557	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
 msgtbl	よろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	CoopRoentgen	editData_Naomi	COMMON/Lib/CoopRoentgen.cs	564	ShowYesNoMsg	Q00100	fileNm + "が既に存在します。" + Environment.NewLi
 msgtbl	レントゲンソフトのＤＬＬが見つかりません。\r\n\r\n[" + dllPath + "]	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	createData_NeoPremium	COMMON/Lib/CoopRoentgen.cs	598	ShowErrorMsg	E00100	レントゲンソフトのＤＬＬが見つかりません。\r\n\r\n[" + dllPath + "]
@@ -715,7 +715,9 @@ msgtbl	レントゲンソフト患者情報更新エラー。" + Environment.New
 msgtbl	レントゲンソフト患者情報削除エラー。" + Environment.NewLine + "Error[" + getMsg (ret) + "]	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_NeoPremium	COMMON/Lib/CoopRoentgen.cs	841	ShowErrorMsg	E00100	レントゲンソフト患者情報削除エラー。" + Environment.NewLine + "Error[" + getMsg (ret) + "]
 msgtbl	レントゲンソフトＤＢクローズエラー。" + Environment.NewLine + "Error[" + getMsg(ret) + "]	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_NeoPremium	COMMON/Lib/CoopRoentgen.cs	862	ShowErrorMsg	E00100	レントゲンソフトＤＢクローズエラー。" + Environment.NewLine + "Error[" + getMsg(ret) + "]
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	createData_NeoPremium2	COMMON/Lib/CoopRoentgen.cs	881	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
+msgtbl	レントゲンソフト連携 結果ファイル受信タイムアウトが発生しました。	？ hỏi	Retry|Cancel	Button1 (ngầm)	CoopRoentgen	createData_NeoPremium2	COMMON/Lib/CoopRoentgen.cs	906	ShoRetryCancelMsg	E00100	レントゲンソフト連携 結果ファイル受信タイムアウトが発生しました。
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_NeoPremium2	COMMON/Lib/CoopRoentgen.cs	935	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
+msgtbl	レントゲンソフト連携 結果ファイル受信タイムアウトが発生しました。	？ hỏi	Retry|Cancel	Button1 (ngầm)	CoopRoentgen	editData_NeoPremium2	COMMON/Lib/CoopRoentgen.cs	982	ShoRetryCancelMsg	E00100	レントゲンソフト連携 結果ファイル受信タイムアウトが発生しました。
 msgtbl	レントゲンソフト連携 患者情報登録更新エラーです。" + Environment.NewLine + "エラーコード[" + column[1] + "]" + "　エラー内容[" + column[2] + "]	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	waitForResultFile	COMMON/Lib/CoopRoentgen.cs	1044	ShowErrorMsg	E00100	レントゲンソフト連携 患者情報登録更新エラーです。" + Environment.NewLine + "エラーコード[" + column[1] + "]" + "　エラー内容[" + column[2] + "]
 msgtbl	レントゲンソフト連携 患者情報登録更新エラーです。" + Environment.NewLine + "エラーコード[" + column[1] + "]" + "　エラー内容[" + column[2] + "]	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	waitForResultFile	COMMON/Lib/CoopRoentgen.cs	1087	ShowErrorMsg	E00100	レントゲンソフト連携 患者情報登録更新エラーです。" + Environment.NewLine + "エラーコード[" + column[1] + "]" + "　エラー内容[" + column[2] + "]
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	createData_NeoPremiumCSV	COMMON/Lib/CoopRoentgen.cs	1122	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
@@ -723,34 +725,34 @@ msgtbl	レントゲンソフト連携のディレクトリパスの設定があ�
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	createData_Hercules2007	COMMON/Lib/CoopRoentgen.cs	1214	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
 msgtbl	よろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	CoopRoentgen	createData_Hercules2007	COMMON/Lib/CoopRoentgen.cs	1226	ShowYesNoMsg	Q00100	fileNm + "が既に存在します。" + Environment.NewLi
 msgtbl	起動ファイル(StexLink.exe)が見つかりません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	createData_Hercules2007	COMMON/Lib/CoopRoentgen.cs	1248	ShowErrorMsg	E00100	起動ファイル(StexLink.exe)が見つかりません。
-msgtbl	⟨không render được: mã là biến⟩	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_Hercules2007	COMMON/Lib/CoopRoentgen.cs	1275	ShowErrorMsg	⟨biến "E0026"⟩	レントゲンソフト連携
+msgtbl	レントゲンソフト連携	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_Hercules2007	COMMON/Lib/CoopRoentgen.cs	1275	ShowErrorMsg	⚠ MÃ SAI E0026	レントゲンソフト連携
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_Hercules2007	COMMON/Lib/CoopRoentgen.cs	1282	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
 msgtbl	よろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	CoopRoentgen	editData_Hercules2007	COMMON/Lib/CoopRoentgen.cs	1289	ShowYesNoMsg	Q00100	fileNm + "が既に存在します。" + Environment.NewLi
 msgtbl	起動ファイル(StexLink.exe)が見つかりません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_Hercules2007	COMMON/Lib/CoopRoentgen.cs	1303	ShowErrorMsg	E00100	起動ファイル(StexLink.exe)が見つかりません。
 msgtbl	kintone連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_Kintone	COMMON/Lib/CoopRoentgen.cs	1331	ShowErrorMsg	E00024	kintone連携のディレクトリパスの設定
 msgtbl	よろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	CoopRoentgen	editData_Kintone	COMMON/Lib/CoopRoentgen.cs	1353	ShowYesNoMsg	Q00100	fileNm + "が既に存在します。" + Environment.NewLi
-msgbox	カルテアプリ(kintone)の起動が出来ませんでした。	?	OK	Button1 (ngầm)	CoopRoentgen	editData_Kintone	COMMON/Lib/CoopRoentgen.cs	1377	OkOnly		
-msgtbl	⟨không render được: mã là biến⟩	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_DentalX	COMMON/Lib/CoopRoentgen.cs	1687	ShowErrorMsg	⟨biến "E0026"⟩	DentalX連携
+msgbox	カルテアプリ(kintone)の起動が出来ませんでした。	không icon	OK	Button1 (ngầm)	CoopRoentgen	editData_Kintone	COMMON/Lib/CoopRoentgen.cs	1377	OkOnly		
+msgtbl	DentalX連携	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_DentalX	COMMON/Lib/CoopRoentgen.cs	1687	ShowErrorMsg	⚠ MÃ SAI E0026	DentalX連携
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_DentalX	COMMON/Lib/CoopRoentgen.cs	1750	ShowErrorMsg	E88888	ex.Message
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_DentalX	COMMON/Lib/CoopRoentgen.cs	1755	ShowErrorMsg	E88888	ex.Message
 msgtbl	予約システム連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	createData_DentMapPlus	COMMON/Lib/CoopRoentgen.cs	1820	ShowErrorMsg	E00024	予約システム連携のディレクトリパスの設定
 msgtbl	よろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	CoopRoentgen	createData_DentMapPlus	COMMON/Lib/CoopRoentgen.cs	1846	ShowYesNoMsg	Q00100	fullPathName + "が既に存在します。" + Environment
-msgtbl	⟨không render được: mã là biến⟩	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_DentMapPlus	COMMON/Lib/CoopRoentgen.cs	1894	ShowErrorMsg	⟨biến "E0026"⟩	予約システム連携
+msgtbl	予約システム連携	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_DentMapPlus	COMMON/Lib/CoopRoentgen.cs	1894	ShowErrorMsg	⚠ MÃ SAI E0026	予約システム連携
 msgtbl	予約システム連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_DentMapPlus	COMMON/Lib/CoopRoentgen.cs	1901	ShowErrorMsg	E00024	予約システム連携のディレクトリパスの設定
 msgtbl	予約システム連携のディレクトリ（" + dirName + "）が存在しません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_DentMapPlus	COMMON/Lib/CoopRoentgen.cs	1906	ShowErrorMsg	E00100	予約システム連携のディレクトリ（" + dirName + "）が存在しません。
 msgtbl	よろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	CoopRoentgen	editData_DentMapPlus	COMMON/Lib/CoopRoentgen.cs	1912	ShowYesNoMsg	Q00100	fullPathName + "が既に存在します。" + Environment
 msgtbl	予約システム連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	createData_Teraoka	COMMON/Lib/CoopRoentgen.cs	1939	ShowErrorMsg	E00024	予約システム連携のディレクトリパスの設定
 msgtbl	よろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	CoopRoentgen	createData_Teraoka	COMMON/Lib/CoopRoentgen.cs	1952	ShowYesNoMsg	Q00100	fileNm + "が既に存在します。" + Environment.NewLi
-msgtbl	⟨không render được: mã là biến⟩	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_Teraoka	COMMON/Lib/CoopRoentgen.cs	1992	ShowErrorMsg	⟨biến "E0026"⟩	清算機システム連携
+msgtbl	清算機システム連携	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_Teraoka	COMMON/Lib/CoopRoentgen.cs	1992	ShowErrorMsg	⚠ MÃ SAI E0026	清算機システム連携
 msgtbl	清算機システム連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_Teraoka	COMMON/Lib/CoopRoentgen.cs	1998	ShowErrorMsg	E00024	清算機システム連携のディレクトリパスの設定
 msgtbl	清算機システム連携のディレクトリ（" + neo.path + "）が存在しません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_Teraoka	COMMON/Lib/CoopRoentgen.cs	2004	ShowErrorMsg	E00100	清算機システム連携のディレクトリ（" + neo.path + "）が存在しません。
 msgtbl	よろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	CoopRoentgen	editData_Teraoka	COMMON/Lib/CoopRoentgen.cs	2011	ShowYesNoMsg	Q00100	fileNm + "が既に存在します。" + Environment.NewLi
 msgbox	画像ファイルが見つかりません。(	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	createData_DentAView	COMMON/Lib/CoopRoentgen.cs	2044	Critical		
 msgbox	画像ファイルが見つかりません。(	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_DentAView	COMMON/Lib/CoopRoentgen.cs	2115	Critical		
-msgtbl	⟨không render được: mã là biến⟩	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_DentAView	COMMON/Lib/CoopRoentgen.cs	2122	ShowErrorMsg	⟨biến "E0026"⟩	DentAView連携
-msgtbl	⟨không render được: mã là biến⟩	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_Sirona	COMMON/Lib/CoopRoentgen.cs	2210	ShowErrorMsg	⟨biến "E0026"⟩	レントゲンソフト連携
+msgtbl	DentAView連携	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_DentAView	COMMON/Lib/CoopRoentgen.cs	2122	ShowErrorMsg	⚠ MÃ SAI E0026	DentAView連携
+msgtbl	レントゲンソフト連携	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_Sirona	COMMON/Lib/CoopRoentgen.cs	2210	ShowErrorMsg	⚠ MÃ SAI E0026	レントゲンソフト連携
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_Sirona	COMMON/Lib/CoopRoentgen.cs	2220	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
-msgtbl	⟨không render được: mã là biến⟩	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_SironaSLIDA	COMMON/Lib/CoopRoentgen.cs	2379	ShowErrorMsg	⟨biến "E0026"⟩	レントゲンソフト連携
+msgtbl	レントゲンソフト連携	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_SironaSLIDA	COMMON/Lib/CoopRoentgen.cs	2379	ShowErrorMsg	⚠ MÃ SAI E0026	レントゲンソフト連携
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_SironaSLIDA	COMMON/Lib/CoopRoentgen.cs	2388	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	createData_Morita	COMMON/Lib/CoopRoentgen.cs	2518	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
 msgtbl	よろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	CoopRoentgen	createData_Morita	COMMON/Lib/CoopRoentgen.cs	2530	ShowYesNoMsg	Q00100	fileNm + "が既に存在します。" + Environment.NewLi
@@ -772,8 +774,8 @@ msgtbl		✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	errorProc	COMMON/Lib/CoopRoen
 msgtbl	レントゲンソフトのＤＬＬが見つかりません。\r\n\r\n[" + dllPath + "]	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	errorProc	COMMON/Lib/CoopRoentgen.cs	3613	ShowErrorMsg	E00100	レントゲンソフトのＤＬＬが見つかりません。\r\n\r\n[" + dllPath + "]
 msgtbl	レントゲンソフトのＤＬＬが見つかりません。\r\n\r\n[" + dllPath + "]	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	AdrStart	COMMON/Lib/CoopRoentgen.cs	3873	ShowErrorMsg	E00100	レントゲンソフトのＤＬＬが見つかりません。\r\n\r\n[" + dllPath + "]
 msgtbl	レントゲンソフトのフォルダが見つかりません。\r\n\r\n[" + strWKDir + "]	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	AdrStart	COMMON/Lib/CoopRoentgen.cs	3912	ShowErrorMsg	E00100	レントゲンソフトのフォルダが見つかりません。\r\n\r\n[" + strWKDir + "]
-msgbox	レントゲンソフト連携	?	OK	Button1 (ngầm)	CoopRoentgen	AdrStart	COMMON/Lib/CoopRoentgen.cs	3946	OkOnly		
-msgbox	レントゲンソフト（NeoPremium2）の起動が出来ませんでした。	?	OK	Button1 (ngầm)	CoopRoentgen	NeoPremiumStart	COMMON/Lib/CoopRoentgen.cs	3981	OkOnly		
+msgbox	レントゲンソフト連携	không icon	OK	Button1 (ngầm)	CoopRoentgen	AdrStart	COMMON/Lib/CoopRoentgen.cs	3946	OkOnly		
+msgbox	レントゲンソフト（NeoPremium2）の起動が出来ませんでした。	không icon	OK	Button1 (ngầm)	CoopRoentgen	NeoPremiumStart	COMMON/Lib/CoopRoentgen.cs	3981	OkOnly		
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	createData_TakaraCSV	COMMON/Lib/CoopRoentgen.cs	3998	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_TakaraCSV	COMMON/Lib/CoopRoentgen.cs	4039	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	createData_AadvaStationCSV	COMMON/Lib/CoopRoentgen.cs	4075	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
@@ -782,8 +784,8 @@ msgtbl	レントゲンソフト連携のディレクトリパスの設定があ�
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_ActionGateCSV	COMMON/Lib/CoopRoentgen.cs	4198	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	createData_TatsujinPlusCSV	COMMON/Lib/CoopRoentgen.cs	4284	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
 msgtbl	レントゲンソフト連携のディレクトリパスの設定がありません。	✕ đỏ	OK	Button1 (ngầm)	CoopRoentgen	editData_TatsujinPlusCSV	COMMON/Lib/CoopRoentgen.cs	4319	ShowErrorMsg	E00024	レントゲンソフト連携のディレクトリパスの設定
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	ComLibrary	chkExcellent	COMMON/Lib/ComLibrary.cs	523	ShowFreeMsg	⟨biến "データベースへの接続に失敗しました。"⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	ComLibrary	DecodingBase64WriteAllBytes	COMMON/Lib/ComLibrary.cs	622	ShowFreeMsg	⟨biến "Error: " + e.Messag⟩	MessageBoxButtons.OK
+free	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	ComLibrary	chkExcellent	COMMON/Lib/ComLibrary.cs	523	ShowFreeMsg		
+free	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	ComLibrary	DecodingBase64WriteAllBytes	COMMON/Lib/ComLibrary.cs	622	ShowFreeMsg		
 msgbox	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	MsgDialog	ShowErrorMsg	COMMON/Lib/MsgDialog.cs	36	Error		
 msgbox	⟨chuỗi ghép lúc chạy⟩	ⓘ xanh	OK	Button1 (ngầm)	MsgDialog	ShowInfoMsg	COMMON/Lib/MsgDialog.cs	50	Information		
 msgbox	⟨chuỗi ghép lúc chạy⟩	⚠ vàng	OK	Button1 (ngầm)	MsgDialog	ShowWarningMsg	COMMON/Lib/MsgDialog.cs	64	Warning		
@@ -805,29 +807,29 @@ msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	Kon	insertDe
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	Bnow	insertDefaultBnow	COMMON/DBAccess/Bnow.cs	445	ShowErrorMsg	E99999	
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	Siga	insertDefaultSiga	COMMON/DBAccess/Siga.cs	403	ShowErrorMsg	E99999	
 msgtbl	基準日が間違っています。	⚠ vàng	OK	Button1 (ngầm)	frm506006	getViewData	INI/Forms/frm506006.cs	278	ShowWarningMsg	E00002	基準日
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm506002	bindingViewModel	INI/Forms/frm506002.cs	262	ShowFreeMsg	⟨biến "サーバー名が設定されていません。"⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm506002	bindingViewModel	INI/Forms/frm506002.cs	272	ShowFreeMsg	⟨biến "サーバー名がローカルに設定されていなけ⟩	MessageBoxButtons.OK
+free	サーバー名が設定されていません。	✕ đỏ	OK	Button1 (ngầm)	frm506002	bindingViewModel	INI/Forms/frm506002.cs	262	ShowFreeMsg		
+free	サーバー名がローカルに設定されていなければ、アタッチはできません。	✕ đỏ	OK	Button1 (ngầm)	frm506002	bindingViewModel	INI/Forms/frm506002.cs	272	ShowFreeMsg		
 msgbox	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	frm506002	bindingViewModel	INI/Forms/frm506002.cs	273	Error		
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm506002	bindingViewModel	INI/Forms/frm506002.cs	281	ShowFreeMsg	⟨biến "サーバー名が設定されていません。"⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm506002	bindingViewModel	INI/Forms/frm506002.cs	291	ShowFreeMsg	⟨biến "サーバー名がローカルに設定されていなけ⟩	MessageBoxButtons.OK
+free	サーバー名が設定されていません。	✕ đỏ	OK	Button1 (ngầm)	frm506002	bindingViewModel	INI/Forms/frm506002.cs	281	ShowFreeMsg		
+free	サーバー名がローカルに設定されていなければ、デタッチはできません。	✕ đỏ	OK	Button1 (ngầm)	frm506002	bindingViewModel	INI/Forms/frm506002.cs	291	ShowFreeMsg		
 msgbox	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	frm506002	bindingViewModel	INI/Forms/frm506002.cs	292	Error		
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm506002	btnF1_Click	INI/Forms/frm506002.cs	305	ShowFreeMsg	⟨biến "サーバー名が設定されていません。"⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm506002	btnF1_Click	INI/Forms/frm506002.cs	312	ShowFreeMsg	⟨biến "サーバー名がローカルに設定されている為⟩	MessageBoxButtons.OK
+free	サーバー名が設定されていません。	✕ đỏ	OK	Button1 (ngầm)	frm506002	btnF1_Click	INI/Forms/frm506002.cs	305	ShowFreeMsg		
+free	サーバー名がローカルに設定されている為、アップロードができません。	✕ đỏ	OK	Button1 (ngầm)	frm506002	btnF1_Click	INI/Forms/frm506002.cs	312	ShowFreeMsg		
 msgbox	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	frm506002	btnF1_Click	INI/Forms/frm506002.cs	313	Error		
-msgtbl	⟨không render được: mã là biến⟩	？ hỏi	OK|Cancel	Button1 (ngầm)	frm506002	btnF1_Click	INI/Forms/frm506002.cs	317	ShowOKCancelMsg	⟨biến ""⟩	サーバーのデータをダウンロードします。\n\rクライアントのデータに上書きしますが、よろしいですか？
+msgtbl	サーバーのデータをダウンロードします。\n\rクライアントのデータに上書きしますが、よろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm506002	btnF1_Click	INI/Forms/frm506002.cs	317	ShowOKCancelMsg		サーバーのデータをダウンロードします。\n\rクライアントのデータに上書きしますが、よろしいですか？
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm506002	btnF1_Click	INI/Forms/frm506002.cs	338	ShowErrorMsg	E99999	
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm506002	btnF1_Click	INI/Forms/frm506002.cs	344	ShowFreeMsg	⟨biến "ダウンロードが完了しました。"⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm506002	ProgressDialog_DownLoad	INI/Forms/frm506002.cs	378	ShowFreeMsg	⟨biến "サーバーへの接続に失敗しました。 " ⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm506002	ProgressDialog_DownLoad	INI/Forms/frm506002.cs	401	ShowFreeMsg	⟨biến "コピーに失敗しました。 (" + "\⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm506002	btnF2_Click	INI/Forms/frm506002.cs	453	ShowFreeMsg	⟨biến "サーバー名が設定されていません。"⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm506002	btnF2_Click	INI/Forms/frm506002.cs	460	ShowFreeMsg	⟨biến "サーバー名がローカルに設定されている為⟩	MessageBoxButtons.OK
+free	ダウンロードが完了しました。	ⓘ xanh	OK	Button1 (ngầm)	frm506002	btnF1_Click	INI/Forms/frm506002.cs	344	ShowFreeMsg		
+free	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	frm506002	ProgressDialog_DownLoad	INI/Forms/frm506002.cs	378	ShowFreeMsg		
+free	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	frm506002	ProgressDialog_DownLoad	INI/Forms/frm506002.cs	401	ShowFreeMsg		
+free	サーバー名が設定されていません。	✕ đỏ	OK	Button1 (ngầm)	frm506002	btnF2_Click	INI/Forms/frm506002.cs	453	ShowFreeMsg		
+free	サーバー名がローカルに設定されている為、アップロードができません。	✕ đỏ	OK	Button1 (ngầm)	frm506002	btnF2_Click	INI/Forms/frm506002.cs	460	ShowFreeMsg		
 msgbox	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	frm506002	btnF2_Click	INI/Forms/frm506002.cs	461	Error		
 msgtbl	アップロード年月が間違っています。	✕ đỏ	OK	Button1 (ngầm)	frm506002	btnF2_Click	INI/Forms/frm506002.cs	469	ShowErrorMsg	E00002	アップロード年月
-msgtbl	⟨không render được: mã là biến⟩	？ hỏi	OK|Cancel	Button1 (ngầm)	frm506002	btnF2_Click	INI/Forms/frm506002.cs	474	ShowOKCancelMsg	⟨biến ""⟩	クライアントで変更した処置データをサーバーへアップロードします。\r\n処置データに変更がある患者データもアップロードされます。よろしいですか？
+msgtbl	クライアントで変更した処置データをサーバーへアップロードします。\r\n処置データに変更がある患者データもアップロードされます。よろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm506002	btnF2_Click	INI/Forms/frm506002.cs	474	ShowOKCancelMsg		クライアントで変更した処置データをサーバーへアップロードします。\r\n処置データに変更がある患者データもアップロードされます。よろしいですか？
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm506002	btnF2_Click	INI/Forms/frm506002.cs	496	ShowErrorMsg	E99999	
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm506002	btnF2_Click	INI/Forms/frm506002.cs	502	ShowFreeMsg	⟨biến "アップロードが完了しました。"⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm506002	ProgressDialog_UpLoad	INI/Forms/frm506002.cs	540	ShowFreeMsg	⟨biến "サーバー接続に失敗しました。 " + ⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm506002	data_upload	INI/Forms/frm506002.cs	874	ShowFreeMsg	⟨biến "クライアントの処置データ内に、コピー対⟩	MessageBoxButtons.OK
+free	アップロードが完了しました。	ⓘ xanh	OK	Button1 (ngầm)	frm506002	btnF2_Click	INI/Forms/frm506002.cs	502	ShowFreeMsg		
+free	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	frm506002	ProgressDialog_UpLoad	INI/Forms/frm506002.cs	540	ShowFreeMsg		
+free	クライアントの処置データ内に、コピー対象データが存在しません。	ⓘ xanh	OK	Button1 (ngầm)	frm506002	data_upload	INI/Forms/frm506002.cs	874	ShowFreeMsg		
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm506002	data_upload	INI/Forms/frm506002.cs	938	ShowErrorMsg	E88888	ex.Message
 msgtbl	システムエラーです。 ⟨+ex.Message⟩	✕ đỏ	OK	Button1 (ngầm)	frm506002	data_upload_person	INI/Forms/frm506002.cs	1010	ShowErrorMsg	E99999	ex.Message
 msgtbl	医療機関名が入力されていません。	✕ đỏ	OK	Button1 (ngầm)	frm506003	setIinmstData	INI/Forms/frm506003.cs	384	ShowErrorMsg	E00001	医療機関名
@@ -865,7 +867,7 @@ msgtbl	ユーザ名が入力されていません。	✕ đỏ	OK	Button1 (ngầ
 msgtbl	パスワードが入力されていません。	✕ đỏ	OK	Button1 (ngầm)	frm506008	chkInputData	INI/Forms/frm506008.cs	1779	ShowErrorMsg	E00001	パスワード
 msgtbl	ディレクトリパスが入力されていません。	✕ đỏ	OK	Button1 (ngầm)	frm506008	chkInputData	INI/Forms/frm506008.cs	1785	ShowErrorMsg	E00001	ディレクトリパス
 msgtbl	スキャナ情報設定が完了しました。	ⓘ xanh	OK	Button1 (ngầm)	frm506008	btnScUpdate_Click	INI/Forms/frm506008.cs	1833	ShowInfoMsg	I00005	スキャナ情報設定
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm506008	initScNm	INI/Forms/frm506008.cs	1868	ShowFreeMsg	⟨biến "スキャナー名称の取得ができません。" ⟩	MessageBoxButtons.OK
+free	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	frm506008	initScNm	INI/Forms/frm506008.cs	1868	ShowFreeMsg		
 msgtbl	患者情報一括作成を開始します。よろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm506008	btnCreateDentalX_Click	INI/Forms/frm506008.cs	1892	ShowOKCancelMsg	Q00100	患者情報一括作成を開始します。
 msgtbl	患者情報一括作成が完了しました。	ⓘ xanh	OK	Button1 (ngầm)	frm506008	btnCreateDentalX_Click	INI/Forms/frm506008.cs	1902	ShowInfoMsg	I00005	患者情報一括作成
 msgtbl	システムエラーです。患者情報一括作成に失敗しました。	✕ đỏ	OK	Button1 (ngầm)	frm506008	btnCreateDentalX_Click	INI/Forms/frm506008.cs	1905	ShowErrorMsg	E88888	患者情報一括作成に失敗しました。
@@ -911,12 +913,12 @@ msgtbl	検索処理を中断しました。	⚠ vàng	OK	Button1 (ngầm)	frm506
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm506011	takeRecepts	INI/Forms/frm506011.cs	202	ShowErrorMsg	E99999	
 msgtbl	該当データがありません。	✕ đỏ	OK	Button1 (ngầm)	frm506011	takeRecepts	INI/Forms/frm506011.cs	208	ShowErrorMsg	E00003	
 msgtbl	該当データがありません。	✕ đỏ	OK	Button1 (ngầm)	frm506011	takeRecepts	INI/Forms/frm506011.cs	216	ShowErrorMsg	E00003	
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	Frm506002Model	connectTest	INI/Models/Frm506002Model.cs	163	ShowFreeMsg	⟨biến "接続テストが無事終了しました。"⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	Frm506002Model	connectTest	INI/Models/Frm506002Model.cs	167	ShowFreeMsg	⟨biến "接続に失敗しました。 " + ex.M⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	Frm506002Model	detachTest	INI/Models/Frm506002Model.cs	184	ShowFreeMsg	⟨biến "正常にデタッチされました。"⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	Frm506002Model	detachTest	INI/Models/Frm506002Model.cs	188	ShowFreeMsg	⟨biến "デタッチに失敗しました。 " + ex⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	Frm506002Model	attachTest	INI/Models/Frm506002Model.cs	204	ShowFreeMsg	⟨biến "正常にアタッチされました。"⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	Frm506002Model	attachTest	INI/Models/Frm506002Model.cs	208	ShowFreeMsg	⟨biến "アタッチに失敗しました。 " + ex⟩	MessageBoxButtons.OK
+free	接続テストが無事終了しました。	ⓘ xanh	OK	Button1 (ngầm)	Frm506002Model	connectTest	INI/Models/Frm506002Model.cs	163	ShowFreeMsg		
+free	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	Frm506002Model	connectTest	INI/Models/Frm506002Model.cs	167	ShowFreeMsg		
+free	正常にデタッチされました。	ⓘ xanh	OK	Button1 (ngầm)	Frm506002Model	detachTest	INI/Models/Frm506002Model.cs	184	ShowFreeMsg		
+free	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	Frm506002Model	detachTest	INI/Models/Frm506002Model.cs	188	ShowFreeMsg		
+free	正常にアタッチされました。	ⓘ xanh	OK	Button1 (ngầm)	Frm506002Model	attachTest	INI/Models/Frm506002Model.cs	204	ShowFreeMsg		
+free	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	Frm506002Model	attachTest	INI/Models/Frm506002Model.cs	208	ShowFreeMsg		
 msgtbl	総括日が入力されていません。	✕ đỏ	OK	Button1 (ngầm)	frm305001	btnF1_Click	SUM/Forms/frm305001.cs	159	ShowErrorMsg	E00001	総括日
 msgtbl	プリンタに用紙をセットしてください。	？ hỏi	OK|Cancel	Button1 (ngầm)	frm305001	btnF3_Click	SUM/Forms/frm305001.cs	209	ShowOKCancelMsg	Q00033	
 msgtbl	プリンタに用紙をセットしてください。	？ hỏi	OK|Cancel	Button1 (ngầm)	frm305001	btnF8_Click	SUM/Forms/frm305001.cs	250	ShowOKCancelMsg	Q00033	
@@ -983,8 +985,8 @@ msgtbl	該当データがありません。	✕ đỏ	OK	Button1 (ngầm)	frm307
 msgtbl	総括年月が間違っています。	✕ đỏ	OK	Button1 (ngầm)	frm307001	chkCondition	ONLINECARE/Forms/frm307001.cs	580	ShowErrorMsg	E00002	総括年月
 msgtbl	印刷に失敗しました。	✕ đỏ	OK	Button1 (ngầm)	frm307001	printProc	ONLINECARE/Forms/frm307001.cs	1089	ShowErrorMsg	E00026	印刷
 msgtbl	レセプトデータが存在しないため、出力できません。	✕ đỏ	OK	Button1 (ngầm)	EditCSV	outputLongTermCareInsuranceCSV	ONLINECARE/Lib/EditCSV.cs	139	ShowErrorMsg	E00100	レセプトデータが存在しないため、出力できません。
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	MainMenu	lblVersion_Click	MENU/MainMenu.cs	288	ShowFreeMsg	⟨biến msg⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	Form1	customButton5_Click_1	MENU/Form1.cs	60	ShowFreeMsg	⟨biến msg⟩	MessageBoxButtons.OK
+free	⟨chuỗi ghép lúc chạy⟩	ⓘ xanh	OK	Button1 (ngầm)	MainMenu	lblVersion_Click	MENU/MainMenu.cs	288	ShowFreeMsg		
+free	⟨chuỗi ghép lúc chạy⟩	ⓘ xanh	OK	Button1 (ngầm)	Form1	customButton5_Click_1	MENU/Form1.cs	60	ShowFreeMsg		
 msgtbl	データが選択されていません。	✕ đỏ	OK	Button1 (ngầm)	frm303001	btnF6_Click	HENREI/Forms/frm303001.cs	263	ShowErrorMsg	E00007	
 msgtbl	データが選択されていません。	✕ đỏ	OK	Button1 (ngầm)	frm303001	btnF8_Click	HENREI/Forms/frm303001.cs	319	ShowErrorMsg	E00007	
 msgtbl	診療年月が間違っています。	✕ đỏ	OK	Button1 (ngầm)	frm303001	chkSearchData	HENREI/Forms/frm303001.cs	548	ShowErrorMsg	E00002	診療年月
@@ -1098,7 +1100,7 @@ msgtbl	薬剤名の文字数が越えています。	✕ đỏ	OK	Button1 (ngầ
 msgtbl	カルテ名の文字数が越えています。	✕ đỏ	OK	Button1 (ngầm)	frm501016	chkInputData	FIL/Forms/frm501016.cs	990	ShowErrorMsg	E00022	カルテ名
 msgtbl	適用日が間違っています。	✕ đỏ	OK	Button1 (ngầm)	frm501016	chkInputData	FIL/Forms/frm501016.cs	1003	ShowErrorMsg	E00002	適用日
 msgtbl	過去データ以前の日付は設定できません。	✕ đỏ	OK	Button1 (ngầm)	frm501016	chkInputData	FIL/Forms/frm501016.cs	1009	ShowErrorMsg	E00028	
-msgtbl	⟨không render được: mã là biến⟩	✕ đỏ	OK	Button1 (ngầm)	frm501016	chkInputData	FIL/Forms/frm501016.cs	1037	ShowErrorMsg	⟨biến ""⟩	データが重複しています。薬品コード
+msgtbl	データが重複しています。薬品コード	✕ đỏ	OK	Button1 (ngầm)	frm501016	chkInputData	FIL/Forms/frm501016.cs	1037	ShowErrorMsg		データが重複しています。薬品コード
 msgtbl	明細から求めた点数と、入力された点数が違います。登録してよろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	frm501016	chkInputData	FIL/Forms/frm501016.cs	1076	ShowYesNoMsg	Q00023	
 msgtbl	更新してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm501016	entryData	FIL/Forms/frm501016.cs	1095	ShowOKCancelMsg	Q00002	
 msgtbl	薬剤コード[" + trtCd + "-" + trtSb + "] は既に登録されています。	✕ đỏ	OK	Button1 (ngầm)	frm501016	entryData	FIL/Forms/frm501016.cs	1118	ShowErrorMsg	E00008	薬剤コード[" + trtCd + "-" + trtSb + "] 
@@ -1208,7 +1210,7 @@ msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	EPSsiPIR03	s
 msgtbl	サーバーからの応答待機をキャンセルしました。	⚠ vàng	OK	Button1 (ngầm)	EPSsiPIR03	setEPSsiPIR03reqXml	OQS_RX/RxControls/EPSsiPIR03.cs	214	ShowWarningMsg	W00100	サーバーからの応答待機をキャンセルしました。
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	EPSsiPIR03	setEPSsiPIR03reqXml	OQS_RX/RxControls/EPSsiPIR03.cs	220	ShowErrorMsg	E99999	
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	EPSsiDMP04	setEPSsiDMP04req	OQS_RX/RxControls/EPSsiDMP04.cs	96	ShowErrorMsg	E00100	resData.XMLCheckingDuplicateMedicationRe
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	EPSsiDMP04	setEPSsiDMP04req	OQS_RX/RxControls/EPSsiDMP04.cs	111	ShowFreeMsg	⟨biến "重複投薬等チェック正常終了しました"⟩	MessageBoxButtons.OK
+free	重複投薬等チェック正常終了しました	ⓘ xanh	OK	Button1 (ngầm)	EPSsiDMP04	setEPSsiDMP04req	OQS_RX/RxControls/EPSsiDMP04.cs	111	ShowFreeMsg		
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	EPSsiDMP04	setEPSsiDMP04req	OQS_RX/RxControls/EPSsiDMP04.cs	126	ShowErrorMsg	E00100	errorList
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	EPSsiDMP04	setEPSsiDMP04req	OQS_RX/RxControls/EPSsiDMP04.cs	133	ShowErrorMsg	E00100	resData.XMLCheckingDuplicateMedicationRe
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	EPSsiDMP04	setEPSsiDMP04reqXml	OQS_RX/RxControls/EPSsiDMP04.cs	172	ShowErrorMsg	E88888	ex.Message
@@ -1217,7 +1219,7 @@ msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	EPSsiDMP04	s
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	EPSsiPIR17	setEPSsiPIR17reqXml	OQS_RX/RxControls/EPSsiPIR17.cs	178	ShowErrorMsg	E88888	ex.Message
 msgtbl	サーバーからの応答待機をキャンセルしました。	⚠ vàng	OK	Button1 (ngầm)	EPSsiPIR17	setEPSsiPIR17reqXml	OQS_RX/RxControls/EPSsiPIR17.cs	196	ShowWarningMsg	W00100	サーバーからの応答待機をキャンセルしました。
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	EPSsiPIR17	setEPSsiPIR17reqXml	OQS_RX/RxControls/EPSsiPIR17.cs	202	ShowErrorMsg	E99999	
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	EPSsiPIR06	setEPSsiPIR06req	OQS_RX/RxControls/EPSsiPIR06.cs	129	ShowFreeMsg	⟨biến "処方内容（控え）取得正常終了しました。⟩	MessageBoxButtons.OK
+free	処方内容（控え）取得正常終了しました。	ⓘ xanh	OK	Button1 (ngầm)	EPSsiPIR06	setEPSsiPIR06req	OQS_RX/RxControls/EPSsiPIR06.cs	129	ShowFreeMsg		
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	EPSsiPIR06	setEPSsiPIR06req	OQS_RX/RxControls/EPSsiPIR06.cs	142	ShowErrorMsg	E00100	resData.EPSsiPIR06res.MessageBody.Proces
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	EPSsiPIR06	setEPSsiPIR06req	OQS_RX/RxControls/EPSsiPIR06.cs	148	ShowErrorMsg	E00100	resData.EPSsiPIR06res.MessageHeader.Erro
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	EPSsiPIR06	setEPSsiPIR06reqXml	OQS_RX/RxControls/EPSsiPIR06.cs	188	ShowErrorMsg	E88888	ex.Message
@@ -1247,7 +1249,7 @@ msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	EPSsiPIR15	s
 msgtbl	サーバーからの応答待機をキャンセルしました。	⚠ vàng	OK	Button1 (ngầm)	EPSsiPIR15	setEPSsiPIR15reqXml	OQS_RX/RxControls/EPSsiPIR15.cs	157	ShowWarningMsg	W00100	サーバーからの応答待機をキャンセルしました。
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	EPSsiPIR15	setEPSsiPIR15reqXml	OQS_RX/RxControls/EPSsiPIR15.cs	163	ShowErrorMsg	E99999	
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	EPSsiDMP02	setEPSsiDMP02req	OQS_RX/RxControls/EPSsiDMP02.cs	100	ShowErrorMsg	E00100	resData.XMLCheckingDuplicateMedicationRe
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	EPSsiDMP02	setEPSsiDMP02req	OQS_RX/RxControls/EPSsiDMP02.cs	116	ShowFreeMsg	⟨biến "重複投薬等チェック正常終了しました"⟩	MessageBoxButtons.OK
+free	重複投薬等チェック正常終了しました	ⓘ xanh	OK	Button1 (ngầm)	EPSsiDMP02	setEPSsiDMP02req	OQS_RX/RxControls/EPSsiDMP02.cs	116	ShowFreeMsg		
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	EPSsiDMP02	setEPSsiDMP02req	OQS_RX/RxControls/EPSsiDMP02.cs	134	ShowErrorMsg	E00100	errorList
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	EPSsiDMP02	setEPSsiDMP02req	OQS_RX/RxControls/EPSsiDMP02.cs	140	ShowErrorMsg	E00100	resData.XMLCheckingDuplicateMedicationRe
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	EPSsiDMP02	setEPSsiDMP02reqXml	OQS_RX/RxControls/EPSsiDMP02.cs	179	ShowErrorMsg	E88888	ex.Message
@@ -1329,11 +1331,11 @@ msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm702001	ba
 msgtbl	ドライブ（）にバックアップデータが存在しません。	✕ đỏ	OK	Button1 (ngầm)	frm702001	restore	BACKUP/Forms/frm702001.cs	393	ShowErrorMsg	E00067	Strings.StrConv(bPath, VbStrConv.Wide, 1
 msgtbl	バックアップデータは現在ものより古いデータです。上書きしてもよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm702001	restore	BACKUP/Forms/frm702001.cs	402	ShowOKCancelMsg	Q00054	
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm702001	restore	BACKUP/Forms/frm702001.cs	454	ShowErrorMsg	E88888	ex.Message
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm702001	backup_online	BACKUP/Forms/frm702001.cs	516	ShowFreeMsg	⟨biến "コピーに失敗しました。 (" + "\⟩	MessageBoxButtons.OK
+free	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	frm702001	backup_online	BACKUP/Forms/frm702001.cs	516	ShowFreeMsg		
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm702001	backup_online	BACKUP/Forms/frm702001.cs	546	ShowErrorMsg	E88888	ex.Message
 msgtbl	ドライブ（）にバックアップデータが存在しません。	✕ đỏ	OK	Button1 (ngầm)	frm702001	restore_online	BACKUP/Forms/frm702001.cs	573	ShowErrorMsg	E00067	Strings.StrConv(bPath, VbStrConv.Wide, 1
-msgtbl	⟨không render được: mã là biến⟩ ⟨+Strings.StrConv(strBakDate, VbStrConv.Wi⟩	？ hỏi	OK|Cancel	Button1 (ngầm)	frm702001	restore_online	BACKUP/Forms/frm702001.cs	578	ShowOKCancelMsg	⟨biến ""⟩	Strings.StrConv(strBakDate, VbStrConv.Wi
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm702001	TryRestoreDatabase	BACKUP/Forms/frm702001.cs	703	ShowFreeMsg	⟨biến "コピーに失敗しました。 (" + "\⟩	MessageBoxButtons.OK
+msgtbl	⟨không render được: mã là biến⟩ ⟨+Strings.StrConv(strBakDate, VbStrConv.Wi⟩	？ hỏi	OK|Cancel	Button1 (ngầm)	frm702001	restore_online	BACKUP/Forms/frm702001.cs	578	ShowOKCancelMsg		Strings.StrConv(strBakDate, VbStrConv.Wi
+free	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	frm702001	TryRestoreDatabase	BACKUP/Forms/frm702001.cs	703	ShowFreeMsg		
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm702001	TryRestoreDatabase	BACKUP/Forms/frm702001.cs	722	ShowErrorMsg	E88888	ex.Message
 msgtbl	が入力されていません。	✕ đỏ	OK	Button1 (ngầm)	frm602003	chkInputData	GUIDEDIT/Forms/frm602003.cs	348	ShowErrorMsg	E00001	strMsg
 msgtbl	コードが登録されていません。	✕ đỏ	OK	Button1 (ngầm)	frm602003	chkInputData	GUIDEDIT/Forms/frm602003.cs	364	ShowErrorMsg	E00005	コード
@@ -1398,7 +1400,7 @@ msgtbl	印刷開始行が間違っています。	✕ đỏ	OK	Button1 (ngầm)	
 msgtbl	ページが入力されていません。	✕ đỏ	OK	Button1 (ngầm)	frm205003	printCctbProc	CCT/Forms/frm205003.cs	945	ShowErrorMsg	E00001	ページ
 msgtbl	ページが間違っています。	✕ đỏ	OK	Button1 (ngầm)	frm205003	printCctbProc	CCT/Forms/frm205003.cs	953	ShowErrorMsg	E00002	ページ
 msgtbl	印刷開始行が用紙の最大行数を超えています。	✕ đỏ	OK	Button1 (ngầm)	frm205003	printCctbProc	CCT/Forms/frm205003.cs	964	ShowErrorMsg	E00050	
-msgtbl	⟨không render được: mã là biến⟩ ⟨+cd.getWareki().Substring(0, 8) +\n       ⟩	？ hỏi	Yes|No	Button1 (ngầm)	frm205003	printCctbProc	CCT/Forms/frm205003.cs	992	ShowYesNoMsg	⟨biến ""⟩	cd.getWareki().Substring(0, 8) +\n       
+msgtbl	⟨không render được: mã là biến⟩ ⟨+cd.getWareki().Substring(0, 8) +\n       ⟩	？ hỏi	Yes|No	Button1 (ngầm)	frm205003	printCctbProc	CCT/Forms/frm205003.cs	992	ShowYesNoMsg		cd.getWareki().Substring(0, 8) +\n       
 msgtbl	指定月に診療情報がありません。このまま続けてもよろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	frm205003	printCctbProc	CCT/Forms/frm205003.cs	1004	ShowYesNoMsg	Q00032	
 msgtbl	プリンタに２号用紙をセットしてください。	？ hỏi	OK|Cancel	Button1 (ngầm)	frm205003	printCctbProc	CCT/Forms/frm205003.cs	1011	ShowOKCancelMsg	Q00033	２号
 msgtbl	カルテ印刷（" + ex.Message +"）に失敗しました。	✕ đỏ	OK	Button1 (ngầm)	frm205003	printCctbProc	CCT/Forms/frm205003.cs	1094	ShowErrorMsg	E00026	カルテ印刷（" + ex.Message +"）
@@ -1413,9 +1415,9 @@ msgtbl		✕ đỏ	OK	Button1 (ngầm)	Prescription	lblRxId_Click	RX/UserControls
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	Prescription	lblRxId_Click	RX/UserControls/Prescription.cs	3059	ShowErrorMsg	E88888	ex.Message
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	Prescription	lblRxId_Click	RX/UserControls/Prescription.cs	3071	ShowErrorMsg	E00100	ex.Message
 msgtbl	データが見つかりません。	⚠ vàng	OK	Button1 (ngầm)	frm210002	frm210002_Shown	RX/Forms/frm210002.cs	191	ShowWarningMsg	W00100	データが見つかりません。
-msgtbl	⟨không render được: mã là biến⟩	⚠ vàng	OK	Button1 (ngầm)	frm210002	frm210002_Shown	RX/Forms/frm210002.cs	201	ShowWarningMsg	⟨biến ""⟩	処方せん印刷用プリンタ設定が可能になりました。プリンタ設定がない場合、その他帳票印刷用プリンタから処方せんを印刷します。\n" +\n                                             "お茶コンメニューの「ハードウェア設定」よりプリンタ設定してください。
+msgtbl	処方せん印刷用プリンタ設定が可能になりました。プリンタ設定がない場合、その他帳票印刷用プリンタから処方せんを印刷します。\n" +\n                                             "お茶コンメニューの「ハードウェア設定」よりプリンタ設定してください。	⚠ vàng	OK	Button1 (ngầm)	frm210002	frm210002_Shown	RX/Forms/frm210002.cs	201	ShowWarningMsg		処方せん印刷用プリンタ設定が可能になりました。プリンタ設定がない場合、その他帳票印刷用プリンタから処方せんを印刷します。\n" +\n                                             "お茶コンメニューの「ハードウェア設定」よりプリンタ設定してください。
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	btnF2_Click	RX/Forms/frm210002.cs	296	ShowErrorMsg	E00100	oqsRxData.error_msg + "(" + oqsRxData.er
-msgtbl	⟨không render được: mã là biến⟩	⚠ vàng	OK	Button1 (ngầm)	frm210002	btnF5_Click	RX/Forms/frm210002.cs	424	ShowWarningMsg	⟨biến ""⟩	処方IDがありません。
+msgtbl	処方IDがありません。	⚠ vàng	OK	Button1 (ngầm)	frm210002	btnF5_Click	RX/Forms/frm210002.cs	424	ShowWarningMsg		処方IDがありません。
 msgtbl	処方箋を変更します。よろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	frm210002	btnF7_Click	RX/Forms/frm210002.cs	445	ShowYesNoMsg	Q00100	処方箋を変更します。
 msgtbl	電子署名が取得できません\n[F3 電子署名]ボタンを押下して、電子署名してください。	✕ đỏ	OK	Button1 (ngầm)	frm210002	checkCurrentToken	RX/Forms/frm210002.cs	490	ShowErrorMsg	E00100	電子署名が取得できません\n[F3 電子署名]ボタンを押下して、電子署名してください。
 msgtbl	処方箋を削除します。よろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	frm210002	btnF8_Click	RX/Forms/frm210002.cs	503	ShowYesNoMsg	Q00100	処方箋を削除します。
@@ -1436,15 +1438,15 @@ msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR14req	RX/Forms/frm210002
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR14req	RX/Forms/frm210002.cs	1215	ShowErrorMsg	E00100	errorList
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR14req	RX/Forms/frm210002.cs	1224	ShowErrorMsg	E00100	resData.EPSsiPIR14res.MessageHeader.Erro
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR14req	RX/Forms/frm210002.cs	1238	ShowErrorMsg	E00100	ex.Message
-msgtbl	⟨không render được: mã là biến⟩	⚠ vàng	OK	Button1 (ngầm)	frm210002	EPSsiPIR02req	RX/Forms/frm210002.cs	1252	ShowWarningMsg	⟨biến ""⟩	処方箋IDを入力してください。
+msgtbl	処方箋IDを入力してください。	⚠ vàng	OK	Button1 (ngầm)	frm210002	EPSsiPIR02req	RX/Forms/frm210002.cs	1252	ShowWarningMsg		処方箋IDを入力してください。
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR02req	RX/Forms/frm210002.cs	1267	ShowErrorMsg	E00100	resData.ePSsiPIR02res.MessageHeader.Erro
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR02req	RX/Forms/frm210002.cs	1273	ShowErrorMsg	E00100	resData.ePSsiPIR02res.MessageBody.Proces
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR02req	RX/Forms/frm210002.cs	1288	ShowErrorMsg	E00100	ex.Message
-msgtbl	⟨không render được: mã là biến⟩	⚠ vàng	OK	Button1 (ngầm)	frm210002	EPSsiPIR15req	RX/Forms/frm210002.cs	1303	ShowWarningMsg	⟨biến ""⟩	処方箋IDを入力してください。
+msgtbl	処方箋IDを入力してください。	⚠ vàng	OK	Button1 (ngầm)	frm210002	EPSsiPIR15req	RX/Forms/frm210002.cs	1303	ShowWarningMsg		処方箋IDを入力してください。
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR15req	RX/Forms/frm210002.cs	1318	ShowErrorMsg	E00100	resData.EPSsiPIR15res.MessageHeader.Erro
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR15req	RX/Forms/frm210002.cs	1324	ShowErrorMsg	E00100	resData.EPSsiPIR15res.MessageBody.Proces
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR15req	RX/Forms/frm210002.cs	1335	ShowErrorMsg	E00100	ex.Message
-msgtbl	⟨không render được: mã là biến⟩	⚠ vàng	OK	Button1 (ngầm)	frm210002	EPSsiPIR03req	RX/Forms/frm210002.cs	1352	ShowWarningMsg	⟨biến ""⟩	処方箋IDを入力してください。
+msgtbl	処方箋IDを入力してください。	⚠ vàng	OK	Button1 (ngầm)	frm210002	EPSsiPIR03req	RX/Forms/frm210002.cs	1352	ShowWarningMsg		処方箋IDを入力してください。
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR03req	RX/Forms/frm210002.cs	1387	ShowErrorMsg	E00100	resData.EPSsiPIR03res.MessageBody.XmlChe
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR03req	RX/Forms/frm210002.cs	1394	ShowErrorMsg	E00100	resData.EPSsiPIR03res.MessageBody.CsvChe
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR03req	RX/Forms/frm210002.cs	1407	ShowErrorMsg	E00100	resData.EPSsiPIR03res.MessageBody.Verify
@@ -1453,13 +1455,13 @@ msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR03req	RX/Forms/frm210002
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR03req	RX/Forms/frm210002.cs	1441	ShowErrorMsg	E00100	errorList
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR03req	RX/Forms/frm210002.cs	1448	ShowErrorMsg	E00100	resData.EPSsiPIR03res.MessageHeader.Erro
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR03req	RX/Forms/frm210002.cs	1473	ShowErrorMsg	E00100	msgErr
-msgtbl	⟨không render được: mã là biến⟩	⚠ vàng	OK	Button1 (ngầm)	frm210002	EPSsiPIR16req	RX/Forms/frm210002.cs	1490	ShowWarningMsg	⟨biến ""⟩	処方箋IDを入力してください。
+msgtbl	処方箋IDを入力してください。	⚠ vàng	OK	Button1 (ngầm)	frm210002	EPSsiPIR16req	RX/Forms/frm210002.cs	1490	ShowWarningMsg		処方箋IDを入力してください。
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR16req	RX/Forms/frm210002.cs	1516	ShowErrorMsg	E00100	resData.EPSsiPIR16res.MessageBody.XmlChe
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR16req	RX/Forms/frm210002.cs	1523	ShowErrorMsg	E00100	resData.EPSsiPIR16res.MessageBody.CsvChe
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR16req	RX/Forms/frm210002.cs	1544	ShowErrorMsg	E00100	errorList
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR16req	RX/Forms/frm210002.cs	1551	ShowErrorMsg	E00100	resData.EPSsiPIR16res.MessageHeader.Erro
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiPIR16req	RX/Forms/frm210002.cs	1574	ShowErrorMsg	E00100	ex.Message
-msgtbl	⟨không render được: mã là biến⟩	⚠ vàng	OK	Button1 (ngầm)	frm210002	EPSsiDIM06req	RX/Forms/frm210002.cs	1599	ShowWarningMsg	⟨biến ""⟩	処方箋IDを入力してください。
+msgtbl	処方箋IDを入力してください。	⚠ vàng	OK	Button1 (ngầm)	frm210002	EPSsiDIM06req	RX/Forms/frm210002.cs	1599	ShowWarningMsg		処方箋IDを入力してください。
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiDIM06req	RX/Forms/frm210002.cs	1620	ShowErrorMsg	E00100	resDataAvail.EPSsiDIM06res.MessageHeader
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiDIM06req	RX/Forms/frm210002.cs	1627	ShowErrorMsg	E00100	resDataAvail.EPSsiDIM06res.MessageBody.P
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiDIM06req	RX/Forms/frm210002.cs	1668	ShowErrorMsg	E00100	resDataNotAvail.EPSsiDIM06res.MessageHea
@@ -1467,12 +1469,12 @@ msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiDIM06req	RX/Forms/frm210002
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	EPSsiDIM06req	RX/Forms/frm210002.cs	1713	ShowErrorMsg	E00100	ex.Message
 msgbox	これは電子処方箋ですので、登録前に電子署名を作成してください。	✕ đỏ	OK	Button1 (ngầm)	frm210002	ChkElectronicSignature	RX/Forms/frm210002.cs	1730	Error		
 msgtbl	薬剤を選択してください	⚠ vàng	OK	Button1 (ngầm)	frm210002	printProc	RX/Forms/frm210002.cs	1952	ShowWarningMsg	W00100	薬剤を選択してください
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm210002	printProc	RX/Forms/frm210002.cs	1969	ShowFreeMsg	⟨biến "薬剤情報提供書印刷正常終了しました"⟩	MessageBoxButtons.OK
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm210002	printProc	RX/Forms/frm210002.cs	1994	ShowFreeMsg	⟨biến "処方箋印刷正常終了しました。"⟩	MessageBoxButtons.OK
+free	薬剤情報提供書印刷正常終了しました	ⓘ xanh	OK	Button1 (ngầm)	frm210002	printProc	RX/Forms/frm210002.cs	1969	ShowFreeMsg		
+free	処方箋印刷正常終了しました。	ⓘ xanh	OK	Button1 (ngầm)	frm210002	printProc	RX/Forms/frm210002.cs	1994	ShowFreeMsg		
 msgtbl	印刷に失敗しました。	✕ đỏ	OK	Button1 (ngầm)	frm210002	printProc	RX/Forms/frm210002.cs	2000	ShowErrorMsg	E00026	印刷
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm210002	insertOrUpdatePrescriptionInf	RX/Forms/frm210002.cs	2300	ShowFreeMsg	⟨biến msg + "正常終了しました。"⟩	MessageBoxButtons.OK
+free	⟨chuỗi ghép lúc chạy⟩	ⓘ xanh	OK	Button1 (ngầm)	frm210002	insertOrUpdatePrescriptionInf	RX/Forms/frm210002.cs	2300	ShowFreeMsg		
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm210002	insertOrUpdatePrescriptionInf	RX/Forms/frm210002.cs	2309	ShowErrorMsg	E88888	ex.Message
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm210002	deletePrescriptionInf	RX/Forms/frm210002.cs	2446	ShowFreeMsg	⟨biến "処方箋取消正常終了しました。"⟩	MessageBoxButtons.OK
+free	処方箋取消正常終了しました。	ⓘ xanh	OK	Button1 (ngầm)	frm210002	deletePrescriptionInf	RX/Forms/frm210002.cs	2446	ShowFreeMsg		
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm210002	deletePrescriptionInf	RX/Forms/frm210002.cs	2451	ShowErrorMsg	E88888	ex.Message
 msgtbl	ファイルにアクセスできません。	✕ đỏ	OK	Button1 (ngầm)	frm210002	SharedMedInfoReq	RX/Forms/frm210002.cs	2682	ShowErrorMsg	E00100	ファイルにアクセスできません。
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	SharedMedInfoReq	RX/Forms/frm210002.cs	2696	ShowErrorMsg	E00100	ex.Message
@@ -1480,7 +1482,7 @@ msgtbl	薬剤情報閲覧履歴の保存に失敗しました。	✕ đỏ	OK	Bu
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210002	SharedMedInfoReq	RX/Forms/frm210002.cs	2717	ShowErrorMsg	E00100	ex.Message
 msgbox	⟨chuỗi ghép lúc chạy⟩	⚠ vàng	OK	Button1 (ngầm)	frm210008	CanSkipAuth	RX/Forms/frm210008.cs	103	Exclamation		
 msgtbl	まだログインしていません。	⚠ vàng	OK	Button1 (ngầm)	frm210008	clearToken	RX/Forms/frm210008.cs	144	ShowWarningMsg	W00100	まだログインしていません。
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm210008	clearToken	RX/Forms/frm210008.cs	156	ShowFreeMsg	⟨biến "ログアウトしました。"⟩	MessageBoxButtons.OK
+free	ログアウトしました。	ⓘ xanh	OK	Button1 (ngầm)	frm210008	clearToken	RX/Forms/frm210008.cs	156	ShowFreeMsg		
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210008	clearToken	RX/Forms/frm210008.cs	160	ShowErrorMsg	E00100	ex.Message
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210008	btnF1_Click	RX/Forms/frm210008.cs	250	ShowErrorMsg	E00100	ex.Message
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210008	btnF2_Click	RX/Forms/frm210008.cs	264	ShowErrorMsg	E00100	ex.Message
@@ -1495,7 +1497,7 @@ msgtbl	交付日が入力されていません。	✕ đỏ	OK	Button1 (ngầm)	
 msgtbl	交付日が間違っています。	✕ đỏ	OK	Button1 (ngầm)	frm210001	checkInputDt	RX/Forms/frm210001.cs	289	ShowErrorMsg	E00002	交付日
 msgtbl	有効終了日が有効開始日より過去日付です。	✕ đỏ	OK	Button1 (ngầm)	frm210001	checkInputDt	RX/Forms/frm210001.cs	299	ShowErrorMsg	E00023	
 msgtbl	患者情報が登録されていません。	✕ đỏ	OK	Button1 (ngầm)	frm210001	defData	RX/Forms/frm210001.cs	459	ShowErrorMsg	E00005	患者情報
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm210001	updateDispensingData	RX/Forms/frm210001.cs	570	ShowFreeMsg	⟨biến "処方箋ステータスと調剤結果リストの更新⟩	MessageBoxButtons.OK
+free	処方箋ステータスと調剤結果リストの更新正常に完了しました	ⓘ xanh	OK	Button1 (ngầm)	frm210001	updateDispensingData	RX/Forms/frm210001.cs	570	ShowFreeMsg		
 msgtbl	応答ファイルには記録された処方箋 ID が含まれていません。	✕ đỏ	OK	Button1 (ngầm)	frm210001	updateDispensingData	RX/Forms/frm210001.cs	574	ShowErrorMsg	E00100	応答ファイルには記録された処方箋 ID が含まれていません。
 msgtbl	表示または更新するデータがありません	✕ đỏ	OK	Button1 (ngầm)	frm210001	ePSsiDIM04req	RX/Forms/frm210001.cs	611	ShowErrorMsg	E00100	表示または更新するデータがありません
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm210001	ePSsiDIM04req	RX/Forms/frm210001.cs	618	ShowErrorMsg	E00100	resData.EPSsiDIM04res.MessageBody.Proces
@@ -1517,8 +1519,8 @@ msgtbl	削除してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)
 msgtbl	患者情報を全て削除する場合は、F8削除ボタンを使用して下さい。	⚠ vàng	OK	Button1 (ngầm)	frm201031	btnDel_Click	PAT/Forms/frm201031.cs	290	ShowWarningMsg	W00001	
 msgtbl	選択されている患者情報を削除します。よろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm201031	btnDel_Click	PAT/Forms/frm201031.cs	310	ShowOKCancelMsg	Q00006	患者情報
 msgtbl	登録してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm201031	F9Proc	PAT/Forms/frm201031.cs	345	ShowOKCancelMsg	Q00001	
-msgtbl	⟨không render được: mã là biến⟩ ⟨+strMsg⟩	？ hỏi	Yes|No|Cancel	Button1 (ngầm)	frm201031	F9Proc	PAT/Forms/frm201031.cs	356	ShowYesNoCancelMsg	⟨biến ""⟩	strMsg
-msgtbl	⟨không render được: mã là biến⟩	？ hỏi	Yes|No|Cancel	Button2 (khai rõ)	frm201031	ExitWithoutSaving	PAT/Forms/frm201031.cs	390	ShowYesNoCancelMsg	⟨biến ""⟩	介護保険情報は変更されています。保存しますか？
+msgtbl	⟨không render được: mã là biến⟩ ⟨+strMsg⟩	？ hỏi	Yes|No|Cancel	Button1 (ngầm)	frm201031	F9Proc	PAT/Forms/frm201031.cs	356	ShowYesNoCancelMsg		strMsg
+msgtbl	介護保険情報は変更されています。保存しますか？	？ hỏi	Yes|No|Cancel	Button2 (khai rõ)	frm201031	ExitWithoutSaving	PAT/Forms/frm201031.cs	390	ShowYesNoCancelMsg		介護保険情報は変更されています。保存しますか？
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm201031	insertProc	PAT/Forms/frm201031.cs	574	ShowErrorMsg	E99999	
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm201031	updateProc	PAT/Forms/frm201031.cs	695	ShowErrorMsg	E99999	
 msgtbl	関連データが存在する為、削除できません。	✕ đỏ	OK	Button1 (ngầm)	frm201031	chkDelete	PAT/Forms/frm201031.cs	718	ShowErrorMsg	E00004	関連データが存在する為、
@@ -1601,13 +1603,13 @@ msgtbl	保険者住所の文字数が越えています。	✕ đỏ	OK	Button1 
 msgtbl	新規登録ウィザードを表示しますか？	？ hỏi	Yes|No	Button1 (ngầm)	frm201001	frm201001_Shown	PAT/Forms/frm201001.cs	216	ShowYesNoMsg	Q00037	
 msgtbl	削除してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm201001	btnF8_Click	PAT/Forms/frm201001.cs	623	ShowOKCancelMsg	Q00003	
 msgtbl	お茶コン終了してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm201001	btnF12_Click	PAT/Forms/frm201001.cs	741	ShowOKCancelMsg	Q00004	お茶コン
-msgtbl	⟨không render được: mã là biến⟩ ⟨+tabMain.SelectedTab.Text + "の保険情報、及び公費情報⟩	？ hỏi	Yes|No	Button1 (ngầm)	frm201001	btnAdd_Click	PAT/Forms/frm201001.cs	784	ShowYesNoMsg	⟨biến ""⟩	tabMain.SelectedTab.Text + "の保険情報、及び公費情報
+msgtbl	⟨không render được: mã là biến⟩ ⟨+tabMain.SelectedTab.Text + "の保険情報、及び公費情報⟩	？ hỏi	Yes|No	Button1 (ngầm)	frm201001	btnAdd_Click	PAT/Forms/frm201001.cs	784	ShowYesNoMsg		tabMain.SelectedTab.Text + "の保険情報、及び公費情報
 msgtbl	患者情報を全て削除する場合は、F8削除ボタンを使用して下さい。	⚠ vàng	OK	Button1 (ngầm)	frm201001	btnDel_Click	PAT/Forms/frm201001.cs	837	ShowWarningMsg	W00001	
 msgtbl	削除できません。	✕ đỏ	OK	Button1 (ngầm)	frm201001	btnDel_Click	PAT/Forms/frm201001.cs	853	ShowErrorMsg	E00004	"選択されている患者情報の処置データが存在する為、" + Environment
 msgtbl	選択されている患者情報を削除します。よろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm201001	btnDel_Click	PAT/Forms/frm201001.cs	859	ShowOKCancelMsg	Q00006	患者情報
 msgtbl	登録してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm201001	F9Proc	PAT/Forms/frm201001.cs	963	ShowOKCancelMsg	Q00001	
-msgtbl	⟨không render được: mã là biến⟩ ⟨+strMsg⟩	？ hỏi	Yes|No|Cancel	Button1 (ngầm)	frm201001	F9Proc	PAT/Forms/frm201001.cs	978	ShowYesNoCancelMsg	⟨biến ""⟩	strMsg
-msgtbl	⟨không render được: mã là biến⟩	？ hỏi	Yes|No|Cancel	Button2 (khai rõ)	frm201001	ExitWithoutSaving	PAT/Forms/frm201001.cs	1012	ShowYesNoCancelMsg	⟨biến ""⟩	患者データは変更されています。保存しますか？
+msgtbl	⟨không render được: mã là biến⟩ ⟨+strMsg⟩	？ hỏi	Yes|No|Cancel	Button1 (ngầm)	frm201001	F9Proc	PAT/Forms/frm201001.cs	978	ShowYesNoCancelMsg		strMsg
+msgtbl	患者データは変更されています。保存しますか？	？ hỏi	Yes|No|Cancel	Button2 (khai rõ)	frm201001	ExitWithoutSaving	PAT/Forms/frm201001.cs	1012	ShowYesNoCancelMsg		患者データは変更されています。保存しますか？
 msgtbl	有効期間(自)より過去日付が有効期間(至)に入力されています。\r\n\r\n有効期間(自)以降の日付を入力してください。	✕ đỏ	OK	Button1 (ngầm)	frm201001	ExitWithoutSaving	PAT/Forms/frm201001.cs	1035	ShowErrorMsg	E00100	有効期間(自)より過去日付が有効期間(至)に入力されています。\r\n\r\n有効期間(自)以降の日付を入力してください。
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm201001	insertProc	PAT/Forms/frm201001.cs	1360	ShowErrorMsg	E99999	
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm201001	updateProc	PAT/Forms/frm201001.cs	1693	ShowErrorMsg	E99999	
@@ -1677,7 +1679,7 @@ msgtbl	限度額適用認定証が変更されました。枝番を追加しま�
 msgtbl	高齢受給者証一部負担金割合が変更されました。枝番を追加します。よろしいですか？	？ hỏi	Yes|No	Button1 (khai rõ)	frm201001	chkOQSDataMerge	PAT/Forms/frm201001.cs	3392	ShowYesNoMsg	Q00100	高齢受給者証一部負担金割合が変更されました。枝番を追加します。
 msgtbl	未就学児から一般に変更されました。枝番を追加します。よろしいですか？	？ hỏi	Yes|No	Button1 (khai rõ)	frm201001	chkOQSDataMerge	PAT/Forms/frm201001.cs	3407	ShowYesNoMsg	Q00100	未就学児から一般に変更されました。枝番を追加します。
 msgtbl	一部負担金割合が変更されました。枝番を追加します。よろしいですか？	？ hỏi	Yes|No	Button1 (khai rõ)	frm201001	chkOQSDataMerge	PAT/Forms/frm201001.cs	3435	ShowYesNoMsg	Q00100	一部負担金割合が変更されました。枝番を追加します。
-msgtbl	⟨không render được: mã là biến⟩	？ hỏi	Yes|No	Button1 (ngầm)	frm201001	setOQSReferenceNumber	PAT/Forms/frm201001.cs	3537	ShowYesNoMsg	⟨biến string.Empty⟩	オンライン資格確認システムへ照会番号を登録します。
+msgtbl	オンライン資格確認システムへ照会番号を登録します。	？ hỏi	Yes|No	Button1 (ngầm)	frm201001	setOQSReferenceNumber	PAT/Forms/frm201001.cs	3537	ShowYesNoMsg		オンライン資格確認システムへ照会番号を登録します。
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm201001	setOQSReferenceNumber	PAT/Forms/frm201001.cs	3563	ShowErrorMsg	E00100	OQSsiimm01res.MessageHeader.ErrorMessage
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm201001	setOQSReferenceNumber	PAT/Forms/frm201001.cs	3567	ShowErrorMsg	E00100	OQSsiimm01res.MessageBody.ProcessingResu
 msgtbl	更新してよろしいですか？	？ hỏi	OK|Cancel	Button1 (ngầm)	frm201011	btnF1_Click	PAT/Forms/frm201011.cs	117	ShowOKCancelMsg	Q00002	
@@ -1702,7 +1704,7 @@ msgtbl	診療年月が間違っています。	⚠ vàng	OK	Button1 (ngầm)	frm
 msgtbl	データが選択されていません。	⚠ vàng	OK	Button1 (ngầm)	frm201009	btnF9_Click	PAT/Forms/frm201009.cs	143	ShowWarningMsg	E00007	
 msgtbl	生年月日が間違っています。	⚠ vàng	OK	Button1 (ngầm)	frm201009	getViewData	PAT/Forms/frm201009.cs	190	ShowWarningMsg	E00002	生年月日
 msgtbl	該当データがありません。	ⓘ xanh	OK	Button1 (ngầm)	frm201009	getViewData	PAT/Forms/frm201009.cs	205	ShowInfoMsg	E00003	
-msgtbl	⟨không render được: mã là biến⟩	？ hỏi	Yes|No|Cancel	Button1 (ngầm)	frm201008	btnF4_Click	PAT/Forms/frm201008.cs	223	ShowYesNoCancelMsg	⟨biến ""⟩	医療扶助委託先資格情報の一括取得要求を行います。" + Environment.NewLine +\n                   "「はい」を押すと、" + EditControl.editDateToString(dtDate, "gggyy年MM月") + "診療分" + Environment.NewLine +\n                   "「いいえ」を押すと、指定した診療年月分を取得します。
+msgtbl	医療扶助委託先資格情報の一括取得要求を行います。" + Environment.NewLine +\n                   "「はい」を押すと、" + EditControl.editDateToString(dtDate, "gggyy年MM月") + "診療分" + Environment.NewLine +\n                   "「いいえ」を押すと、指定した診療年月分を取得します。	？ hỏi	Yes|No|Cancel	Button1 (ngầm)	frm201008	btnF4_Click	PAT/Forms/frm201008.cs	223	ShowYesNoCancelMsg		医療扶助委託先資格情報の一括取得要求を行います。" + Environment.NewLine +\n                   "「はい」を押すと、" + EditControl.editDateToString(dtDate, "gggyy年MM月") + "診療分" + Environment.NewLine +\n                   "「いいえ」を押すと、指定した診療年月分を取得します。
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm201008	timerTick	PAT/Forms/frm201008.cs	590	ShowErrorMsg	E00100	OQSmutic02resData.OQSmutic02res.MessageB
 msgtbl	保険者番号が入力されていません。	✕ đỏ	OK	Button1 (ngầm)	frm201003	chkInputData	PAT/Forms/frm201003.cs	238	ShowErrorMsg	E00001	保険者番号
 msgtbl	保険者番号は既に登録されています。	✕ đỏ	OK	Button1 (ngầm)	frm201003	entryData	PAT/Forms/frm201003.cs	267	ShowErrorMsg	E00008	保険者番号
@@ -1750,7 +1752,7 @@ msgtbl	削除してよろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	fr
 msgtbl	システムエラーです。	✕ đỏ	OK	Button1 (ngầm)	frm201002	delData	PAT/Forms/frm201002.cs	372	ShowErrorMsg	E99999	
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm201043	init	PAT/Forms/frm201043.cs	195	ShowErrorMsg	E00100	ex.Message
 msgtbl		✕ đỏ	OK	Button1 (ngầm)	frm201043	defData	PAT/Forms/frm201043.cs	234	ShowErrorMsg	E00100	ex.Message
-msgtbl	⟨không render được: mã là biến⟩ ⟨+MessageBoxButtons.OK⟩	?	?	Button1 (ngầm)	frm201012	btnF1_Click	PAT/Forms/frm201012.cs	129	ShowFreeMsg	⟨biến "スキャナー名称の取得ができません。" ⟩	MessageBoxButtons.OK
+free	⟨chuỗi ghép lúc chạy⟩	✕ đỏ	OK	Button1 (ngầm)	frm201012	btnF1_Click	PAT/Forms/frm201012.cs	129	ShowFreeMsg		
 msgtbl	スキャナーが特定できません。	✕ đỏ	OK	Button1 (ngầm)	frm201012	btnF1_Click	PAT/Forms/frm201012.cs	138	ShowErrorMsg	E00100	スキャナーが特定できません。
 msgtbl	選択されている画像を削除します。よろしいですか？	？ hỏi	Yes|No	Button1 (ngầm)	frm201012	btnF8_Click	PAT/Forms/frm201012.cs	172	ShowYesNoMsg	Q00006	画像
 msgtbl	患者パスが登録されていません。	✕ đỏ	OK	Button1 (ngầm)	frm201012	getPatPath	PAT/Forms/frm201012.cs	303	ShowErrorMsg	E00005	患者パス
