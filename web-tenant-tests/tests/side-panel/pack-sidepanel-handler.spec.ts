@@ -103,6 +103,13 @@ const LONG_TERM_PACK_NM = process.env.TEST_PACK_NM ?? 'クラリス2T、ボル�
 /** pack_nm của mst_cmt_pack_def Z001 — phần trong ngoặc của tiêu đề 摘要選択. */
 const LONG_TERM_PACK_DEF_NM = '長期収載品の選定療養に関する取扱い'
 
+/**
+ * pac_nm của パック có CẢ 処方料 (301-2) lẫn 薬剤情報提供料 (117-4) — dùng cho
+ * testcase cổng `syohosen`. Lưu ý ２ ở đây là FULL width, khác
+ * LONG_TERM_PACK_NM dùng 2 ASCII: master pac_mst không nhất quán.
+ */
+const SYOHOSEN_PACK_NM = process.env.TEST_SYOHOSEN_PACK_NM ?? 'クラビット２T、ボルタレン'
+
 /** Kết quả của một cú "chốt" một dòng パック. */
 type PickResult = 'picker' | 'alert'
 
@@ -836,6 +843,155 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
         await clearOverlays()
         await step()
     })
+    /**
+     * REGRESSION — cổng `syohosen` phải so CẢ 枝番, nếu không パック nào có
+     * 処方料 + 薬剤情報提供料 cùng ngày cũng bung nhầm 「ユーザー摘要コメント選択」.
+     *
+     * WinForm `Lib.CmtAuto.cmtSyohosen` (CmtAuto.cs:2958) lấy 処置 của pack ĐỐI DIỆN
+     * (院内処方 F100 ↔ 院外処方 F400) qua `MstCmtPack.getMstCmtPackTrtCd` — trả
+     * `KeyValuePair<trt_cd, trt_sb>` — rồi đưa cho `CommonChk.getTreatDataTeethDis`,
+     * so bằng `kv.Equals(treat)`, tức so CẢ CẶP.
+     *
+     * Bug (đã sửa): BE trả `SELECT DISTINCT trt_cd` (mất 枝番) và FE so
+     * `gate.includes(r.trtCd)`. Mà 処置コード 117 là 処方箋料 ở 枝番 6/7 nhưng
+     * 薬剤情報提供料 ở 枝番 4 ⇒ 117-4 lọt cổng 117-6/117-7 của F400-2.
+     *
+     * Đường đi TẤT ĐỊNH (dữ liệu t_tenant1, đã kiểm bằng SQL) — PHẢI chạy NGAY SAU
+     * testcase 長期収載品 ở trên, vì bug chỉ hiện ở パック THỨ HAI:
+     *   pac_mst 889 「クラリス2T、ボルタレン」  = 301-2, 117-4, 302-0, 626-0, 600-0
+     *   pac_mst 888 「クラビット２T、ボルタレン」 = 301-2, 117-4, 302-0, 606-0, 600-0
+     *   · Chốt 889 trước: lúc cascade của 301-2 chạy thì 117-4 CHƯA vào lưới ⇒ cổng
+     *     không mở, không lộ bug.
+     *   · Chốt 888 sau: ngày đã có 117-4 của 889 ⇒ cổng mở NHẦM ⇒ bung
+     *     「ユーザー摘要コメント選択 / 同日に院内処方及び処方箋による投薬を行った理由」.
+     *   · F100-1 (pack_type 50) cùng cổng ⇒ còn chèn nhầm cả DÒNG
+     *     「同日に院内処方及び処方箋による投薬を行った診療年月日 …」 vào lưới.
+     *
+     * WinForm chỉ hiện chuỗi 算定チェック (301-2 rồi 117-4, đều 「1日の算定限度（1回）を
+     * 超えています」) rồi tới 摘要選択（長期収載品…）của 600-0 — KHÔNG có 投薬理由.
+     *
+     * ⚠ Tên パック dùng ２ FULL width (`クラビット２T`), khác 889 là 2 ASCII
+     * (`クラリス2T`) — master data không nhất quán, copy nguyên từ pac_mst.
+     */
+    test('F9 確定 KHÔNG bung 投薬理由 khi chỉ có 薬剤情報提供料 (cổng syohosen so 枝番)', async () => {
+        test.skip(!ALLOW_COMMIT, 'làm bẩn lưới đang mở — đặt TEST_ALLOW_COMMIT=1 để chạy')
+
+        const total = await rows.count()
+        let target = -1
+        for (let i = 0; i < total; i++) {
+            if ((await rowNm(i).innerText()).trim() === SYOHOSEN_PACK_NM) {
+                target = i
+                break
+            }
+        }
+        if (target < 0) {
+            console.log(
+                `không thấy パック 「${SYOHOSEN_PACK_NM}」 trong ${total} dòng → BỎ QUA ` +
+                    '(đặt TEST_SYOHOSEN_PACK_NM=<tên> để trỏ sang パック 処方料+薬剤情報提供料 khác)',
+            )
+            return
+        }
+
+        await clearOverlays()
+        await rows.nth(target).click()
+        expect(await waitPickResult(), 'パック 処方料 phải mở được picker').toBe('picker')
+        await expect(
+            picker.getByText(/薬剤情報提供料/).first(),
+            'パック không còn chứa 薬剤情報提供料 → đường đi tất định đã hỏng',
+        ).toBeVisible({ timeout: 15000 })
+
+        await picker.getByRole('button', { name: /F9\s*確定/ }).click()
+        await expect(picker).toBeHidden({ timeout: 20000 })
+
+        // Lái hết chuỗi modal, GHI LẠI từng cái gặp. Không dùng clearOverlays() vì
+        // testcase này cần biết ĐÃ THẤY GÌ, chứ không chỉ dọn cho sạch.
+        //
+        // 算定チェック là BLOCKING (WinForm chạy SingleChk trước Chk_CmtAuto,
+        // frm203002.cs:9049) nên chuỗi này vừa là cách đo vừa là cách gỡ chặn.
+        const seenAlerts: string[] = []
+        let sawUserCmtDialog = false
+        let sawLongTermDialog = false
+        const alert = page.locator('[role="alertdialog"]')
+        // Bắt cả hai kiểu: tiêu đề frm203019 là MỘT text node
+        // (`title={<>ユーザー摘要コメント選択</>}`, user-summary-comment-dialog.tsx:364) nên
+        // getByText exact ăn; `[role="dialog"]` qua page.locator là CSS nên miễn nhiễm
+        // aria-hidden của Radix hideOthers. OR lại để không phụ thuộc kiểu nào.
+        const userCmtTitle = page
+            .getByText('ユーザー摘要コメント選択', { exact: true })
+            .or(page.locator('[role="dialog"]').filter({ hasText: 'ユーザー摘要コメント選択' }))
+        const anyDialog = page.locator('[role="dialog"]')
+        // Màn TRỐNG không có nghĩa là xong: chuỗi này chạy tuần tự qua 5 pick, mỗi
+        // pick một vòng API (resolve-trt-score → SingleChk → cascade), nên giữa hai
+        // modal có quãng lặng vài trăm ms. Thoát ngay khi thấy trống là đo 0 dialog
+        // và test xanh/đỏ oan (đã dính: testcase chạy hết 339ms, seenAlerts rỗng).
+        // ⇒ chỉ kết luận "hết" sau QUIET_TICKS nhịp im liên tiếp, trong hạn tổng.
+        const QUIET_TICKS = 10
+        const TICK_MS = 600
+        const deadline = Date.now() + 60_000
+        let quiet = 0
+        while (Date.now() < deadline && quiet < QUIET_TICKS) {
+            if ((await alert.count()) > 0) {
+                seenAlerts.push((await alert.first().innerText()).replace(/\s+/g, ' ').trim())
+                await alert
+                    .locator('button', { hasText: /^(OK|Yes|はい)$/ })
+                    .first()
+                    .click({ timeout: 5000 })
+                    .catch(() => {})
+                quiet = 0
+            } else if ((await userCmtTitle.count()) > 0) {
+                sawUserCmtDialog = true
+                await page.keyboard.press('F10') // 戻る — không ghi gì vào lưới
+                quiet = 0
+            } else if ((await summaryTitle.count()) > 0) {
+                sawLongTermDialog = true
+                await page.keyboard.press('F10')
+                quiet = 0
+            } else if ((await anyDialog.count()) > 0) {
+                await page.keyboard.press('F10')
+                quiet = 0
+            } else {
+                quiet++
+            }
+            await page.waitForTimeout(TICK_MS)
+        }
+
+        // Log chuỗi đã quan sát: phân biệt "đo được và đúng" với "không đo được gì"
+        // (Rule 18 — skip/no-op phải nhìn thấy trong output).
+        console.log(
+            `syohosen: ${seenAlerts.length} alert, 長期収載品=${sawLongTermDialog}, ` +
+                `投薬理由=${sawUserCmtDialog} | ${seenAlerts.join(' || ')}`,
+        )
+
+        // ── Câu assert CHÍNH ─────────────────────────────────────────────────
+        expect(
+            sawUserCmtDialog,
+            '117-4 (薬剤情報提供料) lọt cổng 117-6/117-7 (処方箋料) → bung 投薬理由 mà ' +
+                'WinForm không có (cổng syohosen đang so thiếu 枝番)',
+        ).toBe(false)
+
+        // F100-1 (pack_type 50) dùng CHUNG cổng đó nên lọt thì chèn thẳng dòng này.
+        const ryoCells = page.locator('[data-grid-cell$="|2"]')
+        const gridText = (await ryoCells.allInnerTexts()).join('\n')
+        expect(
+            gridText.includes('同日に院内処方及び処方箋による投薬を行った'),
+            'F100-1 chèn nhầm dòng 診療年月日 vào lưới (cùng lỗi cổng syohosen)',
+        ).toBe(false)
+
+        // Những gì WinForm THẬT SỰ hiện: 算定チェック của 301-2 rồi 117-4.
+        const alertsText = seenAlerts.join(' | ')
+        expect(alertsText, `算定チェック của 301-2 không thấy. Đã gặp: ${alertsText}`).toMatch(
+            /301-2/,
+        )
+        expect(alertsText, `算定チェック của 117-4 không thấy. Đã gặp: ${alertsText}`).toMatch(
+            /117-4/,
+        )
+        // 600-0 (ボルタレン) vẫn phải kéo 摘要選択（長期収載品…）như パック trước.
+        expect(sawLongTermDialog, '600-0 không còn mở 摘要選択（長期収載品…）').toBe(true)
+
+        await clearOverlays()
+        await step()
+    })
+
     test('F9 確定 đẩy 処置 vào lưới đăng ký (mặc định BỎ QUA)', async () => {
         test.skip(!ALLOW_COMMIT, 'làm bẩn lưới đang mở — đặt TEST_ALLOW_COMMIT=1 để chạy')
 
