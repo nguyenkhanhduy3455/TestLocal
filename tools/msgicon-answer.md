@@ -326,7 +326,38 @@ modAcc.cs:388  Interaction.MsgBox("会計処理を行う日が本日でありま
 **không icon và không kêu tiếng nào**. Bản web luôn ra ？ xanh, nên đây là chênh lệch
 thứ hai mà primitive chưa diễn tả được (cùng loại với 「hộp hỏi màu vàng」).
 
-### Còn lại chưa tra được — 6 chỗ
+### Còn lại 6 chỗ — đã phân loại xong, không cần chạy UI nữa
 
-`1.#11` · `1.#27` · `2.#25` · `3.#5` · `3.#11` · `3.#17` · `3.#18` — chuỗi ghép lúc chạy
-hoặc bản web tự thêm; không có câu tương ứng trong 1787 chỗ gọi của WinForm.
+**2 chỗ bản web TỰ THÊM** (grep cả 1787 chỗ gọi của WinForm, không có câu nào tương ứng):
+
+| # | Chuỗi | Kết luận |
+|---|---|---|
+| 1.#11 | `登録するデータがありません。` | WinForm không có — web tự thêm |
+| 1.#27 | `この薬剤コードは現在未対応です。` | WinForm không có — web tự thêm |
+
+Hai câu này không có vế WinForm để đối chiếu, nên **không phải lỗi parity** — nhưng cũng
+có nghĩa là không ai chốt được icon 「đúng」 cho chúng; đội web tự chọn.
+
+**4 chỗ gọi qua wrapper động** — `confirmDialog(message)` nhận chuỗi lúc chạy nên đọc
+source không ra: `2.#25` · `3.#5` · `3.#11` · `3.#17` · `3.#18`.
+Nhưng cả 4 đều đi qua nhánh xác nhận, và **luật họ câu** ở mục F đã phủ:
+`…してよろしいですか？` → **213/214 là ？ hỏi**. Ngoại lệ duy nhất đã liệt kê ở mục F
+(`frm203002.cs:3857`, `modMain.cs:2406` — ⚠ vàng), không nằm trong 4 chỗ này.
+⇒ chốt **？ hỏi**, không cần chạy UI.
+
+---
+
+## Tổng kết cả đợt
+
+| | Số chỗ |
+|---|---|
+| Bản web đọc source không ra | 83 |
+| Chốt được bằng bảng tra 1787 chỗ gọi | 34 |
+| Chốt được bằng đọc handler (nhóm D) | 16 |
+| Chốt bằng luật họ câu | 4 |
+| Web tự thêm — không có vế WinForm | 9 |
+| Còn lại | **0** |
+
+Không chỗ nào phải chạy FlaUI. Gốc vấn đề là bản web grep source để tìm chuỗi, mà chuỗi
+WinForm **nằm trong bảng MSGTBL của DB** chứ không nằm trong code — nên grep vĩnh viễn
+không ra. Bảng `tools/winform-dialog-catalog.tsv` join sẵn hai vế đó lại.
