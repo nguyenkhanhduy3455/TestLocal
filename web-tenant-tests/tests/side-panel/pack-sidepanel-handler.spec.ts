@@ -65,9 +65,15 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  * 23.2 thanh cuộn, 23.4 mở lại reset — còn 23.3 (thông báo) là testcase
  * 「算定可能な処置はありません。」 ở giữa file.
  *
- * Testcase 確定 (F9) ĐẨY DÒNG VÀO GRID mặc định bị bỏ qua (chỉ sửa state màn hình,
- * chưa ghi DB, nhưng làm bẩn lưới đang mở). Muốn chạy:
+ * HAI testcase 確定 (F9) ĐẨY DÒNG VÀO GRID mặc định bị bỏ qua (chỉ sửa state màn
+ * hình, chưa ghi DB, nhưng làm bẩn lưới đang mở) — testcase 確定 chung và testcase
+ * regression 摘要選択（長期収載品…）ở cuối file. Muốn chạy:
  *   TEST_ALLOW_COMMIT=1 npx playwright test tests/side-panel/pack-sidepanel-handler.spec.ts
+ *
+ * Testcase regression cuối file giữ nửa còn thiếu của `ModMain.Chk_CmtAuto`: F9 確定
+ * của パック phải chạy cascade 摘要コメントパック cho từng 処置 (frm203002.cs:9054), chứ
+ * không chỉ đẩy dòng vào lưới. Xem docblock riêng của nó để biết đường đi tất định
+ * và các mã master liên quan.
  */
 
 const PAT_NO = patNo('12138')
@@ -83,6 +89,15 @@ const ALLOW_COMMIT = process.env.TEST_ALLOW_COMMIT === '1'
 /** Số dòng パック tối đa sẽ dò khi cần tìm một パック mở được picker / ra alert. */
 const SCAN_LIMIT = 12
 
+/**
+ * pac_nm của パック chứa 薬剤 選定療養 — dùng cho testcase regression Chk_CmtAuto ở
+ * cuối file. Tìm theo TÊN chứ không theo cột No.: thứ tự list phụ thuộc cờ
+ * IntelliPac (PacQueries.cs:37-39) nên số thứ tự không phải hằng số.
+ */
+const LONG_TERM_PACK_NM = process.env.TEST_PACK_NM ?? 'クラリス2T、ボルタレン'
+/** pack_nm của mst_cmt_pack_def Z001 — phần trong ngoặc của tiêu đề 摘要選択. */
+const LONG_TERM_PACK_DEF_NM = '長期収載品の選定療養に関する取扱い'
+
 /** Kết quả của một cú "chốt" một dòng パック. */
 type PickResult = 'picker' | 'alert'
 
@@ -96,6 +111,17 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
     let picker: Locator
     /** Alert 「算定可能な処置はありません。」 khi パック không có 処置 nào tính được. */
     let noTrtAlert: Locator
+    /**
+     * Tiêu đề dialog 摘要選択 (frm203018) = `摘要選択（<pack_nm>）`
+     * (summary-comment-selection-dialog.tsx:326). Neo đầu-cuối bằng regex nên
+     * KHÔNG match nhầm 「ユーザー摘要コメント選択」 (frm203019).
+     *
+     * Dùng `getByText` chứ không `getByRole('dialog')`: Radix `hideOthers` gắn
+     * `aria-hidden` lên portal khi một modal khác mount, làm locator theo role
+     * "mù" dù dialog vẫn hiện (bẫy đã ghi ở
+     * dialogs-selection/summary-comment-selection-enter.spec.ts).
+     */
+    let summaryTitle: Locator
     /**
      * Dialog カルテ記載選択 (frm203012 gType.Auto) — nhịp CUỐI của chuỗi AutoSantei:
      * trả lời No cho 「〜を算定しますか？」 xong thì 処置 kế tự 算定 KHÔNG hỏi
@@ -228,6 +254,7 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
 
         picker = page.getByRole('dialog').filter({ hasText: 'パック番号' })
         noTrtAlert = page.getByText('算定可能な処置はありません')
+        summaryTitle = page.getByText(new RegExp(`^摘要選択（${LONG_TERM_PACK_DEF_NM}）$`))
         karteCmtDialog = page.getByRole('dialog').filter({ hasText: 'カルテ記載選択' })
         rows = page.locator('div[class*="grid-cols-[42px_1fr]"][class*="cursor-pointer"]')
         noInput = page.locator('input[data-side-anchor]')
@@ -681,4 +708,110 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
         }
         await step()
     })
+    /**
+     * REGRESSION — F9 確定 của パック phải chạy `ModMain.Chk_CmtAuto` cho TỪNG 処置,
+     * tức là mở cả 摘要選択 (frm203018) chứ không chỉ đẩy dòng vào lưới.
+     *
+     * Bug (đã sửa): `pack-selection-flow.tsx` chỉ gọi `/tenant/cmt-autos` +
+     * `/tenant/cmt-autos/programmatic` rồi append hết một lượt. Nửa còn lại của
+     * Chk_CmtAuto — cascade 摘要コメントパック qua `/tenant/cmt-autos/cascade` — KHÔNG
+     * bao giờ được gọi, nên dialog 摘要選択 không bung. WinForm frm203002.cs:9054
+     * gọi `Chk_CmtAuto(con, trtCd, trtSb, cnt)` sau MỖI pick 通常処置; tab ガイド
+     * (frmGuid2_Let_Data) đã port đúng, chỉ mình tab パック sót.
+     *
+     * Đường đi TẤT ĐỊNH (dữ liệu t_tenant1, đã kiểm bằng SQL):
+     *   pac_mst 889 「クラリス2T、ボルタレン」 = 301/2, 117/4, 302/0, 626/0(×3), 600/0(×2)
+     *   · 600/0 = ボルタレン錠２５ｍｇ → mst_drug.selected_treat_kb='1' và mst_trt.f3=1
+     *     (院内処方) ⇒ `IsDrug_lt_listed_product` = true ⇒ BE gắn thêm pack Z001.
+     *   · Z001 = 長期収載品の選定療養に関する取扱い, pack_type=1, 5 dòng candidate
+     *     (com_cd 820101320..24) ⇒ candidates.length > 1 ⇒ mở 摘要選択, KHÔNG auto-apply.
+     *   · 626/0 = クラリス錠２００ có selected_treat_kb='0' ⇒ KHÔNG bung dialog.
+     *   · 301/2 có 2 pack syohosen nhưng cổng 同日 đòi 処方箋料 cùng ngày — pack này
+     *     không có ⇒ cũng KHÔNG bung dialog.
+     *   ⇒ Đúng MỘT dialog 摘要選択, khớp ảnh WinForm người dùng gửi.
+     *
+     * com_cd 820101320 → comPattern = substring(1,2) = 20 (KHÔNG phải 30) nên 確定
+     * ghi thẳng text vào lưới, không cascade tiếp sang frm203019.
+     *
+     * Rule 18 — tên パック để env override; không tìm thấy thì log rõ rồi BỎ QUA
+     * (không giả vờ pass). KHÔNG dò theo cột No.: thứ tự list phụ thuộc cờ
+     * IntelliPac (PacQueries.cs:37-39 — `use_cnt DESC` hoặc `pac_sb, pac_cd`),
+     * nên số 21 trong ảnh không phải hằng số.
+     */
+    test('F9 確定 mở 摘要選択（長期収載品…）cho 処置 選定療養 (Chk_CmtAuto, mặc định BỎ QUA)', async () => {
+        test.skip(!ALLOW_COMMIT, 'làm bẩn lưới đang mở — đặt TEST_ALLOW_COMMIT=1 để chạy')
+
+        // Tìm dòng パック theo TÊN (xem docblock: cột No. không ổn định).
+        const total = await rows.count()
+        let target = -1
+        for (let i = 0; i < total; i++) {
+            if ((await rowNm(i).innerText()).trim() === LONG_TERM_PACK_NM) {
+                target = i
+                break
+            }
+        }
+        if (target < 0) {
+            console.log(
+                `không thấy パック 「${LONG_TERM_PACK_NM}」 trong ${total} dòng → BỎ QUA ` +
+                    '(đặt TEST_PACK_NM=<tên> để trỏ sang パック 選定療養 khác)',
+            )
+            return
+        }
+
+        await rows.nth(target).click()
+        expect(await waitPickResult(), 'パック 選定療養 phải mở được picker').toBe('picker')
+        // 600/0 nằm trong パック — nếu dữ liệu master đổi thì fail ở đây (rõ nguyên
+        // nhân) thay vì fail mù ở câu assert dialog phía dưới.
+        await expect(
+            picker.getByText(/ボルタレン/).first(),
+            'パック không còn chứa 薬剤 選定療養 → đường đi tất định đã hỏng',
+        ).toBeVisible({ timeout: 15000 })
+
+        const beforeCells = await page.locator('[data-grid-cell]').count()
+        await picker.getByRole('button', { name: /F9\s*確定/ }).click()
+        await expect(picker).toBeHidden({ timeout: 20000 })
+
+        // ── Câu assert CHÍNH của regression ──────────────────────────────────
+        // Locator theo TEXT chứ không `getByRole`: Radix `hideOthers` gắn
+        // aria-hidden lên portal khi một modal khác mount, làm getByRole "mù"
+        // (bẫy đã ghi ở summary-comment-selection-enter.spec.ts).
+        await expect(
+            summaryTitle,
+            'F9 確定 của パック KHÔNG chạy Chk_CmtAuto → 摘要選択 không bung (bug cũ)',
+        ).toBeVisible({ timeout: 30000 })
+
+        const cmtDialog = page
+            .locator('[role="dialog"]')
+            .filter({ hasText: LONG_TERM_PACK_DEF_NM })
+        // 処置名称 caption = 処置 đã kích hoạt cascade (frm203018 customLabel3).
+        await expect(cmtDialog.getByText(/処置名称.*ボルタレン/)).toBeVisible({ timeout: 10000 })
+        const candidates = cmtDialog.locator('[data-testid="cell-dispText"]')
+        await expect(candidates, 'Z001 có 5 摘要 candidate (com_cd 820101320..24)').toHaveCount(5)
+
+        // 確定 dòng đang ở con trỏ (dòng đầu) → text phải rơi xuống cột 療法・処置.
+        const firstText = (await candidates.first().innerText()).trim()
+        await cmtDialog.getByRole('button', { name: /F9\s*確定/ }).click()
+        await expect(summaryTitle).toBeHidden({ timeout: 20000 })
+
+        const ryoCells = page.locator('[data-grid-cell$="|2"]')
+        await expect
+            .poll(
+                async () => (await ryoCells.allInnerTexts()).some((t) => t.includes(firstText)),
+                { timeout: 30000, message: '摘要コメント đã chọn không xuất hiện trong lưới' },
+            )
+            .toBe(true)
+        // Các 処置 của パック cũng phải nằm trong lưới (dòng 処置 + dòng comment).
+        expect(await page.locator('[data-grid-cell]').count()).toBeGreaterThan(beforeCells)
+
+        // Dọn dialog dây chuyền còn sót (カルテ記載選択 do CMTAUTO của 処方料 …).
+        const dialogs = page.getByRole('dialog')
+        for (let i = 0; i < 3 && (await dialogs.count()) > 0; i++) {
+            await page.keyboard.press('F10')
+            await expect(dialogs.first())
+                .toBeHidden({ timeout: 10000 })
+                .catch(() => {})
+        }
+        await step()
+    })
+
 })
