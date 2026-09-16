@@ -1,158 +1,176 @@
-# 患者登録 / 窓口精算 / カルテ印刷 — trả lời 87 chỗ
+# 87 chỗ — tra xong toàn bộ
 
-Làm **hoàn toàn offline** (đọc legacy + MSGTBL + bảng tra), không chạy FlaUI.
+Tra bằng legacy + MSGTBL + `winform-dialog-catalog.tsv`. Không chạy FlaUI.
 
-**Trước hết: có hai thứ nằm NGOÀI danh sách 87 mà cần sửa ngay** — chúng rơi vào
-nhóm 52 「khớp bảng tra, icon đúng」 nên phép đối chiếu theo icon không thấy.
-
----
-
-## ⚠ A. 7 chỗ thiếu `defaultButtonIndex: 1` — Enter đang phá dữ liệu
-
-Trong **toàn bộ** legacy chỉ có 3 hộp 3-nút không mặc định nút 1:
-
-| Legacy | Nút mặc định |
-|---|---|
-| `frm201001.ExitWithoutSaving:1012` 「患者データは変更されています。保存しますか？」 | **Button2 = いいえ** |
-| `frm201031.ExitWithoutSaving:390` 「介護保険情報は変更されています。保存しますか？」 | **Button2 = いいえ** |
-| `frm201001.chkInputDataMain:2433` 「…生保後期高齢者ですか？…」 | Button3 = キャンセル |
-
-Chỗ thứ ba bản web khai đúng (`wizard-validation.ts:772` `THREE_WAY_DEFAULT_CANCEL`).
-Hai chỗ đầu thì **không chỗ gọi nào khai**, mà `defaultButtonIndex` bỏ trống = 0 = はい:
-
-| File | Dòng | Ngữ cảnh |
+| | Số chỗ | |
 |---|---|---|
-| `patient-detail-form.tsx` | 1176 | `handleExit` — F10 戻る / F11 患者選択 / F12 メニュー |
-| `patient-detail-form.tsx` | 1191 | `handleShiftF9Accounting` |
-| `patient-detail-form.tsx` | 1223 | `handleShiftF6Chart` |
-| `patient-detail-form.tsx` | 1248 | 口腔 (`goToOralExam`) |
-| `long-term-care-insurance-screen.tsx` | 1116 · 1162 · 1203 | thoát màn 介護保険 |
-
-Chính comment bên web ở `patient-detail-form.tsx:1170` đã ghi `// ExitWithoutSaving
-(frm201001)` — đúng hàm, chỉ thiếu tham số.
-
-### Cặp đối chứng chứng minh đây không phải suy đoán
-
-Cùng một câu, hai chỗ gọi, hai nút mặc định khác nhau:
-
-```csharp
-frm201001.cs:978   F9Proc            ShowYesNoCancelMsg("", strMsg)                       // Button1 = はい
-frm201001.cs:1012  ExitWithoutSaving ShowYesNoCancelMsg("", "…", MessageBoxDefaultButton.Button2)  // いいえ
-```
-
-Và `patient-detail-form.tsx:855` (nhánh F9 không đổi gì) **đang đúng** — nó ứng với
-`F9Proc:978`, vốn mặc định はい. Nên đây không phải 「thêm `defaultButtonIndex: 1` cho
-mọi chỗ」: chỗ F9 phải giữ nguyên, chỉ 7 chỗ thoát màn mới đổi.
-
-**Đây là lần thứ ba cùng một lớp lỗi** — sau `Q00049` và `modAcc.cs:581` vs `:733`.
-
-## B. Vì sao 87 chỗ này bảng tra không khớp — không phải 「web tự đặt câu」
-
-Kết luận ở báo cáo cũ nói bản port tự đặt câu. Đúng một phần, nhưng **legacy cũng ghép
-chuỗi lúc chạy**, nên bảng tra lưu mảnh chưa render:
-
-```csharp
-frm201001.cs:974   string strMsg = "患者データは、変更されて"
-                                 + (chkChangeData(iList) == true ? "いません" : "います")
-                                 + "。保存しますか？";
-```
-
-`患者登録#32` 「患者データは、変更されていません。保存しますか？」 chính là nhánh `いません`
-của dòng này — **có gốc WinForm hẳn hoi**, chỉ là khớp chuỗi chính xác không thấy.
-Bảng tra ghi dòng 978 là `⟨không render được: mã là biến⟩`.
-
-⇒ Khi bảng tra ghi 「không render được」, đừng kết luận web tự thêm; phải mở file đọc.
+| Đang đúng, **giữ nguyên** | 53 | |
+| **Sai icon — phải sửa** | 2 | `窓#4` ⓘ xanh · `患#17` ⚠ vàng |
+| **Sai bộ nút — phải sửa** | 10 | legacy `OK/Cancel`, web đang `はい/いいえ` |
+| Web tự thêm, WinForm không có | 22 | |
 
 ---
 
-## C. 20 chỗ chốt được bằng chỗ gọi cụ thể
+## ⚠ Hai chỗ sai icon
 
-| # | Chuỗi | Legacy | **Icon** | Nút | Mặc định |
+### `窓#4` — báo THÀNH CÔNG mà vẽ ✕ đỏ
+
+```ts
+counter-payment-page.tsx:261   await alertDialog('削除が完了しました')   // sau khi xoá THÀNH CÔNG
+```
+
+Legacy: 「…完了しました」 xuất hiện **62 lần, 61 lần là ⓘ xanh**. Ngoại lệ duy nhất là
+`frm201012.CallbackTransferImage:639` 「スキャナ取込が完了しました。（画像なし）」 ⚠ vàng —
+xong nhưng không có ảnh, nên cảnh báo là hợp lý.
+
+Quét cả 3 feature thì đây là **chỗ duy nhất** báo thành công mà đổ về đỏ. Cùng lớp lỗi
+với `long-term-care-insurance-screen.tsx:1272` mà anh đã sửa.
+
+### `患#17` — cùng một ô nhập, hai dòng liền nhau lại khác icon
+
+```ts
+patient-no-input.tsx:150   await alertDialog('番号を正しく入力してください')            // ✕ đỏ
+patient-no-input.tsx:161   await alertDialog(ja.E00005('患者情報'), {severity:'warning'}) // ⚠ vàng — đã sửa
+```
+
+Màn `frm203001` dùng `ShowWarningMsg` ở **6/8** chỗ (`defData:638/672/707/723`,
+`Let_Data_frmPatId:1006`). Dòng `:150` nên theo ⚠ vàng cho đồng bộ.
+
+## ⚠ 10 chỗ sai bộ nút
+
+Legacy `ShowOKCancelMsg` ⇒ **OK / キャンセル**. Web gọi `confirmDialog(...)` trơ, mà mặc
+định của nó là **はい / いいえ** (`confirm-dialog-view.tsx:13`). Đổi sang
+`confirmDialog.okCancel(...)` là khớp.
+
+| # | Web | Legacy |
+|---|---|---|
+| 患#30 | `long-term-care-insurance-screen.tsx:1027` | `frm201031.btnF8_Click:202` — web đang Yes/No |
+| 患#33 | `patient-detail-form.tsx:1149` | `frm201001.btnF8_Click:623` — web đang Yes/No |
+| 窓#19 | `counter-payment-detail.tsx:1454` | `frm204002.btnF10_Click:1349` |
+| 窓#20 | `counter-payment-detail.tsx:1463` | `frm204002.btnF12_Click:1401` |
+| 窓#22 | `counter-payment-page.tsx:252` | `frm204001.delUnPaid:547` |
+| 窓#23 | `use-reservation-delete.ts:41` | `frm204007.btnF8_Click:137` — comment bên web đã ghi `ShowOKCancelMsg("Q00007")` |
+| カ#24 | `chart-form1-page.tsx:581` | `frm205002.printProc:598` / `frm205006.printProc:343` |
+| カ#25 | `chart-form1-page.tsx:854` | `frm205002.btnF12_Click:400` |
+| カ#28 | `chart-form2-page.tsx:740` | `frm205003.btnF12_Click:431` |
+| カ#29 | `chart-print-patient-select-page.tsx:243` | `frm205001.delCctWait:406` |
+
+`窓#23` đáng chú ý: comment ngay trên nó đã ghi `mirrors MsgDialog.ShowOKCancelMsg("Q00007")`
+— biết đúng mà gọi nhầm hàm.
+
+---
+
+## Bảng đầy đủ 87 chỗ
+
+### 患者登録 — 35 chỗ
+
+| # | Chuỗi | Icon | Nút | Kết luận | Căn cứ |
 |---|---|---|---|---|---|
-| 患#6 | タブ…の設定の有効期間… | `frm201031.chkInputDataMain:849` | ✕ đỏ | OK | — |
-| 患#13 | `削除できません。` | `frm201001.btnDel_Click:853` | ✕ đỏ | OK | — |
-| 患#14 | これ以上削除できません。 | `frm201001.btnDel_Click:853` | ✕ đỏ | OK | — |
-| 患#22 | 資格取得日より過去の日付が… | `frm201023.chkInputDataMain:499` | ✕ đỏ | OK | — |
-| 患#24 | `ja.E00100` 公費 自>至 | `frm201001.cs:2721` | ✕ đỏ | OK | — |
-| 患#27 | 以前の患者情報有効日より… | `frm201001.chkInputDataMain:2386` | ✕ đỏ | OK | — |
-| 患#28 | 削除しますか？ | `frm201003.delData:345` | ？ hỏi | **Yes/No** | Button1 |
-| 患#29 | 削除しますか？ | `frm201002.delData:353` | ？ hỏi | **Yes/No** | Button1 |
-| 患#30 | このタブを削除しますか？ | `frm201031.btnF8_Click:202` | ？ hỏi | **OK/Cancel** | Button1 |
-| 患#32 | 患者データは、変更されていません… | `frm201001.F9Proc:978` | ？ hỏi | Yes/No/Cancel | **Button1** ✓ |
-| 患#33 | 患者情報を削除してよろしいですか？ | `frm201001.btnF8_Click:623` | ？ hỏi | **OK/Cancel** | Button1 |
-| 患#35 | 選択した画像を削除しますか？ | `frm201012.btnF8_Click:172` | ？ hỏi | **Yes/No** | Button1 |
-| 窓#3 | 削除対象を選択してください | `frm204001.delUnPaid:552` | ✕ đỏ | OK | — |
-| 窓#8 | 削除対象を選択してください | `frm204004.btnF8_Click:578` | ✕ đỏ | OK | — |
-| 窓#18 | 保険及び自費のデータを再診で… | `frm204002.initProc:301` | ？ hỏi | **Yes/No** | Button1 ✓ |
-| 窓#21 | 登録してよろしいですか？ | `frm204002.F9Proc:1154` | ？ hỏi | OK/Cancel | Button1 ✓ |
-| カ#1 | 部位、傷病名の登録に失敗しました | `frm205002.saveBuiDisInfo:593` | ✕ đỏ | OK | — |
-| カ#4 · #8 | カルテ印刷に失敗しました | `frm205002:730` · `frm205003:895` | ✕ đỏ | OK | — |
-| カ#12 | 月締め印刷に失敗しました | `frm205003.printMonthSumProc:895` | ✕ đỏ | OK | — |
-| カ#13 · #14 | 印刷指定の範囲を正しく… | `frm205006.getPatInf:239/251` | ✕ đỏ | OK | — |
-| カ#18 | 削除対象を選択してください | `frm205001.delCctWait:411` | ✕ đỏ | OK | — |
-| カ#23 | 診療日が選択されていません。 | `frm205005.defData:210` | ✕ đỏ | OK | — |
-| カ#25 · #28 | お茶コンを終了しますか？ | `frm205002:400` · `frm205003:431` | ？ hỏi | **OK/Cancel** | Button1 |
-| カ#26 | …月締めを行っていません… | `frm205003.printMonthSumProc:840` | ？ hỏi | **Yes/No** | Button1 ✓ |
-| カ#27 | プリンターに新しい用紙を… | `frm205003:857/1011` | ？ hỏi | OK/Cancel | Button1 ✓ |
+| 1 | 会計情報の更新に失敗しました。 | ✕ đỏ | OK | giữ | họ `…に失敗しました` — 116/116 ✕ đỏ |
+| 2 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | lỗi runtime, cùng họ `失敗` |
+| 3 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | lỗi runtime, cùng họ `失敗` |
+| 4 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | mọi `chkInputData*` của frm201001/201023/201031 đều `ShowErrorMsg` |
+| 5 | 最後のタブは削除できません。 | — | — | web tự thêm | legacy không có thông báo nào về tab 枝番 |
+| 6 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | `frm201031.chkInputDataMain:849` |
+| 7 | 患者情報の取得に失敗しました。 | ✕ đỏ | OK | giữ | họ `…に失敗しました` — 116/116 ✕ đỏ |
+| 8 | 元号情報を読み込み中です。少々お待ちください。 | — | — | web tự thêm | trạng thái tải bất đồng bộ |
+| 9 | 患者情報がありません。 | ✕ đỏ | OK | giữ | `E00100` trong frm201001 luôn `ShowErrorMsg` |
+| 10 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | mọi `chkInputData*` của frm201001/201023/201031 đều `ShowErrorMsg` |
+| 11 | 入力内容に誤りがあります。 | — | — | web tự thêm | WinForm báo từng lỗi cụ thể, không có câu gộp |
+| 12 | ⟨chuỗi ghép lúc chạy⟩ | — | — | web tự thêm | không có câu 患者番号 trùng |
+| 13 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | `frm201001.btnDel_Click:853` 「削除できません。」 |
+| 14 | これ以上削除できません。 | ✕ đỏ | OK | giữ | `frm201001.btnDel_Click:853` 「削除できません。」 |
+| 15 | 患者が見つかりませんでした。 | ✕ đỏ | OK | giữ | nhánh tải chi tiết hỏng — là lỗi thật |
+| 16 | 患者が見つかりませんでした。 | ✕ đỏ | OK | giữ | nhánh tải chi tiết hỏng — là lỗi thật |
+| 17 | 番号を正しく入力してください | ⚠ vàng | OK | **SỬA ICON** | cả frm203001 dùng `ShowWarningMsg` (6/8 dòng); `:161` ngay dưới đã sửa rồi |
+| 18 | 患者情報の取得に失敗しました | ✕ đỏ | OK | giữ | họ `…に失敗しました` — 116/116 ✕ đỏ |
+| 19 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | mọi `chkInputData*` của frm201001/201023/201031 đều `ShowErrorMsg` |
+| 20 | 元号情報を読み込み中です。少々お待ちください。 | — | — | web tự thêm | trạng thái tải bất đồng bộ |
+| 21 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | mọi `chkInputData*` của frm201001/201023/201031 đều `ShowErrorMsg` |
+| 22 | 資格取得日より過去の日付が患者情報有効日入力されています。\n資格取得日以降の日 | ✕ đỏ | OK | giữ | `frm201023.chkInputDataMain:499` |
+| 23 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | mọi `chkInputData*` của frm201001/201023/201031 đều `ShowErrorMsg` |
+| 24 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | `frm201001.cs:2721` `ShowErrorMsg("E00100", …)` |
+| 25 | 郵便番号・住所　両方が未入力です。 | — | — | web tự thêm | tra bưu chính là chức năng web |
+| 26 | 該当するデータが見つかりません。 | — | — | web tự thêm | tra bưu chính là chức năng web |
+| 27 | 以前の患者情報有効日より過去日付が患者情報有効日に入力されています。\n\n以前 | ✕ đỏ | OK | giữ | `frm201001.chkInputDataMain:2386` |
+| 28 | 削除しますか？ | ？ hỏi | Yes/No | giữ | `frm201003.delData:345` |
+| 29 | 削除しますか？ | ？ hỏi | Yes/No | giữ | `frm201002.delData:353` |
+| 30 | このタブを削除しますか？ | ？ hỏi | **OK/Cancel** | **SỬA NÚT** | `frm201031.btnF8_Click:202` — web đang Yes/No |
+| 31 | ⟨chuỗi ghép lúc chạy⟩ | — | — | web tự thêm | F1 コピー của frm201001 chép thẳng, không hỏi |
+| 32 | 患者データは、変更されていません。保存しますか？ | ？ hỏi | Yes/No/Cancel | giữ | `frm201001.F9Proc:978` — mặc định Button1 ✓ |
+| 33 | 患者情報を削除してよろしいですか？ | ？ hỏi | **OK/Cancel** | **SỬA NÚT** | `frm201001.btnF8_Click:623` — web đang Yes/No |
+| 34 | 患者データを保存しますか？ | — | — | web tự thêm | `frm201001.btnF7_Click:581` đi thẳng `callProj`, **không hỏi gì** |
+| 35 | 選択した画像を削除しますか？ | ？ hỏi | Yes/No | giữ | `frm201012.btnF8_Click:172` |
 
-### ⚠ Lệch BỘ NÚT — 5 chỗ
+### 窓口精算 — 23 chỗ
 
-Legacy `ShowOKCancelMsg` ⇒ **OK/キャンセル**, nhưng web gọi `confirmDialog(...)` trơ,
-mà mặc định của nó là **はい/いいえ**:
+| # | Chuỗi | Icon | Nút | Kết luận | Căn cứ |
+|---|---|---|---|---|---|
+| 1 | ⟨chuỗi ghép lúc chạy⟩ | — | — | web tự thêm | エージェント in ấn là kiến trúc web |
+| 2 | ⟨chuỗi ghép lúc chạy⟩ | — | — | web tự thêm | như trên |
+| 3 | 削除対象を選択してください | ✕ đỏ | OK | giữ | `frm204001.delUnPaid:552` |
+| 4 | 削除が完了しました | **ⓘ xanh** | OK | **SỬA ICON** | 「…完了しました」 legacy **61/62 ⓘ xanh** — đây là báo THÀNH CÔNG |
+| 5 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | họ `…に失敗しました` |
+| 6 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | họ `…に失敗しました` |
+| 7 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | họ `…に失敗しました` |
+| 8 | 削除対象を選択してください | ✕ đỏ | OK | giữ | `frm204004.btnF8_Click:578` |
+| 9 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | họ `…に失敗しました` |
+| 10 | ⟨chuỗi ghép lúc chạy⟩ | — | — | web tự thêm | như trên |
+| 11 | 患者が選択されていません | ✕ đỏ | OK | giữ | gần nhất `frm204004:578` 「削除対象が選択されていません。」 |
+| 12 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | họ `…に失敗しました` |
+| 13 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | họ `…に失敗しました` |
+| 14 | 患者が選択されていません | ✕ đỏ | OK | giữ | gần nhất `frm204004:578` 「削除対象が選択されていません。」 |
+| 15 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | họ `…に失敗しました` |
+| 16 | 印刷するデータがありません。 | — | — | web tự thêm | frm204004/204005 không có câu tương ứng |
+| 17 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | họ `…に失敗しました` |
+| 18 | 保険及び自費のデータを再診で処理します。よろしいですか？\n | ？ hỏi | Yes/No | giữ | `frm204002.initProc:301` |
+| 19 | ⟨chuỗi ghép lúc chạy⟩ | ？ hỏi | **OK/Cancel** | **SỬA NÚT** | `frm204002.btnF10_Click:1349` |
+| 20 | ⟨chuỗi ghép lúc chạy⟩ | ？ hỏi | **OK/Cancel** | **SỬA NÚT** | `frm204002.btnF12_Click:1401` |
+| 21 | ⟨chuỗi ghép lúc chạy⟩ | ？ hỏi | OK/Cancel | giữ | `frm204002.F9Proc:1154` — web đã dùng `.okCancel` ✓ |
+| 22 | ⟨chuỗi ghép lúc chạy⟩ | ？ hỏi | **OK/Cancel** | **SỬA NÚT** | `frm204001.delUnPaid:547` |
+| 23 | 予約データを削除しますか？ | ？ hỏi | **OK/Cancel** | **SỬA NÚT** | `frm204007.btnF8_Click:137` — comment bên web đã ghi `ShowOKCancelMsg("Q00007")` |
 
-`患#30` · `患#33` · `カ#25` · `カ#28` — và hai chỗ ghép động dưới đây:
+### カルテ印刷 — 29 chỗ
 
-| Web | Legacy |
-|---|---|
-| `counter-payment-page.tsx:252` 「選択された${n}件の未精算データを削除しますか？」 はい/いいえ | `frm204001.delUnPaid:547` 「削除してよろしいですか？」 **OK/Cancel** |
-| `chart-print-patient-select-page.tsx:243` 「選択された${n}件のカルテ待ちデータを…」 はい/いいえ | `frm205001.delCctWait:406` 「削除してよろしいですか？」 **OK/Cancel** |
+| # | Chuỗi | Icon | Nút | Kết luận | Căn cứ |
+|---|---|---|---|---|---|
+| 1 | 部位、傷病名の登録に失敗しました | ✕ đỏ | OK | giữ | `frm205002.saveBuiDisInfo:593` |
+| 2 | 印刷エージェントに接続できません。エージェントを起動してください。 | — | — | web tự thêm | エージェント in ấn là kiến trúc web |
+| 3 | ⟨chuỗi ghép lúc chạy⟩ | — | — | web tự thêm | như trên |
+| 4 | カルテ印刷に失敗しました | ✕ đỏ | OK | giữ | `frm205002.printProc:730` |
+| 5 | 検索条件が変更されています。検索ボタンを押してから実行してください。 | — | — | web tự thêm | WinForm không có khái niệm 検索条件 lệch |
+| 6 | 印刷エージェントに接続できません。 | — | — | web tự thêm | エージェント |
+| 7 | ⟨chuỗi ghép lúc chạy⟩ | — | — | web tự thêm | エージェント |
+| 8 | カルテ印刷に失敗しました | ✕ đỏ | OK | giữ | `frm205003.printMonthSumProc:895` |
+| 9 | 診療日を指定してください。 | ✕ đỏ | OK | giữ | `frm205003.printCctbProc:922` |
+| 10 | 印刷エージェントに接続できません。 | — | — | web tự thêm | エージェント |
+| 11 | ⟨chuỗi ghép lúc chạy⟩ | — | — | web tự thêm | エージェント |
+| 12 | 月締め印刷に失敗しました | ✕ đỏ | OK | giữ | `frm205003.printMonthSumProc:895` |
+| 13 | 印刷指定の範囲を正しく指定してください | ✕ đỏ | OK | giữ | `frm205006.getPatInf:239` |
+| 14 | 印刷指定の範囲を正しく指定してください | ✕ đỏ | OK | giữ | `frm205006.getPatInf:251` |
+| 15 | 印刷対象を選択してください | ✕ đỏ | OK | giữ | 「印刷対象が選択されていません。」 `frm304001:121`/`frm305002` đều ✕ đỏ |
+| 16 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | họ `…に失敗しました` |
+| 17 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | họ `…に失敗しました` |
+| 18 | 削除対象を選択してください | ✕ đỏ | OK | giữ | `frm205001.delCctWait:411` |
+| 19 | 削除対象の形式が不正です | — | — | web tự thêm | chặn phòng thủ id hỏng |
+| 20 | ⟨chuỗi ghép lúc chạy⟩ | ✕ đỏ | OK | giữ | họ `…に失敗しました` |
+| 21 | 該当する患者が見つかりません | — | — | web tự thêm | WinForm ô 患者番号 chỉ nhập số |
+| 22 | 患者を選択してください | ✕ đỏ | OK | giữ | `frm205001.delCctWait:411` — cùng dạng 「chưa chọn gì」 |
+| 23 | 診療日が選択されていません。 | ✕ đỏ | OK | giữ | `frm205005.defData:210` |
+| 24 | １号用紙を印刷しますか？ | ？ hỏi | **OK/Cancel** | **SỬA NÚT** | `frm205002.printProc:598` / `frm205006.printProc:343` |
+| 25 | お茶コンを終了しますか？ | ？ hỏi | **OK/Cancel** | **SỬA NÚT** | `frm205002.btnF12_Click:400` |
+| 26 | ⟨chuỗi ghép lúc chạy⟩ | ？ hỏi | Yes/No | giữ | `frm205003.printMonthSumProc:840` |
+| 27 | プリンターに新しい用紙をセットしてください。 | ？ hỏi | OK/Cancel | giữ | `frm205003:857` — web đã khai OK/キャンセル ✓ |
+| 28 | お茶コンを終了しますか？ | ？ hỏi | **OK/Cancel** | **SỬA NÚT** | `frm205003.btnF12_Click:431` |
+| 29 | ⟨chuỗi ghép lúc chạy⟩ | ？ hỏi | **OK/Cancel** | **SỬA NÚT** | `frm205001.delCctWait:406` |
 
-Đổi sang `confirmDialog.okCancel(...)` là khớp.
+---
 
-## D. 24 chỗ ghép động — luật họ câu đã phủ, MẶC ĐỊNH ĐỎ là ĐÚNG
+## Ghi chú cách tra
 
-Gần hết nhóm 「chuỗi ghép lúc chạy」 là handler `catch` đổ ra `…に失敗しました`:
+Khớp chuỗi chính xác trượt hai lớp, nên lần trước mới còn 87 chỗ:
 
-`窓#1 #2 #5 #6 #7 #9 #10 #12 #13 #15 #17` · `カ#3 #7 #11 #17 #20` · `患#2 #3`
-
-Luật đã đo ở đợt trước: **`…に失敗しました` 116/116 là ✕ đỏ**, không ngoại lệ.
-Các chỗ đổ `result.errors` của validation (`患#4 #10 #19 #21 #23`) cũng vậy —
-mọi `chkInputData*` của `frm201001` / `frm201023` / `frm201031` đều `ShowErrorMsg`.
-
-⇒ **Giữ nguyên.** Không cần sửa, không cần chạy UI.
-
-## E. 9 chỗ web tự thêm — WinForm không có hộp tương ứng
-
-| # | Chuỗi | Vì sao |
-|---|---|---|
-| 患#8 · #20 | 元号情報を読み込み中です。 | trạng thái tải bất đồng bộ, WinForm không có |
-| 患#11 | 入力内容に誤りがあります。 | WinForm báo từng lỗi cụ thể, không có câu gộp |
-| 患#25 · #26 | 郵便番号…／該当するデータが見つかりません。 | tra bưu chính là chức năng web |
-| 患#34 | 患者データを保存しますか？ | `frm201001.btnF7_Click:581` đi thẳng `callProj`, **không hỏi gì** |
-| カ#2 · #6 · #10 | 印刷エージェントに接続できません。 | WinForm in trực tiếp, không có agent |
-
-Riêng `患#34`: WinForm F7 sang 処置 **không hỏi**. Bản web thêm một hộp xác nhận
-không có ở bản gốc — quyết định thiết kế, cần người chốt chứ không phải parity.
-
-## F. 6 chỗ nên xem lại — nghi ⚠ vàng chứ không phải ✕ đỏ
-
-Nhóm 「không có / chưa chọn」 trong `defData` của WinForm đều là `ShowWarningMsg`:
-`frm203001.defData:672` · `frm204001.defData:376` · `frm205001.defData:495`
-— cả ba đều 「患者情報が登録されていません。」 **⚠ vàng**.
-
-| # | Chuỗi | Nghi |
-|---|---|---|
-| 患#9 | 患者情報がありません。 | ⚠ vàng |
-| 患#15 · #16 | 患者が見つかりませんでした。 | ⚠ vàng |
-| 患#17 | 番号を正しく入力してください | ⚠ vàng — cùng họ với `patient-no-input:161` đã sửa |
-| 患#18 | 患者情報の取得に失敗しました | ⚠ vàng (`frm203001.defData:672`) |
-| カ#22 | 患者を選択してください | ⚠ vàng (`frm205001.defData:495`) |
-
-`患#17` đáng chú ý: `patient-no-input.tsx:161` vừa được sửa thành ⚠ vàng, mà `:150`
-ngay trên nó vẫn đỏ — cùng một ô nhập, cùng một họ câu.
-
-## G. Còn lại 8 chỗ chưa chốt
-
-`患#1 #5 #12 #31` · `窓#4 #11 #14 #16 #19 #20 #22` · `カ#15 #16 #19 #21 #29`
-— chuỗi không có họ rõ ràng trong legacy. Phần lớn là 「…を選択してください」 /
-「…がありません」, tức cùng nhóm nghi ngờ ở mục F.
+1. **Legacy cũng ghép chuỗi lúc chạy** — bảng tra ghi `⟨không render được⟩`.
+   Gặp chữ đó phải mở file đọc, không được kết luận 「web tự thêm」.
+2. **Cùng một ý nhưng khác chữ** — web 「削除対象を選択してください」 ↔ WinForm
+   「削除対象が選択されていません。」. Phải khớp theo **màn + hàm**, không theo chữ.
