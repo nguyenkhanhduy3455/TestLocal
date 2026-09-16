@@ -277,3 +277,56 @@ chỗ gọi trong app đều ✕ đỏ.
 | 4. Đang khai ⚠ | 1 | ``⟨động⟩ MsgDialog.ShowWarningM` | — | *(không có ứng viên trong màn khai báo)* | — |
 | 4. Đang khai ⚠ | 2 | ``⟨động⟩ `MsgBox(…, MsgBoxStyle` | — | *(không có ứng viên trong màn khai báo)* | — |
 | 4. Đang khai ⚠ | 3 | ``⟨động⟩ alertDialog(NO_MATCHIN` | — | *(không có ứng viên trong màn khai báo)* | — |
+
+---
+
+## H. Nhóm D — đọc handler xong (22 chỗ)
+
+Tra bằng cách mở đúng `frmXXXXXX` mà file web khai, rồi đọc handler tương ứng.
+
+| Nhóm | # | Chuỗi (web) | **Icon** | Call-site legacy | Ghi chú |
+|---|---|---|---|---|---|
+| 1 | 1 | `日付が正しくありません。` | **✕ đỏ** | `frm203048.cs:179` `btnF9_Click` | legacy: 「日付が間違っています。」 |
+| 1 | 7 | `申し送り事項は10行以内で…` | **✕ đỏ** | `frm203025.cs:290` `selectRow` | legacy: 「登録できるのは１０行までです。」 |
+| 1 | 10 | `申し送り事項を入力してください。` | **✕ đỏ** | `frm203026.cs:102` `btnF9_Click` | màn là **frm203026** (web ghi 「—」) |
+| 1 | 11 | `登録するデータがありません。` | — | *(không có)* | legacy không có câu này |
+| 1 | 13 | `日付が正しくありません。` | **✕ đỏ** | `frm902004.cs:135` `btnF9_Click` | |
+| 1 | 21 | F8 削除 confirm | **？ hỏi** | `frm203047.cs:137` `btnF8_Click` | `Q00003` |
+| 1 | 27 | `この薬剤コードは現在未対応です。` | — | *(không có)* | web tự thêm |
+| 2 | 21 | Surface failures… | **✕ đỏ** | `frm203045.cs:174` `btnF9_Click` | 「補綴管理情報の更新に失敗しました。」 |
+| 3 | 1 | wrapped by `Q00100` | **？ hỏi** | `frm203051.cs:104` `btnF9_Click` | |
+| 3 | 3 | `行（…）を削除してよ…` | **？ hỏi** | `frm203026.cs:185` `btnDelete_Click` | `Q00006` |
+| 3 | 4 | `登録します。よろしいですか？` | **？ hỏi** | `frm203026.cs:106` `btnF9_Click` | `Q00001` |
+| 3 | 13 | `会計処理後、請求金額が増えています。` | **？ hỏi** Yes/No | `INP/Lib/modAcc.cs:581` | **mặc định No** (`Button2`) |
+| 3 | 14 | `会計処理後、医療保険の請求金額が…` | **？ hỏi** Yes/No | `INP/Lib/modAcc.cs:733` | **mặc định Yes** (`Button1`) |
+| 4 | 1 | `W00100` | **⚠ vàng** | `ShowWarningMsg("W00100", …)` | comment bên web đã ghi sẵn |
+| 4 | 2 | `MsgBoxStyle.Exclamation` | **⚠ vàng** | — | comment bên web đã ghi sẵn |
+| 4 | 3 | `NO_MATCHING_TREATMENT_MSG` | **⚠ vàng** | `modMain.cs:280/480/596` | 「該当処置はありません。」 |
+
+### ⚠ Hai hộp thoại kề nhau, NÚT MẶC ĐỊNH KHÁC NHAU
+
+```csharp
+modAcc.cs:581  ShowYesNoMsg(string.Empty, "会計処理後、請求金額が増えています。…",
+                            MessageBoxDefaultButton.Button2)   // mặc định No
+modAcc.cs:733  ShowYesNoMsg(string.Empty, "会計処理後、医療保険の請求金額が増えています。…",
+                            MessageBoxDefaultButton.Button1)   // mặc định Yes
+```
+
+Đây đúng loại chi tiết đã sai một lần ở `Q00049` (lẽ ra mặc định Cancel, bản web để OK).
+Hai câu gần như giống nhau mà con trỏ nằm ở hai nút khác nhau — bản web phải khớp từng cái.
+
+### Một hộp XÁC NHẬN KHÔNG CÓ ICON
+
+```csharp
+modAcc.cs:388  Interaction.MsgBox("会計処理を行う日が本日でありません。よろしいですか。",
+                                  MsgBoxStyle.OkCancel, "")
+```
+
+`OkCancel` là kiểu **nút**, không phải icon — không style icon nào ⇒ MessageBox hiện
+**không icon và không kêu tiếng nào**. Bản web luôn ra ？ xanh, nên đây là chênh lệch
+thứ hai mà primitive chưa diễn tả được (cùng loại với 「hộp hỏi màu vàng」).
+
+### Còn lại chưa tra được — 6 chỗ
+
+`1.#11` · `1.#27` · `2.#25` · `3.#5` · `3.#11` · `3.#17` · `3.#18` — chuỗi ghép lúc chạy
+hoặc bản web tự thêm; không có câu tương ứng trong 1787 chỗ gọi của WinForm.
