@@ -96,15 +96,17 @@ public static class MsgEvidence
 
             var path = Path.Combine(dir, label.Length > 0 ? $"{code}__{label}.png" : $"{code}.png");
 
+            string icon;
             using (var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb))
             {
                 using (var g = Graphics.FromImage(bitmap))
                     g.CopyFromScreen(new Point(r.Left, r.Top), Point.Empty,
                                      new Size(width, height), CopyPixelOperation.SourceCopy);
+                icon = ClassifyIcon(bitmap);
                 bitmap.Save(path, ImageFormat.Png);
             }
 
-            AppendManifest(dir, code, box, Path.GetFileName(path), what, template, defaultButton);
+            AppendManifest(dir, code, box, Path.GetFileName(path), what, template, defaultButton, icon);
             return path;
         }
         catch
@@ -116,12 +118,67 @@ public static class MsgEvidence
     }
 
     /// <summary>
+    /// Đọc ICON của hộp thoại từ chính ảnh vừa chụp, theo MÀU.
+    ///
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// VÌ SAO ĐỌC MÀU CHỨ KHÔNG HỎI WIN32
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// Icon là thứ <b>chỗ gọi</b> quyết định (<c>ShowErrorMsg</c> / <c>ShowWarningMsg</c> /
+    /// <c>ShowInfoMsg</c> / <c>ShowOKCancelMsg</c>), không phải mã thông báo — cùng một mã
+    /// có thể đỏ ở màn này, vàng ở màn khác. Mà UIA thì KHÔNG phơi ra icon.
+    ///
+    /// <para>Đường Win32 (<c>STM_GETICON</c> rồi so <c>HICON</c> với
+    /// <c>LoadIcon(NULL, IDI_ERROR)</c>…) KHÔNG dùng được: handle ấy thuộc tiến trình APP,
+    /// còn <c>LoadIcon</c> của mình trả về handle của tiến trình TEST — hai con số không
+    /// bao giờ bằng nhau.</para>
+    ///
+    /// <para>Đọc màu thì không vướng chuyện đó, và đã được đối chứng: 15 ảnh chụp sẵn,
+    /// đáp án biết trước từ source, khớp <b>15/15</b> — kể cả ca bất ngờ
+    /// <c>frm203002.cs:2205</c> dùng <c>ShowWarningMsg("E00002", …)</c> nên ra VÀNG chứ
+    /// không phải đỏ như tên mã E gợi ý.</para>
+    ///
+    /// <para>ⓘ xanh và ？ xanh cùng màu — phân biệt bằng BỘ NÚT: chỉ có OK là thông báo,
+    /// có Cancel/No là hộp hỏi. Cột <c>buttons</c> của manifest lo phần đó.</para>
+    /// </summary>
+    private static string ClassifyIcon(Bitmap bitmap)
+    {
+        // Icon nằm bên TRÁI thân hộp thoại: bỏ thanh tiêu đề (~22% trên) và vùng chữ.
+        var x0 = (int)(bitmap.Width * 0.02);
+        var x1 = (int)(bitmap.Width * 0.18);
+        var y0 = (int)(bitmap.Height * 0.22);
+        var y1 = (int)(bitmap.Height * 0.72);
+
+        int red = 0, yellow = 0, blue = 0, total = 0;
+
+        for (var x = x0; x < x1; x++)
+        for (var y = y0; y < y1; y++)
+        {
+            var c = bitmap.GetPixel(x, y);
+            var hue = c.GetHue();
+            var sat = c.GetSaturation();
+            var light = c.GetBrightness();
+
+            if (sat < 0.35f || light < 0.12f || light > 0.93f) continue;  // xám/trắng/đen
+            total++;
+
+            if (hue < 20f || hue > 340f) red++;
+            else if (hue is >= 35f and <= 70f) yellow++;
+            else if (hue is >= 185f and <= 250f) blue++;
+        }
+
+        if (total == 0) return "(không đọc được)";
+        if (red >= yellow && red >= blue) return "do";
+        if (yellow >= blue) return "vang";
+        return "xanh";
+    }
+
+    /// <summary>
     /// Một dòng TSV cho mỗi lần chụp. TSV chứ không JSON: câu tiếng Nhật có đủ loại dấu
     /// ngoặc, còn TAB thì không bao giờ xuất hiện trong thân MessageBox.
     /// </summary>
     private static void AppendManifest(string dir, string code, MsgBoxWin32.Found box,
                                        string fileName, string what, string? template,
-                                       string? defaultButton)
+                                       string? defaultButton, string icon)
     {
         var path = Path.Combine(dir, "manifest.tsv");
         var buttons = string.Join("|", MsgBoxWin32.ButtonCaptions(box.Hwnd));
@@ -137,10 +194,10 @@ public static class MsgEvidence
             // cột đầu tiên khiến mọi bộ đọc TSV thấy tên cột là "\ufeffcode".
             using var writer = new StreamWriter(path, append: true, new UTF8Encoding(false));
             if (isNew)
-                writer.WriteLine("code\tside\traw\ttemplate\ttitle\tbuttons\tdefault\tfile\twhat\tcaptured_at");
+                writer.WriteLine("code\tside\traw\ttemplate\ttitle\tbuttons\tdefault\ticon\tfile\twhat\tcaptured_at");
             writer.WriteLine(string.Join('\t',
                 code, "win", raw, (template ?? "").Replace("\r", "").Replace("\n", "\\n"),
-                box.Title, buttons, defaultButton ?? "", fileName, what,
+                box.Title, buttons, defaultButton ?? "", icon, fileName, what,
                 DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)));
         }
     }

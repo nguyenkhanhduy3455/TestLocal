@@ -72,6 +72,10 @@ lines = [
     f'Dựng lúc {datetime.datetime.now():%Y-%m-%d %H:%M}. '
     f'{len(win)} mã có ảnh WinForm, {len(web)} mã có ảnh web.',
     '',
+    '**Cột 「chỗ bung」** cho biết hai vế có đo CÙNG MỘT tình huống không. Cùng mã mà khác ',
+    'chỗ thì vẫn so được phần chữ (theo khuôn, xem dưới) nhưng KHÔNG so được hành vi — ',
+    'số nút và nút mặc định là của chỗ gọi, không phải của mã.',
+    '',
     '**Cột 「nút」** so phần HÀNH VI: SỐ nút và NÚT MẶC ĐỊNH (mđ). Nhãn nút thì không so ',
     'vì WinForm lấy theo ngôn ngữ Windows (OK/Cancel) còn web tự đặt — nhưng số nút và ',
     'nút mặc định thì phải khớp: Q00049 mặc định Cancel chính là cách legacy nói ',
@@ -83,8 +87,8 @@ lines = [
     'là 「個別入力のコード」 còn ở 患者登録 là 「保険者番号」 — so nguyên câu thì ra "lệch" ',
     'trong khi cả hai đều đúng. Trống một vế = lượt chạy bên đó chưa phủ mã này.',
     '',
-    '| Mã | chữ | nút | WinForm | web | nút win → web | ảnh |',
-    '|---|---|---|---|---|---|---|',
+    '| Mã | chữ | nút | icon win | chỗ bung (win → web) | WinForm | web | nút win → web | ảnh |',
+    '|---|---|---|---|---|---|---|---|---|',
 ]
 
 same = diff = only = 0
@@ -137,8 +141,23 @@ for code in codes:
     else:
         bmark = '—'
 
+    # Chỗ bung: hai vế phải là CÙNG MỘT tình huống thì so mới có nghĩa. Không tự đoán
+    # được nên in cả hai nhãn ra để người đọc tự thấy — vd E00002 hiện đang là
+    # 個別 tab (win) so với 保険者番号 (web): cùng mã, KHÁC chỗ.
+    ww = (w or {}).get('what', '')
+    bw_ = (b or {}).get('what', '')
+    where = f'{ww or "—"}<br>→ {bw_ or "—"}'
+
+    # Icon do CHO GOI quyet dinh (ShowErrorMsg/ShowWarningMsg/…), khong do ma — cung mot
+    # ma co the do o man nay vang o man khac. Doc tu chinh anh da chup.
+    ICONS = {'do': '✕ đỏ', 'vang': '⚠ vàng', 'xanh': 'xanh'}
+    wi = ICONS.get((w or {}).get('icon', ''), (w or {}).get('icon', '') or '—')
+    if w and 'xanh' in (w.get('icon') or ''):
+        btns = (w.get('buttons') or '')
+        wi = '？ hỏi' if ('Cancel' in btns or 'No' in btns) else 'ⓘ xanh'
+
     lines.append(
-        f'| `{code}` | {mark} | {bmark} | {wt or "—"} | {bt or "—"} | '
+        f'| `{code}` | {mark} | {bmark} | {wi} | {where} | {wt or "—"} | {bt or "—"} | '
         f'{sw or "—"} → {sb or "—"} | {" · ".join(shots) or "—"} |'
     )
 
