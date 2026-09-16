@@ -66,14 +66,19 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  * 「算定可能な処置はありません。」 ở giữa file.
  *
  * HAI testcase 確定 (F9) ĐẨY DÒNG VÀO GRID mặc định bị bỏ qua (chỉ sửa state màn
- * hình, chưa ghi DB, nhưng làm bẩn lưới đang mở) — testcase 確定 chung và testcase
- * regression 摘要選択（長期収載品…）ở cuối file. Muốn chạy:
+ * hình, chưa ghi DB, nhưng làm bẩn lưới đang mở). Muốn chạy:
  *   TEST_ALLOW_COMMIT=1 npx playwright test tests/side-panel/pack-sidepanel-handler.spec.ts
  *
- * Testcase regression cuối file giữ nửa còn thiếu của `ModMain.Chk_CmtAuto`: F9 確定
- * của パック phải chạy cascade 摘要コメントパック cho từng 処置 (frm203002.cs:9054), chứ
- * không chỉ đẩy dòng vào lưới. Xem docblock riêng của nó để biết đường đi tất định
- * và các mã master liên quan.
+ * THỨ TỰ của hai cái đó CÓ Ý NGHĨA (serial, chung một page):
+ *  1. regression 摘要選択（長期収載品…）— giữ nửa còn thiếu của `ModMain.Chk_CmtAuto`:
+ *     F9 確定 của パック phải chạy cascade 摘要コメントパック cho từng 処置
+ *     (frm203002.cs:9054), chứ không chỉ đẩy dòng vào lưới. Nó chốt một パック CỐ ĐỊNH
+ *     nên cần xuất phát từ màn sạch — Rule 23.4 ngay phía trên kết thúc bằng
+ *     `dismiss('picker')` nên đúng là màn sạch.
+ *  2. testcase 確定 chung — dò パック ĐẦU TIÊN nào mở được picker, tức là chốt một
+ *     パック không đoán trước, và cascade của nó xếp cả hàng dialog
+ *     (đo được: để lại nguyên 摘要選択（歯清-妊婦、糖尿病）). Vì vậy nó phải nằm SAU;
+ *     đảo lại là testcase regression chết vì overlay của nó, không phải vì app.
  */
 
 const PAT_NO = patNo('12138')
@@ -172,6 +177,50 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
             if ((await picker.count()) > 0) await page.keyboard.press('F10')
         }
         await expect(picker).toBeHidden({ timeout: 10000 })
+    }
+
+    /**
+     * Bấm OK cho tới khi hàng đợi alert お茶コン rỗng.
+     *
+     * F10 KHÔNG đóng được `[role="alertdialog"]` — phải bấm nút OK. Đo được khi
+     * chạy với TEST_ALLOW_COMMIT=1: testcase 「F9 確定 đẩy 処置 vào lưới」 chốt một
+     * パック làm 算定チェック bung alert 「…当月の算定限度（1回）を超えています。」, cleanup
+     * bằng F10 của nó không dọn nổi, và overlay `z-[200] bg-black/80` của alert
+     * NUỐT mọi cú click ở testcase sau (「element intercepts pointer events」).
+     * Không phải bug app: cảnh báo 算定チェック là thật.
+     */
+    async function drainAlerts() {
+        const alert = page.locator('[role="alertdialog"]')
+        for (let i = 0; i < 10; i++) {
+            if ((await alert.count()) === 0) return
+            const ok = alert.locator('button', { hasText: /^(OK|Yes|はい)$/ })
+            if ((await ok.count()) === 0) return
+            await ok.first().click({ timeout: 5000 }).catch(() => {})
+            await page.waitForTimeout(300)
+        }
+    }
+
+    /**
+     * Dọn SẠCH mọi thứ đang đè lên màn nền: alert お茶コン trước, rồi mọi
+     * `[role="dialog"]` bằng F10, lặp cho tới khi hết.
+     *
+     * Thứ tự BẮT BUỘC là alert-trước-dialog: overlay `z-[200]` của alert nuốt cả
+     * click lẫn F10, nên F10 bắn khi còn alert chỉ rơi vào alert. Đúng lý do lần
+     * chạy trước 「F9 確定 đẩy 処置 vào lưới」 để sót lại nguyên một
+     * 摘要選択（歯清-妊婦、糖尿病）, và nó chặn testcase kế.
+     *
+     * Chỉ dùng ở cleanup của HAI testcase 確定 (cuối file). KHÔNG cắm
+     * addLocatorHandler toàn cục: testcase 「算定可能な処置はありません。」 cần alert
+     * đó còn sống để assert.
+     */
+    async function clearOverlays() {
+        const dialogs = page.getByRole('dialog')
+        for (let i = 0; i < 6; i++) {
+            await drainAlerts()
+            if ((await dialogs.count()) === 0) return
+            await page.keyboard.press('F10')
+            await page.waitForTimeout(600)
+        }
     }
 
     /** Đóng カルテ記載選択 nếu nó đang mở; true = có đóng. */
@@ -663,51 +712,6 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
         await dismiss('picker')
     })
 
-    test('F9 確定 đẩy 処置 vào lưới đăng ký (mặc định BỎ QUA)', async () => {
-        test.skip(!ALLOW_COMMIT, 'làm bẩn lưới đang mở — đặt TEST_ALLOW_COMMIT=1 để chạy')
-
-        // Tìm パック mở được picker.
-        const total = Math.min(await rows.count(), SCAN_LIMIT)
-        let opened = false
-        for (let i = 0; i < total; i++) {
-            await rows.nth(i).click()
-            const result = await waitPickResult()
-            if (result === 'picker') {
-                opened = true
-                break
-            }
-            await dismiss(result)
-        }
-        expect(opened, 'không パック nào mở được picker để test 確定').toBe(true)
-
-        // Nút F9 確定 disabled khi mọi 回数 = 0 (hasAnyCnt). Double-click 1 dòng để
-        // chạy vòng 回数 (dgvSelect_CellClick: cnt = (cnt + 1) % (maxCnt + 1)).
-        const f9 = picker.getByRole('button', { name: /F9\s*確定/ })
-        if (await f9.isDisabled()) {
-            await picker.getByTestId('cell-trtNm').first().dblclick()
-        }
-        await expect(f9).toBeEnabled({ timeout: 10000 })
-
-        // Mỗi 処置 chốt thêm ít nhất 1 dòng vào lưới → số ô [data-grid-cell] phải tăng.
-        const cells = page.locator('[data-grid-cell]')
-        const beforeCells = await cells.count()
-        await f9.click()
-        await expect(picker).toBeHidden({ timeout: 20000 })
-        await expect.poll(() => cells.count(), { timeout: 30000 }).toBeGreaterThan(beforeCells)
-
-        // Chk_CmtAuto có thể kéo theo カルテ記載選択 (CmtAutoPickerDialog) — F10 để bỏ
-        // qua; dòng 処置 đã được chèn TRƯỚC đó (handleKobetuPicks chạy trước picker).
-        const dialogs = page.getByRole('dialog')
-        for (let i = 0; i < 3 && (await dialogs.count()) > 0; i++) {
-            await page.keyboard.press('F10')
-            // Không assert cứng: có thể là dialog dây chuyền (batch kế tiếp mở ngay),
-            // vòng lặp sẽ dọn tiếp — đây chỉ là dọn dẹp sau khi đã assert xong.
-            await expect(dialogs.first())
-                .toBeHidden({ timeout: 10000 })
-                .catch(() => {})
-        }
-        await step()
-    })
     /**
      * REGRESSION — F9 確定 của パック phải chạy `ModMain.Chk_CmtAuto` cho TỪNG 処置,
      * tức là mở cả 摘要選択 (frm203018) chứ không chỉ đẩy dòng vào lưới.
@@ -740,6 +744,11 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
      */
     test('F9 確定 mở 摘要選択（長期収載品…）cho 処置 選定療養 (Chk_CmtAuto, mặc định BỎ QUA)', async () => {
         test.skip(!ALLOW_COMMIT, 'làm bẩn lưới đang mở — đặt TEST_ALLOW_COMMIT=1 để chạy')
+
+        // Testcase 確定 phía trên (cũng chỉ chạy khi ALLOW_COMMIT) để lại alert
+        // 算定チェック và/hoặc 摘要選択 của パック nó vừa chốt; overlay của chúng nuốt
+        // mọi click ở đây.
+        await clearOverlays()
 
         // Tìm dòng パック theo TÊN (xem docblock: cột No. không ổn định).
         const total = await rows.count()
@@ -775,16 +784,36 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
         // Locator theo TEXT chứ không `getByRole`: Radix `hideOthers` gắn
         // aria-hidden lên portal khi một modal khác mount, làm getByRole "mù"
         // (bẫy đã ghi ở summary-comment-selection-enter.spec.ts).
-        await expect(
-            summaryTitle,
-            'F9 確定 của パック KHÔNG chạy Chk_CmtAuto → 摘要選択 không bung (bug cũ)',
-        ).toBeVisible({ timeout: 30000 })
+        //
+        // PHẢI vừa dọn alert vừa chờ: WinForm chạy SingleChk (frm203002.cs:9049)
+        // TRƯỚC Chk_CmtAuto và web port cũng chặn (`runSingleCheckBlocking`), nên
+        // alert 算定チェック của mấy 処置 đầu パック đứng CHẶN cascade — chờ suông là
+        // hết giờ. Đây là thứ tự đúng của WinForm, không phải app treo.
+        await expect
+            .poll(
+                async () => {
+                    await drainAlerts()
+                    return (await summaryTitle.count()) > 0
+                },
+                {
+                    timeout: 60000,
+                    message:
+                        'F9 確定 của パック KHÔNG chạy Chk_CmtAuto → 摘要選択 không bung (bug cũ)',
+                },
+            )
+            .toBe(true)
+        await expect(summaryTitle).toBeVisible({ timeout: 10000 })
 
         const cmtDialog = page
             .locator('[role="dialog"]')
             .filter({ hasText: LONG_TERM_PACK_DEF_NM })
         // 処置名称 caption = 処置 đã kích hoạt cascade (frm203018 customLabel3).
-        await expect(cmtDialog.getByText(/処置名称.*ボルタレン/)).toBeVisible({ timeout: 10000 })
+        //
+        // Khớp theo 「錠25mg」 chứ KHÔNG theo tên thuốc: caption lấy thẳng mst_trt.trt_nm
+        // nên là katakana NỬA chiều rộng 「ﾎﾞﾙﾀﾚﾝ錠25mg２T」, trong khi pac_mst /
+        // mst_drug ghi FULL chiều rộng 「ボルタレン」. Viết /ボルタレン/ ở đây là fail oan
+        // (đã dính) — hai chuỗi đó không bằng nhau với JS regex.
+        await expect(cmtDialog.getByText(/処置名称.*錠25mg/)).toBeVisible({ timeout: 10000 })
         const candidates = cmtDialog.locator('[data-testid="cell-dispText"]')
         await expect(candidates, 'Z001 có 5 摘要 candidate (com_cd 820101320..24)').toHaveCount(5)
 
@@ -804,13 +833,45 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
         expect(await page.locator('[data-grid-cell]').count()).toBeGreaterThan(beforeCells)
 
         // Dọn dialog dây chuyền còn sót (カルテ記載選択 do CMTAUTO của 処方料 …).
-        const dialogs = page.getByRole('dialog')
-        for (let i = 0; i < 3 && (await dialogs.count()) > 0; i++) {
-            await page.keyboard.press('F10')
-            await expect(dialogs.first())
-                .toBeHidden({ timeout: 10000 })
-                .catch(() => {})
+        await clearOverlays()
+        await step()
+    })
+    test('F9 確定 đẩy 処置 vào lưới đăng ký (mặc định BỎ QUA)', async () => {
+        test.skip(!ALLOW_COMMIT, 'làm bẩn lưới đang mở — đặt TEST_ALLOW_COMMIT=1 để chạy')
+
+        // Tìm パック mở được picker.
+        const total = Math.min(await rows.count(), SCAN_LIMIT)
+        let opened = false
+        for (let i = 0; i < total; i++) {
+            await rows.nth(i).click()
+            const result = await waitPickResult()
+            if (result === 'picker') {
+                opened = true
+                break
+            }
+            await dismiss(result)
         }
+        expect(opened, 'không パック nào mở được picker để test 確定').toBe(true)
+
+        // Nút F9 確定 disabled khi mọi 回数 = 0 (hasAnyCnt). Double-click 1 dòng để
+        // chạy vòng 回数 (dgvSelect_CellClick: cnt = (cnt + 1) % (maxCnt + 1)).
+        const f9 = picker.getByRole('button', { name: /F9\s*確定/ })
+        if (await f9.isDisabled()) {
+            await picker.getByTestId('cell-trtNm').first().dblclick()
+        }
+        await expect(f9).toBeEnabled({ timeout: 10000 })
+
+        // Mỗi 処置 chốt thêm ít nhất 1 dòng vào lưới → số ô [data-grid-cell] phải tăng.
+        const cells = page.locator('[data-grid-cell]')
+        const beforeCells = await cells.count()
+        await f9.click()
+        await expect(picker).toBeHidden({ timeout: 20000 })
+        await expect.poll(() => cells.count(), { timeout: 30000 }).toBeGreaterThan(beforeCells)
+
+        // Chk_CmtAuto kéo theo cả 摘要選択 (frm203018) lẫn カルテ記載選択 — và
+        // 算定チェック có thể bung alert đè lên. Dọn hết, nếu không testcase kế
+        // không click được gì (dòng 処置 đã chèn TRƯỚC đó nên bỏ qua là an toàn).
+        await clearOverlays()
         await step()
     })
 
