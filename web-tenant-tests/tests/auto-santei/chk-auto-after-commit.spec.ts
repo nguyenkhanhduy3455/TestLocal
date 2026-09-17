@@ -596,6 +596,24 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
         // TC-1 chốt với 病名 Ｃ(100), mà 100 nằm trong ToothPresentDisCds nên pack
         // 「歯管-有床義歯」 bị ẨN → cascade rỗng → đuôi chạy trọn vẹn. Đổi sang Ｐ(103)
         // để pack BUNG, đúng trạng thái người dùng gặp.
+        // Bắt luôn trao đổi /chk-auto để phân định khi đỏ: FE không gọi, hay BE trả
+        // rỗng? Log BE không dùng được — appsettings.Development đặt MinimumLevel
+        // = Warning nên LogInformation bị lọc sạch, và console của dev server thì
+        // spec không đọc được.
+        const chkAutoCalls: string[] = []
+        page.on('response', (res) => {
+            // PHẢI lọc theo method + đường dẫn API: dev server của Vite cũng phục vụ
+            // file nguồn `chk-auto-runtime-api.ts`, url của nó cũng chứa 'chk-auto'
+            // nên lọc lỏng sẽ đếm nhầm 5 lượt tải module thành 5 lượt gọi API.
+            const u = res.url()
+            if (!u.includes('/api/tenant/')) return
+            // Ghi lại TOÀN BỘ chuỗi API của đuôi 回 Enter, không chỉ /chk-auto —
+            // cần biết chuỗi DỪNG ở đâu: cascade → cmt-autos → chk-auto.
+            const tag = u.split('/api/tenant/')[1]?.split('?')[0] ?? u
+            chkAutoCalls.push(`${res.request().method()} ${tag} → ${res.status()}`)
+            return
+        })
+
         await resetPhase({ disCd: DIS_CD_P, disSb: DIS_SB_P, dspDis: 'Ｐ' })
         await commitTrigger('Ｐ')
 
@@ -613,20 +631,30 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
         // gốc hết nút để bấm, timeout 15s (đo được 2026-09-17). Ở đây chỉ ĐỌC lưới và
         // để handler tự dọn; assert vẫn auto-retry nên vẫn ép handler chạy.
         const names = expected.map((m) => norm(m.trtNm))
-        await expect
-            .poll(
-                async () => {
-                    const texts = (await ryoCells().allInnerTexts()).map(norm)
-                    return names.filter((n) => texts.some((t) => t.includes(n))).length
-                },
-                {
-                    timeout: FOLLOWUP_TIMEOUT,
-                    message:
-                        'dòng 自動算定 không xuống lưới khi 摘要コメントパック cùng bung — ' +
-                        `chờ: ${names.join(' / ')}`,
-                },
+        try {
+            await expect
+                .poll(
+                    async () => {
+                        const texts = (await ryoCells().allInnerTexts()).map(norm)
+                        return names.filter((n) => texts.some((t) => t.includes(n))).length
+                    },
+                    {
+                        timeout: FOLLOWUP_TIMEOUT,
+                        message:
+                            'dòng 自動算定 không xuống lưới khi 摘要コメントパック cùng bung — ' +
+                            `chờ: ${names.join(' / ')}`,
+                    },
+                )
+                .toBe(names.length)
+        } finally {
+            // In DÙ ĐỎ HAY XANH: đây là thứ phân định 「FE không gọi」 với
+            // 「BE trả rỗng」, và khi đỏ thì poll ném nên phải nằm ở finally.
+            console.log(
+                `API sau khi chốt 処置 (${chkAutoCalls.length} lượt):\n` +
+                    chkAutoCalls.map((c, n) => `  [${n}] ${c}`).join('\n'),
             )
-            .toBe(names.length)
+        }
+
 
         // 摘要コメント phải CÓ mặt — nếu không thì điều kiện tái hiện chưa đúng và
         // phép đo ở trên vô nghĩa (pack bị ẩn thì đây chỉ là TC-1 lặp lại).
