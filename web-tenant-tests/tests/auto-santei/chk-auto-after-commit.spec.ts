@@ -132,6 +132,17 @@ const TRIGGER_SB = Number(process.env.TEST_TRIGGER_SB ?? 2)
 const DIS_CD_C = 100
 const DIS_SB_C2 = 2
 
+/**
+ * 病名 KHÔNG thuộc nhóm làm ẩn pack 「歯管-有床義歯」 — dùng cho TC-5.
+ *
+ * `ListCascadeCmtAutosHandler.ToothPresentDisCds` = [100, 101, 102, 111, 112, 158]
+ * (Ｃ/Ｐul/Ｐer/Ｐerico/Ｃ4/Ｃ3処置歯, CmtAuto.cs:205-217): khi dòng kích hoạt mang một
+ * trong số đó, WinForm ẩn 「有床義歯に係る口腔管理のみ」. 103 = Ｐ (歯周炎) nằm ngoài
+ * nhóm nên pack BUNG — đúng điều kiện tái hiện bug.
+ */
+const DIS_CD_P = 103
+const DIS_SB_P = 0
+
 /** Ô 部位 seed: index 2 = 右上6 (bố cục 32 ô, `tooth-bui.ts:25`: 0-7 右上 8→1). */
 const BUI_SLOT = 2
 const BUI_VAL = 1
@@ -293,7 +304,13 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
      *
      * ⚠️ Thứ tự BẮT BUỘC: ghi `siga` TRƯỚC khi mở màn (BẪY 2).
      */
-    async function resetPhase() {
+    async function resetPhase(
+        dis: { disCd: number; disSb: number; dspDis: string } = {
+            disCd: DIS_CD_C,
+            disSb: DIS_SB_C2,
+            dspDis: 'Ｃ',
+        },
+    ) {
         await writeSigaTeeth(Number(PAT_NO), { se: { [BUI_SLOT + 1]: SE_VITAL } })
         await purgeTestRows()
         await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
@@ -305,9 +322,9 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
                 dspTrt: '',
                 bui: buiAt(BUI_SLOT, BUI_VAL),
                 dspBui: '右上6',
-                disCd: [DIS_CD_C],
-                disSb: [DIS_SB_C2],
-                dspDis: 'Ｃ',
+                disCd: [dis.disCd],
+                disSb: [dis.disSb],
+                dspDis: dis.dspDis,
             },
         ])
         await openTreatmentScreen()
@@ -317,14 +334,14 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
      * Chốt 処置 `TRIGGER_CD/TRIGGER_SB` qua コードモード → 処置選択 → F9 確定 →
      * Enter ở ô 回. Đúng đường người dùng đi khi báo lỗi.
      */
-    async function commitTrigger() {
+    async function commitTrigger(seedDisNm = 'Ｃ') {
         await closeDialogs(page)
         const modeBtn = page.locator('button[title^="点数/コード 入力モード切替"]')
         const footerTen = page.locator('input[data-footer-cell$=":footer-ten"]').last()
         const trtPicker = page.getByRole('dialog').filter({ hasText: '処置選択' })
 
         // Con trỏ phải nằm trên 部位病名行 vừa seed thì dòng mới mới thừa kế 部位.
-        const seededRow = ryoCells().filter({ hasText: 'Ｃ' }).first()
+        const seededRow = ryoCells().filter({ hasText: seedDisNm }).first()
         await expect(seededRow, 'không thấy 部位病名行 vừa seed').toBeVisible({ timeout: 30_000 })
         await seededRow.click()
 
@@ -568,6 +585,56 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
                 ).toBeGreaterThan(trtIdx)
             }
         }
+    })
+
+    test('TC-5 摘要コメントパック bung ra KHÔNG được nuốt mất dòng 自動算定', async () => {
+        skipWithReason(
+            slots.length === 0,
+            `処置 ${TRIGGER_CD}/${TRIGGER_SB} không có dòng chk_auto — đặt TEST_TRIGGER_CD/SB sang mã khác`,
+        )
+
+        // TC-1 chốt với 病名 Ｃ(100), mà 100 nằm trong ToothPresentDisCds nên pack
+        // 「歯管-有床義歯」 bị ẨN → cascade rỗng → đuôi chạy trọn vẹn. Đổi sang Ｐ(103)
+        // để pack BUNG, đúng trạng thái người dùng gặp.
+        await resetPhase({ disCd: DIS_CD_P, disSb: DIS_SB_P, dspDis: 'Ｐ' })
+        await commitTrigger('Ｐ')
+
+        const expected = slots
+            .map((s) => slotMaster.get(`${s.trtCd}/${s.trtSb}`))
+            .filter((m): m is { trtNm: string; score1: number } => m !== undefined)
+        skipWithReason(
+            expected.length === 0,
+            'các slot chk_auto không có dòng mst_trt hiệu lực trong tháng test',
+        )
+
+        // KHÔNG dùng waitForFollowUpRows ở đây: nó gọi closeDialogs, mà 116/7 bung
+        // CẢ alert 算定チェック LẪN カルテ記載選択 nên cú click OK thủ công tranh chấp
+        // với locator handler của installOverlayHandlers — handler đóng trước, click
+        // gốc hết nút để bấm, timeout 15s (đo được 2026-09-17). Ở đây chỉ ĐỌC lưới và
+        // để handler tự dọn; assert vẫn auto-retry nên vẫn ép handler chạy.
+        const names = expected.map((m) => norm(m.trtNm))
+        await expect
+            .poll(
+                async () => {
+                    const texts = (await ryoCells().allInnerTexts()).map(norm)
+                    return names.filter((n) => texts.some((t) => t.includes(n))).length
+                },
+                {
+                    timeout: FOLLOWUP_TIMEOUT,
+                    message:
+                        'dòng 自動算定 không xuống lưới khi 摘要コメントパック cùng bung — ' +
+                        `chờ: ${names.join(' / ')}`,
+                },
+            )
+            .toBe(names.length)
+
+        // 摘要コメント phải CÓ mặt — nếu không thì điều kiện tái hiện chưa đúng và
+        // phép đo ở trên vô nghĩa (pack bị ẩn thì đây chỉ là TC-1 lặp lại).
+        const gridText = (await ryoCells().allInnerTexts()).map(norm).join('\n')
+        expect(
+            gridText.includes('有床義歯'),
+            'pack 歯管-有床義歯 không bung — đổi 病名 seed, TC này cần nó BUNG',
+        ).toBe(true)
     })
 
     test('TC-4 các dòng đi kèm nằm ĐÚNG cụm quanh 処置, không trôi xuống cuối ngày', async () => {
