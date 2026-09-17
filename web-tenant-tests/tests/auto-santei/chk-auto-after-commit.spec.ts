@@ -397,7 +397,15 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
         await expect
             .poll(
                 async () => {
-                    if ((await page.getByRole('dialog').count()) > 0) await closeDialogs(page, 2)
+                    // Ép locator handler chạy. Chúng CHỈ chạy trước một action hoặc
+                    // một assertion auto-retry trên locator; `allInnerTexts()` /
+                    // `count()` đi qua $$eval (playwright-core 1.62.1) nên KHÔNG kích
+                    // hoạt, và alert 算定限度 nằm lại tới hết poll (đo 2026-09-17).
+                    // KHÔNG tự bấm OK/F10 ở đây: click thủ công tranh chấp với handler
+                    // — handler dọn xong trước thì click gốc hết nút để bấm, treo 15s.
+                    await expect(page.locator('[role="dialog"],[role="alertdialog"]'))
+                        .toHaveCount(0, { timeout: 1000 })
+                        .catch(() => {})
                     last = (await ryoTexts()).map(norm)
                     // Neo vào dòng 処置 vừa chốt: chỉ những gì nằm QUANH nó mới là
                     // của cú nhập này (BẪY 6). Chưa thấy 処置 ⇒ coi như còn thiếu hết.
@@ -587,6 +595,32 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
         }
     })
 
+    test('TC-4 các dòng đi kèm nằm ĐÚNG cụm quanh 処置, không trôi xuống cuối ngày', async () => {
+        skipWithReason(slots.length === 0, 'không có slot chk_auto để đo')
+        skipWithReason(triggerNm === '', 'không tra được 処置名 của mã trigger')
+
+        const cells = (await ryoTexts()).map(norm)
+        const trtIdx = lastIdxOf(cells, norm(triggerNm))
+        expect(trtIdx, `không thấy dòng 処置 「${triggerNm}」`).toBeGreaterThanOrEqual(0)
+
+        // WinForm AddRow chèn NGAY tại con trỏ, mà con trỏ lúc này đứng ngay sau
+        // dòng 処置 ⇒ các 処置 của chk_auto là những dòng LIỀN KỀ bên dưới, theo đúng
+        // thứ tự slot (modMain.cs:861 vòng `for i < 5`).
+        const below = cells.slice(trtIdx + 1)
+        for (const s of slots) {
+            const m = slotMaster.get(`${s.trtCd}/${s.trtSb}`)
+            if (!m) continue
+            const at = below.findIndex((c) => c.includes(norm(m.trtNm)))
+            expect(
+                at,
+                `dòng 「${m.trtNm}」 phải nằm DƯỚI 「${triggerNm}」 (AddRow tại con trỏ, ` +
+                    `modMain.cs:958). Lưới: ${JSON.stringify(cells.filter(Boolean))}`,
+            ).toBeGreaterThanOrEqual(0)
+        }
+    })
+    // ⚠️ PHẢI nằm CUỐI describe: TC này re-seed 病名 sang Ｐ rồi chốt lại, mà
+    // TC-2/3/4 đều đọc state do TC-1 để lại (spec chạy serial, chung một page).
+    // Đặt nó trước TC-4 làm TC-4 đỏ — đã vấp 2026-09-17.
     test('TC-5 摘要コメントパック bung ra KHÔNG được nuốt mất dòng 自動算定', async () => {
         skipWithReason(
             slots.length === 0,
@@ -629,12 +663,18 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
         // CẢ alert 算定チェック LẪN カルテ記載選択 nên cú click OK thủ công tranh chấp
         // với locator handler của installOverlayHandlers — handler đóng trước, click
         // gốc hết nút để bấm, timeout 15s (đo được 2026-09-17). Ở đây chỉ ĐỌC lưới và
-        // để handler tự dọn; assert vẫn auto-retry nên vẫn ép handler chạy.
+        // để handler tự dọn — nhưng phải ÉP handler chạy, xem ghi chú dưới.
         const names = expected.map((m) => norm(m.trtNm))
         try {
             await expect
                 .poll(
                     async () => {
+                        // Handler chỉ chạy trước action / assertion auto-retry trên
+                        // locator. `allInnerTexts()` đi qua $$eval nên tự nó không bao
+                        // giờ kích hoạt handler — assertion no-op này mới ép được.
+                        await expect(page.locator('[role="dialog"],[role="alertdialog"]'))
+                            .toHaveCount(0, { timeout: 1000 })
+                            .catch(() => {})
                         const texts = (await ryoCells().allInnerTexts()).map(norm)
                         return names.filter((n) => texts.some((t) => t.includes(n))).length
                     },
@@ -663,29 +703,5 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
             gridText.includes('有床義歯'),
             'pack 歯管-有床義歯 không bung — đổi 病名 seed, TC này cần nó BUNG',
         ).toBe(true)
-    })
-
-    test('TC-4 các dòng đi kèm nằm ĐÚNG cụm quanh 処置, không trôi xuống cuối ngày', async () => {
-        skipWithReason(slots.length === 0, 'không có slot chk_auto để đo')
-        skipWithReason(triggerNm === '', 'không tra được 処置名 của mã trigger')
-
-        const cells = (await ryoTexts()).map(norm)
-        const trtIdx = lastIdxOf(cells, norm(triggerNm))
-        expect(trtIdx, `không thấy dòng 処置 「${triggerNm}」`).toBeGreaterThanOrEqual(0)
-
-        // WinForm AddRow chèn NGAY tại con trỏ, mà con trỏ lúc này đứng ngay sau
-        // dòng 処置 ⇒ các 処置 của chk_auto là những dòng LIỀN KỀ bên dưới, theo đúng
-        // thứ tự slot (modMain.cs:861 vòng `for i < 5`).
-        const below = cells.slice(trtIdx + 1)
-        for (const s of slots) {
-            const m = slotMaster.get(`${s.trtCd}/${s.trtSb}`)
-            if (!m) continue
-            const at = below.findIndex((c) => c.includes(norm(m.trtNm)))
-            expect(
-                at,
-                `dòng 「${m.trtNm}」 phải nằm DƯỚI 「${triggerNm}」 (AddRow tại con trỏ, ` +
-                    `modMain.cs:958). Lưới: ${JSON.stringify(cells.filter(Boolean))}`,
-            ).toBeGreaterThanOrEqual(0)
-        }
     })
 })
