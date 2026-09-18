@@ -90,6 +90,25 @@ public static class MsgBoxWin32
     /// <summary>
     /// Bấm nút có nhãn khớp <paramref name="captions"/> (so sau khi bỏ dấu &amp; của phím tắt).
     /// Không có nhãn nào khớp thì trả false và KHÔNG bấm bừa nút khác.
+    ///
+    /// <para>⚠️ <b><paramref name="captions"/> là một TẬP HỢP, KHÔNG phải thứ tự ưu
+    /// tiên.</b> Hàm duyệt <c>EnumChildWindows</c> — tức theo thứ tự NÚT trên hộp thoại —
+    /// và bấm nút ĐẦU TIÊN có nhãn nằm trong tập đó. Truyền
+    /// <c>("キャンセル","Cancel","OK")</c> cho một hộp <c>[OK | Cancel]</c> sẽ bấm
+    /// <b>OK</b>, dù 「キャンセル」 đứng trước trong danh sách.</para>
+    ///
+    /// <para>🔥 Đã trả giá 2026-09-18: <c>GuideResetProbeTests</c> và
+    /// <c>GuideSidePanelProbeTests</c> đều gộp cả hai nhánh vào một lời gọi, nên hộp
+    /// Q00100 của 「リセット」 bị trả lời <b>OK</b> trong khi log báo 「đã bấm キャンセル」 —
+    /// <c>StepReset</c> chạy và <c>TRTSTATE</c> của bệnh nhân test bị xoá. Đúng cái bẫy
+    /// F16, chỉ khác là F16 chưa nói rõ chuyện thứ tự danh sách vô tác dụng.</para>
+    ///
+    /// <para><b>Cách gọi đúng</b>: mỗi nhánh MỘT lời gọi riêng, nhánh mình muốn trước,
+    /// và chỉ rơi xuống nhánh kia khi lời gọi đầu trả <c>false</c>:</para>
+    /// <code>
+    /// if (ClickButton(h, "キャンセル", "Cancel", "いいえ", "No")) { /* đã huỷ */ }
+    /// else if (ClickButton(h, "OK", "はい", "Yes"))              { /* hộp MỘT nút */ }
+    /// </code>
     /// </summary>
     public static bool ClickButton(IntPtr dialog, params string[] captions)
     {

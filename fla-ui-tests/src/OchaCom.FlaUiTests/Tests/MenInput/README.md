@@ -162,3 +162,77 @@ Thiếu DB thì `TcM0` / `TcM2` / `TcM9` tự `Ignore` kèm lý do; phần còn 
   ghi thẳng vào `grdRegi` và **không đọc** cột đó, nên không mở 面入力.
 - **`trn_trn.MEN1..MEN5`** — năm cột đó có thật trong bảng, nhưng `modSave.cs:2074-2078`
   ghi cứng `""` cho cả năm. Dữ liệu 面 nằm ở `FREEWD` + `DSP_TRT`, đúng chỗ luồng này đo.
+
+---
+
+## 9. Đo lại với ĐÚNG 枝番 `326-3` — 2026-09-18 (`MenInputSb3ProbeTests`)
+
+```powershell
+.\run-input-tooth-surfaces.ps1 -Case TcS3
+```
+
+### 9.1 Vì sao cần một ca riêng
+
+`Tc0` chọn 枝番 bằng `MenInputDb.FindMenPair`, và hàm đó lấy dòng `men = 1` **ĐẦU TIÊN**
+của mã 326. Đo được 2026-09-18, nó trả về:
+
+```
+cặp A/B mà FindMenPair chọn = [MST_TRT266] mã 326: men=1 → 2 「光ＣＲ充(単純)」, men=0 → 0 「充填１(複雑)」
+```
+
+tức **`326-2`**. Còn `men-input-dialog.spec.ts:100-104` dùng **`326-3`**:
+
+```
+326-1  充填１(単純)     men=0   ← spec dùng làm ĐỐI CHỨNG ÂM
+326-2  光ＣＲ充(単純)   men=1   ← FindMenPair chọn cái này  (Tc0, mục 3)
+326-3  光ＣＲ充(複雑)   men=1   ← spec web dùng cái này     (TcS3)
+```
+
+⇒ **Số ở mục 3 (`光重合型CR充填(単純) <歯OD>`) là của `326-2`, không phải của `326-3`.** Đem
+nó đối chiếu với `TC-M4` là so hai dòng khác nhau. `TcS3` ghim cứng `326-3`.
+
+### 9.2 Số đo — bệnh nhân 10 / 2026-08-03, dòng `[12] 居宅療養管理指導費` (部位 slot đầu 3, 5 răng)
+
+| Đo cái gì | Kết quả |
+|---|---|
+| `INPCONFIG.MENINPUT_FLG` | **1** ⇒ cổng MỞ |
+| tên ở ô 名称 của picker | 「光重合型CR充填(複雑)」 ← **`cct_nm`**, KHÔNG phải `trt_nm` 「光ＣＲ充(複雑)」 |
+| `326-3` mở 面入力 | **True**; 処置選択 **CÒN MỞ** phía sau (showDialog modal lồng nhau) |
+| `lblBui` | `U+E092` (gaiji 右上5) |
+| `lblTrt` | 「光重合型CR充填(複雑)」 |
+| 5 nhãn mặt (slot đầu 3 ⇒ nhánh `idx <= 4`) | Top=**B** Left=**D** Center=**O** Right=**M** Bottom=**P** |
+| số mặt chọn lúc vừa mở | **0** |
+| phím 5 rồi 4 | 2 mặt; `Left`/`Center` đổi `RGB(255,255,255)` → `RGB(211,211,211)` |
+| chuỗi mặt sinh ra | 「**OD**」 (Center=O + Left=D, thứ tự theo `EmitOrder`, không theo thứ tự bấm) |
+
+**Sau F9 確定 — câu chính:**
+
+```
+cột 2  = 「光重合型CR充填(複雑) <歯OD>」
+         [U+5149 U+91CD U+5408 U+578B C R U+5145 U+586B ( U+8907 U+96D1 )   < U+E092 O D >]
+
+cột 72 = 「<歯OD>」
+         [< U+E092 O D >]
+```
+
+Token là `<` + **gaiji `U+E092`** + `OD` + `>`, và ở cột 2 nó được nối sau tên 処置 bằng
+**đúng một dấu cách** — khớp `fixProc`: `_dtRegiData[2] + " " + strMen` (frm203035.cs:470-476).
+
+> ⚠️ **Cột 72 đọc qua `Txt.N` nên đã bị `Trim()`.** `fixProc` làm
+> `_dtRegiData[72] + " " + strMen`, mà cột 72 trước đó rỗng ⇒ giá trị THẬT rất có thể là
+> **` <歯OD>` có dấu cách đứng đầu**. Số đo này **không loại trừ** được điều đó. Cột 2 thì
+> dấu cách nằm giữa nên nhìn thấy chắc chắn. Muốn chốt cột 72 nguyên văn thì phải đọc
+> không qua `Txt.N` — cùng cái bẫy mà F23 ghi 「hàm đọc UI hay làm phẳng chuỗi」.
+
+**Hai hệ quả kèm theo, tái hiện đúng trên `326-3`:**
+
+- 面入力 **Ở LẠI** hỏi răng kế (`算定回数 ÷ 部位数 = 1 ÷ 5 = 0`); `lblBui` đổi
+  `U+E092` → `U+E098` — glyph của **răng kế**, không phải răng cũ.
+- **F10 戻り**: cột 2 **GIỮ** `<歯OD>`, cột 72 **VỀ RỖNG** ⇒ hai cột lệch nhau. Bug đã port
+  có chủ ý (mục 6).
+
+### 9.3 Đối chiếu với `TC-M4`
+
+Spec đặt `EXPECT_SURFACES = ${FACE_CENTER}${FACE_LEFT}` → 「OD」, và assert bằng
+`new RegExp('<[\\s\\S]{1,2}OD>')`. Chuỗi WinForm `<U+E092OD>` **khớp** cả hai.
+⇒ Kỳ vọng của `TC-M4` là **đúng** cho `326-3`.

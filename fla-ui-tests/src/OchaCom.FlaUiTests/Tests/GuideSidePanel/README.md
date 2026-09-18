@@ -150,3 +150,23 @@ Thêm hai điều nhỏ nhưng tốn thời gian:
 - Đóng frm203017 **bằng nút 戻る** → con trỏ về `txtGuid1Sel`.
   Đóng **bằng phím F10** → con trỏ đọc ra `MenuBar`: phím F10 của Windows kích hoạt thanh
   menu của cửa sổ đứng sau. Testcase đo focus phải đóng bằng NÚT.
+
+---
+
+## 5. Nút 「リセット」 — đo lại đầy đủ 2026-09-18 (`GuideResetProbeTests`)
+
+Luồng riêng, README riêng: **[`GUIDE-RESET-README.md`](./GUIDE-RESET-README.md)**.
+
+Bốn câu mà bản web đang phải suy từ source (「hộp thoại có bung ở dòng KHÔNG có 病名 không」,
+nguyên văn, bộ nút + nút mặc định + ESC, và cú OK để lại gì) nay đã có số đo. Chạy bằng
+`.\run-select-guide-treatment.ps1 -Reset -Case TcR0|TcR1A|TcR1B`.
+
+> ⚠️ **Số đo của P17 trong mục 4.3 phải đọc lại.** `ClearDialogs` của
+> `GuideSidePanelProbeTests` gộp cả hai nhánh vào MỘT lời gọi
+> `MsgBoxWin32.ClickButton(h, "キャンセル","Cancel","いいえ","No","OK")`, mà hàm đó
+> `EnumChildWindows` — nó duyệt theo **thứ tự NÚT trên hộp thoại** và bấm nút đầu tiên có
+> nhãn nằm trong tập, **không** theo thứ tự danh sách. Hộp Q00100 có `[OK | Cancel]` nên
+> nó bấm **OK**, `StepReset` chạy, và log vẫn báo 「đã bấm」. Đo lại 2026-09-18: một lượt
+> như vậy đưa `TRTSTATE` bệnh nhân 10 từ `BUI1_4..BUI1_8 = 1081` về **0 hết**. Đã sửa
+> thành hai lượt tách hẳn nhau. ⇒ Dòng 「リセット hỏi nguyên văn …」 ở mục 4.3 vẫn đúng,
+> nhưng câu 「luôn trả lời キャンセル ⇒ không ghi DB」 ở mục 1 thì **trước bản sửa là sai**.

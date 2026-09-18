@@ -151,9 +151,29 @@ public sealed class GuideSidePanelProbeTests : UiTestBase
     /// <summary>
     /// Dẹp hộp thoại đang mở. Câu 「リセットします」 luôn trả lời キャンセル/Cancel —
     /// nhánh OK GHI DB.
+    ///
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// 🔥 SỬA 2026-09-18 — bản cũ trả lời NGƯỢC Ý và ghi thật vào TRTSTATE
+    /// ═══════════════════════════════════════════════════════════════════════════
+    /// Bản cũ truyền MỘT danh sách <c>["キャンセル","Cancel","いいえ","No","OK"]</c> và
+    /// tưởng thứ tự danh sách là thứ tự ưu tiên. <b>Không phải.</b>
+    /// <see cref="MsgBoxWin32.ClickButton"/> <c>EnumChildWindows</c> — nó duyệt theo
+    /// <b>thứ tự NÚT trên hộp thoại</b> và bấm nút đầu tiên có nhãn nằm trong danh sách
+    /// (MsgBoxWin32.cs:94-118). Hộp Q00100 của 「リセット」 có bộ <c>[OK | Cancel]</c>,
+    /// OK đứng trước ⇒ nó bấm <b>OK</b>, <c>StepReset</c> chạy, và log vẫn báo 「đã bấm」.
+    ///
+    /// <para>Đo được ở <see cref="GuideResetProbeTests"/> cùng ngày: một lượt như vậy
+    /// đưa <c>TRTSTATE</c> của bệnh nhân 10 từ <c>BUI1_4..BUI1_8 = 1081</c> về 0 hết.
+    /// ⇒ Mọi số 「không ghi gì」 mà P17 từng ghi trong README đều phải đọc lại với giả
+    /// định là nó ĐÃ bấm OK.</para>
+    ///
+    /// <para>Hai lượt tách hẳn nhau: chỉ nhánh huỷ trước; rơi xuống OK chỉ khi hộp thoại
+    /// không có nút huỷ nào (E00024/I00100 một nút), và log nói rõ điều đó (F16).</para>
     /// </summary>
     private void ClearDialogs(string tag)
     {
+        string[] cancelOnly = ["キャンセル", "Cancel", "いいえ", "No"];
+
         for (var i = 0; i < 5; i++)
         {
             var open = MsgBoxWin32.All(App.ProcessId);
@@ -161,10 +181,15 @@ public sealed class GuideSidePanelProbeTests : UiTestBase
 
             foreach (var d in open)
             {
-                var clicked = MsgBoxWin32.ClickButton(d.Hwnd, "キャンセル", "Cancel", "いいえ", "No", "OK");
-                LogKq(tag, $"   dẹp hộp thoại {d} → " +
-                           (clicked ? "đã bấm" : "KHÔNG có nút khớp; nút thấy được: " +
-                                                 string.Join(" / ", MsgBoxWin32.ButtonCaptions(d.Hwnd))));
+                var buttons = string.Join(" | ", MsgBoxWin32.ButtonCaptions(d.Hwnd));
+
+                if (MsgBoxWin32.ClickButton(d.Hwnd, cancelOnly))
+                    LogKq(tag, $"   dẹp hộp thoại {d} → đã bấm nhánh HUỶ (nút thật: [{buttons}])");
+                else if (MsgBoxWin32.ClickButton(d.Hwnd, "OK", "はい", "Yes"))
+                    LogKq(tag, $"   dẹp hộp thoại {d} → KHÔNG có nút huỷ nên bấm OK " +
+                               $"(nút thật: [{buttons}]) — hộp MỘT NÚT, không phải đồng ý");
+                else
+                    LogKq(tag, $"   dẹp hộp thoại {d} → KHÔNG bấm được nút nào; nút thật: [{buttons}]");
             }
             Thread.Sleep(500);
         }

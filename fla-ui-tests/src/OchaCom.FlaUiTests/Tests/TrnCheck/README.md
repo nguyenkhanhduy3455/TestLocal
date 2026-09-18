@@ -249,3 +249,117 @@ hình mà không lưu là sạch — cùng tính chất với spec web.
 > mà nhóm thứ nhất đã mở, và lưới của nó đã bị chèn đầy dòng スケーリング từ lượt trước
 > — mốc của TC-BASE không còn sạch. Giữa hai lượt: đóng 診療入力 **không lưu**, hoặc tắt
 > hẳn `MENU.exe`.
+
+---
+
+## 7. 処置選択 確定 → ô 回 — đo 2026-09-18 (`SingleChkKaiCellProbeTests`)
+
+Ba câu của vế web (`single-check-w00100.spec.ts`, testcase đầu): sau 「F9 確定」 của 処置選択
+thì con trỏ đáp xuống ô nào, ô đó có **editor** hay chỉ bôi vàng, và **W00100 bung lúc nào**.
+
+```powershell
+.\run-trn-check.ps1 -Case TcK1   # mốc: mã 108, chốt dòng đầu (108-0)
+.\run-trn-check.ps1 -Case TcK2   # mã 100, chốt 100-0 歯科初診料
+```
+
+Bệnh nhân 10 · 診療日 2026-08-03 · gõ vào ô 点 của dòng CUỐI gõ được (ngày 14).
+
+### 7.1 Con trỏ sau 確定 — CÓ editor, giá trị 「1」
+
+Đo **ba lượt độc lập** (108 một lượt, 100 hai lượt), cùng kết quả:
+
+```
+処置選択 đã đóng sau 確定 = True
+ô đang giữ con trỏ       = 「Editing Control」
+編集モード (có editor)    = True
+giá trị đọc được         = 「1」
+phần tử focus            = type=Edit  name=「Editing Control」  con=0
+```
+
+Đọc lại sau khi chờ thêm 8s: **y nguyên**. Ảnh `03-ngay-sau-F9-confirm.png` thấy rõ caret
+trong ô 回 của dòng vừa chốt.
+
+Ô đó là ô **回**, chốt bằng hai mốc độc lập: source làm `Move_Cell(eMovePoint.Right)` từ 点
+→ 回 rồi `BeginEdit(true)` (`frm203002.cs:5601-5604`); và sau cú Enter con trỏ nhảy sang
+「点 Row 22」, tức nó vừa rời **回 Row 21**.
+
+> `FocusedCellName()` trả 「Editing Control」 chứ không phải tên cột: ô đang ở chế độ sửa
+> thì phần tử focus là `Edit` con của CHÍNH LƯỚI, không phải ô. 「tên ô đọc ra
+> 『Editing Control』 + `IsEditing = true`」 chính là chữ ký của 編集モード — đừng đọc nó
+> thành 「không tìm thấy ô」.
+
+⇒ Vế web: `single-check-w00100.spec.ts` tìm `input:focus` sau 確定 là **ĐÚNG kỳ vọng**;
+bản web thiếu chỗ này.
+
+### 7.2 W00100 ở bước 確定 — KHÔNG có
+
+```
+ngay sau 確定 : KHÔNG có MessageBox nào (quét Win32 #32770)
+              : KHÔNG có FORM modal nào (ngoài 診療入力)
+chờ thêm 8s   : có hộp thoại nào bung muộn = False
+```
+
+Khớp với danh sách 5 điểm gọi `new SingleChk` ở mục 1: **không chỗ nào** nằm trên đường
+処置選択. Và hai chuyện này khớp nhau có lý do — nếu `SingleChk` chạy ngay lúc 確定 thì
+MessageBox modal sẽ cướp mất editor mà `BeginEdit(true)` vừa mở.
+
+### 7.3 Số lượng W00100 ở ô 回 — CHƯA đo được, và hai lý do đều xác định được
+
+| Mồi | W00100 | Vì sao con số đó không kết luận được |
+|---|---|---|
+| `108-0 歯科外来物価対応料1(初診)` | 0 | Engine **ĐÃ chạy**: `合計` 413 → **405** (đúng −8: dòng `310-2` 11点 bị gõ đè thành 3点), con trỏ rời editor sang 点 dòng kế. ⇒ `Chk_list` **rỗng cho đúng 処置 này**, không phải 「đường không chạy」 |
+| `100-0 歯科初診料` | 0 | Cú Enter ở ô 回 bung **FORM** 「カルテ記載選択」 (`AutomationId = frm203012`, nút `[… 歯科初診料, F1 部位, F9 確定, F10 戻る …]`). W00100 có thể còn đứng sau nó |
+
+**Bài học đã đưa vào code.** `DrainW00100` (và `Dialogs`/`MsgBoxWin32` nói chung) chỉ quét
+lớp Win32 `#32770`, tức CHỈ MessageBox — nên một `Form` WinForms chắn màn hình là **vô
+hình** với nó, và con số `0` đọc được trông y hệt 「luật không bắn」. Đúng bẫy **F19** nhưng
+ở mức **FORM** chứ không phải MessageBox. Probe nay có `DescribeModalForms` /
+`DismissModalForms`: quét form modal, in NGUYÊN VĂN, và nếu còn form chắn thì **nói thẳng
+là số W00100 không kết luận được** thay vì để số 0 đứng một mình.
+
+Mồi thứ hai còn tự phá chính nó: chèn 初診料 vào ngày 14 làm app **ghi lại 診療開始日 thành
+`R 08/08/14`** (chỉ trong bộ nhớ — `INSURANCE.MED_ST_DT` vẫn `2026-08-03`), nên
+`ChkFirst_visit_date` (Check.cs:7202-7242) tự vô hiệu: `trt_dt == med_st_dt`.
+
+**Muốn đếm được** thì cần một 処置 vừa **0 dòng `CMTAUTO`** vừa **0 dòng `MST_CMT_PACK`**
+(để không có form chắn) mà vẫn bắn luật. Tiền đề đã tra sẵn cho lượt sau:
+
+```
+INPCONFIG: SISU_CHK_FLG=0  SANTEI_CHK_FLG=0  SET_CHK_FLG=0   ⇒ CHK4/CHK5/CHK8 đều CHẠY
+mã 0 CMTAUTO + 0 PACK trên MST_TRT266: 108-9, 108-24, 108-8, 310-2, 109-100
+   310-2 có G_CNT = 1 và ĐÃ được算定 một lần ở ngày 14 ⇒ ứng viên cho CHK5_Cmn 期間・回数
+mọi mã 初診 (100-0/100-1/107-0/333-50/333-55) đều CÓ MST_CMT_PACK ⇒ đều bung form
+```
+
+### 7.4 Cái đã chốt được mà KHÔNG cần số đo
+
+- **Một cú chốt ô 回 = MỘT lượt chạy engine.** `new SingleChk(…, curRow, 1)` (`:5667`) —
+  `cntRow` cứng bằng 1. Đây là tính chất của **chữ ký hàm**, không quan sát được ở tầng UI
+  (cùng lý do với `single-check` parity 1 ở mục 4).
+- **Số MessageBox = `Chk_list.Count`, KHÔNG gộp trùng** (`SingleChk.cs:43-46`).
+
+⇒ 「web bắn đúng 1 lượt」 khớp ở tầng **lượt chạy**, nhưng **không** đảm bảo khớp ở tầng
+**số alert**: web gộp bằng `Set` (`treatment-entry-detail.tsx:2685`), WinForm bung N hộp
+cho N phần tử. Đó đúng là chỗ `WinForm parity 3` của spec đang khoá.
+
+### 7.5 Một bug của harness đã sửa
+
+`HighNeedsFlow.TargetRow()` lọc theo `r.Name.Length > 0 && r.Ten is not ("-" or "－")`,
+nhưng `Uia.ValueOf` của một ô `DataGridView` **RỖNG** trả về chuỗi **「(null)」** — bốn ký
+tự thật, không phải `null` — nên một dòng "ma" mà cầu MSAA→UIA dựng ra ở index 0 đi qua
+**đủ cả hai** bộ lọc:
+
+```
+DÒNG đem gõ mã = [0]  |  | (null) | (null) |
+NÉM: ô cột 3 của dòng đó đọc ra rect RỖNG {0,0,0,0}
+```
+
+Đúng dòng ma mà mục 5 (PROBE 2 Tc2, 2026-08-26) đã ghi — lần đó nó click ra (0,0) tức góc
+trái trên Desktop và mở `1.pdf` trong Edge. Lần này `TreatmentGridOps.FocusCell` ném sớm
+nên hỏng ở đúng chỗ hỏng.
+
+> ⚠️ **Kết luận 「đường コードモード không dùng được, đi tab 個別」 ở mục 5 nay phải đọc lại.**
+> Tab 個別 **không đi qua 処置選択** nên nó không trả lời được câu 7.1 chút nào. Câu trả lời
+> thật là: lọc dòng cho đúng. `SingleChkKaiCellProbeTests.ReadGrid` đọc rect của ô 点
+> **ngay trong lượt quét** và biến nó thành điều kiện chọn dòng — đường コードモード chạy
+> được, ba lượt liền.
