@@ -377,3 +377,45 @@ Không có chúng thì luồng cho **xanh sai** — 「không có 病名」 và 
 | dòng 歯管 vừa gõ nằm dưới 部位病名行 **đúng 病名** | chèn dòng sai chỗ |
 | `PackAsked` và `CommentLanded` **đồng ý** | lượt chạy đứt giữa chừng |
 
+
+
+---
+
+## 8. §C4 — `AutoBui` chép từ ĐÚNG MỘT DÒNG NGAY TRÊN
+
+### 2026-09-22 · bệnh nhân 4 · 2026-06-03 · **XANH**
+
+Dựng lưới có **một dòng xen giữa không mang 病名** (`TESTGAP`, `dis_cd = 0`) giữa dòng mang
+病名 và dòng 歯管 — bật bằng `cmtPackDenture.gapRow = true`:
+
+```
+[35] 部位…(28) | MT         | - | -     ← 部位病名行 của dòng mang 病名
+[36] (null)    | TESTDIS393 | 22 | 1
+[37] 部位…(28) | (rỗng)     | - | -     ← 部位病名行 của TESTGAP: 病名 RỖNG
+[38] (null)    | TESTGAP    | 22 | 1    ← dòng xen giữa
+[39] (null)    | 歯科疾患管理料 | 90 | 1  ← dòng 歯管 vừa gõ
+```
+
+| bố trí | 病名 dòng 歯管 thừa kế | pack |
+|---|---|---|
+| **không** có dòng xen giữa | MT (`dis_kbn` 51) | **HIỆN** |
+| **có** dòng xen giữa | **không có** | **ẨN** |
+
+⇒ `ModMain.AutoBui` (modMain.cs:139-156) chép từ **đúng một dòng ngay trên** — dòng xen giữa,
+`dis_cd = 0` — chứ **không** đi ngược lên dòng mang 病名. Đúng như ghi chú gốc §C4 mô tả.
+
+### ⚠️ Nhưng rủi ro với vế web THẤP — và đây là lý do
+
+Dòng xen giữa **tự sinh 部位病名行 riêng** (`[37]`) với 病名 **rỗng**. Nên một cài đặt kiểu
+`governingBuiLineOf` 「đi ngược lên 部位病名行 gần nhất」 cũng dừng ở chính `[37]`, **không** đi
+tiếp tới MT ⇒ **hai cách cho cùng kết quả**.
+
+Hễ một dòng làm đứt chuỗi 病名 thì lưới vẽ ngay một 部位病名行 cho nó, nên hai cách hội tụ.
+Chênh lệch **chỉ** xảy ra nếu `governingBuiLineOf` **bỏ qua** 部位病名行 có 病名 rỗng để đi
+tiếp lên trên — đó là thứ phải kiểm ở **vế web**, không đo được từ phía WinForm.
+
+```powershell
+# đối chứng: cùng 病名, KHÔNG có dòng xen giữa
+#   cmtPackDenture.gapRow = false, disCd = 393  → HIỆN
+.\run-cmt-pack-denture.ps1 -Plaque -Case TCD_30
+```

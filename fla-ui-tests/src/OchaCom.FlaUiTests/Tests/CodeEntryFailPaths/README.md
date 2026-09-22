@@ -123,12 +123,53 @@ kết cục khác nhau tuỳ đường:
 
 ---
 
-## 5. Chạy
+## 5. `IS_AUTO_FLG = 0` — lỗ hổng cuối của §B2, nặng hơn cờ = 1
+
+`frm203016` ở chế độ `_flg50` **`return` sớm** khi cờ tắt (`frm203016.cs:407`) ⇒ không hiện ô
+nhập lít ⇒ `_is2[0]`/`_is2[1]` rỗng ⇒ `setIS` bỏ qua cả khối N2O (`:831`) lẫn O2 (`:857`) ⇒
+**không** `AddRow()` nào, con trỏ **không** bị dời.
+
+Nhưng `btnF9_Click` vẫn chạy: `chkInputArea()` chỉ chặn 179/5, 202/x, 203/x, 17 — **mã 50
+không nằm trong đó** ⇒ `setPacData` + `fixProc`, mà `fixProc` gọi `frmTrtSel_Let_Trt_Data`,
+tức **đường ghi của 処置選択 bình thường: GHI ĐÈ dòng đang đứng**.
+
+### 2026-09-22 · bệnh nhân 4 · 2026-06-03 · **XANH** (đã xác nhận lại 2 lượt)
+
+```
+ô nhập lít 「txtVal」 : KHÔNG CÓ          ← mốc trực tiếp của cú return sớm
+
+TRƯỚC: [34] ペリオクリン 0.5g(3シリンジ) | 150 | 1
+SAU  : [34] N2O使用リッター数            | (rỗng) | 0
+       dòng gốc 「ペリオクリン…」          : ĐÃ BIẾN MẤT
+```
+
+| cờ | 確定 làm gì | dòng gốc |
+|---|---|---|
+| **1** | `setIS` → `AddRow()` ×2, dời con trỏ | mất **点数** (150 → rỗng) |
+| **0** | `fixProc` → `frmTrtSel_Let_Trt_Data` → **ghi đè dòng đang đứng** | mất **cả 処置** |
+
+⚠️ **Cờ 0 nặng hơn**: không chỉ mất 点数 mà 処置 gốc bị **thay thế hoàn toàn** bằng dòng
+placeholder của dialog. Chưa lưu (cần F9), nhưng bấm F9 là mất dữ liệu thật.
+
+### Đổi cấu hình — không phải seed dữ liệu
+
+`INPCONFIG` chỉ có **MỘT** dòng và áp cho **toàn app**. Cờ riêng
+`codeEntryFail.allowConfigChange` (mặc định tắt), chụp/in/trả lại rồi **đọc lại để khẳng
+định**. Nếu lượt chạy đứt giữa chừng:
+
+```sql
+UPDATE INPCONFIG SET IS_AUTO_FLG = 1
+```
+
+---
+
+## 6. Chạy
 
 ```powershell
 .\run-code-entry-fail-paths.ps1 -Case TCF_10   # huỷ picker, dòng ĐÃ CÓ 処置
 .\run-code-entry-fail-paths.ps1 -Case TCF_11   # huỷ picker, dòng TRỐNG
-.\run-code-entry-fail-paths.ps1 -Case TCF_20   # mã 50 (IS)
+.\run-code-entry-fail-paths.ps1 -Case TCF_20   # mã 50 (IS), IS_AUTO_FLG = 1
+.\run-code-entry-fail-paths.ps1 -IsAutoOff     # mã 50 với IS_AUTO_FLG = 0 (ĐỔI CẤU HÌNH)
 ```
 
 Mỗi ca ~35-45 giây. Chạy riêng từng ca (F7) — ca trước làm đổi lưới, ca sau chọn lại dòng

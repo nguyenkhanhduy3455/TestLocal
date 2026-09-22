@@ -39,6 +39,7 @@ public sealed class TestSettings
     [JsonPropertyName("cmtPack")] public CmtPackSection CmtPack { get; set; } = new();
     [JsonPropertyName("cmtPackDenture")] public CmtPackDentureSection CmtPackDenture { get; set; } = new();
     [JsonPropertyName("misoutyaku")] public MisoutyakuSection Misoutyaku { get; set; } = new();
+    [JsonPropertyName("codeEntryFail")] public CodeEntryFailSection CodeEntryFail { get; set; } = new();
     [JsonPropertyName("locators")] public Dictionary<string, string> Locators { get; set; } = new();
 
     private static TestSettings? _current;
@@ -440,6 +441,22 @@ public sealed class TestSettings
         /// có thể ra 「病名 đó」 hoặc 「không có 病名」.</para>
         /// </summary>
         [JsonPropertyName("disCd")] public int DisCd { get; set; } = 393;
+
+        /// <summary>
+        /// §C4 — chèn thêm MỘT dòng <b>KHÔNG mang 病名</b> giữa dòng mang 病名 và dòng 歯管.
+        ///
+        /// <para>Đây là phép đo phân biệt 「chép từ ĐÚNG MỘT DÒNG NGAY TRÊN」 (ModMain.AutoBui,
+        /// modMain.cs:139-156) với 「đi ngược lên dòng 部位病名 chi phối」 (cách vế web làm,
+        /// <c>governingBuiLineOf</c>):</para>
+        /// <list type="bullet">
+        ///   <item><b>WinForm</b> chép từ dòng xen giữa ⇒ <c>dis_cd = 0</c> ⇒ rơi xuống nhánh
+        ///     現存歯 ⇒ pack <b>ẨN</b>;</item>
+        ///   <item><b>kiểu web</b> đi ngược lên dòng mang 病名 ⇒ <c>dis_cd</c> = 欠損 ⇒ pack
+        ///     <b>HIỆN</b>.</item>
+        /// </list>
+        /// Đối chứng là chính lượt chạy <c>gapRow = false</c> với cùng 病名.
+        /// </summary>
+        [JsonPropertyName("gapRow")] public bool GapRow { get; set; }
     }
 
     /// <summary>
@@ -464,6 +481,23 @@ public sealed class TestSettings
 
         /// <inheritdoc cref="SeedTrtCd"/>
         [JsonPropertyName("seedTrtSb")] public int SeedTrtSb { get; set; }
+    }
+
+    /// <summary>
+    /// Luồng hai nhánh THẤT BẠI của <c>GetTrtmasCod</c> (<c>Tests/CodeEntryFailPaths</c>).
+    /// </summary>
+    public sealed class CodeEntryFailSection
+    {
+        /// <summary>
+        /// Cho phép <b>ĐỔI CẤU HÌNH PHÒNG KHÁM</b> <c>INPCONFIG.IS_AUTO_FLG</c> rồi trả lại ở
+        /// <c>OneTimeTearDown</c>.
+        ///
+        /// <para>⚠️ Cờ RIÊNG và mặc định tắt vì mức rủi ro <b>cao hơn hẳn</b> seed dòng
+        /// <c>TRNTRN</c>: <c>INPCONFIG</c> chỉ có MỘT dòng và áp cho toàn bộ app, nên quên trả
+        /// lại là mọi luồng khác (và người dùng thật) chạy với cấu hình sai mà không ai biết.
+        /// Fixture chụp giá trị cũ, IN RA STDOUT, rồi trả lại và ĐỌC LẠI để khẳng định.</para>
+        /// </summary>
+        [JsonPropertyName("allowConfigChange")] public bool AllowConfigChange { get; set; }
     }
 
     public sealed class ChkAutoCascadeSection
@@ -1230,6 +1264,7 @@ public sealed class TestSettings
         Set("OCHA_CMT_PACK_ALLOW_SEED", v => s.CmtPack.AllowSeed = ToBool(v));
         Set("OCHA_CMT_PACK_DENTURE_ALLOW_SEED", v => s.CmtPackDenture.AllowSeed = ToBool(v));
         Set("OCHA_MISOUTYAKU_ALLOW_SEED", v => s.Misoutyaku.AllowSeed = ToBool(v));
+        Set("OCHA_CODE_ENTRY_FAIL_ALLOW_CONFIG", v => s.CodeEntryFail.AllowConfigChange = ToBool(v));
         Set("OCHA_MISOUTYAKU_SEED_TRT_CD", v => s.Misoutyaku.SeedTrtCd = int.Parse(v));
         Set("OCHA_MISOUTYAKU_SEED_TRT_SB", v => s.Misoutyaku.SeedTrtSb = int.Parse(v));
         Set("OCHA_TEST_PATIENT_ALLOW_SEED", v => s.TestPatient.AllowSeed = ToBool(v));

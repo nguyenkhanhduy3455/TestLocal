@@ -24,18 +24,23 @@
 .EXAMPLE
     .\run-code-entry-fail-paths.ps1 -Case TCF_10   # huy picker, dong DA CO 処置
     .\run-code-entry-fail-paths.ps1 -Case TCF_11   # huy picker, dong TRONG
-    .\run-code-entry-fail-paths.ps1 -Case TCF_20   # ma 50 (IS)
+    .\run-code-entry-fail-paths.ps1 -Case TCF_20   # ma 50 (IS), IS_AUTO_FLG = 1
+    .\run-code-entry-fail-paths.ps1 -IsAutoOff     # ma 50 voi IS_AUTO_FLG = 0
+                                                   #   can codeEntryFail.allowConfigChange = true
+                                                   #   DOI CAU HINH PHONG KHAM roi tra lai
 #>
 [CmdletBinding()]
 param(
     [string]$Case = "",
+    [switch]$IsAutoOff,
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug"
 )
 
 $ErrorActionPreference = "Stop"
 $project = Join-Path $PSScriptRoot "src\OchaCom.FlaUiTests\OchaCom.FlaUiTests.csproj"
-$ns = "OchaCom.FlaUiTests.Tests.CodeEntryFailPaths.CodeEntryFailTests"
+$ns = if ($IsAutoOff) { "OchaCom.FlaUiTests.Tests.CodeEntryFailPaths.IsAutoOffTests" }
+      else              { "OchaCom.FlaUiTests.Tests.CodeEntryFailPaths.CodeEntryFailTests" }
 
 $filter = if ($Case -ne "") { "FullyQualifiedName~$ns&FullyQualifiedName~$Case" }
           else              { "FullyQualifiedName~$ns" }

@@ -86,6 +86,9 @@ public abstract class CmtPackDentureUiTestBase : UiTestBase
     /// <summary>Nhãn ghi vào <c>DSP_TRT</c> của dòng mang 病名, để ca đo tìm lại trên lưới.</summary>
     protected static string CarrierTag(int disCd) => $"TESTDIS{disCd}";
 
+    /// <summary>Nhãn của dòng XEN GIỮA (không mang 病名) dùng cho §C4.</summary>
+    public const string GapTag = "TESTGAP";
+
     protected int TrtCd => Settings.CmtPackDenture.TrtCd;
     protected int TrtSb => Settings.CmtPackDenture.TrtSb;
 
@@ -169,6 +172,14 @@ public abstract class CmtPackDentureUiTestBase : UiTestBase
             var d = Seeder.Disease(disCd, day);
             var disp = Seeder.SeedCarrierRow(PatNo, day, disCd, d?.DisNm ?? "", CarrierTag(disCd));
             Log($"   + disp {disp} · DÒNG MANG 病名 「{CarrierTag(disCd)}」 · {d}");
+
+            // §C4: chèn MỘT dòng KHÔNG mang 病名 ngay sau dòng mang 病名. Dòng 歯管 sẽ nằm
+            // dưới dòng này, nên AutoBui (chép từ ĐÚNG một dòng ngay trên) sẽ chép số 0.
+            if (Settings.CmtPackDenture.GapRow)
+            {
+                var gap = Seeder.SeedCarrierRow(PatNo, day, 0, "", GapTag);
+                Log($"   + disp {gap} · DÒNG XEN GIỮA 「{GapTag}」 (KHÔNG 病名) — §C4");
+            }
         }
 
         // Dòng chốt đuôi: ca đo chèn dòng trống TẠI vị trí của dòng NGAY SAU dòng mang 病名,
@@ -243,7 +254,10 @@ public abstract class CmtPackDentureUiTestBase : UiTestBase
             $"Ca đo hỏi 病名 {disCd} nhưng fixture không seed dòng mang nó " +
             $"(CarrierDiseases = [{string.Join(",", CarrierDiseases)}]) ⇒ lỗi HARNESS.");
 
-        var tag = CarrierTag(disCd);
+        // §C4: khi có dòng xen giữa, MỐC để chèn là dòng XEN GIỮA — dòng 歯管 phải nằm
+        // ngay dưới NÓ, để AutoBui chép từ nó (dis_cd = 0) chứ không từ dòng mang 病名.
+        var gap = Settings.CmtPackDenture.GapRow;
+        var tag = gap ? GapTag : CarrierTag(disCd);
         var rows = Flow.Grid.Snapshot(200).ToList();
         var idx = rows.FindLastIndex(r => Txt.Has(r.Ryo, tag));
 
@@ -279,7 +293,7 @@ public abstract class CmtPackDentureUiTestBase : UiTestBase
         // tức ca đối chứng KHÔNG phát hiện được, vì 「không có 病名」 và 「有 Ｃ」 cho cùng
         // kết quả. Chỉ có mốc dưới đây phân biệt được hai thứ đó.
         var disNm = Seeder?.Disease(disCd, TrtDate)?.DisNm ?? "";
-        if (disCd > 0 && disNm.Length > 0)
+        if (!gap && disCd > 0 && disNm.Length > 0)
         {
             var buiLineAbove = rows.Take(idx).Reverse()
                 .TakeWhile(r => Txt.N(r.Ten) is "-" or "－" || Txt.Has(r.Ryo, "TESTDIS"))
@@ -389,6 +403,23 @@ public abstract class CmtPackDentureUiTestBase : UiTestBase
                 var owner = ownerIdx >= 0 ? after2[ownerIdx].Ryo : "(không thấy 部位病名行 nào)";
                 trace.Note($"部位病名行 chi phoi dong 歯管 vua go: 「{owner}」 (mong doi 「{disNm}」)");
 
+                if (gap)
+                {
+                    // §C4 — CỐ Ý: dòng 歯管 nằm dưới dòng XEN GIỮA (không 病名), nên nó phải
+                    // KHÔNG thừa kế 病名 của dòng mang 病名 ở trên nữa.
+                    Log($"=== KQ-C4 === dòng 歯管 nằm dưới 部位病名行 「{owner}」 " +
+                        $"(dòng mang 病名 là 「{disNm}」, giữa chúng có 「{GapTag}」)");
+                    Assert.That(Txt.Has(owner, disNm), Is.False,
+                        $"§C4 — có dòng 「{GapTag}」 xen giữa mà dòng 歯管 VẪN nằm dưới 部位病名行 " +
+                        $"「{owner}」 mang 病名 「{disNm}」 ⇒ nó vẫn thừa kế được 病名 từ dòng " +
+                        "CÁCH MỘT DÒNG.\n" +
+                        "  Theo ModMain.AutoBui (modMain.cs:139-156) nó chỉ chép từ ĐÚNG MỘT " +
+                        "DÒNG NGAY TRÊN, mà dòng đó là 「" + GapTag + "」 (dis_cd = 0) ⇒ phải " +
+                        "KHÔNG có 病名.\n" +
+                        "  Đỏ ở đây ⇒ WinForm thật sự đi ngược lên dòng 部位病名 chi phối, tức " +
+                        "GIỐNG cách vế web làm (governingBuiLineOf) — và §C4 không còn là rủi ro.");
+                }
+                else
                 Assert.That(Txt.Has(owner, disNm), Is.True,
                     $"Dòng 歯管 vừa gõ nằm dưới 部位病名行 「{owner}」, KHÔNG phải 「{disNm}」 ⇒ " +
                     $"nó đã thừa kế NHẦM 病名 và số đo của ca này nói về 病名 KHÁC.\n" +
