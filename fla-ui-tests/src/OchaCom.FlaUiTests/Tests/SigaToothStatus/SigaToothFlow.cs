@@ -668,8 +668,22 @@ public sealed class SigaToothFlow
     /// (:8395-8399) gọi <c>BeginEdit(true)</c>. Đó chính là chỗ gõ mã 処置 tiếp theo, xem
     /// <see cref="EnterTreatmentAtCursor"/>.</para>
     /// </summary>
+    /// <param name="beforePick">
+    /// Chạy NGAY SAU khi 病名選択 mở ra và TRƯỚC khi chọn <paramref name="disCd"/> — chỗ để
+    /// đổi bộ lọc nhóm của hộp thoại.
+    ///
+    /// <para><b>Vì sao cần.</b> Danh sách mặc định của frm902007 là bộ <b>đã học</b>, KHÔNG
+    /// phải cả master: đo được 2026-09-21 — 59 dòng hiện ra trong khi <c>MST_DIS992</c> có
+    /// 402 病名, và <c>dis_cd 369</c> (Brダツリ) <b>không</b> nằm trong đó. <c>PickDisease</c>
+    /// khi ấy trả false, app bung 「病名が選択されていませんが…」 và dòng lưới KHÔNG mang 病名 —
+    /// ca đo đi tiếp và kết luận về 「病名 X」 trong khi thật ra đang đo 「không có 病名」.</para>
+    ///
+    /// <para>Bấm nút nhóm để thu hẹp về đúng dải cần: <c>F5 欠損補綴</c> =
+    /// <c>dis_kbn IN (51..60)</c> (MstDis.cs:258), <c>F4 ダツリ・ハソン</c> = 41/42/43,
+    /// <c>F9 全て表示</c> = cả master.</para>
+    /// </param>
     public BuiSetResult SetBuiOnRow(RegiRow row, int slot, bool milk, int? disCd = null,
-                                    TestTrace? trace = null)
+                                    TestTrace? trace = null, Action<Window>? beforePick = null)
     {
         var seen = new List<string>();
 
@@ -706,6 +720,13 @@ public sealed class SigaToothFlow
         {
             trace?.Shot("byoumei-dialog");
             trace?.Note("danh sach 病名: " + string.Join(" · ", DiseaseRows(disease!)));
+            if (beforePick is not null)
+            {
+                beforePick(disease!);
+                trace?.Note("sau beforePick, danh sach 病名: " +
+                            string.Join(" · ", DiseaseRows(disease!)));
+                trace?.Shot("byoumei-dialog-sau-loc");
+            }
             if (disCd is { } cd && !PickDisease(disease!, cd, trace))
                 trace?.Note($"KHONG chon duoc 病名 dis_cd = {cd} — danh sach dang hien: " +
                             string.Join(" · ", DiseaseRows(disease!)));
@@ -828,6 +849,16 @@ public sealed class SigaToothFlow
         return true;
     }
 
+    /// <summary>
+    /// Tiêu đề của 「ガイド処置選択」 — hộp thoại GỢI Ý, <b>không phải</b> 処置選択.
+    ///
+    /// <para>Nó cũng có lưới <c>dgvView</c> nên lọt qua đường lui của <see cref="Picker"/>.
+    /// Đo được 2026-09-21: chọn 病名 欠損 (MT 393) rồi gõ mã thì app bung nó ra với
+    /// 咬合調整 / 補綴前処置 / 義歯連合印象 / 咬合採得…, <c>CommitPick</c> tìm 枝番 trong đó
+    /// không thấy và cả lượt đo kẹt lại — nhìn y như 「app không mở 処置選択」.</para>
+    /// </summary>
+    public const string GuidePickerTitleFragment = "ガイド";
+
     /// <summary>Hộp thoại 処置選択 đang mở (nhận ra bằng lưới <c>dgvView</c>); null nếu không.</summary>
     public Window? Picker()
     {
@@ -836,11 +867,28 @@ public sealed class SigaToothFlow
         try
         {
             foreach (var w in _screen.Window.ModalWindows)
-                if (Uia.ById(w, PickerGridId) is not null && !Txt.Has(Uia.NameOf(w), DiseaseTitleFragment))
+                if (Uia.ById(w, PickerGridId) is not null &&
+                    !Txt.Has(Uia.NameOf(w), DiseaseTitleFragment) &&
+                    !Txt.Has(Uia.NameOf(w), GuidePickerTitleFragment))
                     return w;
         }
         catch { /* */ }
         return null;
+    }
+
+    /// <summary>
+    /// 「ガイド処置選択」 đang mở; null nếu không. Huỷ nó bằng <c>F10 戻る</c> — nó chỉ gợi ý,
+    /// bỏ qua không ảnh hưởng dòng đang nhập.
+    /// </summary>
+    public Window? GuidePicker()
+    {
+        try
+        {
+            foreach (var w in _screen.Window.ModalWindows)
+                if (Txt.Has(Uia.NameOf(w), GuidePickerTitleFragment)) return w;
+        }
+        catch { /* */ }
+        return OpenDialogs().FirstOrDefault(w => Txt.Has(Uia.NameOf(w), GuidePickerTitleFragment));
     }
 
     /// <summary>Một dòng của 処置選択: コード / 枝番 / 名称 / 点数.</summary>

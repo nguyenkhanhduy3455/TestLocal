@@ -1,4 +1,6 @@
+using FlaUI.Core.WindowsAPI;
 using OchaCom.FlaUiTests.Infrastructure;
+using OchaCom.FlaUiTests.Screens;
 using OchaCom.FlaUiTests.Tests.AutoSanteiChkAuto;
 using OchaCom.FlaUiTests.Tests.SigaToothStatus;
 using OchaCom.FlaUiTests.Tests.TreatmentGrid;
@@ -57,6 +59,76 @@ public sealed class CmtPackOps
         trace?.Note($"luoi khong co dong nao cua ngay {day} — lui ve dong du lieu cuoi cung " +
                     $"({rows.Count} dong). ModMain.AutoDate se chep o 日 tu dong ben tren.");
         return rows.Count > 0 ? rows[^1] : null;
+    }
+
+    /// <summary>
+    /// Dòng CUỐI của ngày <paramref name="day"/>, <b>đã cuộn vào khung nhìn</b> — dùng thay
+    /// <c>SigaToothFlow.InputRow()</c> khi lưới đang hiện <b>過去データ inline</b>.
+    ///
+    /// <para>⚠️ <b>Vì sao không dùng <c>InputRow()</c></b> (đã trả giá 2026-09-21, probe
+    /// <c>TcDP0</c>). Khi tuỳ chọn 過去データ１画面表示 bật, <c>GetTrnRsOld</c> chèn thẳng các
+    /// tháng trước vào chính <c>hFG1</c> (modSave.cs:4817), nên lưới có dạng:</para>
+    /// <code>
+    ///   [0]  (null) | R 08年04月            ← dòng tiêu đề THÁNG
+    ///   [1]  7      | 歯科初診料 …           ← dữ liệu THÁNG QUÁ KHỨ
+    ///   [8]  7      | R 08年04月 合計 …      ← dòng 合計
+    ///   …
+    ///   [58] 1      | …                     ← vẫn là tháng quá khứ
+    /// </code>
+    /// <c>InputRow()</c> trả về dòng 処置 CUỐI của cả lưới — rơi đúng vào một tháng quá khứ,
+    /// mà những dòng đó mang <c>linekbn = 99</c> nên <c>AddRow</c> <b>từ chối chèn</b>:
+    /// 「Insert không chèn được dòng trống」. Nhìn y như harness hỏng, thật ra là chọn nhầm dòng.
+    ///
+    /// <para>Cuộn bằng <b>Page Down</b> chứ không bằng thanh cuộn: cầu MSAA→UIA của
+    /// <c>DataGridView</c> không phơi ra <c>ScrollBar</c> nào để mà kéo (F10). Và phải cuộn
+    /// thật, vì UIA vẫn phơi ra một số dòng vừa ra khỏi khung với <c>BoundingRectangle</c>
+    /// RỖNG — click vào đó là bắn chuột ra <c>(0,0)</c>, tức góc trái trên DESKTOP.</para>
+    ///
+    /// <para>Luồng <c>CmtPackExitFlg</c> có một bản tương đương trong
+    /// <c>CmtPackUiTestBase.ScrollToLastRowOfDay</c>; hai bản cùng thuật toán.</para>
+    /// </summary>
+    public RegiRow? ScrollToLastRowOfDay(int day, TestTrace trace, int maxPageDowns = 8)
+    {
+        for (var attempt = 0; attempt <= maxPageDowns; attempt++)
+        {
+            var target = LastRowOfDay(day, trace);
+            if (target is not null && Txt.Int(target.Day) == day && HasRect(target))
+            {
+                if (attempt > 0) trace.Note($"cuon {attempt} lan thi dong cua ngay {day} vao khung nhin");
+                return target;
+            }
+
+            var anchorRow = _grid.Snapshot().LastOrDefault(HasRect);
+            if (anchorRow is null)
+            {
+                trace.Note("⛔ khong con dong nao co rect that de bam Page Down — luoi dang bi che? " +
+                           "Doc anh truoc khi ket luan.");
+                trace.Shot("khong-cuon-duoc-luoi");
+                return target;
+            }
+
+            trace.Do($"cuon luoi: Page Down tu dong 「{anchorRow}」 (lan {attempt + 1})", () =>
+            {
+                _grid.FocusCell(anchorRow, RegiGrid.Col.Day);
+                // Click vào ô 日 có thể mở editor; Enter đóng lại mà KHÔNG đổi giá trị.
+                // ⛔ Đừng dùng ESC — trên lưới 処置 nó là 戻る và bung dirty gate (F14).
+                if (_grid.IsEditing()) _grid.Press(VirtualKeyShort.RETURN);
+                _grid.Press(VirtualKeyShort.NEXT);
+            });
+        }
+
+        trace.Note($"⛔ cuon {maxPageDowns} lan van khong dua duoc dong cua ngay {day} vao khung nhin.");
+        trace.Shot($"khong-cuon-toi-ngay-{day}");
+        return LastRowOfDay(day, trace);
+    }
+
+    /// <summary>Dòng có ô thật trên màn hình (rect khác rỗng) — xem <see cref="ScrollToLastRowOfDay"/>.</summary>
+    public static bool HasRect(RegiRow row)
+    {
+        var cells = Uia.Children(row.Element).ToList();
+        if (cells.Count == 0) return false;
+        var rect = Uia.RectOf(cells[0]);
+        return rect is { Width: > 0, Height: > 0 };
     }
 
     /// <summary>Kết quả một lượt nhập, kèm các dòng comment tách riêng.</summary>

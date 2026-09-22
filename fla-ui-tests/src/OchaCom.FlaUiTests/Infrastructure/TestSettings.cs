@@ -36,6 +36,8 @@ public sealed class TestSettings
     [JsonPropertyName("drugAmount")] public DrugAmountSection DrugAmount { get; set; } = new();
     [JsonPropertyName("drugPathB")] public DrugPathBSection DrugPathB { get; set; } = new();
     [JsonPropertyName("drugRowReload")] public DrugRowReloadSection DrugRowReload { get; set; } = new();
+    [JsonPropertyName("cmtPack")] public CmtPackSection CmtPack { get; set; } = new();
+    [JsonPropertyName("cmtPackDenture")] public CmtPackDentureSection CmtPackDenture { get; set; } = new();
     [JsonPropertyName("locators")] public Dictionary<string, string> Locators { get; set; } = new();
 
     private static TestSettings? _current;
@@ -371,6 +373,74 @@ public sealed class TestSettings
     /// <c>frm203016.IregCodChk</c> (frm203016.cs:1015-1100) nên <b>không đụng 歯式</b>,
     /// chỉ cần quyền seed 部位病名行 vào <c>TRNTRN</c>.</para>
     /// </summary>
+    /// <summary>
+    /// Luồng 摘要コメントパック <c>exit_flg</c> (<c>Tests/CmtPackExitFlg</c>).
+    ///
+    /// <para>Cờ RIÊNG, không dùng chung <c>parity.allowSave</c> hay
+    /// <c>autoSantei.allowSave</c> (F20): hai luồng kia seed 部位病名行 và ghi
+    /// <c>SIGA</c>/<c>ACC_DAT</c>; luồng này chỉ chèn vài dòng 処置 ĐÃ TÍNH ĐIỂM vào
+    /// <c>TRNTRN</c> để dựng LỊCH SỬ算定, và không bao giờ bấm F9 登録.</para>
+    /// </summary>
+    public sealed class CmtPackSection
+    {
+        /// <summary>
+        /// Cho phép seed dòng lịch sử 算定 vào <c>TRNTRN</c> (vùng
+        /// <c>disp_no</c> 9100..9199 — CỐ Ý tách khỏi vùng 9000+ của
+        /// <c>ChkAutoDb</c>, vì ở đó có dòng 再初診 seed cố định <c>disp_no = 9001</c>
+        /// mà không luồng nào được xoá) và dọn lại ở <c>OneTimeTearDown</c>.
+        /// Mặc định tắt ⇒ fixture tự <c>Ignore</c> TRƯỚC khi mở app.
+        /// </summary>
+        [JsonPropertyName("allowSeed")] public bool AllowSeed { get; set; }
+
+        /// <summary>
+        /// Ngày trong tháng test dùng làm 「ngày sau」 cho các ca cần HAI ngày
+        /// (§B2 前回実施年月). Mặc định 14 — bệnh nhân 10 có sẵn 処置 ở ngày đó, nên
+        /// <c>InsertBlankRow</c> chép được ô 日 mà không cần helper đổi ngày.
+        /// </summary>
+        [JsonPropertyName("laterDay")] public int LaterDay { get; set; } = 14;
+    }
+
+    /// <summary>
+    /// Luồng 摘要コメントパック <c>歯管-有床義歯</c> — pack <c>B000-4</c>
+    /// (<c>Tests/CmtPackDenture</c>).
+    ///
+    /// <para>Cờ RIÊNG, không dùng chung <c>cmtPack.allowSeed</c> (F20): luồng
+    /// <c>CmtPackExitFlg</c> seed LỊCH SỬ算定 thuần (mọi cột 病名/部位 = 0), còn luồng này
+    /// phải seed một dòng 歯周病検査 <b>mang 病名 Ｐ(103) và 部位 khác 0</b> — đúng hai cột
+    /// mà <c>CmtAuto.getPlaqueTeeth</c> đọc. Dải <c>disp_no</c> cũng tách riêng
+    /// (9200..9299) để hai luồng không dọn nhầm của nhau.</para>
+    /// </summary>
+    public sealed class CmtPackDentureSection
+    {
+        /// <summary>
+        /// Cho phép seed dòng 歯周病検査 vào <c>TRNTRN</c> (vùng <c>disp_no</c> 9200..9299)
+        /// rồi dọn lại ở <c>OneTimeTearDown</c>. Mặc định tắt ⇒ fixture tự <c>Ignore</c>
+        /// TRƯỚC khi mở app.
+        /// </summary>
+        [JsonPropertyName("allowSeed")] public bool AllowSeed { get; set; }
+
+        /// <summary>
+        /// 処置 kích hoạt pack <c>B000-4</c>: 歯管. Đổi được để đo bản master khác, nhưng
+        /// mặc định 116/7 là thứ <c>MST_CMT_PACK</c> đang trỏ tới từ 2026-06-01.
+        /// </summary>
+        [JsonPropertyName("trtCd")] public int TrtCd { get; set; } = 116;
+
+        /// <inheritdoc cref="TrtCd"/>
+        [JsonPropertyName("trtSb")] public int TrtSb { get; set; } = 7;
+
+        /// <summary>
+        /// <c>dis_cd</c> DUY NHẤT được seed trong lượt chạy này.
+        ///
+        /// <para>⚠️ <b>Mỗi lượt chỉ MỘT 病名.</b> Đo được 2026-09-22: khi seed nhiều dòng mang
+        /// 病名 sát nhau, kết quả khớp hoàn hảo với giả thuyết 「quyết định dùng 病名 của dòng
+        /// KẾ TIẾP」 — `frm203002.cs:9900` đọc <c>hFG1[i+40, CurrentCellAddress.Y]</c>, tức vị
+        /// trí con trỏ SAU khi nhập, có thể đã dời xuống một dòng. Lệch một dòng là đo nhầm
+        /// 病名 mà KHÔNG mốc nào phát hiện được. Một 病名 mỗi lượt thì lệch kiểu gì cũng chỉ
+        /// có thể ra 「病名 đó」 hoặc 「không có 病名」.</para>
+        /// </summary>
+        [JsonPropertyName("disCd")] public int DisCd { get; set; } = 393;
+    }
+
     public sealed class ChkAutoCascadeSection
     {
         /// <summary>
@@ -1132,6 +1202,8 @@ public sealed class TestSettings
         Set("OCHA_CHK_AUTO_BRANCH_SEED", v => s.ChkAutoCascade.AllowBranchSeed = ToBool(v));
         Set("OCHA_CHK_AUTO_P2_TRT_CD", v => s.ChkAutoCascade.Phase2TrtCd = int.Parse(v));
         Set("OCHA_CHK_AUTO_P2_TRT_SB", v => s.ChkAutoCascade.Phase2TrtSb = int.Parse(v));
+        Set("OCHA_CMT_PACK_ALLOW_SEED", v => s.CmtPack.AllowSeed = ToBool(v));
+        Set("OCHA_CMT_PACK_DENTURE_ALLOW_SEED", v => s.CmtPackDenture.AllowSeed = ToBool(v));
         Set("OCHA_TEST_PATIENT_ALLOW_SEED", v => s.TestPatient.AllowSeed = ToBool(v));
         Set("OCHA_TEST_PATIENT_TEMPLATE", v => s.TestPatient.TemplatePatNo = int.Parse(v));
         Set("OCHA_PACK_PAC_CD", v => s.PackDialog.PacCd = int.Parse(v));
