@@ -24,12 +24,14 @@
 
 .EXAMPLE
     .\run-misoutyaku-e00100.ps1              # 3 ca DB, khong mo app
-    .\run-misoutyaku-e00100.ps1 -Ui          # ca do tren giao dien
+    .\run-misoutyaku-e00100.ps1 -Ui          # §B2/§B3 tren giao dien
+    .\run-misoutyaku-e00100.ps1 -CodeSet     # §B4 — MOT ma moi luot, dat misoutyaku.seedTrtCd/Sb
 #>
 [CmdletBinding()]
 param(
     [string]$Case = "",
     [switch]$Ui,
+    [switch]$CodeSet,
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug"
 )
@@ -38,7 +40,10 @@ $ErrorActionPreference = "Stop"
 $project = Join-Path $PSScriptRoot "src\OchaCom.FlaUiTests\OchaCom.FlaUiTests.csproj"
 
 $ns = "OchaCom.FlaUiTests.Tests.MisoutyakuE00100"
-$fixture = if ($Ui) { "MisoutyakuUiTests" } else { "MisoutyakuMasterTests" }
+$fixture =
+    if     ($CodeSet) { "MisoutyakuCodeSetTests" }
+    elseif ($Ui)      { "MisoutyakuUiTests" }
+    else              { "MisoutyakuMasterTests" }
 
 $filter = if ($Case -ne "") { "FullyQualifiedName~$ns.$fixture&FullyQualifiedName~$Case" }
           else              { "FullyQualifiedName~$ns.$fixture" }

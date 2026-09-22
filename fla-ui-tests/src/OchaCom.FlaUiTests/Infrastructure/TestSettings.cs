@@ -38,6 +38,7 @@ public sealed class TestSettings
     [JsonPropertyName("drugRowReload")] public DrugRowReloadSection DrugRowReload { get; set; } = new();
     [JsonPropertyName("cmtPack")] public CmtPackSection CmtPack { get; set; } = new();
     [JsonPropertyName("cmtPackDenture")] public CmtPackDentureSection CmtPackDenture { get; set; } = new();
+    [JsonPropertyName("misoutyaku")] public MisoutyakuSection Misoutyaku { get; set; } = new();
     [JsonPropertyName("locators")] public Dictionary<string, string> Locators { get; set; } = new();
 
     private static TestSettings? _current;
@@ -439,6 +440,30 @@ public sealed class TestSettings
         /// có thể ra 「病名 đó」 hoặc 「không có 病名」.</para>
         /// </summary>
         [JsonPropertyName("disCd")] public int DisCd { get; set; } = 393;
+    }
+
+    /// <summary>
+    /// Luồng mã <c>999 (未装着)</c> → <c>E00100</c> (<c>Tests/MisoutyakuE00100</c>).
+    ///
+    /// <para>Cờ RIÊNG (F20). Dải <c>disp_no</c> <b>9300..9399</b> — tách khỏi 9100..9199
+    /// của <c>CmtPackExitFlg</c> và 9200..9299 của <c>CmtPackDenture</c>.</para>
+    /// </summary>
+    public sealed class MisoutyakuSection
+    {
+        /// <summary>
+        /// Cho phép seed MỘT dòng 処置 vào <c>TRNTRN</c> (dải 9300..9399) rồi dọn ở
+        /// <c>OneTimeTearDown</c>. Mặc định tắt ⇒ fixture tự <c>Ignore</c> trước khi mở app.
+        /// </summary>
+        [JsonPropertyName("allowSeed")] public bool AllowSeed { get; set; }
+
+        /// <summary>
+        /// 処置 đem thử cho §B4: seed một dòng mang mã này lên lưới rồi gõ 999.
+        /// <c>0</c> = không seed (dùng cho ca §B2/§B3).
+        /// </summary>
+        [JsonPropertyName("seedTrtCd")] public int SeedTrtCd { get; set; }
+
+        /// <inheritdoc cref="SeedTrtCd"/>
+        [JsonPropertyName("seedTrtSb")] public int SeedTrtSb { get; set; }
     }
 
     public sealed class ChkAutoCascadeSection
@@ -1204,6 +1229,9 @@ public sealed class TestSettings
         Set("OCHA_CHK_AUTO_P2_TRT_SB", v => s.ChkAutoCascade.Phase2TrtSb = int.Parse(v));
         Set("OCHA_CMT_PACK_ALLOW_SEED", v => s.CmtPack.AllowSeed = ToBool(v));
         Set("OCHA_CMT_PACK_DENTURE_ALLOW_SEED", v => s.CmtPackDenture.AllowSeed = ToBool(v));
+        Set("OCHA_MISOUTYAKU_ALLOW_SEED", v => s.Misoutyaku.AllowSeed = ToBool(v));
+        Set("OCHA_MISOUTYAKU_SEED_TRT_CD", v => s.Misoutyaku.SeedTrtCd = int.Parse(v));
+        Set("OCHA_MISOUTYAKU_SEED_TRT_SB", v => s.Misoutyaku.SeedTrtSb = int.Parse(v));
         Set("OCHA_TEST_PATIENT_ALLOW_SEED", v => s.TestPatient.AllowSeed = ToBool(v));
         Set("OCHA_TEST_PATIENT_TEMPLATE", v => s.TestPatient.TemplatePatNo = int.Parse(v));
         Set("OCHA_PACK_PAC_CD", v => s.PackDialog.PacCd = int.Parse(v));
