@@ -20,6 +20,10 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *  - setBui F1〜F7 GHI ĐÈ 1 / 11 bất kể ô đang có gì (frm902003.cs:776-901).
  *  - F10 反転 chế độ 乳歯 chỉ đi răng 1〜5 (A〜E) và coi 10 là ô trống (:336-349).
  *  - Mỗi lần mở là một frm902003 mới ⇒ luôn bắt đầu ở 永久歯.
+ *  - Backspace / テンキー「-」 (Keys.Back / Keys.Subtract) → clearBui(_pos, _idx): xoá
+ *    răng BẤM/CLICK GẦN NHẤT (`_idx`, mặc định 1) của vùng đang chọn; `-` hàng số
+ *    thường (OemMinus) KHÔNG xoá. Click số răng (lblClrBui) xoá đúng răng đó
+ *    (BuiInfo.cs:370-374, :508-515).
  *
  * ─── Không ghi DB ────────────────────────────────────────────────────────────
  *  Không bấm 確定 (End); đóng bằng F12 戻る. plaque-teeth trả giả `row: null` để gate
@@ -230,6 +234,45 @@ test.describe('部位選択 — cờ 乳歯 từng ô + setter BuiVal (frm902003
 
         await page.keyboard.press('1')
         expect((await readBui())[RU(1)], 'phím 1 đổi ô thành vĩnh viễn: 11+1 qua setter → 1').toBe(1)
+        await closeDialog()
+        await step()
+    })
+
+    test('TC-CELL-5 — Backspace xoá răng bấm gần nhất; テンキー「-」 cũng xoá; 「-」 thường thì không', async () => {
+        skipWithReason(!opened, 'không mở được 部位選択')
+        if (!(await toothDialog.isVisible().catch(() => false))) {
+            opened = await openFromBuiCell()
+            skipWithReason(!opened, 'không mở lại được 部位選択')
+        }
+        await fkey(/^F11\s*全消去$/).click()
+        // Vùng focus sau khi mở = RU. Bấm răng 3 rồi răng 4 ⇒ _idx = 4.
+        await page.keyboard.press('3')
+        await page.keyboard.press('4')
+        await page.keyboard.press('Backspace')
+        let got = await readBui()
+        expect(got[RU(3)], 'răng 3 không phải răng bấm gần nhất — phải giữ').toBe(1)
+        expect(got[RU(4)], 'Backspace phải xoá răng 4 (_idx)').toBe(0)
+
+        await page.keyboard.press('Minus') // OemMinus — WinForm không bắt
+        expect((await readBui())[RU(3)], '「-」 hàng số thường không được xoá').toBe(1)
+
+        await page.keyboard.press('3') // RU3: 1 → 2, _idx = 3
+        await page.keyboard.press('NumpadSubtract')
+        got = await readBui()
+        expect(got[RU(3)], 'テンキー「-」 phải xoá răng 3').toBe(0)
+        await step()
+    })
+
+    test('TC-CELL-6 — click số răng (lblClrBui) xoá đúng răng đó', async () => {
+        skipWithReason(!opened, 'không mở được 部位選択')
+        await fkey(/^F11\s*全消去$/).click()
+        await cells().nth(LD(6)).click()
+        await cells().nth(LD(5)).click()
+        expect((await readBui())[LD(6)]).toBe(1)
+        await toothDialog.locator(`button[data-clear-bui="${LD(6)}"]`).click()
+        const got = await readBui()
+        expect(got[LD(6)], 'click số răng 6 (LD) phải xoá răng đó').toBe(0)
+        expect(got[LD(5)], 'răng bên cạnh giữ nguyên').toBe(1)
         await closeDialog()
         await step()
     })
