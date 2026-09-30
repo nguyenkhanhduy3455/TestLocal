@@ -46,9 +46,9 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  *      · Effect :716 — ←/→ đổi tab, ↑/↓ đổi dòng, CHỈ khi focus đang nằm trong
  *        side panel (root.contains(document.activeElement)); có clamp 2 đầu.
  *  - components/treatment-entry-detail.tsx
- *      · handlePackPick (:818) chỉ set ctx + open (KHÔNG có guard
- *        「当月以外の操作はできません」 — guardCurrentMonth :2258 chỉ dùng cho F-key;
- *        đây là điểm LỆCH so với frm203002.cs:6775, ghi ra để biết, không test).
+ *      · handlePackPick chỉ set ctx + open. Guard 「当月以外の操作はできません」
+ *        (frm203002.cs:6778) nằm ở onPackPick trong context — kiểm ở
+ *        fkey-menu/treatment-current-month-guard.spec.ts (TC-SIDE-パック).
  *      · onOpenChange (:4826): đóng kiểu huỷ (F10/戻る/×) → refocusSidePanel()
  *        (bump focusSignal ở frame kế) → con trỏ về ô №; đóng kiểu 確定
  *        (packPickConfirmedRef) → KHÔNG kéo focus về, nhường cho grid — đúng
