@@ -359,7 +359,7 @@ test.describe('診療入力（患者選択）— 当月来患 / F7 / 受付一�
         page.on('request', onReq)
         const birth = condDateRow('生年月日')
         await birth.getByRole('textbox').nth(0).fill('10')
-        await page.getByRole('button', { name: /検索/ }).click()
+        await page.getByRole('button', { name: '検索', exact: true }).click()
         const dlg = topDialog(page)
         await expect(dlg).toBeVisible({ timeout: 15_000 })
         expect(squash(await dlg.innerText())).toContain(MSG.E00002('生年月日'))
@@ -371,17 +371,20 @@ test.describe('診療入力（患者選択）— 当月来患 / F7 / 受付一�
         expect(searched, 'E00002 mà vẫn gọi tìm kiếm').toBe(0)
     })
 
-    test('TC-SEARCH-2 — 最終診療日 2月30日 ⇒ E00002「最終診療日」 (không lăn sang tháng 3)', async () => {
+    test('TC-SEARCH-2 — 最終診療日 平成32年 (ngoài 元号) ⇒ E00002「最終診療日」', async () => {
         const birth = condDateRow('生年月日')
         for (const i of [0, 1, 2]) await birth.getByRole('textbox').nth(i).fill('')
         const last = condDateRow('最終診療日')
         await last.getByRole('combobox').click()
-        await page.getByRole('option', { name: '令和', exact: true }).click()
+        // Ngày không tồn tại (2/30) KHÔNG gõ được trên web: EraDateField kẹp 日 theo
+        // số ngày của tháng. Ca còn lại của `chkSeireki` là năm vượt 元号 —
+        // 平成32年 = 2020, sau khi 平成 kết thúc (2019-04-30).
+        await page.getByRole('option', { name: '平成', exact: true }).click()
         const boxes = last.getByRole('textbox')
-        await boxes.nth(0).fill('6')
-        await boxes.nth(1).fill('2')
-        await boxes.nth(2).fill('30')
-        await page.getByRole('button', { name: /検索/ }).click()
+        await boxes.nth(0).fill('32')
+        await boxes.nth(1).fill('1')
+        await boxes.nth(2).fill('1')
+        await page.getByRole('button', { name: '検索', exact: true }).click()
         const dlg = topDialog(page)
         await expect(dlg).toBeVisible({ timeout: 15_000 })
         expect(squash(await dlg.innerText())).toContain(MSG.E00002('最終診療日'))
@@ -391,9 +394,9 @@ test.describe('診療入力（患者選択）— 当月来患 / F7 / 受付一�
 
     test('TC-SEARCH-3 — sửa thành ngày thật ⇒ tìm bình thường, không E00002', async () => {
         const boxes = condDateRow('最終診療日').getByRole('textbox')
-        await boxes.nth(2).fill('28')
+        await boxes.nth(0).fill('30')
         const res = page.waitForResponse((r) => /\/tenant\/patients\?/.test(r.url()), { timeout: 30_000 })
-        await page.getByRole('button', { name: /検索/ }).click()
+        await page.getByRole('button', { name: '検索', exact: true }).click()
         await res
         const dlg = topDialog(page)
         if (await dlg.isVisible().catch(() => false)) {
