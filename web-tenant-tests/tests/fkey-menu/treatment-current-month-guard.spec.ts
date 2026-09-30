@@ -243,6 +243,9 @@ test.describe('診療入力 — 当月以外操作不可 (ArrowEvents + side pan
         await revealHistory(true)
         const cell = await historyDayCell(true)
         skipWithReason(!cell, 'không có ô 日 nào của tháng cũ mang số ngày trong vùng render')
+        // IDM_DateChg reads the CURRENT cell's row (hFG1[78, CurrentCellAddress.Y]) and a
+        // right-click does not move it — put the cursor on the past row first.
+        await cell!.click()
         await cell!.click({ button: 'right' })
         await expectBlocked('日付変更', MSG_DATE_CHG)
         await expect(page.getByRole('dialog').filter({ hasText: '日付変更' })).toHaveCount(0)

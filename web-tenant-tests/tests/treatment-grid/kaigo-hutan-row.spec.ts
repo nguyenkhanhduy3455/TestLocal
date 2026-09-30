@@ -695,7 +695,9 @@ test.describe('診療入力 — 【介護保険一部負担金】行 (KaigoHutan
             'double-click vào ô 療法・処置 của dòng 【介護保険一部負担金】 KHÔNG được mở editor — ' +
                 `grdRegi_CellBeginEdit huỷ edit với mọi linekbn ∈ {10..15, ${LINEKBN_KAIGO}}.`,
         ).toBe(0)
-        await page.keyboard.press('Escape').catch(() => {})
+        // Esc chỉ khi thật sự có editor: trên màn 診療入力 Esc = End 登録
+        // (frm203002_KeyDown → KeyFunc(End)), bấm vô cớ sẽ bung hộp 保存しますか？.
+        if (await cell.locator('input').count()) await page.keyboard.press('Escape')
         await step()
     })
 
