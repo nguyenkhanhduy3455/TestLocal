@@ -24,15 +24,23 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *  - 病検 変更 (frm203002.cs:6255-6266) mở frm902003 kiểu Cct và KHÔNG truyền
  *    buiPlaque ⇒ luôn là plaque mặc định.
  *
+ *  - Dòng Ｐ部位 của tab 病検 = CmtAuto.getPlaqueTeeth(1900/01/01, cuối tháng)
+ *    (modByoken.GetBYData :260-296): quét lưới tháng hiện tại (kể cả chưa lưu) rồi
+ *    lịch sử; khớp đúng cặp (trt_cd, trt_sb); 103/104 ở BẤT KỲ cột 病名; bỏ răng 欠損.
+ *    pSetByoken chạy lúc mở màn, F1 và mỗi lần chọn tab 病検.
+ *
  * ─── Web ─────────────────────────────────────────────────────────────────────
- *  lib/byoken-plaque.ts chọn dòng Ｐ部位 (dùng chung với tab 病検);
+ *  POST /tenant/treatment/plaque-teeth (PlaqueTeethResolver) trả dòng Ｐ部位; detail gọi
+ *  lúc mở màn / F1 / chọn tab 病検 và chia cho tab 病検 + dialog. diagnosis-history
+ *  giờ bỏ hẳn DIS_CD1 0/103/104 như SQL của GetBYData.
+ *  lib/byoken-plaque.ts dựng dòng Ｐ部位 (dùng chung với tab 病検);
  *  treatment-entry-detail truyền `plaqueBui` khi mở từ ô 部位 (không truyền khi đang
  *  病検 変更); tooth-selection-dialog dựng `plaqueGate` + gate trong selectRange/反転.
  *  Trước khi sửa: không có gate, F1〜F7 cắt dải theo 全部位モード.
  *
  * ─── Không ghi DB ────────────────────────────────────────────────────────────
- *  Ｐ部位 được ép bằng cách vá response `GET /tenant/patients/{patNo}/diagnosis-history`
- *  (bỏ hết bản ghi Ｐ/単Ｇ thật, tuỳ testcase chèn một bản ghi Ｐ giả mới nhất).
+ *  Ｐ部位 được ép bằng cách trả giả `POST /tenant/treatment/plaque-teeth` (endpoint chỉ
+ *  đọc). TC-PLQ-6 để nó đi thật để kiểm hợp đồng request/response.
  *  Không bấm 確定 (End) — mọi testcase đóng dialog bằng F12 戻る.
  *  SIGA (`GET /tenant/siga`) đi thật, spec đọc lại để tính răng mất vào kỳ vọng.
  *  TEST_DB=1: seed 再診 hôm nay (disp_no >= 9000, afterAll dọn) để có dòng tháng hiện
@@ -57,6 +65,7 @@ const SEED_ROWS = [
 ] as const
 
 const DIAG_HISTORY_URL = /\/tenant\/patients\/\d+\/diagnosis-history(\?|$)/
+const PLAQUE_URL = /\/tenant\/treatment\/plaque-teeth(\?|$)/
 const SIGA_URL = /\/tenant\/siga(\?|$)/
 
 const COL_BUI = 1
@@ -79,13 +88,11 @@ const toothNumOf = (i: number) => (i < 8 || (i >= 16 && i < 24) ? 8 - (i % 8) : 
 const FAKE_PLAQUE_TEETH = [RU(8), RU(1), LU(2), LD(3), LD(8)]
 
 interface DiagItem {
-    dspBui?: string
-    dspDis?: string
-    maxDate: string
-    bui?: (number | string)[] | null
     disCd?: (number | string)[] | null
-    disSb?: (number | string)[] | null
 }
+
+/** dspDis của dòng Ｐ部位 giả — tìm lại được trên tab 病検. */
+const FAKE_PLAQUE_DIS = 'E2E-Ｐ部位'
 
 async function appeared(locator: Locator, timeout: number): Promise<boolean> {
     return locator
@@ -102,29 +109,38 @@ test.describe('部位選択 — gate Ｐ部位 cho F1〜F7 / F10 反転 (frm9020
     let toothDialog: Locator
     let disposeOverlays: (() => Promise<void>) | undefined
 
-    /** Ｐ部位 mà route sẽ trả cho lần đọc diagnosis-history kế tiếp; null = không có. */
-    let plaqueForNextRead: number[] | null = null
+    /** Ｐ部位 mà route plaque-teeth trả; null = không có; 'real' = cho đi thật. */
+    let plaqueMock: number[] | null | 'real' = null
+    /** Số POST plaque-teeth + body gần nhất (để kiểm lúc nào FE đọc lại). */
+    let plaqueCalls = 0
+    let lastPlaqueBody: { rows?: unknown[]; trtDt?: string } | null = null
+    let lastPlaqueStatus = 0
     /** se[32] mới nhất đọc được từ /tenant/siga. */
     let siga: { se: number[] } | null = null
 
-    const diagHandler = async (route: Route) => {
-        if (route.request().method() !== 'GET') return route.fallback()
-        const res = await route.fetch()
-        const json = (await res.json()) as { data?: DiagItem[] }
-        const items = (json.data ?? []).filter(
-            (i) => !PLAQUE_DIS_CDS.includes(Number(i.disCd?.[0] ?? 0)),
-        )
-        if (plaqueForNextRead) {
-            items.unshift({
-                dspBui: 'E2E Ｐ部位',
-                dspDis: 'Ｐ',
-                maxDate: '2099-12-31T00:00:00',
-                bui: plaqueForNextRead,
-                disCd: [103, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                disSb: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            })
+    const plaqueHandler = async (route: Route) => {
+        if (route.request().method() !== 'POST') return route.fallback()
+        plaqueCalls++
+        lastPlaqueBody = JSON.parse(route.request().postData() ?? '{}')
+        if (plaqueMock === 'real') {
+            const res = await route.fetch()
+            lastPlaqueStatus = res.status()
+            return route.fulfill({ response: res })
         }
-        await route.fulfill({ response: res, json: { ...json, data: items } })
+        const row = plaqueMock
+            ? {
+                  bui: plaqueMock,
+                  disCd: [103, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                  disSb: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                  dspDis: FAKE_PLAQUE_DIS,
+                  trtDt: '2026-01-15',
+              }
+            : null
+        await route.fulfill({
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ success: true, data: { row } }),
+        })
     }
 
     const sigaHandler = async (route: Route) => {
@@ -163,15 +179,15 @@ test.describe('部位選択 — gate Ｐ部位 cho F1〜F7 / F10 反転 (frm9020
     }
 
     /** Mở lại 診療入力 với Ｐ部位 cho trước (reload ⇒ cache react-query sạch). */
-    async function openEntry(plaque: number[] | null) {
-        plaqueForNextRead = plaque
-        const diagRead = page.waitForResponse(
-            (r) => DIAG_HISTORY_URL.test(r.url()) && r.request().method() === 'GET',
+    async function openEntry(plaque: number[] | null | 'real') {
+        plaqueMock = plaque
+        const plaqueRead = page.waitForResponse(
+            (r) => PLAQUE_URL.test(r.url()) && r.request().method() === 'POST',
             { timeout: GRID_LOAD_TIMEOUT },
         )
         await page.goto(`/treatments/${PAT_NO}?trtDt=${TODAY}`, { waitUntil: 'domcontentloaded' })
         await expect(page.getByText('合計:').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
-        await diagRead
+        await plaqueRead
         await drainSanteiDialogs()
         await drainKarteCmtDialogs()
     }
@@ -223,13 +239,13 @@ test.describe('部位選択 — gate Ｐ部位 cho F1〜F7 / F10 反転 (frm9020
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
         toothDialog = page.getByRole('dialog').filter({ hasText: /部\s*位\s*選\s*択/ })
-        await page.route(DIAG_HISTORY_URL, diagHandler)
+        await page.route(PLAQUE_URL, plaqueHandler)
         await page.route(SIGA_URL, sigaHandler)
     })
 
     test.afterAll(async () => {
         await closeDialog().catch(() => {})
-        await page.unroute(DIAG_HISTORY_URL, diagHandler).catch(() => {})
+        await page.unroute(PLAQUE_URL, plaqueHandler).catch(() => {})
         await page.unroute(SIGA_URL, sigaHandler).catch(() => {})
         await disposeOverlays?.()
         await releaseSharedPage(page)
@@ -346,6 +362,61 @@ test.describe('部位選択 — gate Ｐ部位 cho F1〜F7 / F10 反転 (frm9020
         }
         await closeDialog()
         // 変更 mode tự tắt khi đóng 部位選択 mà không sang 病名選択 (web + WinForm).
+        await step()
+    })
+
+    const byouTab = () => page.getByRole('button', { name: '病検', exact: true })
+    const byouRows = () => page.locator('div[class*="grid-cols-[44px_270px_1fr]"][class*="cursor-pointer"]')
+
+    test('TC-PLQ-6 — plaque-teeth đi thật: gửi lưới tháng hiện tại, 200; diagnosis-history không còn dòng Ｐ／単Ｇ', async () => {
+        const diag = page.waitForResponse(
+            (r) => DIAG_HISTORY_URL.test(r.url()) && r.request().method() === 'GET',
+            { timeout: GRID_LOAD_TIMEOUT },
+        )
+        await openEntry('real')
+        expect(lastPlaqueStatus, 'POST /tenant/treatment/plaque-teeth phải 2xx').toBe(200)
+        expect(Array.isArray(lastPlaqueBody?.rows), 'body phải mang rows (lưới tháng hiện tại)').toBe(true)
+        // So với CHÍNH lưới đang hiện (spec khác chạy xen kẽ có thể đã dọn dòng seed):
+        // lưới có dòng tháng hiện tại thì rows gửi đi không được rỗng.
+        if ((await currentMonthRowKey()) !== null) {
+            expect(
+                lastPlaqueBody!.rows!.length,
+                'lưới tháng hiện tại có dòng mà rows rỗng — FE không gửi lưới sống (getMainDt)',
+            ).toBeGreaterThan(0)
+        }
+        const body = (await (await diag).json()) as { data?: DiagItem[] }
+        const plaqueInHistory = (body.data ?? []).filter((i) =>
+            PLAQUE_DIS_CDS.includes(Number(i.disCd?.[0] ?? 0)),
+        )
+        expect(
+            plaqueInHistory,
+            'diagnosis-history vẫn trả dòng DIS_CD1 = 103/104 — GetBYData loại chúng khỏi SQL',
+        ).toHaveLength(0)
+        await step()
+    })
+
+    test('TC-PLQ-7 — tab 病検 đặt dòng Ｐ部位 (từ plaque-teeth) lên ĐẦU danh sách', async () => {
+        const plaque = new Array<number>(32).fill(0)
+        for (const i of FAKE_PLAQUE_TEETH) plaque[i] = 1
+        await openEntry(plaque)
+        await byouTab().click()
+        await expect(byouRows().first(), 'dòng đầu tab 病検 phải là dòng Ｐ部位').toContainText(
+            FAKE_PLAQUE_DIS,
+            { timeout: 20_000 },
+        )
+        await step()
+    })
+
+    test('TC-PLQ-8 — chọn lại tab 病検 thì đọc lại Ｐ部位 (pSetByoken ở SSTab1 đổi tab)', async () => {
+        await page.getByRole('button', { name: 'ガイド', exact: true }).click()
+        const before = plaqueCalls
+        const again = page.waitForResponse(
+            (r) => PLAQUE_URL.test(r.url()) && r.request().method() === 'POST',
+            { timeout: 20_000 },
+        )
+        await byouTab().click()
+        await again
+        expect(plaqueCalls, 'chọn tab 病検 phải gọi lại plaque-teeth').toBe(before + 1)
         await step()
     })
 })

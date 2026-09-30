@@ -57,7 +57,12 @@ const ALLOW_SAVE = process.env.TEST_ALLOW_SAVE === '1'
 const GRID_LOAD_TIMEOUT = 60_000
 
 const CHK_PRM_URL = /\/tenant\/chk-prm(\?|$)/
-const DIAG_HISTORY_URL = /\/tenant\/patients\/\d+\/diagnosis-history(\?|$)/
+/**
+ * Dòng Ｐ部位 của tab 病検 = CmtAuto.getPlaqueTeeth (modByoken.cs:260-296). Từ khi port
+ * đúng, nó đến từ POST /tenant/treatment/plaque-teeth — diagnosis-history đã bỏ hẳn
+ * DIS_CD1 103/104 như SQL của GetBYData.
+ */
+const PLAQUE_URL = /\/tenant\/treatment\/plaque-teeth(\?|$)/
 
 const MENU_OPTIONS = '9 オプション'
 const MENU_CHECK_ITEM = '1 チェック項目設定'
@@ -105,13 +110,6 @@ const PLAQUE_DIS_CDS = [103, 104]
 const SPLIT_ROW_CELL = '[class*="ffe0c0"]'
 
 const BYOU_ROW_SEL = 'div[class*="grid-cols-[44px_270px_1fr]"][class*="cursor-pointer"]'
-
-/** Một dòng của `GET /tenant/patients/{patNo}/diagnosis-history`. */
-interface DiagnosisHistoryItem {
-    disCd?: (number | string)[] | null
-    bui?: (number | string)[] | null
-    maxDate: string
-}
 
 test.describe.configure({ mode: 'serial', timeout: 300_000 })
 
@@ -335,17 +333,18 @@ test.describe('診療入力 — mục 17 Ｐ部位分割 điều khiển dòng c
         // Chưa lưu bao giờ → mục 17 mặc định ６分割 (dspData, frm203044.cs:186).
         splitBefore = (await readChkPrmParam(CHK_P_BUI_SPLIT_NO)) ?? BUI_SPLIT_SIX
 
-        // Đọc CHÍNH payload panel dùng, không dựng lại từ trn_trn: BE gộp nhiều
-        // dòng thành một aggregate nên tự query SQL là đoán sai vector bui.
-        const res = page.waitForResponse((r) => DIAG_HISTORY_URL.test(r.url()), {
-            timeout: GRID_LOAD_TIMEOUT,
-        })
+        // Đọc CHÍNH payload panel dùng, không dựng lại từ trn_trn: BE lọc răng 欠損 và
+        // quét cả lưới chưa lưu, tự query SQL là đoán sai vector bui.
+        const res = page.waitForResponse(
+            (r) => PLAQUE_URL.test(r.url()) && r.request().method() === 'POST',
+            { timeout: GRID_LOAD_TIMEOUT },
+        )
         await backToEntry()
-        const body = (await (await res).json()) as { data?: DiagnosisHistoryItem[] }
-
-        const plaque = (body.data ?? [])
-            .filter((i) => PLAQUE_DIS_CDS.includes(Number(i.disCd?.[0] ?? 0)))
-            .sort((a, b) => new Date(b.maxDate).getTime() - new Date(a.maxDate).getTime())[0]
+        const body = (await (await res).json()) as {
+            data?: { row?: { bui?: (number | string)[]; trtDt: string } | null }
+        }
+        const row = body.data?.row ?? null
+        const plaque = row ? { bui: row.bui, maxDate: row.trtDt } : undefined
 
         skipWithReason(
             !plaque,
