@@ -15,6 +15,7 @@
  */
 
 import { type Locator, type Page } from '@playwright/test'
+import { ACC_BUTTON, routeAccButton, type AccButtonRoute } from '../_shared/acc-button'
 import { dbEnabled, withDb, countRealTreatmentRowsInMonth, deleteTreatmentRows, deleteTreatmentRowsByDspTrt, seedTreatmentRows } from '../_shared/db'
 import { patNo } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
@@ -570,6 +571,10 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
      *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
     let disposeOverlays: (() => Promise<void>) | undefined
 
+    /** F8 của spec này là chuỗi 「会計」 — máy test không có device_config nên
+     *  accButton mặc định 0 (= 会計データ作成), phải ép 1. Xem _shared/acc-button.ts. */
+    let accButtonRoute: AccButtonRoute | undefined
+
     test.beforeAll(async ({ authedPage }) => {
         // ── Chọn ngày test từ chính dữ liệu của DB đang chạy ──────────────────
         const days = await readMonthDays()
@@ -612,6 +617,7 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
         }
 
         page = authedPage
+        accButtonRoute = await routeAccButton(page, ACC_BUTTON.Acc)
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
 
@@ -642,6 +648,7 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
 
     test.afterAll(async () => {
         await disposeOverlays?.()
+        await accButtonRoute?.dispose()
         await releaseSharedPage(page)
 
         const targets = [syosinDay, saisinDay].filter((d): d is string => d !== null)

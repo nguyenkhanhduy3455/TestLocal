@@ -1,5 +1,6 @@
 import { type Locator, type Page, type Route } from '@playwright/test'
 
+import { ACC_BUTTON, routeAccButton, type AccButtonRoute } from '../_shared/acc-button'
 import { patNo } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
@@ -446,6 +447,10 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
      *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
     let disposeOverlays: (() => Promise<void>) | undefined
 
+    /** F8 của spec này là chuỗi 「会計」 — máy test không có device_config nên
+     *  accButton mặc định 0 (= 会計データ作成), phải ép 1. Xem _shared/acc-button.ts. */
+    let accButtonRoute: AccButtonRoute | undefined
+
     test.beforeAll(async ({ authedPage }) => {
         // Dựng dữ liệu TRƯỚC khi mở màn hình lần đầu — `backToEntry()` cuối hook
         // này phải thấy đủ hai ngày, nếu không TC-DATE-1 đọc lưới ra rỗng.
@@ -455,6 +460,7 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
         }
 
         page = authedPage
+        accButtonRoute = await routeAccButton(page, ACC_BUTTON.Acc)
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
 
@@ -523,6 +529,7 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
 
     test.afterAll(async () => {
         await disposeOverlays?.()
+        await accButtonRoute?.dispose()
         await releaseSharedPage(page)
         // Chỉ xoá vùng `disp_no >= SEED_DISP_BASE`, dòng thật của bệnh nhân còn nguyên.
         if (dbEnabled) {

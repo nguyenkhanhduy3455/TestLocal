@@ -86,6 +86,7 @@
 
 import { type Locator, type Page, type Route } from '@playwright/test'
 
+import { ACC_BUTTON, routeAccButton, type AccButtonRoute } from '../_shared/acc-button'
 import { patNo } from '../_shared/env'
 import { openTreatmentEntry } from '../_shared/entry'
 import { installOverlayHandlers } from '../_shared/overlays'
@@ -441,8 +442,13 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
         return null
     }
 
+    /** F8 của spec này là chuỗi 「会計」 — máy test không có device_config nên
+     *  accButton mặc định 0 (= 会計データ作成), phải ép 1. Xem _shared/acc-button.ts. */
+    let accButtonRoute: AccButtonRoute | undefined
+
     test.beforeAll(async ({ authedPage }) => {
         page = authedPage
+        accButtonRoute = await routeAccButton(page, ACC_BUTTON.Acc)
         // kartePicker: sửa ô 回 kích hoạt cascade 摘要コメント — mỗi 処置 một hộp
         // 「カルテ記載選択」, đóng hộp này thì hộp kia mở. Vét bằng vòng lặp không kịp
         // và hộp còn treo sẽ NUỐT phím F8 (đo thật, 2 lần chạy đỏ vì đúng lý do này).
@@ -504,6 +510,7 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
 
     test.afterAll(async () => {
         await disposeOverlays?.()
+        await accButtonRoute?.dispose()
         await releaseSharedPage(page)
     })
 

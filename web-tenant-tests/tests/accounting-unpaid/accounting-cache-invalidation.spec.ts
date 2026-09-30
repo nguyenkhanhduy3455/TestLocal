@@ -54,6 +54,7 @@
 
 import { type Locator, type Page, type Route } from '@playwright/test'
 
+import { ACC_BUTTON, routeAccButton, type AccButtonRoute } from '../_shared/acc-button'
 import {
     SEED_PAT_NO_BASE,
     dbEnabled,
@@ -222,8 +223,13 @@ test.describe('会計キャッシュ — 未収金 không được phục vụ t
         return true
     }
 
+    /** F8 của spec này là chuỗi 「会計」 — máy test không có device_config nên
+     *  accButton mặc định 0 (= 会計データ作成), phải ép 1. Xem _shared/acc-button.ts. */
+    let accButtonRoute: AccButtonRoute | undefined
+
     test.beforeAll(async ({ authedPage }) => {
         page = authedPage
+        accButtonRoute = await routeAccButton(page, ACC_BUTTON.Acc)
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
 
@@ -281,6 +287,7 @@ test.describe('会計キャッシュ — 未収金 không được phục vụ t
             await deleteTestPatient(PAT_NO).catch(() => {})
         }
         await disposeOverlays?.()
+        await accButtonRoute?.dispose()
         await releaseSharedPage(page)
     })
 
