@@ -467,8 +467,18 @@ test.describe('摘要コメント選択 — Enter window-level (frm203018)', () 
       for (let attempt = 1; attempt <= 2 && !opened; attempt++) {
         await enterPackRow()
         await page.keyboard.press('Enter')
-        opened = await title(page)
-          .waitFor({ state: 'visible', timeout: attempt === 1 ? 12000 : 30000 })
+        // SingleChk (W00100, alert 算定不可) là modal và chạy TRƯỚC Chk_CmtAuto
+        // (frm203002.cs:5684 → 5738): #7 chỉ mở SAU khi alert được bấm OK, nên phải
+        // dọn alert TRONG lúc chờ, không phải sau khi hết timeout.
+        opened = await expect
+          .poll(
+            async () => {
+              await drainAlerts(page)
+              return title(page).count()
+            },
+            { timeout: attempt === 1 ? 12000 : 30000, intervals: [200, 300, 500, 1000] },
+          )
+          .toBeGreaterThan(0)
           .then(() => true)
           .catch(() => false)
         if (!opened) {
