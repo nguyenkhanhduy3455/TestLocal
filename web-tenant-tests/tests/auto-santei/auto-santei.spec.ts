@@ -23,6 +23,20 @@ import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep } from '../_shared/step'
 import { ADMIN_USER, JA } from '../_shared/test-data'
 
+/**
+ * /tenant/cmt-autos/cascade là POST (body JSON, từ commit 8f65c7c55 — `rows` mang
+ * bui[32] nên không nhét vào query được). Spec vẫn đọc tham số qua `searchParams`,
+ * nên dựng lại URL có query từ body để phần còn lại khỏi phải đổi.
+ */
+function cascadeUrlOf(req: { url(): string; postDataJSON(): unknown }): string {
+  const u = new URL(req.url());
+  const body = (req.postDataJSON() ?? {}) as Record<string, unknown>;
+  for (const k of ["trtCd", "trtSb", "trtDt", "patNo", "disCd"]) {
+    if (body[k] !== undefined && body[k] !== null) u.searchParams.set(k, String(body[k]));
+  }
+  return u.toString();
+}
+
 // ═══ nguyên văn từ auto-santei.spec.ts (đã gộp vào file này) ═══════════════════════════════════════════
 test.describe('dữ liệu THẬT', () => {
 
@@ -161,7 +175,11 @@ test.describe("自動算定 — 初診/再診 (modSave.AutoSantei)", () => {
   /** Mọi lượt /tenant/cmt-autos/cascade kể từ `openFresh()`, theo (trtCd, trtSb). */
   let cascadeSeen: {
     code: string;
-    packs: { condition: string | null; candidates: { dispText: string }[] }[];
+    packs: {
+      condition: string | null;
+      trtCctNm?: string | null;
+      candidates: { dispText: string }[];
+    }[];
   }[] = [];
 
   /**
@@ -264,7 +282,7 @@ test.describe("自動算定 — 初診/再診 (modSave.AutoSantei)", () => {
       }
       if (url.includes("/tenant/cmt-autos/cascade")) {
         try {
-          const q = new URL(url).searchParams;
+          const q = new URL(cascadeUrlOf(r.request())).searchParams;
           const body = (await r.json()) as {
             data?: (typeof cascadeSeen)[number]["packs"];
           };
@@ -649,10 +667,40 @@ test.describe("自動算定 — 初診/再診 (modSave.AutoSantei)", () => {
         "KHÔNG có 歯周病検査 mang 病名 Ｐ/単Ｇ; nếu tenant đổi dữ liệu thì đổi TEST_PAT_NO_DENTURE.",
     ).toBeDefined();
 
-    for (const c of denturePack!.candidates) {
+    // (c) Caption 「処置名称 …」 của frm203018 = mst_trt.cct_nm của 処置 kích hoạt
+    //     (frm203018.cs:219-223), KHÔNG phải trt_nm (歯管 ≠ 歯科疾患管理料). Trước đây
+    //     đường 自動算定２ để trống hẳn.
+    let cctNm: string | undefined;
+    if (dbEnabled) {
+      const master = (await findMstTrt(TRT_DT, TRT_CD_SHIKAN)).find(
+        (r) => r.trtSb === TRT_SB_SHIKAN,
+      );
+      expect(master, `mst_trt không có ${TRT_CD_SHIKAN}/${TRT_SB_SHIKAN} ngày ${TRT_DT}`).toBeDefined();
+      cctNm = master!.cctNm;
+      expect(denturePack!.trtCctNm?.trim(), "trtCctNm của pack 歯管-有床義歯").toBe(cctNm);
+    }
+
+    // Master tenant có thể cho pack 1 ứng viên (tự áp, frm203018.cs:322) hoặc
+    // nhiều ứng viên (vd thêm 「※上記に該当しない場合…」) → frm203018 bung.
+    const [{ dispText: first } = { dispText: "" }] = denturePack!.candidates;
+    expect(first, "pack 歯管-有床義歯 không có ứng viên nào").not.toBe("");
+    if (denturePack!.candidates.length > 1) {
+      const dlg = page
+        .locator('[role="dialog"]')
+        .filter({ hasText: /摘要選択（歯管-有床義歯/ });
+      await expect(dlg).toBeVisible({ timeout: 10000 });
+      if (cctNm) await expect(dlg.getByText(`処置名称 ${cctNm}`, { exact: true })).toBeVisible();
+      await expect(dlg.getByText("<<備考>>", { exact: true })).toBeVisible();
+      // Dòng 1 được chọn sẵn → F9 確定 áp đúng dòng đó.
+      await dlg.getByRole("button", { name: /F9/ }).click();
+      await expect(dlg).toHaveCount(0, { timeout: 10000 });
+      await expect
+        .poll(async () => countOf(await filledRyoTexts(page), first), { timeout: 10000 })
+        .toBeGreaterThan(0);
+    } else {
       expect(
-        countOf(texts, c.dispText),
-        `「${c.dispText}」 phải được áp thẳng vào lưới (pack 1 ứng viên)`,
+        countOf(texts, first),
+        `「${first}」 phải được áp thẳng vào lưới (pack 1 ứng viên)`,
       ).toBeGreaterThan(0);
     }
 
@@ -1069,7 +1117,7 @@ test.describe("自動算定 — bảng nhánh (data giả)", () => {
 
     // 摘要コメントパック — mặc định [] (không pack nào), nhóm G tự nạp `cascade`.
     await page.route("**/tenant/cmt-autos/cascade**", async (route: Route) => {
-      const url = route.request().url();
+      const url = cascadeUrlOf(route.request());
       cascadeUrls.push(url);
       await route.fulfill({
         status: 200,
