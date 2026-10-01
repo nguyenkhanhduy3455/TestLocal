@@ -1,7 +1,13 @@
 import { type Page } from '@playwright/test'
 
-import { countRealTreatmentRowsInMonth, dbEnabled } from '../_shared/db'
-import { TODAY_ISO, trtDt } from '../_shared/env'
+import {
+    SEED_PAT_NO_BASE,
+    dbEnabled,
+    deleteTestPatient,
+    seedTestPatient,
+    seedTreatmentRows,
+} from '../_shared/db'
+import { TODAY_ISO, allowSave, trtDt } from '../_shared/env'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
 import { closeDialogs } from '../_shared/virtual-grid'
@@ -29,21 +35,33 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * `cursor` = dòng 歯管 vừa chèn vào runCmtAutoCascade.
  *
  * ═════════════════════════════════════════════════════════════════════════════
- * ĐIỀU KIỆN DỮ LIỆU
+ * DỮ LIỆU — spec TỰ DỰNG, không mượn bệnh nhân có sẵn
  * ═════════════════════════════════════════════════════════════════════════════
- *  - Bệnh nhân KHÔNG có 歯周病検査 mang 病名 Ｐ/単Ｇ ⇒ cổng 歯管-有床義歯 cho pack bung
- *    (CmtAuto.cs:189-219). Tenant demo: 100 (cùng mặc định TEST_PAT_NO_DENTURE của
- *    auto-santei.spec.ts).
- *  - THÁNG của 診療日 chưa có 処置 nào lưu — AutoSantei chỉ chạy khi ngày còn trống.
- *  - mst_trt_auto đăng ký 116/7 (TRTAUTO) — tenant demo có sẵn.
+ *  - Bệnh nhân riêng `SEED_PAT_NO_BASE + 771` (seedTestPatient): không có 歯周病検査
+ *    nào ⇒ cổng 歯管-有床義歯 (CmtAuto.cs:189-219) cho pack bung.
+ *  - Một dòng 歯科初診料 (100/0) ngày 15 THÁNG TRƯỚC ⇒ 診療日 là 再診 cùng đợt, không
+ *    có hỏi 初診 — đúng bộ dòng trong ảnh tester. Tháng của 診療日 để trống nên
+ *    AutoSantei chạy.
+ *  - Master dùng của tenant: mst_trt_auto đăng ký 116/7, pack B000-4 (2 dòng).
  *
- * Spec KHÔNG bấm F9 登録: mỗi lần mở màn là một lần xuất phát sạch.
+ * Spec KHÔNG bấm F9 登録; `afterAll` xoá hẳn bệnh nhân (deleteTestPatient). Cần
+ * TEST_ALLOW_SAVE=1 vì có ghi DB (person/insurance/trn_trn của bệnh nhân test).
  *
- *     TEST_DB=1 npx playwright test tests/auto-santei/auto-santei-denture-comment-order.spec.ts
+ *     TEST_DB=1 TEST_ALLOW_SAVE=1 \
+ *       npx playwright test tests/auto-santei/auto-santei-denture-comment-order.spec.ts
  */
 
-const PAT_NO = process.env.TEST_PAT_NO_DENTURE ?? '100'
+const PAT_NO = SEED_PAT_NO_BASE + 771
 const TRT_DT = trtDt(TODAY_ISO)
+
+/** Ngày 15 tháng trước 診療日 — chỗ đặt 初診 để 診療日 thành 再診. */
+const prevMonthIso = (iso: string): string => {
+    const [y, m] = iso.split('-').map(Number)
+    const d = new Date(Date.UTC(y!, m! - 2, 15))
+    return d.toISOString().slice(0, 10)
+}
+const INITIAL_VISIT_DT = prevMonthIso(TRT_DT)
+const TRT_CD_SHOSHIN = 100
 
 const SHIKAN_NM = '歯科疾患管理料'
 const DENTURE_CMT = '有床義歯に係る口腔管理のみ'
@@ -70,7 +88,10 @@ const currentMonthRyo = async (page: Page): Promise<string[]> =>
             .filter((t) => t !== ''),
     )
 
-skipWithReason(!dbEnabled, 'Cần TEST_DB=1 để kiểm tháng của 診療日 còn trống (AutoSantei mới chạy)')
+skipWithReason(
+    !dbEnabled || !allowSave,
+    'Cần TEST_DB=1 TEST_ALLOW_SAVE=1 — spec tự dựng bệnh nhân + 初診 tháng trước rồi xoá',
+)
 
 test.describe.configure({ mode: 'serial', timeout: 180_000 })
 
@@ -81,38 +102,28 @@ test.describe('自動算定２ — 摘要 「有床義歯に係る口腔管理�
     test.beforeAll(async ({ authedPage }) => {
         page = authedPage
         step = makeStep(page)
+        await seedTestPatient({ patNo: PAT_NO })
+        await seedTreatmentRows(PAT_NO, INITIAL_VISIT_DT, [
+            { trtCd: TRT_CD_SHOSHIN, trtSb: 0, trtPt: 267, dspTrt: '歯科初診料' },
+        ])
     })
 
     test.afterAll(async () => {
         if (page && !page.isClosed()) await closeDialogs(page)
         await releaseSharedPage(page)
+        await deleteTestPatient(PAT_NO)
     })
 
     test('TC-1 chọn ở 摘要選択 → dòng comment ngay dưới 歯管 và là dòng cuối ngày', async () => {
-        const saved = await countRealTreatmentRowsInMonth(Number(PAT_NO), TRT_DT)
-        skipWithReason(
-            saved > 0,
-            `患者 ${PAT_NO} đã có ${saved} dòng trong tháng ${TRT_DT.slice(0, 7)} ⇒ AutoSantei không ` +
-                'chạy. Đổi TEST_PAT_NO_DENTURE / TEST_TRT_DT.',
-        )
-
         await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
         await tenCell(page).last().waitFor({ state: 'visible', timeout: 60_000 })
 
-        // Bệnh nhân chưa từng khám ⇒ BE đề nghị 初診; trả lời No để ra bộ 再診 như ảnh tester.
-        const askedSantei = await santeiDialog(page)
-            .waitFor({ timeout: 10_000 })
-            .then(() => true)
-            .catch(() => false)
-        if (askedSantei) {
-            await santeiDialog(page).getByRole('button', { name: /^No$/ }).click()
-        }
-
         await expect(
             dentureDialog(page),
-            `患者 ${PAT_NO} không bung pack 歯管-有床義歯 — bệnh nhân phải KHÔNG có 歯周病検査 ` +
-                'mang Ｐ/単Ｇ, và TRTAUTO phải đăng ký 116/7.',
+            'pack 歯管-有床義歯 không bung — tenant phải đăng ký 116/7 trong TRTAUTO và có pack B000-4.',
         ).toBeVisible({ timeout: 30_000 })
+        // 初診 đã nằm ở tháng trước ⇒ 再診, không có hỏi 初診.
+        await expect(santeiDialog(page)).toHaveCount(0)
         await step()
 
         // Dialog mở SAU khi 歯管 đã nằm cuối ngày, comment chưa có (WinForm cũng vậy).
