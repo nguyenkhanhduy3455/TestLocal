@@ -66,6 +66,18 @@ const TRT_CD_SHOSHIN = 100
 const SHIKAN_NM = '歯科疾患管理料'
 const DENTURE_CMT = '有床義歯に係る口腔管理のみ'
 
+/** F3 チェック panel — trn-chk-sweep.spec.ts. */
+const CHECK_LIST_LABEL = '処置データチェック エラー一覧'
+/** SetErrorMsg(4) — `Check.getCheckAnswer` (Check.cs:1006-1028, :6550). */
+const MSG_NO_VISIT = '初診または再診の算定がありません'
+/** Chk_Buidis_Cmn — tháng không có 部位/病名 nào; WinForm cũng ra dòng này (ảnh tester). */
+const MSG_NO_BUIDIS = '当月に部位・病名がない可能性があります'
+/** SUMMARY_COMMENT_TRT_CD — dòng 摘要 do frm203018 ghi. */
+const TRT_CD_SUMMARY_CMT = 6
+const TRT_CD_SAISHIN = 110
+const TRT_CD_SHIKAN = 116
+const TRT_SB_SHIKAN = 7
+
 /** RegiCol.ryo / ten — treatment-entry-shared.ts. */
 const ryoCell = (page: Page) => page.locator('[data-grid-cell$="|2"]')
 const tenCell = (page: Page) => page.locator('[data-grid-cell$="|3"]')
@@ -87,6 +99,25 @@ const currentMonthRyo = async (page: Page): Promise<string[]> =>
             .map((e) => (e.textContent ?? '').trim())
             .filter((t) => t !== ''),
     )
+
+const f3Button = (page: Page) => page.locator('button[data-fkey="F3"]', { hasText: 'チェック' })
+const checkList = (page: Page) => page.getByRole('region', { name: CHECK_LIST_LABEL })
+
+/**
+ * Bấm F3 → danh sách message của panel. Dòng lỗi là `<div><span>No</span><span>msg</span>`,
+ * dòng 「----- 以上 -----」 chỉ có 1 span nên bị loại.
+ */
+const runF3 = async (page: Page): Promise<string[]> => {
+    await f3Button(page).click()
+    await expect(checkList(page), 'F3 không mở được panel 処置データチェック').toBeVisible({
+        timeout: 30_000,
+    })
+    return checkList(page).evaluate((el) =>
+        Array.from(el.children)
+            .filter((d) => d.querySelectorAll('span').length >= 2)
+            .map((d) => (d.querySelectorAll('span')[1]?.textContent ?? '').trim()),
+    )
+}
 
 skipWithReason(
     !dbEnabled || !allowSave,
@@ -156,5 +187,48 @@ test.describe('自動算定２ — 摘要 「有床義歯に係る口腔管理�
         expect(cmtIdx, `comment phải là dòng cuối ngày — lưới: ${JSON.stringify(after)}`).toBe(
             after.length - 1,
         )
+    })
+
+    // ══ F3 チェック — hậu quả của thứ tự dòng ══════════════════════════════════
+    //
+    // Tester (ảnh 2026-10-01): WinForm 「エラー 1件」 (chỉ 部位・病名), web 「エラー 2件」 thêm
+    // 「10/01 初診または再診の算定がありません」. Luật CheckInitialVisitMissing (port
+    // Check.cs:1006-1028) chỉ soi DÒNG ĐẦU của ngày: dòng 摘要 0 点 đứng đầu thì không
+    // phải 初診/再診 mà ngày lại có dòng tính tiền ⇒ bắn lỗi. Thứ tự đúng ⇒ hết lỗi.
+
+    test('TC-2 F3 trên lưới vừa nhập (thứ tự đã sửa) — KHÔNG có lỗi 初診/再診, khớp WinForm', async () => {
+        const rows = await currentMonthRyo(page)
+        expect(rows.at(-1), `TC-1 phải để lưới đúng thứ tự: ${JSON.stringify(rows)}`).toBe(DENTURE_CMT)
+
+        const msgs = await runF3(page)
+        console.log(`F3 (thứ tự đúng): ${JSON.stringify(msgs)}`)
+        await step()
+        expect(msgs.filter((m) => m.includes(MSG_NO_VISIT)), JSON.stringify(msgs)).toEqual([])
+        // WinForm cùng tình huống: đúng 1 lỗi, là dòng 部位・病名.
+        expect(msgs, JSON.stringify(msgs)).toHaveLength(1)
+        expect(msgs[0]).toContain(MSG_NO_BUIDIS)
+    })
+
+    test('TC-3 đối chứng: dòng 摘要 đứng ĐẦU ngày (thứ tự lỗi cũ) ⇒ F3 có lỗi 初診/再診', async () => {
+        // Dựng thẳng trạng thái lỗi cũ dưới dạng dữ liệu đã lưu: 摘要 → 再診 → 歯管.
+        // Ngày đã có dòng ⇒ AutoSantei không chạy, lưới hiện đúng thứ tự seed.
+        await seedTreatmentRows(PAT_NO, TRT_DT, [
+            { trtCd: TRT_CD_SUMMARY_CMT, trtSb: 0, trtPt: 0, dspTrt: DENTURE_CMT },
+            { trtCd: TRT_CD_SAISHIN, trtSb: 0, trtPt: 59, dspTrt: '歯科再診料' },
+            { trtCd: TRT_CD_SHIKAN, trtSb: TRT_SB_SHIKAN, trtPt: 90, dspTrt: SHIKAN_NM },
+        ])
+        await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
+        await tenCell(page).last().waitFor({ state: 'visible', timeout: 60_000 })
+        await expect
+            .poll(() => currentMonthRyo(page), { timeout: 30_000 })
+            .toEqual([DENTURE_CMT, '歯科再診料', SHIKAN_NM])
+
+        const msgs = await runF3(page)
+        console.log(`F3 (thứ tự lỗi): ${JSON.stringify(msgs)}`)
+        await step()
+        expect(
+            msgs.filter((m) => m.includes(MSG_NO_VISIT)),
+            `phải bắn lỗi 初診/再診 khi 摘要 đứng đầu ngày — ${JSON.stringify(msgs)}`,
+        ).toHaveLength(1)
     })
 })
