@@ -18,7 +18,7 @@ import { makeStep } from '../_shared/step'
  *      · initProc kết thúc bằng chkJichi.Focus() → 実地指１ checked + focused.
  *      · 実地指１ / 訪衛指 chỉ là selector layout in, không nằm trong payload save.
  *      · プラークスコア input lọc `[^0-9.]` ngay khi gõ.
- *      · 指導内容 = 6 Input gắn `list="sidou-guide-list"` (combo editable của
+ *      · 指導内容 = 6 EditableSelect `aria-label="指導内容N"` (combo editable của
  *        WinForm cboGuide1..6) → free text + gợi ý, KHÔNG phải Select.
  *      · 指導時刻: giờ 24 mục, phút bước MINUTE_STEP=5 → 12 mục.
  *      · F8 登録 → confirmDialog Q00002; ngày sai → alert E00002.
@@ -761,11 +761,17 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await step()
     })
 
-    test('【指導内容】 — 6 dòng free text + datalist gợi ý', async () => {
-        const guides = dialog.locator('input[list="sidou-guide-list"]')
+    test('【指導内容】 — 6 combo nhập được (DropDown) + nút mũi tên thả danh sách', async () => {
+        const guides = dialog.locator('input[aria-label^="指導内容"]')
         await expect(guides).toHaveCount(GUIDE_COUNT)
-        // datalist phải tồn tại thì gợi ý guideHistory mới bung ra được.
-        await expect(page.locator('#sidou-guide-list')).toHaveCount(1)
+        // cboGuide1..6 là CustomComboBox DropDown: có nút mũi tên thả danh sách
+        // (dòng trống đầu + 指導内容 cũ của bệnh nhân), không phải ô text trơn.
+        await expect(dialog.getByRole('button', { name: /^指導内容\d-list$/ })).toHaveCount(GUIDE_COUNT)
+        await dialog.getByRole('button', { name: '指導内容1-list', exact: true }).click()
+        await expect(page.getByRole('option').first(), 'danh sách 指導内容 không thả xuống').toBeVisible()
+        console.log(`【指導内容】: danh sách có ${(await page.getByRole('option').count()) - 1} mục cũ`)
+        await page.keyboard.press('Escape')
+        await expect(page.getByRole('option')).toHaveCount(0)
 
         // Combo WinForm là editable → gõ tay được, không bị khoá vào danh sách.
         await guides.nth(0).fill('ブラッシング指導')
@@ -836,7 +842,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         // Chọn một ngày → pickHistory setEdits(null) rồi nạp lại toàn bộ form.
         await selectOption(page, history, /.+/)
         await expect(history).not.toHaveText('過去の記録から呼び出し')
-        await expect(dialog.locator('input[list="sidou-guide-list"]')).toHaveCount(GUIDE_COUNT)
+        await expect(dialog.locator('input[aria-label^="指導内容"]')).toHaveCount(GUIDE_COUNT)
         await step()
     })
 
@@ -893,7 +899,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
 
         await stateBox.getByRole('textbox').fill(PRINT_FIXTURE.score)
 
-        const guides = dialog.locator('input[list="sidou-guide-list"]')
+        const guides = dialog.locator('input[aria-label^="指導内容"]')
         for (const [i, text] of PRINT_FIXTURE.guides.entries()) await guides.nth(i).fill(text)
 
         const start = boxOf('指導開始時刻')
@@ -1146,7 +1152,27 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await step()
     })
 
-    test('TC-IN-6 — preview → F1 印刷: /v1/print nhận đúng datasource, dialog đóng', async () => {
+    test('TC-IN-5b — F9 bằng PHÍM mở preview, phím F10 của preview vẫn đóng được', async () => {
+        // Bug thật: trình xem PDF giật focus vào iframe → F1/F2/F10 của preview
+        // chết. Các TC khác bấm CHUỘT nên không bắt được. Chạy bằng STUB.
+        if (await previewDialog.isVisible()) {
+            await previewDialog.getByRole('button', { name: 'F10 戻る' }).click()
+            await expect(previewDialog).toBeHidden({ timeout: 10000 })
+        }
+        agentMode = 'preview'
+        await dialog.locator('input[aria-label^="指導内容"]').first().focus()
+        await page.keyboard.press('F9')
+        await expect(previewDialog, 'phím F9 không mở preview').toBeVisible({ timeout: 60000 })
+        await step()
+        await page.keyboard.press('F10')
+        await expect(previewDialog, 'phím F10 không đóng preview — F-key của preview bị nuốt').toBeHidden({
+            timeout: 15000,
+        })
+        await expect(dialog, 'F10 của preview chỉ đóng preview').toBeVisible()
+        await step()
+    })
+
+    test('TC-IN-6 — preview → F1 印刷: /v1/print nhận đúng datasource, preview VẪN mở', async () => {
         // LUÔN chạy bằng STUB, kể cả khi có agent thật: đây là hợp đồng FE↔agent
         // (in lại đúng datasource đã render), không phải chặng Crystal. Với agent
         // thật thì /v1/print đã bị chặn ở route nên cũng không có gì để soi.
@@ -1166,8 +1192,20 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         resetAgentCapture()
         await previewDialog.getByRole('button', { name: 'F1 印刷' }).click()
 
-        await expect(previewDialog, '印刷 xong phải tự đóng preview').toBeHidden({ timeout: 30000 })
-        await expect(page.getByText('実地指導文書を印刷しました')).toBeVisible({ timeout: 15000 })
+        // Mốc "in xong" là TOAST, không phải dialog đóng.
+        await expect(page.getByText('実地指導文書を印刷しました')).toBeVisible({ timeout: 30000 })
+
+        // PARITY frm902002 (màn preview Crystal): `btnF1_Click` CHỈ gọi
+        // `PrintToPrinter(1, false, 0, 0)` rồi thôi — KHÔNG `this.Close()`; form chỉ
+        // đóng bằng F10 戻る (`frm902002_FormClosed` mới dispose ReportDocument). Web
+        // port đúng như vậy: `onPrint` của mọi caller PdfPreviewDialog chỉ
+        // `printReport` + toast, và `handleClose` (F10/ESC) mới `onOpenChange(false)`
+        // (pdf-preview-dialog.tsx:81-95). Bản trước của testcase này assert ngược lại
+        // ("印刷 xong phải tự đóng preview") nên đỏ oan — app không sai.
+        await expect(
+            previewDialog,
+            'F1 印刷 KHÔNG được tự đóng preview — WinForm frm902002 chỉ in, không thoát',
+        ).toBeVisible()
 
         // printReport gửi lại ĐÚNG datasource đã render — agent in lại theo khổ
         // giấy cấu hình, nên không kèm pdfUrl.
@@ -1178,6 +1216,11 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         expect(printed!.dataJson, '/v1/print nhận datasource khác lúc render').toEqual(
             baselineRenderReq!.dataJson,
         )
+
+        // Đóng như operator vẫn làm (F10 戻る) — TC-IN-7 assert preview KHÔNG mở, mà
+        // preview còn sót lại từ đây thì nó fail oan.
+        await previewDialog.getByRole('button', { name: 'F10 戻る' }).click()
+        await expect(previewDialog).toBeHidden({ timeout: 10000 })
         await step()
     })
 
@@ -1291,7 +1334,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await expect(dialog).toBeVisible({ timeout: 30000 })
 
         await expect(dialog.getByRole('checkbox', { name: '実地指１' })).toBeChecked()
-        await expect(dialog.locator('input[list="sidou-guide-list"]').nth(0)).toHaveValue('')
+        await expect(dialog.locator('input[aria-label^="指導内容"]').nth(0)).toHaveValue('')
         await step()
     })
 

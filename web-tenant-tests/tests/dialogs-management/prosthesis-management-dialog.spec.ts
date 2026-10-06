@@ -24,7 +24,7 @@ import { makeStep } from '../_shared/step'
  *        trừ nhau kiểu NGHỊCH (WinForm chkManage_CheckedChanged): bỏ tick ô này
  *        thì ô kia TỰ bật. KHÔNG phải radio thường.
  *      · 【着脱方法】 = 2 Input; 【その他情報】 = 6 Input gắn
- *        `list="gisi-kanri-other-info-list"` (combo editable của WinForm
+ *        EditableSelect `aria-label="その他情報N"` (combo editable của WinForm
  *        cboOtherInfo1..6) → free text + gợi ý, KHÔNG phải Select.
  *      · 印刷日 = EraDateField, seed từ HÔM NAY (dtDate.setDate(DateTime.Now)),
  *        KHÔNG phải trtDt.
@@ -227,11 +227,15 @@ const PRINT_FIXTURE = {
     ],
 } as const
 
-/** Đọc toàn bộ value của các <option> trong datalist その他情報. */
+/** Thả danh sách của combo その他情報1 rồi đọc các mục (bỏ dòng trống đầu). */
 async function otherInfoOptions(page: Page): Promise<string[]> {
-    return page
-        .locator('#gisi-kanri-other-info-list option')
-        .evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value))
+    await page.getByRole('button', { name: 'その他情報1-list', exact: true }).click()
+    const options = page.getByRole('option')
+    await expect(options.first()).toBeVisible()
+    const texts = (await options.allInnerTexts()).map((t) => t.trim()).filter((t) => t !== '')
+    await page.keyboard.press('Escape')
+    await expect(options).toHaveCount(0)
+    return texts
 }
 
 /** Mở dialog 補管・義歯 và chờ hiện. */
@@ -551,12 +555,12 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         await step()
     })
 
-    test('【その他情報】 — 6 Input free text + datalist gợi ý', async () => {
+    test('【その他情報】 — 6 combo nhập được (DropDown) + nút mũi tên thả danh sách', async () => {
         const box = boxOf('【その他情報】')
-        const others = box.locator('input[list="gisi-kanri-other-info-list"]')
+        const others = box.locator('input[aria-label^="その他情報"]')
         await expect(others).toHaveCount(OTHER_INFO_COUNT)
-        // datalist phải tồn tại thì gợi ý otherInfoSuggestions mới bung ra được.
-        await expect(page.locator('#gisi-kanri-other-info-list')).toHaveCount(1)
+        // cboOtherInfo1..6 là CustomComboBox DropDown: có nút mũi tên.
+        await expect(box.getByRole('button', { name: /^その他情報\d-list$/ })).toHaveCount(OTHER_INFO_COUNT)
 
         // Combo WinForm là editable (đọc `.Text`) → gõ tay được.
         await others.nth(0).fill('上顎総義歯')
@@ -564,6 +568,29 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         await others.nth(OTHER_INFO_COUNT - 1).fill('下顎部分床')
         await expect(others.nth(OTHER_INFO_COUNT - 1)).toHaveValue('下顎部分床')
         await step()
+    })
+
+    test('歯式 — nhãn 右上/右/右下 và 左上/左/左下 đủ 6 (BuiInfo.Designer)', async () => {
+        for (const label of ['右\n上', '右', '右\n下', '左\n上', '左', '左\n下']) {
+            await expect(
+                dialog.getByText(label, { exact: true }),
+                `thiếu nhãn ${label.replace('\n', '')} cạnh 歯式`,
+            ).toHaveCount(1)
+        }
+        await step()
+    })
+
+    test('印刷日 — 元号 / 年 / 月 / 日 thẳng hàng theo chiều dọc', async () => {
+        const eraRow = boxOf('年')
+        const centerY = async (l: Locator) => {
+            const b = (await l.boundingBox())!
+            return b.y + b.height / 2
+        }
+        const yearBox = await centerY(eraRow.getByRole('textbox').nth(0))
+        for (const unit of ['年', '月', '日']) {
+            const y = await centerY(eraRow.getByText(unit, { exact: true }))
+            expect(Math.abs(y - yearBox), `chữ ${unit} lệch dọc so với ô nhập`).toBeLessThan(3)
+        }
     })
 
     test('印刷日 (EraDateField) — seed từ hôm nay, nhập được', async () => {
@@ -601,7 +628,7 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         await page.getByRole('option').nth(1).click()
         await expect(page.getByRole('listbox')).toBeHidden({ timeout: 10000 })
         // Nạp lại record → form vẫn còn nguyên các khối (không vỡ).
-        await expect(dialog.locator('input[list="gisi-kanri-other-info-list"]')).toHaveCount(
+        await expect(dialog.locator('input[aria-label^="その他情報"]')).toHaveCount(
             OTHER_INFO_COUNT,
         )
         await step()
@@ -636,7 +663,7 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         await attach.nth(0).fill(PRINT_FIXTURE.attach1)
         await attach.nth(1).fill(PRINT_FIXTURE.attach2)
 
-        const others = dialog.locator('input[list="gisi-kanri-other-info-list"]')
+        const others = dialog.locator('input[aria-label^="その他情報"]')
         for (const [i, text] of PRINT_FIXTURE.otherInfo.entries()) await others.nth(i).fill(text)
 
         // 印刷日 phải hợp lệ, nếu không F9 dừng ở E00002 trước khi chạm mạng.
@@ -841,6 +868,29 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         await step()
     })
 
+    test('TC-IN-6 — F9 bằng PHÍM mở preview, F1/F2/F10 của preview vẫn nhận PHÍM', async () => {
+        // Bug thật: mở preview bằng phím F9 xong thì F1/F2/F10 chết. TC-IN-1/5 bấm
+        // CHUỘT cả hai đầu nên không bao giờ bắt được. Ở đây dùng phím thật.
+        await dialog.locator('input').first().focus()
+        await page.keyboard.press('F9')
+        await expect(previewDialog, 'phím F9 không mở preview').toBeVisible({ timeout: 60000 })
+        await step()
+
+        const active = await page.evaluate(() => {
+            const el = document.activeElement
+            return el ? `<${el.tagName.toLowerCase()}${el.getAttribute('title') ? ` title=${el.getAttribute('title')}` : ''}>` : '(none)'
+        })
+        console.log(`TC-IN-6: focus sau khi preview mở = ${active}`)
+
+        await page.keyboard.press('F10')
+        await expect(
+            previewDialog,
+            `phím F10 không đóng preview (focus đang ở ${active}) — F-key của preview bị nuốt`,
+        ).toBeHidden({ timeout: 15000 })
+        await expect(dialog, 'F10 của preview phải chỉ đóng preview, dialog 補管 còn nguyên').toBeVisible()
+        await step()
+    })
+
     test('F8 登録 với 年 rỗng → alert E00002 (chặn trước confirm)', async () => {
         const yearBox = boxOf('年').getByRole('textbox').nth(0)
         const keep = await yearBox.inputValue()
@@ -898,7 +948,7 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         // Các Input 【着脱方法】 / 【その他情報】 đã nhập ở trên phải rỗng lại.
         await expect(boxOf('【着脱方法】').getByRole('textbox').nth(0)).toHaveValue('')
         await expect(
-            boxOf('【その他情報】').locator('input[list="gisi-kanri-other-info-list"]').nth(0),
+            boxOf('【その他情報】').locator('input[aria-label^="その他情報"]').nth(0),
         ).toHaveValue('')
         await step()
     })
@@ -968,7 +1018,7 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
 
         // 1. Mở dialog, điền 【その他情報】 marker (cố định → upsert idempotent).
         await openDialog(page, dialog)
-        const marker = boxOf('【その他情報】').locator('input[list="gisi-kanri-other-info-list"]').nth(0)
+        const marker = boxOf('【その他情報】').locator('input[aria-label^="その他情報"]').nth(0)
         await marker.fill(OTHER_INFO_MARKER)
         await expect(marker).toHaveValue(OTHER_INFO_MARKER)
         await step()

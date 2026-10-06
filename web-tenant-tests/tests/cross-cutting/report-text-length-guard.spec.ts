@@ -37,7 +37,7 @@ import { makeStep } from '../_shared/step'
  *        KHÔNG có tầng byte-cap — `maxLength` là thứ DUY NHẤT chặn. Vì vậy
  *        testcase ở đây chỉ kiểm ký tự, KHÔNG kiểm byte. Đừng "đồng bộ" nó với
  *        補管・義歯 bằng cách thêm assert byte.
- *  - locales/ja.ts: E00022 `${field}の桁数が長すぎます。`
+ *  - locales/ja.ts: E00022 `${field}の文字数が越えています。`
  *
  * CHẠY TUẦN TỰ (`describe.serial`) và dùng CHUNG một page: app giới hạn số lần
  * login nên login + mở màn 診療入力 chỉ làm một lần ở beforeAll. Thứ tự testcase
@@ -232,7 +232,7 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
     test('【その他情報】 — cả 6 Input đều có maxlength=60', async () => {
         // Input có `list=` mang role combobox chứ không phải textbox (Rule 12.5)
         // → lấy bằng CSS cho chắc.
-        const others = hokanDialog.locator('input[list="gisi-kanri-other-info-list"]')
+        const others = hokanDialog.locator('input[aria-label^="その他情報"]')
         await expect(others).toHaveCount(OTHER_INFO_COUNT)
         expect(await maxLengths(others)).toEqual(
             Array.from({ length: OTHER_INFO_COUNT }, () => String(MAX_LEN_TEXT)),
@@ -253,7 +253,7 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
     })
 
     test('F9 印刷 — その他情報 vượt 50 byte bị CHẶN TẠI FE, nêu đúng tên dòng', async () => {
-        const others = hokanDialog.locator('input[list="gisi-kanri-other-info-list"]')
+        const others = hokanDialog.locator('input[aria-label^="その他情報"]')
 
         // Dọn 着脱方法 của case trước để không lẫn nguyên nhân.
         await boxOf(hokanDialog, '【着脱方法】').getByRole('textbox').nth(0).fill('')
@@ -269,7 +269,7 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
             await expect(alert).toBeVisible({ timeout: 10000 })
             // Điểm cốt lõi của bản vá: nêu ĐÚNG dòng nào quá dài, không phải
             // 「印刷に失敗しました。」 chung chung như trước.
-            await expect(alert.getByText(`${OVER_CAP_LINE_LABEL}の桁数が長すぎます。`)).toBeVisible()
+            await expect(alert.getByText(`${OVER_CAP_LINE_LABEL}の文字数が越えています。`)).toBeVisible()
             await alert.getByRole('button', { name: 'OK' }).click()
             await expect(alert).toBeHidden({ timeout: 10000 })
         })
@@ -281,7 +281,7 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
     })
 
     test('F9 印刷 — その他情報 đúng 50 byte (25 全角) thì ĐI QUA được', async () => {
-        const others = hokanDialog.locator('input[list="gisi-kanri-other-info-list"]')
+        const others = hokanDialog.locator('input[aria-label^="その他情報"]')
         await others.nth(OVER_CAP_LINE_IDX).fill(OTHER_INFO_AT_CAP)
 
         // Stub datasource trả shouldPrint=false → handlePrint return sớm, không
@@ -302,7 +302,7 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
                 await hokanDialog.getByRole('button', { name: 'F9 印刷' }).click()
                 // Giá trị BIÊN phải lọt: không có alert 桁数 nào bung ra.
                 await expect(
-                    page.getByText('の桁数が長すぎます。'),
+                    page.getByText('の文字数が越えています。'),
                     '25 全角 (= đúng 50 byte) bị chặn nhầm — cap đang lệch 1 ký tự',
                 ).toBeHidden({ timeout: 5000 })
             })
@@ -329,7 +329,7 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
         await attach.nth(0).fill('あ'.repeat(MAX_LEN_TEXT))
         await attach.nth(1).fill('い'.repeat(MAX_LEN_TEXT))
 
-        const others = hokanDialog.locator('input[list="gisi-kanri-other-info-list"]')
+        const others = hokanDialog.locator('input[aria-label^="その他情報"]')
         for (let i = 0; i < OTHER_INFO_COUNT; i++) await others.nth(i).fill(OTHER_INFO_AT_CAP)
 
         // Bắt body /v1/render ngay tại đây (bản GỐC, trước khi route chèn
@@ -339,7 +339,7 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
 
         // Không có alert 桁数 nào được bung ra — toàn bộ giá trị đều ĐÚNG cap.
         await expect(
-            page.getByText('の桁数が長すぎます。'),
+            page.getByText('の文字数が越えています。'),
             'giá trị đúng cap bị chặn nhầm — cap đang lệch',
         ).toBeHidden({ timeout: 5000 })
 
@@ -406,7 +406,7 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
     })
 
     test('【指導内容】 — cả 6 Input đều có maxlength=60', async () => {
-        const guides = sidouDialog.locator('input[list="sidou-guide-list"]')
+        const guides = sidouDialog.locator('input[aria-label^="指導内容"]')
         await expect(guides).toHaveCount(GUIDE_COUNT)
         expect(await maxLengths(guides)).toEqual(
             Array.from({ length: GUIDE_COUNT }, () => String(MAX_LEN_GUIDE)),
@@ -415,7 +415,7 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
     })
 
     test('指導内容 — trình duyệt chặn cứng ở ký tự thứ 60', async () => {
-        const guide = sidouDialog.locator('input[list="sidou-guide-list"]').nth(0)
+        const guide = sidouDialog.locator('input[aria-label^="指導内容"]').nth(0)
         await guide.fill('あ'.repeat(MAX_LEN_GUIDE - 5))
         await guide.pressSequentially('いいいいいいいいいい') // +10 → chỉ 5 lọt
         await expect(guide).toHaveValue('あ'.repeat(MAX_LEN_GUIDE - 5) + 'いいいいい')

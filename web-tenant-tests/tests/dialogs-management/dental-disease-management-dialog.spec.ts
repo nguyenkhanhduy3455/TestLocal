@@ -380,6 +380,8 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
 
     /** Body POST /initial bắt được lúc mở dialog lần đầu (TC-OPEN-1 ghi vào). */
     let sentInitial: InitialBody | null = null
+    /** `carryForward.pq` của response /initial; `null` = không có bản ghi kế thừa. */
+    let carryForwardPq: number | null = null
 
     // ── Trạng thái luồng in, chia sẻ giữa các testcase TC-IN-* ────────────────
     /** Body /v1/render FE gửi đi, chụp TRƯỚC khi test chèn forcePreview. */
@@ -496,7 +498,12 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
         )
         await openDialog(page, dialog)
 
-        sentInitial = (await initialReq).postDataJSON() as InitialBody
+        const req = await initialReq
+        sentInitial = req.postDataJSON() as InitialBody
+        const initialRes = (await (await req.response())?.json()) as {
+            carryForward?: { pq: number } | null
+        }
+        carryForwardPq = initialRes?.carryForward?.pq ?? null
         expect(sentInitial.patNo, 'patNo phải là bệnh nhân đang mở').toBe(PAT_NO_NUM)
         // printDt = ngày của DÒNG đang focus (getFocusDt) trong tháng của trtDt →
         // ngày có thể khác TRT_DT, nhưng tháng thì không.
@@ -825,6 +832,14 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
         // index của {無, 少ない, 多い} nên 多い = 2 — soi ở TC-SAVE-1).
         const pq = boxOf('プラーク・歯石の付着状況')
         await expect(pq.getByRole('radio')).toHaveCount(3)
+        // Mặc định: không có bản ghi kế thừa → Designer `rdoPqMuch.Checked = true`
+        // (多い); có thì lấy pq của bản ghi đó (index {無, 少ない, 多い}).
+        const expectedDefault = ['無', '少ない', '多い'][carryForwardPq ?? 2]!
+        console.log(`TC-FORM-3: carryForward.pq=${carryForwardPq} → mặc định phải là ${expectedDefault}`)
+        await expect(
+            pq.getByRole('radio', { name: expectedDefault, exact: true }),
+            `プラーク・歯石 mặc định phải là ${expectedDefault}`,
+        ).toBeChecked()
         for (const label of ['多い', '少ない', '無'] as const) {
             await expect(pq.getByRole('radio', { name: label }), label).toBeVisible()
         }
