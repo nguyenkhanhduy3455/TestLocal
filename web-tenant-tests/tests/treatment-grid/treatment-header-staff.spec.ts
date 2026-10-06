@@ -214,7 +214,8 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
         // Đi qua 患者選択 chứ không goto thẳng: chỉ đường đó mới đặt được combo Ｄｒ．
         // khác với dr_no của các dòng TRN, tức mới tách được nhãn với combo.
         await page.goto('/treatments', { waitUntil: 'domcontentloaded' })
-        await expect(page.locator('[data-fkey="F7"]')).toBeVisible({ timeout: 60000 })
+        // F5 受付一覧 luôn có; F7 会計作成 ẩn theo 一括会計ボタンを表示する (frm203001.cs:572).
+        await expect(page.locator('[data-fkey="F5"]')).toBeVisible({ timeout: 60000 })
 
         // StaffSelect có `key={ready ? 'ready' : 'pending'}` — nó REMOUNT khi danh
         // sách 医院マスタ về tới. Bấm trước thời điểm đó thì dropdown vừa mở đã bị
@@ -231,7 +232,8 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
         const option = page.getByRole('option', { name: pickedDoctor!.userNm, exact: true })
         await expect(drTrigger).toBeVisible({ timeout: 30000 })
         for (let attempt = 1; ; attempt++) {
-            await drTrigger.click()
+            // Combo nhập được (EditableSelect): danh sách mở bằng nút mũi tên.
+            await page.getByRole('button', { name: 'Dr.-list', exact: true }).click()
             try {
                 await expect(option).toBeVisible({ timeout: 5000 })
                 break

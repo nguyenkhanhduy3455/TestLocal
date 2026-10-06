@@ -23,6 +23,30 @@ import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
 import { rows, cells } from '../_shared/virtual-grid'
 
+/**
+ * SERIAL Ở CẤP FILE — bắt buộc, không chỉ là tối ưu.
+ *
+ * Hai khối dưới đây là hai `test.describe` cấp cao nhất, mỗi khối tự gọi
+ * `configure({ mode: 'serial' })` cho RIÊNG mình. Như vậy mới chỉ thành hai NHÓM
+ * serial độc lập: với `fullyParallel: true` + `workers: 4` (playwright.config.ts)
+ * Playwright chia hai nhóm cho HAI worker chạy SONG SONG. Đã đo: bỏ dòng này đi
+ * thì log ra "Running ... using 2 workers" và `a1 worker=0` / `b1 worker=1`.
+ *
+ * Mà hai khối cùng `ensureWaitRow(patWithDr, …)` trên ĐÚNG MỘT dòng 受付 (bảng
+ * `wait` unique theo `pat_no` qua `ux_wait_active`). Khối chạy trước tạo dòng ⇒
+ * `created = true` ⇒ nó SỞ HỮU và sẽ xoá trong `afterAll`; khối kia thấy dòng đã
+ * có ⇒ `created = false` ⇒ dùng ké mà không đăng ký dọn. Khối chủ về đích trước
+ * là xoá mất dòng ngay giữa lúc khối kia còn đang chạy ⇒ TC-ROW-1 / TC-DR-4 đỏ
+ * giả với 「không thấy dòng 受付」. Đây chính là cảnh báo ở phần doc bên dưới
+ * ("worker chạy xong trước sẽ XOÁ dòng đó… `ensureWaitRow` chỉ chống được va
+ * chạm lúc TẠO"), nhưng nó xảy ra ngay cả khi chạy thường, không cần
+ * `--repeat-each`.
+ *
+ * Đặt ở cấp file ⇒ cả file gom về MỘT worker, chạy tuần tự. Đây cũng đúng với
+ * yêu cầu "dùng chung một page, testcase nối tiếp trạng thái" ở doc bên dưới.
+ */
+test.describe.configure({ mode: 'serial' })
+
 // ═══ nguyên văn từ patient-select-dr-staff-required.spec.ts (đã gộp vào file này) ══════════════════════════
 test.describe('đo theo URL (chuỗi fallback FE)', () => {
 
@@ -177,13 +201,21 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
     }
 
     /**
-     * Trigger của combo Dr. / 衛生士 (StaffSelect).
+     * Ô nhập của combo Dr. / 衛生士 (EditableSelect).
      *
-     * Nhãn render là `{label}:` (staff-select.tsx) — dấu hai chấm là thứ tách nó
+     * Nhãn render là `{label}:` (treatment-entry-page.tsx) — dấu hai chấm là thứ tách nó
      * khỏi HEADER LƯỚI cùng tên `Dr.`. Bỏ dấu này ra là bám nhầm vào header.
      */
     function staffSelect(label: 'Dr.' | '衛生士'): Locator {
         return page.getByText(`${label}:`, { exact: true }).locator('..').getByRole('combobox')
+    }
+
+    /**
+     * Thả danh sách của combo. Combo là ô NHẬP ĐƯỢC (WinForm DropDownStyle.DropDown,
+     * EditableSelect): click vào ô chữ KHÔNG mở danh sách — phải bấm nút mũi tên.
+     */
+    async function openStaffList(label: 'Dr.' | '衛生士') {
+        await page.getByRole('button', { name: `${label}-list`, exact: true }).click()
     }
 
     /**
@@ -241,21 +273,21 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
 
     /** Chọn một Ｄｒ．trong combo theo tên hiển thị (`user_nm`). */
     async function pickDoctor(userNm: string) {
-        await staffSelect('Dr.').click()
+        await openStaffList('Dr.')
         await page.getByRole('option', { name: userNm, exact: true }).click()
-        await expect(staffSelect('Dr.')).toContainText(userNm)
+        await expect(staffSelect('Dr.')).toHaveValue(userNm)
         await step()
     }
 
     /**
      * Trả combo Dr. về dòng TRỐNG.
      *
-     * Dòng trống là `<SelectItem value={EMPTY_SELECT_VALUE}>` render đúng một
-     * dấu cách và đứng ĐẦU danh sách (staff-select.tsx), nên `.first()` là cách
+     * Dòng trống (label rỗng, render một dấu cách) đứng ĐẦU danh sách
+     * (toStaffComboOptions — makeIinMstCombo addBlank), nên `.first()` là cách
      * duy nhất trỏ tới nó — nó không có tên để `getByRole('option', {name})` bám.
      */
     async function clearDoctor() {
-        await staffSelect('Dr.').click()
+        await openStaffList('Dr.')
         await page.getByRole('option').first().click()
         await step()
     }
@@ -381,7 +413,8 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
         })
 
         await page.goto('/treatments', { waitUntil: 'domcontentloaded' })
-        await expect(page.locator('[data-fkey="F7"]')).toBeVisible({ timeout: 60000 })
+        // F5 受付一覧 luôn có; F7 会計作成 ẩn theo 一括会計ボタンを表示する (frm203001.cs:572).
+        await expect(page.locator('[data-fkey="F5"]')).toBeVisible({ timeout: 60000 })
     })
 
     test.afterAll(async () => {
@@ -788,9 +821,17 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
             .getByRole('combobox')
     }
 
-    /** Combo trên màn 患者選択 — nhãn render là `{label}:` (staff-select.tsx). */
+    /** Combo trên màn 患者選択 — nhãn render là `{label}:` (treatment-entry-page.tsx). */
     function staffSelect(label: 'Dr.' | '衛生士'): Locator {
         return page.getByText(`${label}:`, { exact: true }).locator('..').getByRole('combobox')
+    }
+
+    /**
+     * Thả danh sách của combo. Combo là ô NHẬP ĐƯỢC (WinForm DropDownStyle.DropDown,
+     * EditableSelect): click vào ô chữ KHÔNG mở danh sách — phải bấm nút mũi tên.
+     */
+    async function openStaffList(label: 'Dr.' | '衛生士') {
+        await page.getByRole('button', { name: `${label}-list`, exact: true }).click()
     }
 
     /**
@@ -908,15 +949,15 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
     }
 
     async function pickDoctor(userNm: string) {
-        await staffSelect('Dr.').click()
+        await openStaffList('Dr.')
         await page.getByRole('option', { name: userNm, exact: true }).click()
-        await expect(staffSelect('Dr.')).toContainText(userNm)
+        await expect(staffSelect('Dr.')).toHaveValue(userNm)
         await step()
     }
 
     /** Dòng trống là `<SelectItem>` một dấu cách, đứng ĐẦU — chỉ trỏ được bằng `.first()`. */
     async function clearDoctor() {
-        await staffSelect('Dr.').click()
+        await openStaffList('Dr.')
         await page.getByRole('option').first().click()
         await step()
     }
@@ -1018,7 +1059,8 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         })
 
         await page.goto('/treatments', { waitUntil: 'domcontentloaded' })
-        await expect(page.locator('[data-fkey="F7"]')).toBeVisible({ timeout: 60000 })
+        // F5 受付一覧 luôn có; F7 会計作成 ẩn theo 一括会計ボタンを表示する (frm203001.cs:572).
+        await expect(page.locator('[data-fkey="F5"]')).toBeVisible({ timeout: 60000 })
     })
 
     test.afterAll(async () => {
@@ -1040,7 +1082,7 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         // KHÔNG gọi clearDoctor() ở đây: đây là thao tác UI ĐẦU TIÊN của cả file, mà
         // StaffSelect còn `disabled` cho tới khi mst_iin về (`ready={doctors.length > 0}`)
         // — click vào trigger đang disabled thì treo. Combo lúc mới vào vốn đã trống.
-        await expect(staffSelect('Dr.'), 'combo Dr. lúc mới vào phải đang trống').toHaveText(/^\s*$/)
+        await expect(staffSelect('Dr.'), 'combo Dr. lúc mới vào phải đang trống').toHaveValue('')
         await typePatNo(String(patWithoutDr))
         await page.keyboard.press('End')
 
