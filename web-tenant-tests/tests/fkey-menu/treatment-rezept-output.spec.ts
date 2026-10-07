@@ -289,10 +289,30 @@ test.describe('診療入力 レセプト — nội dung tờ レセプト trên 
         await releaseSharedPage(page)
     })
 
+    /**
+     * Mở tháng và chờ header (「合計:」). Nạp lại tới 3 lần: Vite dev server thỉnh
+     * thoảng nhả hụt một module, React không mount và trang trắng mãi (cùng lý do
+     * với `openTreatmentEntry` trong _shared/entry.ts). Không dùng helper đó vì nó
+     * dọn dialog bằng phím — Esc là 登録 trên 診療入力, ở đây chỉ được ĐỌC.
+     */
+    async function openMonth(c: Case) {
+        for (let attempt = 1; ; attempt++) {
+            await page.goto(`/treatments/${c.patNo}?trtDt=${c.trtDt}`, { waitUntil: 'domcontentloaded' })
+            try {
+                await expect(page.getByText('合計:').first()).toBeVisible({
+                    timeout: attempt === 1 ? GRID_LOAD_TIMEOUT : 30_000,
+                })
+                return
+            } catch (e) {
+                if (attempt >= 3) throw e
+                console.log(`openMonth ${c.patNo}/${c.trtDt}: lần ${attempt} trang không dựng — nạp lại`)
+            }
+        }
+    }
+
     /** Mở tháng, bấm レセプト, trả envelope BE (bỏ qua request reportOnly của prewarm). */
     async function issueRezept(c: Case): Promise<DatasourceEnvelope> {
-        await page.goto(`/treatments/${c.patNo}?trtDt=${c.trtDt}`, { waitUntil: 'domcontentloaded' })
-        await expect(page.getByText('合計:').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
+        await openMonth(c)
         renderCalls = 0
         const response = page.waitForResponse(
             (res) =>
