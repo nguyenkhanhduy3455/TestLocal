@@ -7,6 +7,7 @@ import { expect, releaseSharedPage, test } from '../_shared/session'
 import { countGisiKanri, dbEnabled, deleteGisiKanri } from '../_shared/db'
 import { foldForCompare, readPdf } from '../_shared/pdf-content'
 import { makeStep } from '../_shared/step'
+import { captureFixedUi } from '../_shared/capture'
 
 /**
  * クラウン・ブリッジ維持管理・義歯管理 (frm203023) — ProsthesisManagementDialog,
@@ -567,6 +568,9 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         await expect(others.nth(0)).toHaveValue('上顎総義歯')
         await others.nth(OTHER_INFO_COUNT - 1).fill('下顎部分床')
         await expect(others.nth(OTHER_INFO_COUNT - 1)).toHaveValue('下顎部分床')
+        await box.getByRole('button', { name: 'その他情報1-list', exact: true }).click()
+        await captureFixedUi(dialog, 'prosthesis-other-info-combo-open')
+        await page.keyboard.press('Escape')
         await step()
     })
 
@@ -577,6 +581,7 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
                 `thiếu nhãn ${label.replace('\n', '')} cạnh 歯式`,
             ).toHaveCount(1)
         }
+        await captureFixedUi(dialog, 'prosthesis-chart-labels-and-date')
         await step()
     })
 
@@ -881,6 +886,7 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
             return el ? `<${el.tagName.toLowerCase()}${el.getAttribute('title') ? ` title=${el.getAttribute('title')}` : ''}>` : '(none)'
         })
         console.log(`TC-IN-6: focus sau khi preview mở = ${active}`)
+        await captureFixedUi(page, 'prosthesis-preview-opened-by-f9')
 
         await page.keyboard.press('F10')
         await expect(

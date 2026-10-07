@@ -4,6 +4,7 @@ import { openTreatmentEntry } from '../_shared/entry'
 import { patNo, trtDt } from '../_shared/env'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep } from '../_shared/step'
+import { captureFixedUi } from '../_shared/capture'
 
 /**
  * 処置入力 (frm203002) — PageUp / PageDown trên lưới grdRegi.
@@ -112,6 +113,7 @@ test.describe('処置入力 — PageUp/PageDown trên lưới grdRegi', () => {
         await expect.poll(() => focusedId(page), 'PageDown không đưa ô vàng xuống đúng một trang').toBe(expected)
         const after = await columnState(page)
         expect(after.focusedVisible, 'ô vàng mới nằm ngoài khung — lưới không cuộn theo').toBe(true)
+        await captureFixedUi(page, 'treatment-grid-after-pagedown')
     })
 
     test('TC-PG-2 — PageUp: lùi đúng một trang (tính tại chỗ đang đứng), lưới cuộn theo', async () => {

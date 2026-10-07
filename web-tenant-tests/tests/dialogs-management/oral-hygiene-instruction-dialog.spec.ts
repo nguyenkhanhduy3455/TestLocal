@@ -5,6 +5,7 @@ import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
 import { foldForCompare, readPdf } from '../_shared/pdf-content'
+import { captureFixedUi } from '../_shared/capture'
 import { makeStep } from '../_shared/step'
 
 /**
@@ -770,6 +771,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await dialog.getByRole('button', { name: '指導内容1-list', exact: true }).click()
         await expect(page.getByRole('option').first(), 'danh sách 指導内容 không thả xuống').toBeVisible()
         console.log(`【指導内容】: danh sách có ${(await page.getByRole('option').count()) - 1} mục cũ`)
+        await captureFixedUi(page, 'oral-hygiene-guide-combo-open')
         await page.keyboard.press('Escape')
         await expect(page.getByRole('option')).toHaveCount(0)
 
@@ -1163,6 +1165,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await dialog.locator('input[aria-label^="指導内容"]').first().focus()
         await page.keyboard.press('F9')
         await expect(previewDialog, 'phím F9 không mở preview').toBeVisible({ timeout: 60000 })
+        await captureFixedUi(page, 'oral-hygiene-preview-opened-by-f9')
         await step()
         await page.keyboard.press('F10')
         await expect(previewDialog, 'phím F10 không đóng preview — F-key của preview bị nuốt').toBeHidden({

@@ -3,6 +3,7 @@ import { type Locator, type Page } from '@playwright/test'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
 import { SEED_DISP_BASE, dbEnabled, deleteTreatmentRows, seedTreatmentRows, withDb } from '../_shared/db'
+import { captureFixedUi } from '../_shared/capture'
 import { makeStep, skipWithReason } from '../_shared/step'
 import { emptyState, rows, scroller, skeletons } from '../_shared/virtual-grid'
 
@@ -603,6 +604,28 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
         await step()
     })
 
+    test('TC-COLOR-1 — nhãn 社保合計 / 国保合計 / 合計 cùng màu với nhóm của nó (Designer)', async () => {
+        // frm203046.Designer: lblHead6 社保合計 = (192,255,255) như các dòng 社保,
+        // lblHead10 国保合計 = (192,192,255) như các dòng 国保, customLabel11 合計 =
+        // (255,255,128) như 保険合計. `_totalColor` chỉ tô ô số, không tô nhãn.
+        const labelBg = (code: string) =>
+            dialog
+                .getByTestId(`row-${code}`)
+                .getByTestId('cell-label')
+                .evaluate((el) => getComputedStyle(el).backgroundColor)
+        for (const [total, member] of [
+            ['shahoTotal', 'shahoHonnin'],
+            ['kokuhoTotal', 'kokuhoHonnin'],
+            ['grandTotal', 'insuranceTotal'],
+        ] as const) {
+            await dialog.getByTestId(`row-${total}`).scrollIntoViewIfNeeded()
+            expect(await labelBg(total), `nhãn ${total} phải cùng màu ${member}`).toBe(await labelBg(member))
+        }
+        await dialog.getByTestId('row-shahoHonnin').scrollIntoViewIfNeeded()
+        await captureFixedUi(dialog, 'raikan-shukei-total-label-colors')
+        await step()
+    })
+
     test('TC-OPEN-3 — lưới client-side: không skeleton, không empty', async () => {
         // 18 dòng là mảng client (`rows={rows}`), `getRow` resolve ngay ⇒ có
         // skeleton nghĩa là count/getRow bị tính sai.
@@ -721,10 +744,21 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
 
             // Dòng 介護 không có 実日数 → bỏ qua vế thứ hai.
             if (row.values.days === null) continue
+
+            // Dòng 合計 là NGOẠI LỆ: 点数/実日数 của nó được CHÉP nguyên từ 保険合計
+            // (`dspData[17].ave = dspData[14].ave`, frm203046.cs:392) chứ không tính
+            // lại, nên tử số là 合計点数 của 保険合計 — KHÔNG phải 合計点数 của chính
+            // dòng 合計 (số đó đã cộng thêm 介護). Khác hẳn 平均点数 ở vế trên: dòng
+            // 383-385 có tính lại 平均点数 cho 合計. Cùng một luật mà TC-CALC-3 đo qua
+            // SUPPRESSED_COLS, ở đây kiểm thêm cả phép làm tròn.
+            const aveTotal =
+                code === 'grandTotal'
+                    ? num(baseline.get('insuranceTotal')!, 'totalScore', 'insuranceTotal')
+                    : total
             expect(
                 num(row, 'ave', code),
-                `${row.label}: 点数/実日数 ≠ round(合計点数 ${total} / 実日数 ${row.values.days})`,
-            ).toBe(expectedAvg(total, row.values.days!))
+                `${row.label}: 点数/実日数 ≠ round(合計点数 ${aveTotal} / 実日数 ${row.values.days})`,
+            ).toBe(expectedAvg(aveTotal, row.values.days!))
         }
         await step()
     })
@@ -864,7 +898,7 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
 
     test('TC-FKEY-1 — F1 印刷 hỏi Q00039 trước khi in; huỷ thì không in', async () => {
         // RPT203004 ĐÃ được port (frm203046.btnF1_Click → printProc), nên F1 không
-        // còn là stub 開発中 nữa: nó hỏi Q00039「用紙をセットして下さい。」rồi mới
+        // còn là stub 開発中 nữa: nó hỏi Q00039「{0}プリンタに用紙をセットしてください。」rồi mới
         // dựng datasource và đẩy sang agent.
         //
         // Chỉ kiểm tới hộp xác nhận rồi bấm No: đi tiếp sẽ gọi agent in thật, mà
@@ -874,16 +908,25 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
         // confirmDialog dùng Radix AlertDialog → role="alertdialog", KHÔNG phải dialog.
         const confirm = page.getByRole('alertdialog')
         await expect(confirm, 'F1 không bung hộp xác nhận in').toBeVisible({ timeout: 15000 })
-        await expect(confirm).toContainText('用紙をセットして下さい')
+        await expect(confirm).toContainText('プリンタに用紙をセットしてください')
 
-        // Nhãn mặc định của confirmDialog là Yes/No (tiếng Anh) — chịu cả tiếng
-        // Nhật phòng khi call-site đổi sang truyền yesLabel/noLabel (Rule 13.2).
+        // Hộp này là **OK / キャンセル**, KHÔNG phải Yes/No: frm203046.cs:156 gọi
+        // `MsgDialog.ShowOKCancelMsg("Q00039", " ")`, và call-site web gọi đúng
+        // `confirmDialog.okCancel(...)` (nhãn OK/キャンセル đè lên mặc định Yes/No).
+        // Kiểm luôn cả hai nhãn — đó chính là phần parity của ShowOKCancelMsg.
+        await expect(
+            confirm.getByRole('button', { name: 'OK', exact: true }),
+            'Q00039 phải là hộp OK/キャンセル (ShowOKCancelMsg), không phải Yes/No',
+        ).toBeVisible()
+        const cancelBtn = confirm.getByRole('button', { name: 'キャンセル', exact: true })
+        await expect(cancelBtn, 'thiếu nút キャンセル của ShowOKCancelMsg').toBeVisible()
+
         let printCalled = false
         const watch = (r: { url: () => string }) => {
             if (/monthly-visit-summary-datasource/.test(r.url())) printCalled = true
         }
         page.on('request', watch)
-        await confirm.getByRole('button', { name: /^(No|いいえ)$/ }).click()
+        await cancelBtn.click()
         await expect(confirm).toBeHidden({ timeout: 15000 })
         page.off('request', watch)
 

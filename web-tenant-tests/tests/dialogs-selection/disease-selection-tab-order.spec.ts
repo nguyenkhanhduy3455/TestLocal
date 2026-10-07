@@ -3,6 +3,7 @@ import { type Page } from '@playwright/test'
 import { TODAY_ISO, patNo, trtDt } from '../_shared/env'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep } from '../_shared/step'
+import { captureFixedUi } from '../_shared/capture'
 
 /**
  * 病名選択 (DiseaseSelectionDialog, frm902007) — thứ tự Tab, tiêu đề, nhãn F-key.
@@ -142,6 +143,7 @@ test.describe('病名選択 — thứ tự Tab / tiêu đề / nhãn F-key theo 
             return Math.round(el.getBoundingClientRect().height / lh)
         })
         expect(lines, 'nhãn F4 bị rớt dòng').toBe(1)
+        await captureFixedUi(dialog(), 'disease-selection-parent-view')
     })
 
     test('TC-CHILD-1 — màn mã con: tiêu đề vẫn 「病名選択」, Tab đi chuỗi có F11', async () => {
@@ -152,6 +154,7 @@ test.describe('病名選択 — thứ tự Tab / tiêu đề / nhãn F-key theo 
         })
         await expect(dialog(), 'màn mã con không được đổi tiêu đề').toBeVisible()
         await expect(page.getByText(/の\s*詳\s*細/)).toHaveCount(0)
+        await captureFixedUi(dialog(), 'disease-selection-subcode-view')
         await step()
 
         await disNmCells().first().click()

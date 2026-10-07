@@ -3,6 +3,7 @@ import { type Locator, type Page } from '@playwright/test'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
 import { makeStep, skipWithReason } from '../_shared/step'
+import { captureFixedUi } from '../_shared/capture'
 import { emptyState, rows } from '../_shared/virtual-grid'
 
 /**
@@ -112,6 +113,7 @@ test.describe('診療入力（患者選択）— combo nhập tay / Tab 検索�
         await expect(dr, 'rời ô thì chữ gõ tay bị xoá — WinForm DropDown giữ nguyên Text').toHaveValue(
             'zz手入力',
         )
+        await captureFixedUi(page.getByText('≪患者選択≫').locator('xpath=ancestor::div[2]'), 'patient-select-dr-typed-text')
         await step()
 
         const picked = await pickFirstStaff('Dr.')
@@ -130,6 +132,7 @@ test.describe('診療入力（患者選択）— combo nhập tay / Tab 検索�
             if (label === '検索') break
             await page.keyboard.press('Tab')
         }
+        await captureFixedUi(page.getByText('≪患者検索条件≫').locator('xpath=ancestor::div[2]'), 'patient-select-search-cond-layout')
         console.log(`TC-TAB-1 thứ tự Tab: ${seen.join(' → ')}`)
         expect(seen).toEqual([
             '氏名(カナ)',
@@ -145,58 +148,87 @@ test.describe('診療入力（患者選択）— combo nhập tay / Tab 検索�
     })
 
     test('TC-BACK-1 — F8 閲覧 rồi F10 戻る: vẫn ở 患者検索一覧, đúng dòng đã chọn', async () => {
-        await page.getByRole('button', { name: '検索', exact: true }).click()
-        await expect(page.getByText('≪患者検索一覧≫')).toBeVisible({ timeout: 30000 })
-        await expect(rows(page).first(), '検索 không ra bệnh nhân nào').toBeVisible({ timeout: 30000 })
-
-        // 衛生士 có thể bị bắt buộc (eiseiji_flg) — chọn sẵn nếu hàng đang hiện.
-        if ((await staffListButton('衛生士').count()) > 0) await pickFirstStaff('衛生士')
-
-        // Dòng thứ 5 trở đi, để "chọn lại dòng 0" không xanh giả. Bệnh nhân nào
-        // không mở được (chưa có bảo hiểm ngày đó…) thì đóng hộp, thử dòng sau.
+        // State "danh sách lúc rời đi" chỉ nằm trong RAM (giống form bị ẩn của
+        // WinForm). Vite dev qua nginx thỉnh thoảng hỏng một request module
+        // (net::ERR_FAILED) và router tải lại CẢ TRANG ⇒ RAM mất, quay về là
+        // 受付患者一覧. Đó là trục trặc môi trường dev, không phải logic: phát hiện
+        // bằng sự kiện `load` (điều hướng SPA không phát) và làm lại vòng đi-về.
         let patNo: string | null = null
-        for (let n = 4; n < 10 && patNo === null; n++) {
-            const row = rows(page).nth(n)
-            const testId = (await row.getAttribute('data-testid')) ?? ''
-            await row.click()
-            await expect(row).toHaveClass(/border-l-primary/)
-            await step()
-            await page.keyboard.press('F8')
-            const candidate = testId.replace(/^row-/, '')
-            const opened = await Promise.race([
-                page
-                    .waitForURL(new RegExp(`/treatments/${candidate}(\\?|$)`), { timeout: 30000 })
-                    .then(() => true),
-                appDialog()
-                    .waitFor({ state: 'visible', timeout: 30000 })
-                    .then(() => false),
-            ])
-            if (opened) {
-                patNo = candidate
-            } else {
-                console.log(`TC-BACK-1: 患者 ${candidate} không mở được — thử dòng sau`)
-                await appDialog().getByRole('button').first().click()
-                await expect(appDialog()).toHaveCount(0)
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            if (!(await page.getByText('≪患者検索一覧≫').isVisible())) {
+                // Quay về sau reload: ô 患者番号 autoFocus bung popover lịch sử (role
+                // `dialog`) và FKeyScope nuốt F-key khi còn dialog — Tab ra trước.
+                await patNoInput().focus()
+                await page.keyboard.press('Tab')
+                await expect(page.getByRole('dialog')).toHaveCount(0)
+                await page.keyboard.press('F1')
             }
-        }
-        expect(patNo, 'không mở được bệnh nhân nào trong 6 dòng thử').not.toBeNull()
-        const drBefore = new URL(page.url()).searchParams.get('drNo')
-        console.log(`TC-BACK-1: mở 患者 ${patNo} (drNo=${drBefore})`)
+            await page.getByRole('button', { name: '検索', exact: true }).click()
+            await expect(page.getByText('≪患者検索一覧≫')).toBeVisible({ timeout: 30000 })
+            await expect(rows(page).first(), '検索 không ra bệnh nhân nào').toBeVisible({ timeout: 30000 })
 
-        await expect(page.locator('[data-footer-cell$=":footer-ten"]').first()).toBeVisible({
-            timeout: 60000,
-        })
-        await step()
-        await page.keyboard.press('F10')
-        // 閲覧 vẫn dựng dòng seed của 処置月 ⇒ F10 hỏi 「保存しますか？」. Trả lời
-        // いいえ: rời màn KHÔNG lưu (spec không ghi DB).
-        // Hộp hỏi này mang role `dialog` (không phải `alertdialog`).
-        const saveAsk = page.getByRole('dialog').filter({ hasText: '保存しますか' })
-        await saveAsk
-            .getByRole('button', { name: 'いいえ', exact: true })
-            .click({ timeout: 10000 })
-            .catch(() => console.log('TC-BACK-1: F10 không hỏi 保存 — đi thẳng về danh sách'))
-        await expect(page).toHaveURL(/\/treatments(\?|$)/, { timeout: 30000 })
+            // 衛生士 có thể bị bắt buộc (eiseiji_flg) — chọn sẵn nếu hàng đang hiện.
+            if ((await staffListButton('衛生士').count()) > 0) await pickFirstStaff('衛生士')
+
+            let reloaded = false
+            const onLoad = () => {
+                reloaded = true
+            }
+            page.on('load', onLoad)
+
+            // Dòng thứ 5 trở đi, để "chọn lại dòng 0" không xanh giả. Bệnh nhân nào
+            // không mở được (chưa có bảo hiểm ngày đó…) thì đóng hộp, thử dòng sau.
+            patNo = null
+            for (let n = 4; n < 10 && patNo === null; n++) {
+                await rows(page).nth(n).click()
+                // Đọc patNo từ dòng ĐANG CHỌN sau khi click: lưới ảo có thể render lại
+                // giữa lúc đọc và lúc click, nên `nth(n)` trước click chưa chắc là nó.
+                const selectedRow = page.locator('[data-testid^="row-"][class*="border-l-primary"]')
+                await expect(selectedRow).toHaveCount(1)
+                const candidate = ((await selectedRow.getAttribute('data-testid')) ?? '').replace(/^row-/, '')
+                await step()
+                await page.keyboard.press('F8')
+                const opened = await Promise.race([
+                    page
+                        .waitForURL(new RegExp(`/treatments/${candidate}(\\?|$)`), { timeout: 30000 })
+                        .then(() => true),
+                    appDialog()
+                        .waitFor({ state: 'visible', timeout: 30000 })
+                        .then(() => false),
+                ])
+                if (opened) {
+                    patNo = candidate
+                } else {
+                    console.log(`TC-BACK-1: 患者 ${candidate} không mở được — thử dòng sau`)
+                    await appDialog().getByRole('button').first().click()
+                    await expect(appDialog()).toHaveCount(0)
+                }
+            }
+            expect(patNo, 'không mở được bệnh nhân nào trong 6 dòng thử').not.toBeNull()
+            const drBefore = new URL(page.url()).searchParams.get('drNo')
+            console.log(`TC-BACK-1: lần ${attempt} mở 患者 ${patNo} (drNo=${drBefore})`)
+
+            await expect(page.locator('[data-footer-cell$=":footer-ten"]').first()).toBeVisible({
+                timeout: 60000,
+            })
+            await step()
+            await page.keyboard.press('F10')
+            // 閲覧 vẫn dựng dòng seed của 処置月 ⇒ F10 hỏi 「保存しますか？」. Trả lời
+            // いいえ: rời màn KHÔNG lưu (spec không ghi DB).
+            // Hộp hỏi này mang role `dialog` (không phải `alertdialog`).
+            const saveAsk = page.getByRole('dialog').filter({ hasText: '保存しますか' })
+            await saveAsk
+                .getByRole('button', { name: 'いいえ', exact: true })
+                .click({ timeout: 10000 })
+                .catch(() => console.log('TC-BACK-1: F10 không hỏi 保存 — đi thẳng về danh sách'))
+            await expect(page).toHaveURL(/\/treatments(\?|$)/, { timeout: 30000 })
+            page.off('load', onLoad)
+            if (!reloaded) break
+            console.log(
+                `TC-BACK-1: lần ${attempt} trang bị Vite dev tải lại giữa chừng (state RAM mất) — làm lại vòng đi-về`,
+            )
+            expect(attempt, 'cả 3 lần đi-về đều bị tải lại trang — môi trường dev không ổn định').toBeLessThan(3)
+        }
 
         await expect(
             page.getByText('≪患者検索一覧≫'),
@@ -208,6 +240,7 @@ test.describe('診療入力（患者選択）— combo nhập tay / Tab 検索�
         ).toHaveClass(/border-l-primary/, { timeout: 30000 })
         await expect(page.getByText(/^選択中:/)).toBeVisible()
         await expect(page.locator('[data-first-filter]'), '検索条件 phải còn bật (view 患者検索)').toBeEnabled()
+        await captureFixedUi(page, 'patient-select-back-keeps-selected-row')
         await step()
     })
 
@@ -221,5 +254,6 @@ test.describe('診療入力（患者選択）— combo nhập tay / Tab 検索�
         await expect(patNoInput(), 'F5 với lưới rỗng mà focus không về 患者番号').toBeFocused({
             timeout: 15000,
         })
+        await captureFixedUi(page, 'patient-select-f5-focus-pat-no')
     })
 })

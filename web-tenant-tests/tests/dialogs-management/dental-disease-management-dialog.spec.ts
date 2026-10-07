@@ -4,6 +4,7 @@ import { countChiryoKanriR2, dbEnabled, deleteChiryoKanriR2, latestChiryoKanriR2
 import { BASE_URL, patNo, trtDt } from '../_shared/env'
 import { foldForCompare, readPdf } from '../_shared/pdf-content'
 import { makeStep } from '../_shared/step'
+import { captureFixedUi } from '../_shared/capture'
 import { ADMIN_USER, JA } from '../_shared/test-data'
 
 /**
@@ -840,6 +841,7 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
             pq.getByRole('radio', { name: expectedDefault, exact: true }),
             `プラーク・歯石 mặc định phải là ${expectedDefault}`,
         ).toBeChecked()
+        await captureFixedUi(pq, 'dental-disease-pq-default')
         for (const label of ['多い', '少ない', '無'] as const) {
             await expect(pq.getByRole('radio', { name: label }), label).toBeVisible()
         }
