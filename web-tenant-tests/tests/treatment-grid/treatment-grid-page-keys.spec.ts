@@ -1,20 +1,24 @@
 import { type Page } from '@playwright/test'
 
+import { captureFixedUi } from '../_shared/capture'
 import { openTreatmentEntry } from '../_shared/entry'
 import { patNo, trtDt } from '../_shared/env'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep } from '../_shared/step'
-import { captureFixedUi } from '../_shared/capture'
 
 /**
  * 処置入力 (frm203002) — PageUp / PageDown trên lưới grdRegi.
  *
- * WinForm `grdRegi_KeyDown` KHÔNG bắt PageUp/PageDown, nên chúng rơi về hành vi
- * mặc định của DataGridView: ô hiện tại nhảy MỘT TRANG (số dòng đang hiện trọn
- * vẹn) trong CÙNG cột, kẹp ở dòng đầu/cuối, và lưới cuộn theo.
+ * WinForm `grdRegi_KeyDown` KHÔNG bắt hai phím này ⇒ DataGridView.ProcessNextKey /
+ * ProcessPriorKey: ô hiện tại nhảy N dòng trong CÙNG cột (N = số dòng đang hiện TRỌN),
+ * kẹp ở dòng đầu/cuối, rồi ScrollRowIntoView cuộn VỪA ĐỦ — sau PageDown ô đích nằm sát
+ * ĐÁY khung, sau PageUp nằm sát ĐỈNH. Không đưa ra giữa, không giữ vị trí tương đối.
  *
- * KHÔNG GHI DB: chỉ mở màn và bấm phím di chuyển, không F9 登録.
- * Chạy cả file:
+ * Đã đo trên WinForm thật (fla-ui-tests TreatmentGridPageKeyProbeTests, bệnh nhân 18137,
+ * khung ~19 dòng): dòng 81 (giữa khung) → PageDown → 100 ở dòng CUỐI khung; PageUp →
+ * 81 ở dòng ĐẦU; dòng 99 (cuối khung) → PageDown → 118 ở dòng cuối.
+ *
+ * KHÔNG GHI DB. Chạy cả file:
  *   npx playwright test tests/treatment-grid/treatment-grid-page-keys.spec.ts
  */
 
@@ -29,17 +33,15 @@ const FOCUS_CLASS = 'bg-[#ffffc0]'
 const COL_RYO = 2
 
 type ColumnState = {
-    /** `data-grid-cell` của các ô cùng cột với ô vàng, theo thứ tự từ trên xuống. */
+    /** `data-grid-cell` của các ô cùng cột với ô vàng, từ trên xuống. */
     ids: string[]
     /** Vị trí ô vàng trong `ids`. */
     at: number
-    /** Số ô của cột đang hiện TRỌN trong khung cuộn = một trang. */
-    page: number
-    /** Ô vàng có nằm trọn trong khung cuộn không. */
-    focusedVisible: boolean
+    /** Các ô của cột đang hiện TRỌN (dưới header sticky) — một trang. */
+    visible: string[]
 }
 
-/** Đọc cột của ô vàng, giống cách DataGridView đếm một trang. */
+/** Đọc cột của ô vàng và phần đang hiện trọn, giống cách DataGridView đếm một trang. */
 async function columnState(page: Page): Promise<ColumnState> {
     return page.evaluate((cls) => {
         const cells = Array.from(document.querySelectorAll<HTMLElement>('[data-grid-cell]'))
@@ -53,12 +55,14 @@ async function columnState(page: Page): Promise<ColumnState> {
         let scroller = cur.parentElement
         while (scroller && scroller.scrollHeight <= scroller.clientHeight) scroller = scroller.parentElement
         const v = scroller!.getBoundingClientRect()
-        const inView = (r: DOMRect) => r.top >= v.top - 1 && r.bottom <= v.bottom + 1
+        const header = scroller!.querySelector<HTMLElement>('.table-header-row')
+        const top = v.top + (header?.offsetHeight ?? 0)
         return {
             ids: column.map(({ el }) => el.dataset.gridCell!),
             at: column.findIndex(({ el }) => el === cur),
-            page: column.filter(({ r }) => inView(r)).length,
-            focusedVisible: inView(c),
+            visible: column
+                .filter(({ r }) => r.top >= top - 1 && r.bottom <= v.bottom + 1)
+                .map(({ el }) => el.dataset.gridCell!),
         }
     }, FOCUS_CLASS)
 }
@@ -72,12 +76,17 @@ async function focusedId(page: Page): Promise<string | null> {
     )
 }
 
+/** Bấm phím, rồi chờ ô vàng tới ô mong đợi. */
+async function pressAndExpect(page: Page, key: 'PageUp' | 'PageDown', expected: string, why: string) {
+    await page.keyboard.press(key)
+    await expect.poll(() => focusedId(page), why).toBe(expected)
+}
+
 test.describe.configure({ mode: 'serial' })
 
-test.describe('処置入力 — PageUp/PageDown trên lưới grdRegi', () => {
+test.describe('処置入力 — PageUp/PageDown trên lưới grdRegi (DataGridView)', () => {
     let page: Page
     let step: () => Promise<void>
-    let start: ColumnState
 
     test.beforeAll(async ({ authedPage }) => {
         page = authedPage
@@ -89,57 +98,77 @@ test.describe('処置入力 — PageUp/PageDown trên lưới grdRegi', () => {
         await releaseSharedPage(page)
     })
 
-    test('TC-PG-1 — PageDown: ô vàng nhảy đúng một trang trong cùng cột, lưới cuộn theo', async () => {
-        // Đứng ở ô 療法 trên cùng đang hiện, để chắc chắn còn chỗ nhảy xuống.
-        const firstVisible = await page.evaluate((col) => {
+    test('TC-PG-1 — PageDown từ dòng ĐẦU khung: nhảy một trang, ô mới nằm ở dòng CUỐI khung', async () => {
+        // Ô 療法 trên cùng đang hiện trọn.
+        const first = await page.evaluate((col) => {
             const cells = Array.from(document.querySelectorAll<HTMLElement>(`[data-grid-cell$="|${col}"]`))
-            const top = cells.find((el) => {
-                const r = el.getBoundingClientRect()
-                return r.top > 0 && r.bottom < window.innerHeight && r.height > 0
-            })
-            return top?.dataset.gridCell ?? null
+            return (
+                cells.find((el) => {
+                    const r = el.getBoundingClientRect()
+                    return r.top > 0 && r.bottom < window.innerHeight && r.height > 0
+                })?.dataset.gridCell ?? null
+            )
         }, COL_RYO)
-        expect(firstVisible, 'không thấy ô 療法 nào trên màn').not.toBeNull()
-        await page.locator(`[data-grid-cell="${firstVisible}"]`).click()
-        await expect.poll(() => focusedId(page)).toBe(firstVisible)
+        expect(first, 'không thấy ô 療法 nào trên màn').not.toBeNull()
+        await page.locator(`[data-grid-cell="${first}"]`).click()
+        await expect.poll(() => focusedId(page)).toBe(first)
 
-        start = await columnState(page)
-        console.log(`TC-PG-1: cột có ${start.ids.length} ô, một trang = ${start.page} ô, đứng ở #${start.at}`)
-        expect(start.ids.length, 'lưới quá ngắn — cần hơn một trang dòng để đo').toBeGreaterThan(start.page)
-
-        await page.keyboard.press('PageDown')
-        await step()
-        const expected = start.ids[Math.min(start.ids.length - 1, start.at + start.page)]
-        await expect.poll(() => focusedId(page), 'PageDown không đưa ô vàng xuống đúng một trang').toBe(expected)
-        const after = await columnState(page)
-        expect(after.focusedVisible, 'ô vàng mới nằm ngoài khung — lưới không cuộn theo').toBe(true)
-        await captureFixedUi(page, 'treatment-grid-after-pagedown')
-    })
-
-    test('TC-PG-2 — PageUp: lùi đúng một trang (tính tại chỗ đang đứng), lưới cuộn theo', async () => {
-        // Dòng cao thấp khác nhau nên "một trang" ở đây có thể khác lúc PageDown —
-        // DataGridView cũng đếm theo dòng đang hiện tại chỗ đứng, không nhớ trang cũ.
         const before = await columnState(page)
-        await page.keyboard.press('PageUp')
+        const pageSize = before.visible.length
+        console.log(`TC-PG-1: cột ${before.ids.length} ô, một trang = ${pageSize} ô, đứng ở #${before.at}`)
+        expect(before.ids.length - before.at, 'lưới quá ngắn — cần hơn một trang dòng phía dưới').toBeGreaterThan(pageSize)
+
+        await pressAndExpect(page, 'PageDown', before.ids[before.at + pageSize]!, 'PageDown phải nhảy đúng một trang')
+        const after = await columnState(page)
+        expect(after.visible.at(-1), 'ô mới phải nằm sát ĐÁY khung (cuộn vừa đủ)').toBe(after.ids[after.at])
+        await captureFixedUi(page, 'treatment-grid-pagedown-lands-bottom')
         await step()
-        const expected = before.ids[Math.max(0, before.at - before.page)]
-        console.log(`TC-PG-2: một trang tại chỗ = ${before.page} ô, #${before.at} → #${before.ids.indexOf(expected!)}`)
-        await expect.poll(() => focusedId(page), 'PageUp không lùi ô vàng đúng một trang').toBe(expected)
-        expect((await columnState(page)).focusedVisible).toBe(true)
     })
 
-    test('TC-PG-3 — PageUp ở dòng đầu: kẹp lại, ô vàng đứng yên ở dòng đầu', async () => {
-        // Lưới nạp thêm tháng cũ khi cuộn lên ⇒ đọc lại cột mỗi lần, không dùng `start`.
-        for (let i = 0; i < 200 && (await columnState(page)).at !== 0; i++) {
+    test('TC-PG-2 — PageUp: lùi một trang, ô mới nằm ở dòng ĐẦU khung', async () => {
+        const before = await columnState(page)
+        await pressAndExpect(
+            page,
+            'PageUp',
+            before.ids[Math.max(0, before.at - before.visible.length)]!,
+            'PageUp phải lùi đúng một trang',
+        )
+        const after = await columnState(page)
+        expect(after.visible[0], 'ô mới phải nằm sát ĐỈNH khung (cuộn vừa đủ)').toBe(after.ids[after.at])
+        await captureFixedUi(page, 'treatment-grid-pageup-lands-top')
+        await step()
+    })
+
+    test('TC-PG-3 — PageDown từ dòng GIỮA khung: ô mới cũng nằm ở dòng CUỐI khung', async () => {
+        const view = await columnState(page)
+        const mid = view.visible[Math.floor(view.visible.length / 2)]!
+        await page.locator(`[data-grid-cell="${mid}"]`).click()
+        await expect.poll(() => focusedId(page)).toBe(mid)
+        const before = await columnState(page)
+        const target = before.ids[Math.min(before.ids.length - 1, before.at + before.visible.length)]!
+        await pressAndExpect(page, 'PageDown', target, 'PageDown từ giữa khung phải nhảy đúng một trang')
+        const after = await columnState(page)
+        expect(after.visible.at(-1), 'ô mới phải nằm sát ĐÁY khung').toBe(target)
+        await captureFixedUi(page, 'treatment-grid-pagedown-from-middle')
+        await step()
+    })
+
+    test('TC-PG-4 — PageUp ở dòng đầu lưới: kẹp lại, ô vàng đứng yên', async () => {
+        // Lưới nạp DẦN các tháng cũ (virtualize) khi cuộn lên, nên "đầu phần đang render"
+        // chưa phải đầu lưới. Dòng lịch sử mang rowKey `<tháng>-<dòng>`: dòng ĐẦU THẬT là
+        // `0-0`. Mỗi lần bấm chờ ô vàng đổi hẳn rồi mới bấm tiếp.
+        const FIRST_ROW = new RegExp(`^0-0\\|${COL_RYO}$`)
+        let presses = 0
+        for (; presses < 400 && !FIRST_ROW.test((await focusedId(page)) ?? ''); presses++) {
+            const was = await focusedId(page)
             await page.keyboard.press('PageUp')
+            await expect.poll(() => focusedId(page), { timeout: 5000 }).not.toBe(was)
         }
-        const top = await columnState(page)
-        expect(top.at, 'bấm PageUp mãi mà không tới được dòng đầu').toBe(0)
-        console.log(`TC-PG-3: dòng đầu = ${top.ids[0]} (cột ${top.ids.length} ô)`)
+        const firstId = await focusedId(page)
+        console.log(`TC-PG-4: ${presses} lần PageUp tới dòng đầu ${firstId}`)
+        expect(firstId, 'bấm PageUp mãi mà không tới được dòng đầu lưới').toMatch(FIRST_ROW)
         await page.keyboard.press('PageUp')
         await step()
-        await expect
-            .poll(() => focusedId(page), 'PageUp ở dòng đầu làm ô vàng chạy lung tung')
-            .toBe(top.ids[0])
+        await expect.poll(() => focusedId(page), 'PageUp ở dòng đầu làm ô vàng chạy lung tung').toBe(firstId)
     })
 })
