@@ -1,4 +1,4 @@
-import { type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page, type Response } from '@playwright/test'
 
 import { patNo, trtDt } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
@@ -43,6 +43,11 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *   · KHÔNG có `.Focus()` nào trong `initProc` ⇒ WinForm không set focus, con trỏ
  *     theo TabIndex (tthSn TabIndex 0). Không có MsgBox nào trong cả form.
  *   · `BaseDialog2.cs:190-201`      — `End` VÀ `Escape` đều chạy `btnF9_Click` (確定).
+ *   · `frm203002.cs:5595-5604`      — ĐUÔI của case 3 (Enter ô 点 tra ra 処置). 面入力 là
+ *                                     showDialog MODAL nằm TRONG frm203016 nên đuôi này
+ *                                     chạy SAU khi hộp thoại đóng: `Move_Cell(Right);
+ *                                     grdRegi.Focus(); grdRegi.BeginEdit(true)` ⇒ ô 回 phải
+ *                                     ở 編集モード. KHÔNG có `new SingleChk` ở đây.
  *
  * Web — `apps/web-tenant/src/features/treatments/`:
  *   · `components/men-input-dialog.tsx` — title 「面入力」, `KEY_TO_SURFACE` 8/4/5/6/2,
@@ -51,7 +56,9 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *   · `lib/men-input.ts` — `menSurfaceToken` / `applyMenInputConfirm`.
  *   · `lib/cavity-form.ts` — `cavityLabels` (bảng nhãn) + `circleSurfaceString` (thứ tự chữ).
  *   · `components/treatment-entry-detail.tsx` — `armMenInputIfNeeded` gọi ở CẢ 4 đường
- *     ghi dòng (sửa tại chỗ / thêm mới / 薬剤 / tab 個別).
+ *     ghi dòng (sửa tại chỗ / thêm mới / 薬剤 / tab 個別); `closeMenInput` ghi 2 cột về
+ *     dòng RỒI dựng lại focus + 編集モード cho ô 回 (hộp thoại mở đã cướp focus của
+ *     editor, onBlur của nó huỷ edit — `registration-table.tsx:131-142`).
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * DỮ LIỆU — đo thật trên t_tenant1 (bản master đang áp dụng)
@@ -79,7 +86,11 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *     `beforeAll`) — chạy lẻ một test ở giữa sẽ đỏ giả. Chạy CẢ FILE.
  *     Một test đỏ ⇒ các test sau bị skip. Page tự tạo nên KHÔNG có
  *     trace/video/screenshot tự động của fixture.
- *  4. Mặc định KHÔNG bấm F9 登録 ⇒ không ghi DB. Chỉ TC-M8 ghi, và nó nằm sau
+ *  4. 処置選択 (frm203016) 確定 KHÔNG chạy 診療チェック. `new SingleChk` chỉ có 5 chỗ,
+ *     đều ở frm203002 (:5667 Enter ô 回, :8807 処置セット, :9056 パック, :9537 ガイド,
+ *     :9998 薬剤選択). Vì thế TC-M4 khoá bằng "KHÔNG có request" chứ không phải "có".
+ *     Điều tra đầy đủ: `userapp/parity-notes-singlechk-call-sites.md`.
+ *  5. Mặc định KHÔNG bấm F9 登録 ⇒ không ghi DB. Chỉ TC-M8 ghi, và nó nằm sau
  *     `TEST_ALLOW_SAVE=1` (Rule 18.1) vì bulk-save ghi lại TOÀN BỘ 処置行 của tháng.
  *
  * ═══════════════════════════════════════════════════════════════════════════
@@ -118,9 +129,10 @@ const EXPECT_SURFACES = `${FACE_CENTER}${FACE_LEFT}`
 /** Tên seed — đủ lạ để `findRow` không đụng dòng thật nào. */
 const SEED_NAME = 'E2E面入力ベース'
 
-/** Cột lưới (`RegiCol`): 2 = 療法・処置, 3 = 点. */
+/** Cột lưới (`RegiCol`): 2 = 療法・処置, 3 = 点, 4 = 回. */
 const COL_RYO = 2
 const COL_TEN = 3
+const COL_KAI = 4
 
 /** Mặt ĐANG CHỌN của CavityToothModel (`cavity-tooth-model.tsx` FILL_ON). */
 const FILL_ON = '#d4d4d4'
@@ -189,6 +201,19 @@ test.describe('診療入力 — 面入力 (frm203035)', () => {
         )
     }
 
+    /**
+     * `data-grid-cell` của ô lưới ĐANG GIỮ FOCUS (null nếu focus không nằm trong lưới).
+     *
+     * Dùng thay cho việc dò dòng theo tên 処置 khi cần mốc "dòng vừa thao tác": lưới
+     * 診療入力 render CẢ THÁNG nên các lần chạy trước để lại nhiều dòng trùng tên,
+     * `rowKeyOf` rất dễ bắt nhầm dòng cũ.
+     */
+    const focusedGridCellKey = () =>
+        page.evaluate(() => {
+            const cell = (document.activeElement as HTMLElement | null)?.closest('[data-grid-cell]')
+            return cell?.getAttribute('data-grid-cell') ?? null
+        })
+
     async function ensureCodeMode() {
         for (let i = 0; i < 3; i++) {
             if ((await modeBtn.innerText()).includes('コード')) return
@@ -243,9 +268,12 @@ test.describe('診療入力 — 面入力 (frm203035)', () => {
     /**
      * Nuốt các cảnh báo 診療チェック (W00100, `alertDialog` OK-only) và trả text đã đọc.
      *
-     * Dòng seed mang 部位 右上6 nhưng KHÔNG có 病名 nên SingleChk sau mỗi lần chọn
-     * 処置 sẽ kêu 「…算定可能な部位がありません。」. Đó là dữ liệu test, KHÔNG phải lỗi —
-     * cái spec quan tâm là nó xuất hiện SAU 面入力 chứ không đè lên (xem TC-M4).
+     * Đường 処置選択 KHÔNG chạy SingleChk (xem mốc đo ở TC-M4), nên bình thường chẳng
+     * có cảnh báo nào để nuốt — hàm này là lớp phòng xa cho cảnh báo đến từ luồng khác
+     * (vd một cú Enter ô 回 còn sót của spec chạy trước) vì overlay z-[200] của nó
+     * chặn mọi click lên lưới. Dòng seed mang 部位 右上6 nhưng KHÔNG có 病名, nên nếu có
+     * SingleChk chạy thì nó kêu 「…算定可能な部位がありません。」 — đó là dữ liệu test,
+     * KHÔNG phải lỗi.
      */
     async function drainAlerts(): Promise<string[]> {
         const seen: string[] = []
@@ -393,13 +421,13 @@ test.describe('診療入力 — 面入力 (frm203035)', () => {
         expect(await selectedFaceCount(), 'mới mở đã có mặt được chọn sẵn').toBe(0)
 
         // Rule 23.3 + THỨ TỰ MODAL. FACT: frm203035 tự nó KHÔNG có MsgBox nào, và nó là
-        // `showDialog` MODAL bên trong frm203016 — frm203002 chỉ chạy SingleChk SAU khi
-        // nó đóng. Nên trong lúc 面入力 đang mở KHÔNG được có alert nào chồng lên: alert
+        // `showDialog` MODAL bên trong frm203016 nên không gì được chồng lên nó: alert
         // (overlay z-[200] của alert-dialog-primitive) cướp cả phím lẫn click của 面入力.
         expect(
             await page.getByRole('alertdialog').count(),
-            'có alert chồng lên 面入力 — SingleChk (W00100) phải đợi 面入力 đóng đã, giống ' +
-                'WinForm (frm203016 showDialog modal → mới trả điều khiển về frm203002)',
+            'có alert chồng lên 面入力. Đường 処置選択 lẽ ra KHÔNG chạy 診療チェック (xem mốc ' +
+                'đo bên dưới); còn cảnh báo của luồng khác thì cổng giữ trong ' +
+                'treatment-entry-detail (menInputTargetRef) phải chặn tới khi 面入力 đóng.',
         ).toBe(0)
 
         // formBase_KeyDown: 5 = 中央, 4 = 左 (frm203035.cs:205-219).
@@ -411,25 +439,23 @@ test.describe('診療入力 — 面入力 (frm203035)', () => {
         ).toBe(2)
         await step()
 
-        // 面入力 đóng rồi thì SingleChk MỚI chạy. Mốc chờ là chính REQUEST đó —
-        // KHÔNG phải alert.
+        // ── MỐC ĐO THỨ TỰ: KHÔNG được có SingleChk ở đây ────────────────────
+        // ⚠️ Bản trước chờ `waitForResponse(check-single)` ngay sau khi 面入力 đóng.
+        // Sai từ gốc: quét cả `userapp/src/OCHACOM/` thì `new SingleChk` chỉ có ĐÚNG 5
+        // chỗ, tất cả trong frm203002 — :5667 (Enter ô 回), :8807 (処置セット),
+        // :9056 (パック), :9537 (ガイド), :9998 (薬剤選択). 処置選択 (frm203016) 確定
+        // KHÔNG nằm trong đó: case 3 kết thúc ở `Move_Cell(Right); grdRegi.Focus();
+        // grdRegi.BeginEdit(true)` (frm203002.cs:5599-5603), không modal nào chen vào.
+        // 診療チェック của dòng này thuộc về cú Enter ở ô 回 NGAY SAU đó.
+        // Chi tiết điều tra: `userapp/parity-notes-singlechk-call-sites.md`.
         //
-        // ⚠️ Bản trước chờ `getByRole('alertdialog')`: sai mốc. Alert chỉ bung khi
-        // BE TRẢ VỀ cảnh báo (`runSingleCheck` chỉ gọi `alertDialog` cho từng phần
-        // tử `res.errors`, treatment-entry-detail.tsx:3676-3681), mà số cảnh báo
-        // phụ thuộc master + 「チェック項目設定」 của tenant — tenant nào tắt
-        // 歯種/病名チェック là không có alert nào, và test đỏ oan dù thứ tự vẫn ĐÚNG.
-        // Cái testcase này khoá là THỨ TỰ (面入力 đóng → mới tới 診療チェック), nên
-        // bằng chứng đúng là request bay ra SAU cú F9, không phải hệ quả của nó.
-        //
-        // Bẫy TRƯỚC khi bấm F9: request bắn ra ngay khi hộp thoại đóng. Đặt bẫy ở
-        // đây (không phải đầu test) cũng chính là phép đo thứ tự — một request đã
-        // bay lúc chọn 処置 ở TC-M2 sẽ KHÔNG bị bắt nhầm.
-        const pendingCheck = page
-            .waitForResponse((r) => /\/tenant\/treatment\/check-single/.test(r.url()), {
-                timeout: 20_000,
-            })
-            .catch(() => null)
+        // Vẫn KHÔNG dùng alert làm mốc (alert chỉ là HỆ QUẢ khi `res.errors` không rỗng,
+        // phụ thuộc master + 「チェック項目設定」 của tenant) — đếm thẳng REQUEST.
+        const checkCalls: string[] = []
+        const onCheckCall = (r: Response) => {
+            if (/\/tenant\/treatment\/check-single/.test(r.url())) checkCalls.push(r.url())
+        }
+        page.on('response', onCheckCall)
 
         // 回数 = 1, 部位数 = 1 ⇒ `算定回数 ÷ 部位数` = 1 ⇒ MỘT lần 確定 là xong cả hộp thoại.
         await menDialog.locator('[data-fkey="F9"]').click()
@@ -437,28 +463,59 @@ test.describe('診療入力 — 面入力 (frm203035)', () => {
             timeout: 20_000,
         })
 
-        const checkRes = await pendingCheck
+        // Chờ một nhịp đủ cho một lượt lỡ bắn kịp về BE rồi mới khẳng định "không có".
+        // KHÔNG dùng waitForResponse: nó chỉ biết chờ tới khi CÓ, nên với kỳ vọng 0 thì
+        // chỉ treo tới timeout.
+        await page.waitForTimeout(3_000)
+        page.off('response', onCheckCall)
+        console.log(`TC-M4: số lượt check-single sau 確定 = ${checkCalls.length}`)
         expect(
-            checkRes,
-            'SingleChk phải chạy NGAY SAU khi 面入力 đóng (WinForm: frm203016 trả điều khiển ' +
-                'về frm203002 rồi mới SingleChk). Không thấy POST /tenant/treatment/check-single ' +
-                '⇒ hoặc cổng giữ SingleChk không được nhả (closeMenInput → setSingleCheckTick), ' +
-                'hoặc dòng vừa sửa không vào được payload.',
-        ).not.toBeNull()
-        console.log(
-            `TC-M4: SingleChk chạy sau khi 面入力 đóng — HTTP ${checkRes?.status()}, ` +
-                `body ${JSON.stringify(await checkRes?.text().catch(() => '')).slice(0, 300)}`,
+            checkCalls,
+            '処置選択 確定 (kể cả khi có 面入力 chen vào) KHÔNG được chạy SingleChk — ' +
+                'frm203016 không phải 1 trong 5 call site. Có request ⇒ app arm lại 診療チェック ' +
+                'ở đường pick, cảnh báo W00100 (overlay z-[200]) sẽ đè lên ô 回 vừa mở.',
+        ).toEqual([])
+        expect(
+            await page.getByRole('alertdialog').count(),
+            'không chạy SingleChk thì cũng không được có cảnh báo W00100 nào bung ra',
+        ).toBe(0)
+        await step()
+
+        // ── 編集モード phải quay về ô 回 (frm203002.cs:5599-5603) ─────────────────
+        // 面入力 là showDialog MODAL bên trong frm203016, nên WinForm chỉ tới
+        // `Move_Cell(Right); grdRegi.Focus(); grdRegi.BeginEdit(true)` SAU khi nó đóng —
+        // 編集モード nằm SAU hộp thoại, không phải trước. Web arm ô 回 trước rồi mới mở
+        // 面入力; hộp thoại cướp focus, onBlur của editor huỷ edit
+        // (registration-table.tsx:131-142) ⇒ closeMenInput phải dựng lại.
+        // Hỏng chỗ này KHÔNG chỉ là lệch con trỏ: 診療チェック treo ở cú Enter ô 回
+        // (frm203002.cs:5667), nên không còn ô nào ở 編集モード thì dòng vừa 面入力 sẽ
+        // KHÔNG BAO GIỜ được 診療チェック.
+        await expect
+            .poll(focusedGridCellKey, {
+                timeout: 10_000,
+                message:
+                    'đóng 面入力 xong mà không ô lưới nào giữ focus — thiếu bước dựng lại ' +
+                    'focus + 編集モード cho ô 回 trong closeMenInput (frm203002.cs:5602-5603)',
+            })
+            .not.toBeNull()
+        const focusedKey = (await focusedGridCellKey()) ?? ''
+        console.log(`TC-M4: ô giữ focus sau khi 面入力 đóng = ${JSON.stringify(focusedKey)}`)
+        expect(focusedKey, '編集モード phải ở ô 回, không phải cột khác').toMatch(
+            new RegExp(`\\|${COL_KAI}$`),
         )
+        expect(focusedKey, '編集モード rơi xuống ô 回 của 日計 footer chứ không phải dòng 処置').not.toContain(
+            ':footer',
+        )
+        const kaiEditor = page.locator(`[data-grid-cell="${focusedKey}"] input`)
+        await expect(kaiEditor, 'ô 回 phải đang mở input (編集モード)').toBeFocused()
 
-        // Cảnh báo (nếu BE có trả) bung SAU đó — nuốt hết để test kế không bị
-        // overlay z-[200] chặn. Rỗng cũng hợp lệ: xem ghi chú mốc chờ ở trên.
-        const checkAlerts = await drainAlerts()
-        console.log(`TC-M4: cảnh báo 診療チェック sau 面入力 = ${JSON.stringify(checkAlerts)}`)
-
+        // Mốc dòng lấy TỪ ô đang giữ focus, KHÔNG dò theo tên 処置: lưới render cả tháng
+        // nên các lần chạy trước để lại nhiều dòng 「…<OD>」 trùng tên, dò tên bắt nhầm
+        // dòng cũ là pass oan.
         currentRowName = '充'
-        const key = await rowKeyOf(currentRowName)
+        const key = focusedKey.replace(new RegExp(`\\|${COL_KAI}$`), '')
         const after = await ryoTextOf(key)
-        console.log(`TC-M4: 療法・処置 sau 確定 = ${JSON.stringify(after)}`)
+        console.log(`TC-M4: 療法・処置 của dòng đang ở 編集モード = ${JSON.stringify(after)}`)
 
         // Glyph 歯 là gaiji PUA (có thể là surrogate pair) ⇒ khớp bằng regex, không so mặt chữ.
         expect(
@@ -466,6 +523,11 @@ test.describe('診療入力 — 面入力 (frm203035)', () => {
             `療法・処置 phải được nối token 「<歯${EXPECT_SURFACES}>」 (makeMenStr, frm203035.cs:510). ` +
                 `Đang là: ${JSON.stringify(after)}`,
         ).toMatch(new RegExp(`<[\\s\\S]{1,2}${EXPECT_SURFACES}>`))
+
+        // Thoát 編集モード bằng ESC (huỷ, KHÔNG commit) để TC-M5 xuất phát từ lưới tĩnh —
+        // Enter ở đây sẽ kéo cả dây 診療チェック → 摘要コメント → カルテ記載選択 → 自動算定.
+        await page.keyboard.press('Escape')
+        await expect(kaiEditor, 'ESC trong ô 回 phải đóng editor').toBeHidden({ timeout: 10_000 })
         await step()
     })
 
@@ -501,13 +563,18 @@ test.describe('診療入力 — 面入力 (frm203035)', () => {
             new RegExp(`<[\\s\\S]{1,2}${FACE_CENTER}>`),
         )
 
-        // 面入力 đóng ⇒ SingleChk chạy ⇒ cảnh báo (NẾU BE trả) bung ra. Nuốt để
-        // overlay z-[200] của nó không chặn click của TC-M7.
-        //
-        // ⚠️ KHÔNG assert "phải có alert": cùng cái bẫy đã sửa ở TC-M4 — alert chỉ
-        // là HỆ QUẢ khi `res.errors` không rỗng, mà trên tenant hiện tại SingleChk
-        // trả `hasErrors: false` cho chính dòng này (xem log của TC-M4). Thứ tự
-        // 面入力→診療チェック đã được TC-M4 khoá bằng request rồi, ở đây chỉ cần dọn.
+        // ESC 確定 đi hệt đường F9: đóng 面入力 → closeMenInput → ô 回 về 編集モード.
+        await expect
+            .poll(focusedGridCellKey, {
+                timeout: 10_000,
+                message: 'ESC 確定 cũng phải trả focus + 編集モード về ô 回 (như TC-M4)',
+            })
+            .toMatch(new RegExp(`\\|${COL_KAI}$`))
+        // Thoát editor để TC-M7 xuất phát từ lưới tĩnh (xem ghi chú cuối TC-M4).
+        await page.keyboard.press('Escape')
+
+        // Phòng xa: cảnh báo của luồng khác (nếu có) giăng overlay z-[200] chặn click
+        // của TC-M7. Đường 処置選択 không chạy SingleChk nên thường rỗng — xem TC-M4.
         await drainAlerts()
         await step()
     })

@@ -474,6 +474,12 @@ test.describe('診療入力 — thứ tự 自動算定 ↔ カルテコメン�
         await expect
             .poll(
                 async () => {
+                    // Ép locator handler chạy: chúng CHỈ chạy trước một action hoặc một
+                    // assertion auto-retry trên locator, mà `ryoTexts()` đi qua $$eval
+                    // (playwright-core 1.62.1) nên tự nó không kích hoạt cái nào.
+                    await expect(page.locator('[role="dialog"],[role="alertdialog"]'))
+                        .toHaveCount(0, { timeout: 1000 })
+                        .catch(() => {})
                     last = (await ryoTexts()).map(norm)
                     const at = lastIdxOf(last, norm(triggerNm))
                     if (at < 0) return [...needles]
@@ -499,6 +505,22 @@ test.describe('診療入力 — thứ tự 自動算定 ↔ カルテコメン�
         // KHÔNG bật kartePicker: Phase 1/2 dùng master tự-áp-dụng, không có
         // カルテ記載選択; nếu nó bung thì đó là tín hiệu master đã đổi, để nó đỏ.
         disposeOverlays = await installOverlayHandlers(page, { santei: true, alerts: true })
+        // 摘要選択 (frm203018) — Chk_CmtAuto nửa prgCmtAuto mở nó bằng showDialog
+        // (CmtAuto.cs:274), MODAL, nên Chk_ChkAuto (自動算定) chỉ chạy SAU khi nó được
+        // trả lời. F10 戻る = người dùng bỏ pack, đúng luật WinForm và không đụng vào
+        // thứ TC này đo (các dòng 処置 của chk_auto).
+        const cascadeDialog = page.getByRole('dialog').filter({ hasText: '摘要選択' })
+        await page.addLocatorHandler(
+            cascadeDialog,
+            async () => {
+                await cascadeDialog
+                    .getByRole('button', { name: /F10 戻る/ })
+                    .first()
+                    .click({ timeout: 3000 })
+                    .catch(() => {})
+            },
+            { times: 30 },
+        )
         paramDialog = page.getByRole('dialog').filter({ hasText: 'パ ラ メ ー タ' })
 
         treInpFlg = await findTreInpFlg()

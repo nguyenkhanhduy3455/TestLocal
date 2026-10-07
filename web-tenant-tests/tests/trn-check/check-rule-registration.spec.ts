@@ -57,7 +57,7 @@ import { makeStep } from '../_shared/step'
  *  - Tiêu đề đều GIÃN CHỮ bằng dấu cách THẬT trong source ⇒ match nguyên văn:
  *      「チ ェ ッ ク ル ー ル 登 録」「期 間 ・ 回 数 制 限 一 覧」…
  *  - locales/ja.ts: Q00047 「CSV出力してよろしいですか？」, E00003
- *    「該当するデータがありません。」, Q00002 「更新してよろしいですか？」.
+ *    「該当データがありません。」, Q00002 「更新してよろしいですか？」.
  *
  * ─── FACT cho Rule 23 (4 testcase bắt buộc của dialog) ───────────────────────
  *  23.1 Init focus — `grep "\.Focus()"` trên 6 dialog:
@@ -241,7 +241,7 @@ const Q00047_CSV = 'CSV出力してよろしいですか？'
 const Q00002_SAVE = '更新してよろしいですか？'
 
 /** E00003 — lưới rỗng mà bấm F1 出力 (locales/ja.ts). */
-const E00003_NO_DATA = '該当するデータがありません。'
+const E00003_NO_DATA = '該当データがありません。'
 
 /**
  * Chuỗi 処置名 chắc chắn không khớp dòng nào — dùng để ép 検索 về 0 dòng.
@@ -409,7 +409,16 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
      * ghi chú Rule 6 của guideline ("nút confirm là Yes/No").
      */
     async function cancelConfirm() {
-        await page.getByRole('button', { name: 'No', exact: true }).first().click()
+        // Khoanh trong chính hộp confirm, KHÔNG `.first()` ở cấp page: từ 2026-08-26
+        // (c6ebf8e5d 「右タブ4グリッドに見出しクリックの並べ替えを追加」) tiêu đề cột
+        // 「No」 của lưới sắp-xếp-được cũng mang `role="button"`, nên `.first()` có
+        // thể rơi vào TIÊU ĐỀ CỘT — bấm xong hộp thoại đứng im và TC đỏ y như app
+        // hỏng. Ở màn này hộp confirm là modal (nền bị ẩn khỏi a11y tree, xem BẪY
+        // 8b) nên hiện chưa trúng bẫy, nhưng đừng để nó phụ thuộc vào điều đó.
+        await page
+            .getByRole('alertdialog')
+            .getByRole('button', { name: 'No', exact: true })
+            .click()
     }
 
     /** Chờ lưới 一覧 nạp xong — mốc là 該当件数 có số > 0 (BẪY 4, 5). */

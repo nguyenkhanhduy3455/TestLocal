@@ -565,7 +565,7 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
         await page
             .getByRole('dialog')
             .filter({ hasText: '保存しますか？' })
-            .getByRole('button', { name: 'No', exact: true })
+            .getByRole('button', { name: /^(No|いいえ)$/ })
             .click()
         await expect(gate, 'bấm No mà hộp thoại không đóng').toBeHidden({ timeout: 15_000 })
 

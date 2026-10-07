@@ -66,7 +66,7 @@ const MIN_ROWS = 2
 /** Bề rộng thanh cuộn dọc phải chừa cho máy bật "Show scroll bars: Always". */
 const SCROLLBAR_RESERVE = 17
 
-/** Escape ký tự regex trong nhãn cột ('No.' có dấu chấm, '50/100' có dấu gạch). */
+/** Escape ký tự regex trong nhãn cột ('50/100' có dấu gạch). */
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 type TabName = '病検' | 'ガイド' | 'パック' | '個別'
@@ -87,21 +87,22 @@ interface TabCfg {
   fixedTracks?: boolean
 }
 
+// Cột số thứ tự: 「№」 ở cả 3 tab — frm203002.Designer.cs ByouNum/GuidNum/PackNum.HeaderText.
 const TABS: Record<TabName, TabCfg> = {
   病検: {
     tab: '病検',
     rowSel: 'div[class*="grid-cols-[44px_270px_1fr]"][class*="cursor-pointer"]',
-    headers: ['No', '部位', '病名'],
+    headers: ['№', '部位', '病名'],
   },
   ガイド: {
     tab: 'ガイド',
     rowSel: 'div[class*="grid-cols-[46px_1fr]"][class*="cursor-pointer"]',
-    headers: ['No.', '名称'],
+    headers: ['№', '名称'],
   },
   パック: {
     tab: 'パック',
     rowSel: 'div[class*="grid-cols-[42px_1fr]"][class*="cursor-pointer"]',
-    headers: ['No.', '名称'],
+    headers: ['№', '名称'],
   },
   個別: {
     tab: '個別',
@@ -455,7 +456,7 @@ test.describe('SidePanel — 見出しクリックの並べ替え (frm203002 4�
   test('TC-4 病検 — cột No: tăng dần là no-op (rule 6b), giảm dần thì đảo', async () => {
     const cfg = TABS.病検
     // Trả về thứ tự BE trước đã: bấm No ▲ chính là phép "no-op" cần kiểm.
-    await clickHeader('No', 'ascending')
+    await clickHeader('№', 'ascending')
     const asc = await readRows(cfg, 2)
     test.skip(asc.length < MIN_ROWS, '病検 không đủ dòng')
 
@@ -464,7 +465,7 @@ test.describe('SidePanel — 見出しクリックの並べ替え (frm203002 4�
       '病検: No ▲ phải trả về đúng thứ tự BE 1,2,3… (rule 6b)',
     ).toEqual(asc.map((_, i) => i + 1))
 
-    await clickHeader('No', 'descending')
+    await clickHeader('№', 'descending')
     const desc = await readRows(cfg, 2)
     expect(
       desc.map((r) => r.no),
@@ -481,7 +482,7 @@ test.describe('SidePanel — 見出しクリックの並べ替え (frm203002 4�
 
     // Về thứ tự BE rồi chọn dòng 2 bằng ↑/↓ trên ô № (KHÔNG click dòng: click dòng
     // ở tab 病検 là "áp dụng" → nhảy sang tab ガイド).
-    await clickHeader('No', 'ascending')
+    await clickHeader('№', 'ascending')
     await noInput().click()
     await page.keyboard.press('ArrowDown')
     await step()
@@ -586,7 +587,7 @@ test.describe('SidePanel — 見出しクリックの並べ替え (frm203002 4�
     await expectNoDialogOpened(cfg)
     await expectHeadersSingleLine(cfg, 'đang sort 名称 ▲')
 
-    await clickHeader('No.', 'ascending')
+    await clickHeader('№', 'ascending')
     expect(
       (await readRows(cfg, 1)).map((r) => Number(r.no)),
       'パック: No. ▲ phải trả về thứ tự BE 1,2,3… (rule 6b)',

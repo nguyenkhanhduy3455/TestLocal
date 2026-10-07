@@ -407,6 +407,29 @@
     "markerPoint": 771
   },
 
+  "cmtPack": {
+    "//": [
+      "Luong Tests/CmtPackExitFlg — 摘要コメントパック exit_flg:",
+      "  prgCmtAuto chay MOI pack cua mot 処置 theo seq_no, va MOT dong exit_flg cat sach",
+      "  phan con lai (CmtAuto.cs:917-919). Voi pack type 1 thi co do den tu DUNG DONG",
+      "  NGUOI DUNG CHON tren frm203018 (frm203018.cs:488) — nen cascade phu thuoc vao",
+      "  lua chon, khong suy duoc tu master mot minh.",
+      "",
+      "allowSeed = true cho phep chen dong LICH SU 算定 vao TRNTRN roi XOA lai o",
+      "OneTimeTearDown. Can no vi cac handler 口管強 / ＳＰＴ chi chay khi benh nhan da co",
+      "116/23, 116/20 hay 167/x tu truoc — ma 116/20 va 116/23 thi KHONG go tay duoc",
+      "(枝番 nam ngoai khung nhin cua 処置選択, F10).",
+      "",
+      "Dai disp_no 9100..9199 CO Y tach khoi dai 9000+ cua ChkAutoDb: o do co dong 再初診",
+      "seed CO DINH disp_no = 9001 ma khong luong nao duoc xoa.",
+      "KHONG ca nao bam F9 登録 — dong do testcase go chi nam trong luoi dang mo."
+    ],
+    "allowSeed": false,
+
+    "//laterDay": "Ngay 「sau」 cho cac ca can HAI ngay (§B2, §B4). PHAI la ngay DA CO san 処置 trong luoi thi InsertBlankRow moi chep duoc o 日 (ModMain.AutoDate). Benh nhan 10 co 処置 o ngay 3 va ngay 14 cua 08年08月.",
+    "laterDay": 14
+  },
+
   "locators": {
     "//": "AutomationId = Control.Name bên WinForm. Nếu máy Windows soi Inspect thấy khác thì sửa ở đây, KHÔNG phải sửa code.",
     "kobetuTabItem": "個別",

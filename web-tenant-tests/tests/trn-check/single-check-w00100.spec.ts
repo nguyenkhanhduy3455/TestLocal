@@ -377,7 +377,23 @@ test.describe('診療入力 — 行単位 診療チェック W00100 (SingleChk)'
         }
 
         page = authedPage
-        disposeOverlays = await installOverlayHandlers(page, { santei: true })
+        // 算定 trả lời bằng **キャンセル**, và dọn luôn 「カルテ記載選択」.
+        //
+        // ĐÃ ĐO (ảnh chụp lúc TC-1 đỏ, 2026-09-18): ngay sau 確定, trên màn có một
+        // dialog 「カルテ記載選択」 của 歯科疾患管理料 đang mở — không phải do 確定 sinh
+        // ra, mà là đuôi của chuỗi AutoSantei: handler dùng chung bấm 「いいえ」, mà
+        // 「いいえ」 ÁP bộ pick 再診 rồi kéo theo Chk_CmtAuto → dialog này bung ra CHẬM,
+        // rơi đúng vào giữa testcase. Dialog mở làm ô 回 mất focus, `onBlur` của editor
+        // huỷ chế độ nhập (registration-table.tsx:131-142) ⇒ assert 「sau 確定 ô 回 phải
+        // mở ở chế độ nhập」 đỏ, dù app đã `setEditingCell` đúng chỗ.
+        //
+        // 「キャンセル」 không áp pick nào nên không có chuỗi đó; `kartePicker` là lưới
+        // an toàn phòng khi vẫn còn một cái lọt ra từ đường khác.
+        disposeOverlays = await installOverlayHandlers(page, {
+            santei: true,
+            santeiAnswer: 'cancel',
+            kartePicker: true,
+        })
         step = makeStep(page)
 
         // Bắt MỌI lượt /check-single: request body cho các assert về định vị dòng,
@@ -431,11 +447,30 @@ test.describe('診療入力 — 行単位 診療チェック W00100 (SingleChk)'
     // Mốc: đường đi cơ bản phải còn sống thì các testcase parity mới có nghĩa.
     // ─────────────────────────────────────────────────────────────────────────
 
-    test('chốt 処置選択 → bắn ĐÚNG MỘT lượt SingleChk (frm203002.cs:9051 → (row, 1))', async () => {
+    test('処置選択 確定 KHÔNG bắn SingleChk; 回列 Enter mới bắn ĐÚNG MỘT lượt (frm203002.cs:5678)', async () => {
+        // Bản cũ của TC này neo vào :9051 và assert 確定 bắn 1 lượt — SAI ANCHOR.
+        // :9051 là `frmPack2_Let_Data` (パック), không phải đường 処置選択. Trong
+        // frm203002.cs `new SingleChk` chỉ có 5 chỗ (xem inventory đầu file) và
+        // KHÔNG chỗ nào nằm trên đường 処置選択: case 3 chỉ `Move_Cell(Right)` →
+        // `grdRegi.BeginEdit(true)` (:5601-5604) rồi thoát, chờ 回列 Enter (:5678).
+        // Đó cũng là lý do 確定 phải để lại ô 回 ở chế độ nhập: nếu SingleChk chạy
+        // ngay thì alert W00100 (overlay z-[200]) cướp mất input vừa mở.
         // Điểm gọi đơn dòng của WinForm luôn truyền cntRow = 1: một cú chốt 処置 =
         // một lượt chạy getCheckAnswerSingle, không hơn.
         await setCodeMode()
-        await closeStrayDialogs()
+        // CHỜ HẲN chuỗi tự động算定 của lúc mở màn lắng xuống rồi mới chốt 処置.
+        //
+        // ĐÃ ĐO (2026-09-18): 「カルテ記載選択」 của 歯科疾患管理料 — một mắt xích của
+        // chuỗi 自動算定, KHÔNG phải của cú 確定 này — bung ra CHẬM và rơi đúng vào
+        // sau 確定. Dialog mở làm ô 回 mất focus, `onBlur` huỷ chế độ nhập, và
+        // đóng dialog KHÔNG trả lại chế độ nhập (xem "GAP" ở dưới) ⇒ assert kế
+        // tiếp đỏ. `waitMs = 0` chỉ đếm dialog ĐANG mở nên không chặn được nó.
+        //
+        // GAP (đang chờ xác nhận, KHÔNG phải lỗi của spec): app có khôi phục chế độ
+        // nhập cho ô 回 sau khi 面入力 đóng (`closeMenInput`, treatment-entry-detail.tsx),
+        // nhưng đường 「カルテ記載選択」 (cascade-comment-dialogs → dropStep) thì không.
+        // Chờ ở đây chỉ là tránh né; khi nào app vá thì bỏ được.
+        await closeStrayDialogs(6000)
 
         const opened = await enterCodeAndOpenPicker(IJYO_TRT_CD)
         expect(opened, `mã ${IJYO_TRT_CD} không mở được 処置選択 — master tháng này không có?`).toBe(
@@ -456,13 +491,45 @@ test.describe('診療入力 — 行単位 診療チェック W00100 (SingleChk)'
             `確定 mà lưới không có dòng 「${pickedName}」`,
         ).toBeVisible({ timeout: 20000 })
 
+        // (1) 確定 xong: CHƯA được có lượt nào. Chờ một nhịp đủ dài để một lượt
+        // lỡ bắn cũng kịp về (SingleChk đi một vòng BE), rồi mới đếm.
+        await page.waitForTimeout(3000)
+        expect(
+            calls.length,
+            `処置選択 の 確定 không có SingleChk trong WinForm (case 3 = Move_Cell + ` +
+                `BeginEdit, frm203002.cs:5601-5604) nhưng web bắn ${calls.length} lượt`,
+        ).toBe(0)
+
+        // (2) 確定 để lại ô 回 ở chế độ nhập (`grdRegi.BeginEdit(true)`), Enter ở đó
+        // mới là điểm gọi thật (:5678 「１処置チェック」).
+        //
+        // ĐỪNG neo vào `input:focus` — treatment-calc-cnt-parity.spec.ts:338 đã vấp
+        // đúng chỗ này hai lần: editor ô 回 mở ra nhưng focus có thể đang ở nơi khác
+        // (một alert vừa đóng), nên `input:focus` đỏ oan. Neo vào chính ô 回 của lưới
+        // (`:not([data-footer-cell])` loại ô của dòng 日計) rồi mới chờ focus.
+        //
+        // Máy thật CÓ editor ở đây: FlaUI 2026-09-18 đo IsEditing = True, phần tử
+        // focus là Edit「Editing Control」, giá trị 「1」 (3 lượt độc lập).
+        const kaiEditor = page.locator('[data-grid-cell$="|4"] input:not([data-footer-cell])')
+        await expect(
+            kaiEditor,
+            'sau 確定 ô 回 phải mở ở chế độ nhập (grdRegi.BeginEdit(true), frm203002.cs:5604)',
+        ).toHaveCount(1, { timeout: 20000 })
+        await expect
+            .poll(() => kaiEditor.evaluate((el) => el === document.activeElement), {
+                timeout: 10000,
+                message: 'ô 回 mở nhưng không nhận focus → Enter không chốt dòng',
+            })
+            .toBe(true)
+        await kaiEditor.press('Enter')
+
         const n = await settledCallCount()
         expect(
             n,
-            `một cú chốt 処置 phải là ĐÚNG một lượt getCheckAnswerSingle (WinForm luôn truyền ` +
+            `回列 Enter phải là ĐÚNG một lượt getCheckAnswerSingle (WinForm luôn truyền ` +
                 `cntRow = 1), web bắn ${n} lượt`,
         ).toBe(1)
-        console.log(`chốt 処置 「${pickedName}」 → 1 lượt SingleChk, BE trả ${calls[0]!.infos.length} message`)
+        console.log(`chốt 処置 「${pickedName}」 → 回 Enter: 1 lượt SingleChk, BE trả ${calls[0]!.infos.length} message`)
 
         await closeStrayDialogs(6000)
         await step()

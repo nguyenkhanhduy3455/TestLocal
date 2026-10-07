@@ -187,7 +187,22 @@ test.beforeAll(async ({ authedPage }) => {
   page = authedPage
 
   step = makeStep(page)
-  dialog = page.getByRole('dialog')
+  // CSS selector chứ KHÔNG `getByRole('dialog')`: alert お茶コン (W00100) là Radix
+  // AlertDialog modal — nó gắn `aria-hidden` lên toàn bộ nền, nên mọi locator theo role
+  // thấy 0 dialog trong suốt thời gian alert còn mở (đã đo ở TC-3 của #12).
+  //
+  // PHẢI có CẢ HAI nhánh — app dùng hai kiểu dialog:
+  //   · `role="dialog"` gắn tay trong từng component (24 file: các takeover screen
+  //     đặt nó để window-key guard của màn dưới biết mà nhường phím);
+  //   · `<dialog>` NATIVE của `shared/ui/dialog.tsx` — nó gọi `el.show()` (non-modal)
+  //     nên có attribute `open`, và KHÔNG có attribute `role` nào (role dialog chỉ là
+  //     implicit). 来患集計 (#16) là loại này ⇒ nhánh `[role="dialog"]` một mình đếm ra
+  //     0 và TC 「F3 mở được dialog」 đỏ oan trong khi ảnh chụp cho thấy dialog mở
+  //     đầy đủ (đo 2026-09-18).
+  //
+  // `:visible` giữ nguyên phần lọc hidden mà `getByRole` vẫn làm — `dialog.count()` của
+  // `openedNewDialog` vẫn chỉ đếm dialog ĐANG mở.
+  dialog = page.locator('[role="dialog"]:visible, dialog[open]:visible')
   fgDialog = dialog.last()
   await installSanteiAutoCancel(page)
 
@@ -322,15 +337,59 @@ async function gotoTreatmentEntry() {
  *
  * KHÔNG dùng `closeDialogs` cho việc này: nhánh F10 của nó sẽ đóng luôn dialog
  * mà test đang muốn đo. Ở đây chỉ đụng vào `[role="alertdialog"]`.
+ *
+ * `settleMs` — thoát ngay lần đầu thấy hàng đợi rỗng là SAI: mỗi chuỗi SingleChk là
+ * một POST `/check-single` riêng (một chuỗi do pick ở 処置選択 arm —
+ * treatment-entry-detail.tsx:4231 — một chuỗi do 回-Enter tail arm — :5380), nên hàng
+ * đợi rỗng vài trăm ms rồi alert mới lại bung. Alert đến trễ kiểu đó rơi vào giữa
+ * testcase sau và overlay z-[200] của nó nuốt clíck header. Chỉ thoát khi hàng đợi rỗng
+ * LIÊN TỤC `settleMs`.
  */
-async function drainAlerts(max = 10) {
-  for (let i = 0; i < max; i++) {
+async function drainAlerts(max = 10, settleMs = 2500) {
+  let deadline = Date.now() + settleMs
+  for (let i = 0; i < max && Date.now() < deadline; ) {
     const alert = page.getByRole('alertdialog')
-    if (!(await alert.count())) return
+    if (!(await alert.count())) {
+      await page.waitForTimeout(200)
+      continue
+    }
     const btn = alert.locator('button', { hasText: /^(OK|Yes)$/ })
     if (!(await btn.count())) return // không nhận ra nút nào → đừng quay vòng vô ích
     await btn.first().click()
+    i++
     await page.waitForTimeout(300)
+    deadline = Date.now() + settleMs // còn alert thì mở lại cửa sổ yên tĩnh
+  }
+}
+
+/**
+ * Chạy `fn` với lưới an toàn: alert お茶コン bung ra GIỮA chừng thì tự bấm OK.
+ *
+ * `drainAlerts` chỉ dọn được những gì đang có TẠI LÚC GỌI. Chuỗi check-single của mỗi
+ * dòng 処置 chạy ĐỘC LẬP (treatment-entry-detail.tsx:4231 cho pick, :5380 cho 回-Enter
+ * tail) nên một alert vẫn có thể đến giữa lúc testcase đang thao tác, và overlay
+ * z-[200] của nó chặn mọi cú click tiếp theo.
+ *
+ * Playwright chạy locator handler trước mỗi actionability check / assert, nên đây là
+ * chỗ duy nhất vớt được alert đến trễ. Gỡ handler ngay sau đó: nhóm #12 CỐ Ý không dọn
+ * alert ở bước Enter (xem comment ở đó) — để handler sống lâu hơn là làm mất nhịp.
+ */
+async function withAlertAutoOk(fn: () => Promise<void>) {
+  const alert = page.getByRole('alertdialog')
+  await page.addLocatorHandler(
+    alert,
+    async (a) => {
+      await a
+        .locator('button', { hasText: /^(OK|Yes)$/ })
+        .first()
+        .click()
+    },
+    { times: 10 },
+  )
+  try {
+    await fn()
+  } finally {
+    await page.removeLocatorHandler(alert)
   }
 }
 
@@ -846,7 +905,13 @@ test.describe('診療入力 — chuỗi nhập 処置 (GHI DỮ LIỆU THẬT)',
 
     test('TC-3 — sort 摘要欄記載内容 (text)', async () => {
       test.skip(!opened, 'dialog không mở được')
-      await expectSortBehaviour(fgDialog, '摘要コメント選択', '摘要欄記載内容', 'dispText')
+      // Nhóm này nhập TỚI HAI dòng 処置 (lần 1 không mở được cascade), mỗi dòng đẻ ra
+      // chuỗi check-single riêng, nên alert W00100 có thể đến SAU cả lúc dialog đã mở.
+      // Drain ở test trước không bảo đảm được cho test này — dọn lại ngay trước clíck.
+      await drainAlerts()
+      await withAlertAutoOk(() =>
+        expectSortBehaviour(fgDialog, '摘要コメント選択', '摘要欄記載内容', 'dispText'),
+      )
       await step()
     })
   })

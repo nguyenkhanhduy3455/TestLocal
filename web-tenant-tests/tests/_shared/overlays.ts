@@ -58,9 +58,22 @@ export const SANTEI_CONFIRM = /を算定しますか？/
 /** Nút phủ định. Nhãn theo ngôn ngữ hệ điều hành nên phải nhận cả hai (Rule 13.2). */
 export const NO_BUTTON = /^(No|いいえ)$/
 
+/** Nút huỷ của hộp 3 nút (ShowYesNoCancelMsg). */
+export const CANCEL_BUTTON = /^(Cancel|キャンセル)$/
+
 export interface OverlayOptions {
-    /** Dọn 「〜を算定しますか？」 bằng No. Mặc định TẮT. */
+    /** Dọn 「〜を算定しますか？」. Mặc định TẮT. Nút dùng để trả lời xem `santeiAnswer`. */
     santei?: boolean
+    /**
+     * Trả lời hộp 算定 bằng nút nào. Mặc định `'no'` — giữ nguyên hành vi cũ.
+     *
+     * `'no'` KHÔNG vô hại: 「いいえ」 ÁP bộ pick 再診 vào lưới (108-x / 109-x …) và
+     * còn kéo theo popup tiếp theo của chuỗi Chk_CmtAuto. Spec nào ĐO số dòng lưới
+     * hoặc đọc điểm của 「dòng vừa thêm」 thì phải dùng `'cancel'`: WinForm
+     * ShowYesNoCancelMsg trả về ngay, không áp pick nào, không đẻ popup kế tiếp
+     * (xem khối `installSanteiCancel` của save-f9/p0-save-side-effects.spec.ts).
+     */
+    santeiAnswer?: 'no' | 'cancel'
     /** Dọn カルテ記載選択 bằng F10 戻る. Mặc định TẮT. */
     kartePicker?: boolean
     /** Dọn alert お茶コン bằng OK (kèm log). Mặc định TẮT. */
@@ -85,16 +98,45 @@ export async function installOverlayHandlers(
     page: Page,
     opts: OverlayOptions = {},
 ): Promise<() => Promise<void>> {
-    const { santei = false, kartePicker = false, alerts = false, times = 200 } = opts
+    const {
+        santei = false,
+        santeiAnswer = 'no',
+        kartePicker = false,
+        alerts = false,
+        times = 200,
+    } = opts
     const installed: Array<Locator> = []
 
     if (santei) {
         const loc = page.getByText(SANTEI_CONFIRM).first()
         installed.push(loc)
+        // Nút PHẢI lấy TRONG hộp thoại, đừng bắt ở cấp page.
+        //
+        // Màn 診療入力 có tab 病検 bên phải với TIÊU ĐỀ CỘT 「No」 mang `role="button"`
+        // (sort được, từ c6ebf8e5d 2026-08-26). Hộp 算定 là DraggableDialog KHÔNG
+        // modal ⇒ nền vẫn nằm trong accessibility tree, mà tiêu đề cột đứng TRƯỚC
+        // dialog trong DOM ⇒ `page.getByRole('button', { name: /^(No|いいえ)$/ }).first()`
+        // bấm trúng TIÊU ĐỀ CỘT: lưới tab phải bị sort, hộp 算定 đứng im.
+        //
+        // Triệu chứng đúng như đã đo ở treatment-score-gettensu-parity TC-1
+        // (2026-09-18): 「13 × locator resolved to visible <span>歯科初診料を算定
+        // しますか？</span>」 — handler chạy 13 lần mà hộp không bao giờ đóng, rồi
+        // testcase đỏ ở một assert chẳng liên quan.
+        const box = page
+            .getByRole('dialog')
+            .or(page.getByRole('alertdialog'))
+            .filter({ hasText: SANTEI_CONFIRM })
+            .first()
         await page.addLocatorHandler(
             loc,
             async () => {
-                await page.getByRole('button', { name: NO_BUTTON }).first().click()
+                await box
+                    .getByRole('button', {
+                        name: santeiAnswer === 'cancel' ? CANCEL_BUTTON : NO_BUTTON,
+                    })
+                    .first()
+                    .click({ timeout: 3_000 })
+                    .catch(() => {})
             },
             { times },
         )

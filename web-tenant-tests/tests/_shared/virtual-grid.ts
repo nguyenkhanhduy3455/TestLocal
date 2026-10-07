@@ -14,8 +14,26 @@ export const rows = (root: Root) => root.locator('[data-testid^="row-"]')
 export const skeletons = (root: Root) => root.locator('[data-testid^="skeleton-"]')
 export const emptyState = (root: Root) => root.getByTestId('empty-state')
 export const cells = (root: Root, colId: string) => root.getByTestId(`cell-${colId}`)
+/**
+ * Header sortable của một cột.
+ *
+ * KHÔNG dùng `getByRole('button', …)`: `alertDialog` (W00100 / お茶コン) là Radix
+ * AlertDialog MODAL — khi nó mở, mọi thứ còn lại trong `<body>` bị gắn
+ * `aria-hidden="true"` và BIẾN MẤT khỏi accessibility tree, nên locator theo role trả
+ * về 0 phần tử dù dialog nền vẫn hiển thị bình thường. Đã đo: alert 診療チェック bung
+ * ra giữa TC-3 của 摘要選択, header đã có ▲ (sort chạy đúng) nhưng snapshot chỉ còn
+ * mỗi `alertdialog` ⇒ test đỏ oan "element(s) not found".
+ *
+ * Neo vào `[aria-sort]` — ATTRIBUTE thật trong DOM nên CSS đọc được, aria-hidden không
+ * đụng tới. Đây cũng chính là dấu hiệu "cột NÀY sort được" trong contract của app
+ * (sort-header-dom.ts đặt `aria-sort` + `role="button"` + `data-testid="header-<id>"`;
+ * hai grid tự vẽ — karte-auto-calculation-register-dialog / handover-dialog — cũng đặt
+ * `aria-sort`). Cột KHÔNG sort được rớt hẳn `aria-sort` (canSort=false) nên vẫn ra
+ * `toHaveCount(0)` đúng như hồi dùng `getByRole('button')`, mà lại chặt hơn: một nút
+ * thường trùng tên cột không còn lọt vào. `:visible` thay phần lọc hidden của getByRole.
+ */
 export const header = (root: Root, label: string) =>
-  root.getByRole('button', { name: new RegExp(`^${label}\\s*[▲▼]?$`) })
+  root.locator('[aria-sort]:visible').filter({ hasText: new RegExp(`^${label}\\s*[▲▼]?$`) })
 
 /**
  * TC-1 + TC-5 cho một grid client-side.

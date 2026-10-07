@@ -80,7 +80,7 @@
  *     mỗi mục rỗng tốn trọn 8s. Đã đổi thành chờ "có dòng HOẶC empty-state".
  *   · `goto` lại cùng một màn 診療入力 ở 5 test liên tiếp — mỗi lần Vite dev dựng
  *     lại module graph. Đã đổi thành: đang ở đúng màn thì dùng tiếp.
- *   · chờ trọn nhịp poll 30s của 受付患者一覧 — đã ép refetch bằng offline→online
+ *   · chờ trọn nhịp poll 10s của 受付患者一覧 — đã ép refetch bằng offline→online
  *     (`refetchOnReconnect: true`), cùng đường code, xong trong ~1s.
  *   · `waitForTimeout(1500)` sau mỗi lần đổi mode 未精算 — đã đổi sang mốc tất
  *     định (nhãn nút F1 lật theo mode).
@@ -123,7 +123,15 @@ import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
 import { makeStep } from '../_shared/step'
-import { cells, emptyState, expectNoSortGlyph, header, rows } from '../_shared/virtual-grid'
+import {
+  cells,
+  emptyState,
+  expectNoSortGlyph,
+  expectWinFormOrder,
+  header,
+  rows,
+  scroller,
+} from '../_shared/virtual-grid'
 
 const PAT_NO = patNo('12138')
 /** カルテ記載選択 chỉ tự bật khi (bệnh nhân, ngày) CHƯA có 処置 nào được lưu. */
@@ -177,8 +185,44 @@ function findOutOfOrder(
       const compareNumeric = (a: string, b: string) =>
         Number(a.replace(/[^\d.-]/g, '') || 0) - Number(b.replace(/[^\d.-]/g, '') || 0)
 
-      // RUN ký hiệu đứng trước RUN chữ; RUN chữ so nguyên cụm bằng ICU.
-      const compareTextJa = (sa: string, sb: string): number => {
+      // Nhóm hệ chữ Windows (comparators.ts::scriptGroup) — ICU `ja` đặt Hy Lạp/
+      // Cyrillic SAU Hán, Windows đặt trước Kana. null = để collator quyết.
+      const scriptGroup = (raw: number): number | null => {
+        const c = fold(raw)
+        if ((c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a)) return 0
+        if (c >= 0xc0 && c <= 0x24f) return 0
+        if ((c >= 0x370 && c <= 0x3ff) || (c >= 0x1f00 && c <= 0x1fff)) return 1
+        if (c >= 0x400 && c <= 0x52f) return 2
+        if ((c >= 0x3040 && c <= 0x30ff) || (c >= 0x31f0 && c <= 0x31ff) || (c >= 0xff66 && c <= 0xff9f))
+          return 3
+        if (
+          c === 0x3005 ||
+          (c >= 0x3400 && c <= 0x4dbf) ||
+          (c >= 0x4e00 && c <= 0x9fff) ||
+          (c >= 0xf900 && c <= 0xfaff) ||
+          (c >= 0xd840 && c <= 0xd8bf)
+        )
+          return 4
+        return null
+      }
+      const compareScript = (ra: string, rb: string): number => {
+        let k = 0
+        while (k < ra.length && k < rb.length && ra.charCodeAt(k) === rb.charCodeAt(k)) k++
+        if (k === ra.length || k === rb.length) return 0
+        const ga = scriptGroup(ra.charCodeAt(k))
+        const gb = scriptGroup(rb.charCodeAt(k))
+        return ga === null || gb === null ? 0 : ga - gb
+      }
+
+      // Windows word sort BỎ QUA '-' và '\'' (comparators.ts::stripWordSortIgnored):
+      // so bản đã bỏ trước, bằng nhau mới so nguyên bản.
+      const strip = (s: string) =>
+        [...s].filter((ch) => { const c = fold(ch.charCodeAt(0)); return c !== 0x2d && c !== 0x27 }).join('')
+      const compareTextJa = (sa: string, sb: string): number =>
+        sa === sb ? 0 : compareTextRuns(strip(sa), strip(sb)) || compareTextRuns(sa, sb)
+
+      // RUN ký hiệu đứng trước RUN chữ; RUN chữ: nhóm hệ chữ trước, rồi ICU.
+      const compareTextRuns = (sa: string, sb: string): number => {
         if (sa === sb) return 0
         let i = 0
         let j = 0
@@ -196,7 +240,9 @@ function findOutOfOrder(
           while (ei < sa.length && symbolWeight(sa.charCodeAt(ei)) === null) ei++
           let ej = j
           while (ej < sb.length && symbolWeight(sb.charCodeAt(ej)) === null) ej++
-          const cmp = ja.compare(sa.slice(i, ei), sb.slice(j, ej))
+          const ra = sa.slice(i, ei)
+          const rb = sb.slice(j, ej)
+          const cmp = compareScript(ra, rb) || ja.compare(ra, rb)
           if (cmp !== 0) return cmp
           i = ei
           j = ej
@@ -1111,7 +1157,7 @@ test.describe('client sort — dialog grid + list màn hình', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // 7. 受付患者一覧 + 当月来患集計 (F3) — list LUÔN MOUNT vs dialog
   // ═══════════════════════════════════════════════════════════════════════════
-  test('受付患者一覧 — sort sống sót qua poll 30s; 当月来患集計 reset khi đóng/mở', async () => {
+  test('受付患者一覧 — sort sống sót qua poll 10s; 当月来患集計 reset khi đóng/mở', async () => {
     test.setTimeout(240_000)
     await installSanteiNo()
     await gotoAndWaitGrid('/treatments', '受付患者一覧')
@@ -1129,16 +1175,16 @@ test.describe('client sort — dialog grid + list màn hình', () => {
       })
 
       // Rủi ro thật của list luôn mount: một lần refetch thay nguyên mảng `rows`
-      // → nếu hook reset sort theo "rows đổi" thì user mất sort mỗi 30s
-      // (wait-list-queries.ts refetchInterval: 30_000).
+      // → nếu hook reset sort theo "rows đổi" thì user mất sort mỗi 10s
+      // (wait-list-queries.ts WAIT_LIST_POLL_MS = 10_000).
       //
-      // KHÔNG ngồi chờ hết 30s: ÉP refetch ngay bằng một nhịp offline→online.
+      // KHÔNG ngồi chờ hết 10s: ÉP refetch ngay bằng một nhịp offline→online.
       // createQueryClient đặt `refetchOnReconnect: true` (và
       // `refetchOnWindowFocus: false`, nên trò dispatch focus vô dụng), nên
       // onlineManager bắn refetch tức thì — CÙNG một đường code với poll: query
       // trả mảng mới, `useClientSort` nhận `rows` mới. Vẫn chờ response thật để
       // chắc chắn có refetch, và timeout đủ rộng để nếu reconnect không kích
-      // được thì nhịp poll 30s tự nhiên vẫn cứu.
+      // được thì nhịp poll 10s tự nhiên vẫn cứu.
       const refetched = page.waitForResponse(
         (r) => r.url().includes('/tenant/treatment/wait-list'),
         { timeout: 45000 },
@@ -1149,12 +1195,12 @@ test.describe('client sort — dialog grid + list màn hình', () => {
       const h = header(page, '患者番号')
       await expect(
         h,
-        '受付患者一覧: sort BỊ MẤT sau khi poll 30s refetch — list luôn mount không được reset theo rows',
+        '受付患者一覧: sort BỊ MẤT sau khi poll 10s refetch — list luôn mount không được reset theo rows',
       ).toHaveAttribute('aria-sort', 'descending')
       const after = await colValues(page, 'patNo')
       const bad = await findOutOfOrder(page, after, 'numeric', true)
       expect(bad, `受付患者一覧: sau poll thứ tự hỏng tại dòng ${bad?.i}`).toBeNull()
-      console.log('受付患者一覧: sort giữ nguyên qua một nhịp poll 30s')
+      console.log('受付患者一覧: sort giữ nguyên qua một nhịp poll 10s')
     } else {
       console.log('受付患者一覧: <2 dòng → BỎ QUA phần sort')
     }
@@ -1242,5 +1288,166 @@ test.describe('client sort — dialog grid + list màn hình', () => {
         `(code chỉ bump unpaidResetSeq = cuộn về đầu, không reset sort → kỳ vọng "descending"; ` +
         `cần đối chiếu WinForm xem có đúng không)`,
     )
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 10. 傷病名検索 (frm501014) — THỨ TỰ HỆ CHỮ phải theo Windows, không theo ICU
+  //
+  // Khác mọi test ở trên: KHÔNG so bằng comparator của app (findOutOfOrder là
+  // bản port của chính nó ⇒ luôn xanh). Ở đây so với WinForm.
+  //
+  // FACT:
+  //  - WinForm FIL/Forms/frm501014.cs:77-80 — _viewItem1: 3 cột TextBox
+  //    (sicnm_cd / sicnm_nm / den_sicnm_s_nm); :220 `dgvView.DataSource =
+  //    DataTable` ⇒ click header = DataView.Sort theo culture ja-JP (NLS Windows).
+  //    NLS xếp HỆ CHỮ: ký hiệu < số/Latin < Hy Lạp < Cyrillic < Kana < Hán.
+  //  - web comparators.ts::compareTextJa — RUN chữ đẩy nguyên cho
+  //    `Intl.Collator('ja')`. Bảng `ja` của CLDR chỉ `[reorder Latn Kana Hani]`
+  //    ⇒ Hy Lạp/Cyrillic bị xếp SAU Hán (node ICU 78.2: compare('α','鼡') = 1).
+  //  - Quan sát thật (2026-09-29, ▼ 歯科傷病名省略名称, điều kiện trống):
+  //      web     : β−マンノシドーシス, β−ケトチオラーゼ欠損症, α１−…, α−…, 鼡咬症…
+  //      WinForm : 鼡咬症スピロヘータ症, 鼡咬症, 鼡径部有棘細胞癌, …
+  //    Thứ tự GIỮA chữ Hán hai bên trùng nhau (JIS) — chỉ lệch chỗ đặt Hy Lạp.
+  //  - dis-code-search-dialog.tsx: mở từ nhãn "(1)" của 病名マスタ (frm501007),
+  //    chỉ 検索 mới đọc; cột id `cd` / `nm` / `subNm`; F10 = 戻る;
+  //    End / Escape = F9 選択 (KHÔNG dùng End để cuộn!).
+  //  - dis-master-list-screen.tsx: route /masters/dis, F1 新規 cần list đã nạp
+  //    (loadedVersion) ⇒ chờ dòng đầu rồi mới F1.
+  //
+  // Bất biến: trên MỖI khung nhìn (đầu list và cuối list), NHÓM HỆ CHỮ của ký tự
+  // đầu phải đơn điệu theo chiều sort. Không so thứ tự trong cùng nhóm — phần
+  // đó web đã khớp và thuộc test khác.
+  // Trước fix ochacom-saas c43350397 (demo1 2bf0a3484) ca này ĐỎ: web đặt α/β lên
+  // đầu khi ▼, xuống đáy khi ▲.
+  // ═══════════════════════════════════════════════════════════════════════════
+  test('傷病名検索 — α/β phải xếp TRƯỚC Kana/Hán như WinForm (NLS), không theo ICU ja', async () => {
+    test.setTimeout(180_000)
+    await installSanteiNo()
+    await gotoAndWaitGrid('/masters/dis', '病名マスタ一覧')
+    await expect(rows(page).first(), '病名マスタ一覧 chưa nạp dòng nào — F1 新規 sẽ không mở').toBeVisible({
+      timeout: GRID_TIMEOUT,
+    })
+
+    await page.keyboard.press('F1')
+    // "(1)" đầu tiên theo DOM là 傷病名(1) (register-dialog.tsx:641), trước 修飾語/コメント.
+    const reg = dialog().filter({ has: page.getByRole('button', { name: '(1)', exact: true }) })
+    await expect(reg, 'F1 新規 không mở 病名マスタ').toBeVisible({ timeout: 20000 })
+    await reg.getByRole('button', { name: '(1)', exact: true }).first().click()
+
+    // Nhận diện bằng nhãn điều kiện 2 — chỉ bản 傷病名 mới có (Rule 13.1).
+    const sd = dialog().filter({ hasText: '歯科傷病名略称名称' })
+    await expect(sd, '(1) không mở 傷病名検索').toBeVisible({ timeout: 20000 })
+    await sd.getByRole('button', { name: '検索', exact: true }).click()
+    await expect(cells(sd, 'subNm').first(), '検索 trống không trả dòng nào').toBeVisible({
+      timeout: GRID_TIMEOUT,
+    })
+    await step()
+
+    /** Nhóm hệ chữ theo NLS Windows của KÝ TỰ ĐẦU; null = không xếp nhóm được (bỏ qua). */
+    const scriptGroup = (s: string): number | null => {
+      if (s === '') return null
+      let c = s.charCodeAt(0)
+      if (c >= 0xff01 && c <= 0xff5e) c -= 0xfee0 // full-width ASCII → half-width
+      const ch = String.fromCharCode(c)
+      if (/[0-9A-Za-z]/.test(ch)) return 1
+      if (c >= 0x0370 && c <= 0x03ff) return 2 // Hy Lạp
+      if (c >= 0x0400 && c <= 0x04ff) return 3 // Cyrillic
+      if ((c >= 0x3040 && c <= 0x30ff) || (c >= 0x31f0 && c <= 0x31ff) || (c >= 0xff66 && c <= 0xff9f))
+        return 4 // Kana (cả half-width)
+      if ((c >= 0x3400 && c <= 0x4dbf) || (c >= 0x4e00 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff) || c === 0x3005)
+        return 5 // Hán
+      if (/[\s!-/:-@[-`{-~]/.test(ch) || c === 0x3000) return 0 // ký hiệu đứng trước chữ
+      return null
+    }
+    const GROUP_NAME = ['ký hiệu', 'số/Latin', 'Hy Lạp', 'Cyrillic', 'Kana', 'Hán']
+
+    /** Cặp liền kề đầu tiên mà nhóm hệ chữ đi NGƯỢC chiều sort. */
+    const groupInversion = (values: string[], desc: boolean) => {
+      let prev: { v: string; g: number } | null = null
+      for (const v of values) {
+        const g = scriptGroup(v)
+        if (g === null) continue
+        if (prev && (desc ? g > prev.g : g < prev.g)) return { prev, cur: { v, g } }
+        prev = { v, g }
+      }
+      return null
+    }
+
+    const h = header(sd, '歯科傷病名省略名称')
+    /** Khung nhìn ở ĐẦU PHÍA HÁN (▼ đầu list / ▲ cuối list) — chỗ ICU đẩy α/β tới. */
+    let hanEnd: string[] = []
+    for (const dir of ['ascending', 'descending'] as const) {
+      await h.click()
+      await expect(h, `click phải ra ${dir}`).toHaveAttribute('aria-sort', dir)
+      const desc = dir === 'descending'
+
+      // Khung nhìn ĐẦU list. Không có resetScrollSeq khi đổi sort ⇒ tự cuộn về đầu.
+      await scroller(sd).evaluate((el) => (el.scrollTop = 0))
+      await expect(cells(sd, 'subNm').first()).toBeVisible()
+      const top = await colValues(sd, 'subNm')
+
+      // Khung nhìn CUỐI list — cuộn bằng scrollTop, KHÔNG bấm End (= F9 選択).
+      await scroller(sd).evaluate((el) => (el.scrollTop = el.scrollHeight))
+      await expect
+        .poll(async () => (await colValues(sd, 'subNm'))[0], { timeout: 10000 })
+        .not.toBe(top[0])
+      const bottom = await colValues(sd, 'subNm')
+      await step()
+
+      hanEnd = desc ? top : bottom
+      expect(
+        hanEnd.filter((v) => scriptGroup(v) === 2),
+        `${dir}: dòng Hy Lạp nằm ở ĐẦU PHÍA HÁN — đúng lỗi Intl.Collator('ja') (Hy Lạp sau Hán)`,
+      ).toEqual([])
+      for (const [where, vals] of [['ĐẦU', top], ['CUỐI', bottom]] as const) {
+        const bad = groupInversion(vals, desc)
+        expect(
+          bad,
+          `${dir} — khung nhìn ${where}: "${bad?.cur.v}" (${GROUP_NAME[bad?.cur.g ?? 0]}) đứng sau ` +
+            `"${bad?.prev.v}" (${GROUP_NAME[bad?.prev.g ?? 0]}). WinForm (NLS) xếp ` +
+            `số/Latin < Hy Lạp < Kana < Hán; web đang theo Intl.Collator('ja') nên Hy Lạp rơi SAU Hán. ` +
+            `Khung nhìn: [${vals.slice(0, 8).join(' | ')}]`,
+        ).toBeNull()
+      }
+      console.log(`傷病名検索 ${dir}: đầu [${top.slice(0, 4).join(' | ')}] … cuối [${bottom.slice(-4).join(' | ')}]`)
+    }
+
+    // Đầu phía Hán mà không có dòng Hán nào thì assert "không có Hy Lạp ở đó" là
+    // vô nghĩa (Rule 18). Sau fix, α/β nằm GIỮA list (sau số, trước Kana) nên
+    // không thấy chúng ở hai đầu là ĐÚNG — không phải thiếu coverage.
+    expect(
+      hanEnd.some((v) => scriptGroup(v) === 5),
+      `đầu phía Hán không có dòng Hán nào → không kiểm được chỗ đặt α/β. Khung nhìn: [${hanEnd.slice(0, 8).join(' | ')}]`,
+    ).toBe(true)
+
+    // ── 傷病名基本名称 ▲ — 13 dòng đầu chụp từ WinForm (2026-09-29, điều kiện trống).
+    // Chặn lỗi thứ hai: web coi `－` (U+FF0D trong DB) là KÝ HIỆU nên đẩy
+    // 「１８－水酸化酵素欠損症」 lên trước 「１８ｑ…」「１８常…」; WinForm word sort BỎ QUA
+    // dấu gạch ⇒ so như 「18水酸化」 (fix ochacom-saas 8fd452d99, demo1 a650e0a65).
+    // expectWinFormOrder chuẩn hoá NFKC nên full/half-width không làm đỏ oan.
+    const WINFORM_SICKNAME_ASC = [
+      '＊＊　未コード化傷病名　＊＊',
+      '11β-水酸化酵素欠損症',
+      '17α-水酸化酵素欠損症',
+      '17β-ヒドロキシステロイド脱水素酵素欠損症',
+      '18q欠失症候群',
+      '18常染色体異常',
+      '18-水酸化酵素欠損症',
+      '1p36欠失症候群',
+      '1q部分重複症候群',
+      '1型2色覚',
+      '1型3色覚',
+      '1型呼吸不全',
+      '1型自己免疫性膵炎',
+    ] as const
+    const nmHeader = header(sd, '傷病名基本名称')
+    await nmHeader.click()
+    await expect(nmHeader).toHaveAttribute('aria-sort', 'ascending')
+    await scroller(sd).evaluate((el) => (el.scrollTop = 0))
+    await expect(cells(sd, 'nm').first()).toBeVisible()
+    await expectWinFormOrder(sd, '傷病名検索/傷病名基本名称 ▲', 'nm', WINFORM_SICKNAME_ASC)
+    await step()
+
+    await closeAllDialogs()
   })
 })

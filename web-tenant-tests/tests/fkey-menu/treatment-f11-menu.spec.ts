@@ -574,8 +574,14 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
     async function leaveDiscardingEdits() {
         const gate = page.getByText('処置データは変更されています。保存しますか？')
         if (!(await appeared(gate, 10_000))) return
-        await page.getByRole('button', { name: 'No', exact: true }).click()
-        await expect(gate).toBeHidden({ timeout: 10_000 })
+        // PHẢI khoanh trong chính hộp thoại: từ 2026-08-26 (c6ebf8e5d 「右タブ4グリッドに
+        // 見出しクリックの並べ替えを追加」) tiêu đề cột 「No」 của tab 病検 cũng là
+        // `role="button"`, nên `getByRole('button', { name: 'No' })` ở cấp page khớp 2
+        // phần tử → strict mode violation (và `.first()` thì rơi vào TIÊU ĐỀ CỘT, bấm
+        // xong chỉ sort tab phải còn hộp thoại đứng im).
+        const gateDialog = page.getByRole('dialog').filter({ hasText: '保存しますか？' })
+        await gateDialog.getByRole('button', { name: /^(No|いいえ)$/ }).click()
+        await expect(gate, 'bấm No mà hộp thoại không đóng').toBeHidden({ timeout: 10_000 })
     }
 
     /** Bấm một mục ở cấp 1 và chờ menu đóng (runLeaf gọi onClose trước khi chạy). */
@@ -1047,8 +1053,14 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
             'rời màn khi lưới còn sửa dở mà không hỏi — dữ liệu bị vứt im lặng',
         ).toBeVisible({ timeout: 30_000 })
 
-        // Cancel → ở lại, KHÔNG lưu, KHÔNG đi đâu.
-        await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+        // Cancel → ở lại, KHÔNG lưu, KHÔNG đi đâu. Khoanh trong hộp thoại như
+        // `leaveDiscardingEdits()`: hộp này là DraggableDialog (KHÔNG modal) nên nền
+        // vẫn nằm trong a11y tree, locator ở cấp page có thể đụng phần tử của nền.
+        await page
+            .getByRole('dialog')
+            .filter({ hasText: '保存しますか？' })
+            .getByRole('button', { name: /^(Cancel|キャンセル)$/ })
+            .click()
         await expect(confirm).toBeHidden({ timeout: 10_000 })
         await expect(page, 'bấm Cancel mà vẫn rời màn').toHaveURL(
             new RegExp(`/treatments/${PAT_NO}`),

@@ -25,6 +25,7 @@ import {
     seedTreatmentRows,
     withDb,
 } from '../_shared/db'
+import { login } from '../_shared/auth'
 import { patNo } from '../_shared/env'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
@@ -359,8 +360,24 @@ test.describe('nhóm P0 chưa port', () => {
  * CÁCH CHẠY
  * ═════════════════════════════════════════════════════════════════════════════
  *   cd /Users/thinhnn/Documents/GitHub/TestLocalApp/TestLocal/web-tenant-tests
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/save-f9/p0-save-side-effects.spec.ts
- *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/save-f9/p0-save-side-effects.spec.ts --headed
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/save-f9/p0-save-side-effects.spec.ts --workers=1
+ *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/save-f9/p0-save-side-effects.spec.ts --workers=1 --headed
+ *
+ * ⚠️ `--workers=1` KHÔNG phải cho đẹp — file có HAI `test.describe` cấp cao nhất,
+ *    mà `playwright.config.ts` đặt `fullyParallel: true` + `workers: 4`, nên mặc
+ *    định Playwright đẩy hai khối cho HAI worker chạy SONG SONG. Hai trình duyệt
+ *    cùng nạp 診療入力 làm Vite **dev** đuối: đo thật 2026-09-18, chỉ riêng trang
+ *    đăng nhập (195 module) đã là 1.1s khi chạy một mình → 7.9s với 2 trang →
+ *    11.3s với 4 trang; màn 診療入力 nặng hơn nhiều. Lúc đó `openTreatmentScreen`
+ *    đốt sạch 5 lần thử với `net::ERR_FAILED` trên `/src/*.ts` rồi ném, và TC đỏ
+ *    ở chỗ chẳng liên quan gì tới F9 登録 (đã ăn đúng 3 quả: TC-5 / TC-L2 / TC-L4).
+ *
+ *    ĐỪNG "sửa" bằng `test.describe.configure({ mode: 'serial' })` ở cấp FILE: đã
+ *    đo, serial cấp file làm MỘT test đỏ là toàn bộ test còn lại 「did not run」 —
+ *    file catalogue 16 TC này sẽ mất 15 kết quả chỉ vì một lần Vite đuối.
+ *
+ *    Ổn định hơn nữa thì trỏ BASE_URL vào bản build (`vite preview`) thay vì dev
+ *    server (xem `_shared/env.ts`, khối 「Thời lượng chờ lưới」).
  *
  * Chạy riêng một nhóm khi bị rate-limit login:
  *   ... npx playwright test tests/save-f9/p0-save-side-effects.spec.ts --grep "TC-1|TC-2"
@@ -701,6 +718,8 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
 
     async function openTreatmentScreen() {
         let lastErr: unknown
+        /** Chỉ cho đăng nhập lại MỘT lần mỗi lần mở màn — xem nhánh /login bên dưới. */
+        let reloggedIn = false
         for (let attempt = 1; attempt <= GRID_LOAD_ATTEMPTS; attempt++) {
             moduleWatch.reset()
             await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, {
@@ -716,6 +735,34 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
                     `openTreatmentScreen: lần ${attempt}/${GRID_LOAD_ATTEMPTS} app KHÔNG mount ` +
                         `(${app === 'dead' ? 'Vite dev nhả hụt module /src/*.ts' : 'quá hạn'}) → nạp lại`,
                 )
+                continue
+            }
+
+            // BỊ ĐÁ VỀ MÀN ĐĂNG NHẬP — phải tách khỏi 「lưới không lên」.
+            //
+            // Trang /login MOUNT bình thường, chỉ là không có ô 療法 nào, nên nếu
+            // không kiểm ở đây thì mọi lần thử còn lại đều chết ở `ryoCells` và TC
+            // đỏ với thông báo 「Lưới 診療入力 không nạp được dữ liệu」 — sai hoàn
+            // toàn nguyên nhân. ĐÃ ĐO: ảnh chụp lúc TC-L2 đỏ (2026-09-18) chính là
+            // màn đăng nhập, chứ không phải lưới rỗng.
+            //
+            // `authedPage` là page dùng chung theo worker, đăng nhập MỘT lần ở
+            // fixture; mất phiên giữa chừng thì không có gì tự khôi phục. Đăng nhập
+            // lại đúng MỘT lần: nếu bị đá tiếp thì ném lỗi nói thẳng, đừng để nó
+            // hoá trang thành lỗi lưới.
+            if (/\/login/.test(page.url())) {
+                if (reloggedIn) {
+                    throw new Error(
+                        'bị đá về màn đăng nhập LẦN THỨ HAI — phiên của worker chết liên tục, ' +
+                            'KHÔNG phải lỗi lưới 診療入力',
+                    )
+                }
+                reloggedIn = true
+                console.log(
+                    `openTreatmentScreen: lần ${attempt}/${GRID_LOAD_ATTEMPTS} bị ĐÁ VỀ MÀN ` +
+                        'ĐĂNG NHẬP (mất phiên) → đăng nhập lại rồi thử tiếp',
+                )
+                await login(page)
                 continue
             }
 
@@ -1715,6 +1762,8 @@ test.describe('診療入力 F9 登録 — LetHokan / Let_BNOW (口腔内チャ�
 
     async function openTreatmentScreen() {
         let lastErr: unknown
+        /** Chỉ cho đăng nhập lại MỘT lần mỗi lần mở màn — xem nhánh /login bên dưới. */
+        let reloggedIn = false
         for (let attempt = 1; attempt <= GRID_LOAD_ATTEMPTS; attempt++) {
             moduleWatch.reset()
             await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, {
@@ -1730,6 +1779,34 @@ test.describe('診療入力 F9 登録 — LetHokan / Let_BNOW (口腔内チャ�
                     `openTreatmentScreen: lần ${attempt}/${GRID_LOAD_ATTEMPTS} app KHÔNG mount ` +
                         `(${app === 'dead' ? 'Vite dev nhả hụt module /src/*.ts' : 'quá hạn'}) → nạp lại`,
                 )
+                continue
+            }
+
+            // BỊ ĐÁ VỀ MÀN ĐĂNG NHẬP — phải tách khỏi 「lưới không lên」.
+            //
+            // Trang /login MOUNT bình thường, chỉ là không có ô 療法 nào, nên nếu
+            // không kiểm ở đây thì mọi lần thử còn lại đều chết ở `ryoCells` và TC
+            // đỏ với thông báo 「Lưới 診療入力 không nạp được dữ liệu」 — sai hoàn
+            // toàn nguyên nhân. ĐÃ ĐO: ảnh chụp lúc TC-L2 đỏ (2026-09-18) chính là
+            // màn đăng nhập, chứ không phải lưới rỗng.
+            //
+            // `authedPage` là page dùng chung theo worker, đăng nhập MỘT lần ở
+            // fixture; mất phiên giữa chừng thì không có gì tự khôi phục. Đăng nhập
+            // lại đúng MỘT lần: nếu bị đá tiếp thì ném lỗi nói thẳng, đừng để nó
+            // hoá trang thành lỗi lưới.
+            if (/\/login/.test(page.url())) {
+                if (reloggedIn) {
+                    throw new Error(
+                        'bị đá về màn đăng nhập LẦN THỨ HAI — phiên của worker chết liên tục, ' +
+                            'KHÔNG phải lỗi lưới 診療入力',
+                    )
+                }
+                reloggedIn = true
+                console.log(
+                    `openTreatmentScreen: lần ${attempt}/${GRID_LOAD_ATTEMPTS} bị ĐÁ VỀ MÀN ` +
+                        'ĐĂNG NHẬP (mất phiên) → đăng nhập lại rồi thử tiếp',
+                )
+                await login(page)
                 continue
             }
 

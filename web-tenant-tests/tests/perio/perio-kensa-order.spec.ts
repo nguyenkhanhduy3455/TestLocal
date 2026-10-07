@@ -5,11 +5,14 @@ import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
 import {
+    SEED_PAT_NO_BASE,
     countRealTreatmentRowsInMonth,
     dbEnabled,
+    deleteTestPatient,
     deleteTreatmentRows,
     deleteTreatmentRowsByBui,
     deleteTreatmentRowsByDspTrt,
+    seedTestPatient,
     seedTreatmentRows,
 } from '../_shared/db'
 import { makeStep } from '../_shared/step'
@@ -108,7 +111,28 @@ import { makeStep } from '../_shared/step'
  *   TEST_DB=1 npx playwright test tests/perio/perio-kensa-order.spec.ts --headed
  */
 
-const PAT_NO = patNo('11')
+
+/**
+ * BỆNH NHÂN RIÊNG — KHÔNG dùng chung 患者 11 nữa.
+ *
+ * `seedTreatmentRows` MỞ ĐẦU bằng `DELETE … WHERE pat_no AND trt_dt AND disp_no >=
+ * SEED_DISP_BASE` và luôn ghi vào đúng `disp_no = SEED_DISP_BASE + 1 + i`. Nghĩa là
+ * mọi spec seed vào CÙNG (bệnh nhân, ngày) sẽ xoá seed của nhau — không chỉ lúc dọn
+ * mà ngay lúc seed. Hai spec perio trước đây cùng dùng 患者 11 + cùng TEST_TRT_DT,
+ * mà `fullyParallel: true` + `workers: 4` cho chúng chạy SONG SONG ⇒ spec này xoá
+ * 部位病名行 của spec kia giữa chừng, và cái đỏ lại là spec chẳng làm gì sai.
+ *
+ * Bệnh nhân trong dải `SEED_PAT_NO_BASE` là câu trả lời có sẵn của repo cho đúng
+ * chuyện này (_shared/db.ts:380-392). `siga`/`kon` toàn 0 = 32 răng vĩnh viễn còn
+ * nguyên, đúng thứ 歯周検査 cần. Offset phải DUY NHẤT — soát bằng:
+ *   grep -rn "SEED_PAT_NO_BASE + " tests/
+ *
+ * Đặt `TEST_PAT_NO` vẫn đè được sang bệnh nhân thật; lúc đó spec không seed/xoá
+ * bệnh nhân, chỉ dọn 処置行 như cũ.
+ */
+const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 61))
+/** false = người chạy đã trỏ `TEST_PAT_NO` sang bệnh nhân thật ⇒ không được xoá họ. */
+const SELF_SEEDED = Number(PAT_NO) >= SEED_PAT_NO_BASE
 const TRT_DT = trtDt(TODAY_ISO)
 
 /** `mst_cod` cd_type 68 の cd_val. */
@@ -210,6 +234,10 @@ test.describe('歯周検査 — 検査順 (pInpOpt[36] / KensaOrder)', () => {
     let disposeOverlays: (() => Promise<void>) | undefined
 
     test.beforeAll(async ({ authedPage }) => {
+        // Dựng lại từ số 0 mỗi lần chạy (idempotent) — cũng dọn luôn 処置行 sót lại
+        // của lần chạy trước bị ngắt giữa chừng.
+        if (SELF_SEEDED) await seedTestPatient({ patNo: Number(PAT_NO) })
+
         const realRows = await countRealTreatmentRowsInMonth(Number(PAT_NO), TRT_DT)
         console.log(
             `tháng ${TRT_DT} của BN ${PAT_NO} đang có ${realRows} 処置行 THẬT. ` +
@@ -268,6 +296,13 @@ test.describe('歯周検査 — 検査順 (pInpOpt[36] / KensaOrder)', () => {
         await page?.unroute(INP_CONFIG_URL).catch(() => {})
         await disposeOverlays?.()
         await releaseSharedPage(page)
+        if (SELF_SEEDED) {
+            // Bệnh nhân do spec dựng ⇒ xoá HẲN cả person/insurance/siga/kon lẫn mọi
+            // 処置行, không cần dọn từng mảnh.
+            await deleteTestPatient(Number(PAT_NO)).catch(() => undefined)
+            console.log(`dọn: xoá hẳn bệnh nhân test ${PAT_NO}`)
+            return
+        }
         const n =
             (await deleteTreatmentRows(Number(PAT_NO), TRT_DT).catch(() => 0)) +
             (await deleteTreatmentRowsByDspTrt(Number(PAT_NO), TRT_DT, 0, [SEED_NM]).catch(

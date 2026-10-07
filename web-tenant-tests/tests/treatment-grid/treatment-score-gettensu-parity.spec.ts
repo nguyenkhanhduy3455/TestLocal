@@ -470,7 +470,14 @@ test.describe('診療入力 — 点数 = getTensu trên mọi đường nhập +
         )
 
         page = authedPage
-        disposeOverlays = await installOverlayHandlers(page, { santei: true })
+        // KHÔNG dùng 「いいえ」 cho hộp 算定 ở file này: 「いいえ」 ÁP bộ pick 再診 vào
+        // lưới, mà `commitViaPicker` đọc điểm của DÒNG CUỐI vừa được thêm — dòng đó
+        // sẽ là một pick của AutoSantei chứ không phải 処置 mình vừa nhập, và số đo
+        // thành vô nghĩa. 「キャンセル」 không áp pick nào, không đẻ popup kế tiếp.
+        disposeOverlays = await installOverlayHandlers(page, {
+            santei: true,
+            santeiAnswer: 'cancel',
+        })
         step = makeStep(page)
 
         picker = page.getByRole('dialog').filter({ hasText: '処置選択' })

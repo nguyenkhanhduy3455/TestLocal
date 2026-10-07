@@ -72,12 +72,20 @@ public static class UnpaidCreationFlow
     /// </summary>
     public static Walk PressF8AndCreateUnpaid(OchaApp app, Window screen, TestTrace? trace = null)
     {
-        var trail = new List<Seen>();
-        var sawCreate = false;
-
         trace?.Step("bam F8 会計 (nhanh TAO 未精算)");
         AccountingFlow.TriggerAccounting(screen, trace);
         Waits.Step();
+        return WalkCreateUnpaid(app, screen, trace);
+    }
+
+    /// <summary>
+    /// Đi hết chuỗi hộp thoại 会計 ĐÃ được kích hoạt (F8, hoặc F11 「3 会計データ作成」),
+    /// luôn chọn nhánh TẠO 未精算 — cùng luật với <see cref="PressF8AndCreateUnpaid"/>.
+    /// </summary>
+    public static Walk WalkCreateUnpaid(OchaApp app, Window screen, TestTrace? trace = null)
+    {
+        var trail = new List<Seen>();
+        var sawCreate = false;
 
         for (var i = 0; i < 8; i++)
         {

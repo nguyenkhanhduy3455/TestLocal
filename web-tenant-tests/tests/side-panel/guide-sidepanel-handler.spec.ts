@@ -419,7 +419,7 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
         await releaseSharedPage(page)
     })
 
-    test('F4 mở tab ガイド — header No./名称 + danh sách pac_nam nạp xong', async () => {
+    test('F4 mở tab ガイド — header №/名称 + danh sách pac_nam nạp xong', async () => {
         // frm203002.cs:4195/4698 KeyFunc(F4), nhánh non-STEP: nhảy sang tab ガイド rồi
         // getGuidNyuryokuInfo. Bấm PHÍM F4 chứ không click tab — đây mới là đường đi
         // WinForm, và nó kiểm luôn dây F-key của màn nền.
@@ -427,11 +427,10 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
 
         // Header sticky 2 cột — GuidCol chỉ có 0:№ và 1:処置名称 (frm203002.cs:239).
         // Bám vào DÒNG header (phần tử grid-cols-[46px_1fr] đầu tiên, không có
-        // cursor-pointer) chứ không getByText('No.'): nhãn 「No.」 còn xuất hiện lần
-        // nữa ở cụm 選択 dưới chân tab ガイド.
+        // cursor-pointer). Nhãn 「№」 = GuidNum.HeaderText (frm203002.Designer.cs:1617).
         const header = sidePanel.locator('div[class*="grid-cols-[46px_1fr]"]').first()
         await expect(header).toBeVisible({ timeout: 30000 })
-        await expect(header.locator('div').first(), 'cột 0 phải là 「No.」').toHaveText('No.')
+        await expect(header.locator('div').first(), 'cột 0 phải là 「№」').toHaveText('№')
         await expect(header.locator('div').nth(1), 'cột 1 phải là 「名称」').toHaveText('名称')
 
         // 「読込中…」 → có dòng. Tenant KHÔNG có ガイド nào thì cả file vô nghĩa
@@ -793,28 +792,37 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
         // StepReset() (UPDATE trt_state). Nhánh Cancel không ghi gì → chạy được mặc
         // định. Nhánh OK là GHI THẬT nên nằm ở testcase riêng, mặc định skip.
         const before = await rows.count()
+
+        // Nút リセット chạy qua `onClick={() => void handleGuidReset()}`, nên MỌI
+        // exception trong handler bị `void` nuốt sạch: không dialog, không log, nhìn
+        // y như 「app chặn sớm」. Đã mất một lượt truy vì chuyện này (2026-09-18:
+        // `row.includes is not a function` — Q00100 bị merge vào ROWS dưới dạng hàm).
+        // Gom pageerror để câu assert bên dưới nói ra được lý do thật.
+        const pageErrors: string[] = []
+        const onPageError = (e: Error) => pageErrors.push(e.message)
+        page.on('pageerror', onPageError)
+
         await resetBtn.click()
 
+        // ĐỎ THẬT khi không bung, không log rồi bỏ qua nữa. Trước đây chỗ này chỉ
+        // cảnh báo vì web `return` sớm khi 部位病名行 đang focus không có 病名
+        // (handleGuidReset: disCd0 <= 0) và spec không phân biệt được "thiếu 病名"
+        // với "nút hỏng". FlaUI 2026-09-18 đã đo trên máy thật: dòng đo có 部位「3」
+        // nhưng DIS_CD1 = 0, và Q00100 VẪN bung ⇒ cái gate của web là bug, đã sửa.
         const confirm = page.getByText('該当部位の治療進行状態をリセットします')
-        const appeared = await confirm
-            .waitFor({ state: 'visible', timeout: 8000 })
-            .then(() => true)
-            .catch(() => false)
+        await expect(
+            confirm,
+            'リセット phải bung Q00100 VÔ ĐIỀU KIỆN (cmdGuidReset_Click hỏi trước, ' +
+                'đọc 病名 sau — trong StepReset, frm203002.cs:6631/6653).' +
+                ' pageerror trong lúc bấm: ' +
+                (pageErrors.length > 0 ? JSON.stringify(pageErrors) : '(không có)'),
+        )
+            .toBeVisible({ timeout: 8000 })
+            .finally(() => page.off('pageerror', onPageError))
 
-        if (!appeared) {
-            // Web chặn sớm khi 部位病名行 đang focus không có 病名 (disCd0 <= 0) —
-            // WinForm hỏi Q00100 vô điều kiện. Không đủ dữ kiện để phân biệt
-            // "thiếu 病名" với "nút hỏng" nên log thay vì đánh đỏ.
-            console.log(
-                'CẢNH BÁO WinForm parity: リセット không bung Q00100. WinForm cmdGuidReset_Click ' +
-                    'hỏi vô điều kiện; web return sớm khi 部位病名行 đang focus không có 病名 ' +
-                    '(handleGuidReset: disCd0 <= 0). Chọn một 部位病名行 rồi chạy lại để kiểm nhánh này.',
-            )
-            await step()
-            return
-        }
-
-        await page.getByRole('button', { name: /^(No|いいえ)$/ }).first().click()
+        // ShowOKCancelMsg ⇒ nhãn là OK/キャンセル (FlaUI: [OK | Cancel], OK mặc định).
+        // Nhận cả No/いいえ để không vỡ theo thứ tự merge.
+        await page.getByRole('button', { name: /^(Cancel|キャンセル|No|いいえ)$/ }).first().click()
         await expect(confirm).toBeHidden({ timeout: 10000 })
         expect(await rows.count(), 'huỷ Q00100 mà list vẫn đổi → đã lỡ chạy StepReset').toBe(before)
         await step()
@@ -1095,10 +1103,52 @@ test.describe('SidePanel — tab ガイド (frm203002 ガイドタブ系)', () =
         // cmdGuidReset_Click: Q00100 OK → StepReset() (UPDATE trt_state) →
         // getGuidNyuryokuInfo2(con, false, false, false) → nạp lại list STEP.
         // Sau reset intTrtS[0] = 0 nên list rỗng → E00024 là kết quả HỢP LỆ.
+
+        // PHẢI vào STEP trước: 前回/リセット chỉ render ở nhánh bolStepPass=false
+        // (getGuidNyuryokuInfo đặt cmdGuidReset.Visible = false, frm203002.cs:1985)
+        // — xem 「WinForm parity 2」. Các testcase parity ngay trên dùng F4/regular
+        // (openPickableRow + reload) nên panel đang ở list regular, nút リセット
+        // KHÔNG có mặt. Trước đây ca này không lộ ra vì testcase 「F9 確定 … xoá ô
+        // 選択No.」 đứng trước nó còn đỏ, mà describe chạy mode 'serial'.
+        //
+        // Và phải DỌN MODAL + đưa focus về side panel trước khi gõ Shift+F4: ca ngay
+        // trên bung カルテ記載選択 (Chk_CmtAuto sau 確定), mà FKeyScopeProvider nuốt sạch
+        // F-key khi có modal — Shift+F4 sẽ im lặng không chạy (xem ghi chú đầu file).
+        // `allBtn.click()` vừa đảm bảo không còn modal chặn click, vừa focus panel —
+        // giống hệt cách testcase 「WinForm parity 2」 vào STEP.
+        await dismissPickerIfOpen()
+        for (let i = 0; i < 3 && (await page.getByRole('dialog').count()) > 0; i++) {
+            await page.keyboard.press('F10')
+            await expect(page.getByRole('dialog').first())
+                .toBeHidden({ timeout: 10000 })
+                .catch(() => {})
+        }
+        await allBtn.click()
+        await expect(rows.first()).toBeVisible({ timeout: 30000 })
+
+        const stepResp = page
+            .waitForResponse(
+                (r) => r.url().includes('/tenant/guids/step') && r.url().includes('mode=step'),
+                { timeout: OPTIONAL_RESP_TIMEOUT },
+            )
+            .catch(() => null)
+        await page.keyboard.press('Shift+F4')
+        await stepResp
+        await dismissNoGuidAlert()
+        await expect(resetBtn, 'Shift+F4 phải làm nút リセット hiện ra (chế độ STEP)').toBeVisible({
+            timeout: 15000,
+        })
+
         await resetBtn.click()
         const confirm = page.getByText('該当部位の治療進行状態をリセットします')
         await expect(confirm).toBeVisible({ timeout: 10000 })
-        await page.getByRole('button', { name: /^(Yes|はい)$/ }).first().click()
+        // WinForm gọi `ShowOKCancelMsg` ⇒ nhãn là OK/キャンセル (đo bằng FlaUI
+        // 2026-09-18: [OK | Cancel], OK là nút mặc định). Nhận cả Yes/はい để không
+        // vỡ theo thứ tự merge — cùng khuôn với step-edit-dialog.spec.ts:1226.
+        await page
+            .getByRole('button', { name: /^(OK|Yes|はい)$/ })
+            .first()
+            .click()
         await expect(confirm).toBeHidden({ timeout: 10000 })
 
         // Kết quả: hoặc list STEP mới, hoặc E00024 (list cũ giữ nguyên).

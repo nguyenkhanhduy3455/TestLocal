@@ -106,3 +106,66 @@ export async function openTreatmentList(page: Page, readyFKey = 'F4'): Promise<v
         `Màn 受付患者一覧 chưa dựng xong thanh F-key (không thấy ${readyFKey})`,
     ).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
 }
+
+/**
+ * Ô theo nhãn của `FieldRow` trên màn 患者登録.
+ *
+ * FieldRow render `<div><label>X</label><input/></div>` và không gắn
+ * testid/aria-label ⇒ phải bám nhãn. Hai cái bẫy đã vấp thật:
+ *
+ *  - `required` chèn thêm `<span> *</span>` VÀO TRONG `<label>`, nên text thật là
+ *    「保険者番号 *」 — regex neo `$` ngay sau tên nhãn sẽ không bao giờ khớp.
+ *  - `.last()` chứ KHÔNG `.first()`: bộ lọc khớp MỌI div tổ tiên có chứa nhãn đó,
+ *    kể cả div bọc cả trang, và Playwright trả theo thứ tự DOM ⇒ `.first()` ra
+ *    div ngoài cùng, `input` đầu tiên của nó là một ô hoàn toàn khác. Khi đó
+ *    `fill()` vẫn chạy trơn, không ai báo lỗi, mà dữ liệu đi sai chỗ.
+ */
+export function patientFieldInput(page: Page, label: string) {
+    return page
+        .locator('div')
+        .filter({
+            has: page.locator('label').filter({ hasText: new RegExp(`^${label}\\s*\\*?$`) }),
+        })
+        .last()
+        .locator('input')
+        .first()
+}
+
+/**
+ * Mở màn 患者登録 ở chế độ SỬA của một bệnh nhân, chờ form dựng xong.
+ *
+ * `patientNo` đi qua router dưới dạng JSON-serialise, nên giá trị thật trên URL
+ * là `%22990071%22` chứ không phải `990071`. Truyền dạng trần thì
+ * `validateSearch` (z.string()) nhận về number, ném SearchParamError và
+ * RouteErrorComponent dựng ra trang 404 — trông y hệt "route không tồn tại".
+ *
+ * Retry cùng lý do với `openTreatmentEntry`: dev server nhả hụt module thì React
+ * không mount, chờ thêm vô ích, chỉ `goto` lại mới cứu. Đã bắt được thật khi
+ * chạy `msgtbl-register-f9-parity` — một testcase giữa file chết vì trang trắng
+ * trong khi các testcase quanh nó vẫn xanh.
+ */
+export async function openPatientRegistration(page: Page, patNo: string): Promise<void> {
+    let lastErr: unknown
+    for (let attempt = 1; attempt <= GRID_LOAD_ATTEMPTS; attempt++) {
+        await page.goto(`/patients/registration?patientNo=%22${patNo}%22`, {
+            waitUntil: 'domcontentloaded',
+        })
+        try {
+            await expect(
+                patientFieldInput(page, '保険者番号'),
+                'màn 患者登録 không mở được ở chế độ sửa — kiểm tra route ' +
+                    '/patients/registration?patientNo=… và bệnh nhân seed có tồn tại không',
+            ).toBeVisible({
+                timeout: attempt === 1 ? GRID_LOAD_TIMEOUT : GRID_RELOAD_TIMEOUT,
+            })
+            return
+        } catch (e) {
+            lastErr = e
+            console.log(
+                `openPatientRegistration: lần ${attempt}/${GRID_LOAD_ATTEMPTS} không dựng được ` +
+                    'form (nhiều khả năng Vite dev server nhả hụt một module /src/*.ts) — nạp lại',
+            )
+        }
+    }
+    throw lastErr
+}

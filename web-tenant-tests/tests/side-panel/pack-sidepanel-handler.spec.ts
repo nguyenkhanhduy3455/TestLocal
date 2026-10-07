@@ -337,11 +337,11 @@ test.describe('SidePanel — tab パック (frm203002 パックタブ系)', () =
         await page?.close()
     })
 
-    test('mở tab パック — header No./名称 + danh sách pac_mst nạp xong', async () => {
+    test('mở tab パック — header №/名称 + danh sách pac_mst nạp xong', async () => {
         await page.getByRole('button', { name: 'パック', exact: true }).click()
 
-        // Header sticky 2 cột của riêng tab パック.
-        await expect(page.getByText('No.', { exact: true })).toBeVisible({ timeout: 30000 })
+        // Header sticky 2 cột của riêng tab パック — 「№」 = PackNum.HeaderText (frm203002.Designer.cs:1736).
+        await expect(page.getByText('№', { exact: true }).first()).toBeVisible({ timeout: 30000 })
         await expect(page.getByText('名称', { exact: true })).toBeVisible()
 
         // 「読込中…」 → có dòng. Tenant KHÔNG có pac_mst nào thì cả file vô nghĩa

@@ -3,9 +3,12 @@ import { type Locator, type Page } from '@playwright/test'
 import {
     dbEnabled,
     deleteTestPatient,
+    readSiga,
+    restoreSiga,
     SEED_PAT_NO_BASE,
     seedTestPatient,
     seedTreatmentRows,
+    writeSigaTeeth,
 } from '../_shared/db'
 import { patNo, trtDt } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
@@ -188,6 +191,12 @@ const ACC_UNIT_GROUP_SHIFT = 4
 const CAVITY_GRP_MIN = 0
 const CAVITY_GRP_MAX = 7
 
+/** ガイド 611 「異種充填」 — ガイド duy nhất ở 病名 Ｃ bật khối 窩洞形態 (D-e / D-e2 / D-f). */
+const GUID_CD_ISHU_JUTEN = 611
+
+/** `siga.se_*` = 4 ⇒ 永久歯 欠損歯 (miền giá trị: xem khối siga trong `_shared/db.ts`). */
+const SE_MISSING = 4
+
 /**
  * Một dòng trong response `GET /tenant/guids/treatments`.
  *
@@ -246,6 +255,8 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
      * `beforeAll` chứ đừng chờ response ngay trong testcase.
      */
     const itemsByGuid = new Map<number, GuideTrtWire[]>()
+    /** `showCavityForm` của response gần nhất, keyed ガイド番号 (cùng nguồn với `itemsByGuid`). */
+    const cavityFormByGuid = new Map<number, boolean>()
 
     const headerCell = (id: string) => picker.locator(`[data-testid="header-${id}"]`)
     const dialogRows = () => picker.locator('[data-testid^="row-"]')
@@ -406,6 +417,29 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
         return m
     }
 
+    /**
+     * (Re)load màn 診療入力 của bệnh nhân test và chờ AutoSantei dọn xong.
+     *
+     * Gọi lại được giữa chừng: goto là cách DUY NHẤT bỏ cache TanStack Query của
+     * danh sách 処置 — key cache không có 歯式, nên đổi `siga` dưới DB rồi mở lại
+     * ガイド cũ sẽ nhận nguyên response cũ.
+     */
+    async function gotoTreatments() {
+        const url = TRT_DT ? `/treatments/${PAT_NO}?trtDt=${TRT_DT}` : `/treatments/${PAT_NO}`
+        await page.goto(url, { waitUntil: 'domcontentloaded' })
+        await expect(page, 'goto 診療入力 mà bị đá đi (mất session?)').toHaveURL(/\/treatments\//, {
+            timeout: 15000,
+        })
+        await expect(page.getByText('合計:').first()).toBeVisible({ timeout: 60000 })
+        // Chờ chuỗi AutoSantei chạy xong rồi dọn sạch — assert (auto-retry) mới ép
+        // locator handler chạy, `waitForTimeout` trần thì không.
+        for (let i = 0; i < 6; i++) {
+            await expect(page.getByText(/を算定しますか？/)).toHaveCount(0, { timeout: 20000 })
+            await expect(karteCmtDialog).toHaveCount(0, { timeout: 15000 })
+            await page.waitForTimeout(700)
+        }
+    }
+
     test.beforeAll(async ({ authedPage }) => {
         // ⚠️ Dựng dữ liệu TRƯỚC khi mở màn: list ガイド lọc theo 病名 của dòng đang
         // sáng, mà dòng đó phải có sẵn từ lúc lưới dựng.
@@ -441,10 +475,15 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
             if (!res.url().includes('/tenant/guids/treatments')) return
             void (async () => {
                 try {
-                    const json = (await res.json()) as { data?: { items?: GuideTrtWire[] } }
+                    const json = (await res.json()) as {
+                        data?: { items?: GuideTrtWire[]; showCavityForm?: boolean }
+                    }
                     const items = json.data?.items
                     const guid = new URL(res.url()).searchParams.get('GuidCd')
                     if (items && guid) itemsByGuid.set(Number(guid), items)
+                    if (guid && typeof json.data?.showCavityForm === 'boolean') {
+                        cavityFormByGuid.set(Number(guid), json.data.showCavityForm)
+                    }
                 } catch {
                     /* không phải JSON / bị huỷ — assert bên dưới tự báo thiếu */
                 }
@@ -473,19 +512,7 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
             { times: 30 },
         )
 
-        const url = TRT_DT ? `/treatments/${PAT_NO}?trtDt=${TRT_DT}` : `/treatments/${PAT_NO}`
-        await page.goto(url, { waitUntil: 'domcontentloaded' })
-        await expect(page, 'goto 診療入力 mà bị đá đi (mất session?)').toHaveURL(/\/treatments\//, {
-            timeout: 15000,
-        })
-        await expect(page.getByText('合計:').first()).toBeVisible({ timeout: 60000 })
-        // Chờ chuỗi AutoSantei chạy xong rồi dọn sạch — assert (auto-retry) mới ép
-        // locator handler chạy, `waitForTimeout` trần thì không.
-        for (let i = 0; i < 6; i++) {
-            await expect(page.getByText(/を算定しますか？/)).toHaveCount(0, { timeout: 20000 })
-            await expect(karteCmtDialog).toHaveCount(0, { timeout: 15000 })
-            await page.waitForTimeout(700)
-        }
+        await gotoTreatments()
     })
 
     test.afterAll(async () => {
@@ -1210,5 +1237,96 @@ test.describe('ガイド処置選択 (frm203017) — định dạng dialog + dan
         }
         await step()
         await dismissPicker()
+    })
+
+    test('WinForm parity D-f: 歯式 ẩn HẾT dòng 充填 ⇒ KHÔNG hiện khối 窩洞形態', async () => {
+        // frm203017.getViewData:987-996 (WinForm source 2026-09-28): 処置グループ登録
+        // (`getTrtGrp` → `_guideData[idx].trtData.Add`) nằm TRONG `if (trt_cnt >= 0)`
+        // — 「実際に追加した行のみ紐付ける」. Dòng bị chkSiga ẩn (欠損歯 + kesson 9)
+        // không đăng ký nhóm, nên cặp 複雑/単純 của initProc:445-448 không đủ và khối
+        // 窩洞形態 không hiện. Bản source cũ để việc đăng ký NGOÀI guard ⇒ khối vẫn hiện;
+        // web từng port theo bản cũ (commit 75a52490e), sửa lại ở 319173343.
+        //
+        // Tiền đề đối chứng: D-e2 ngay trên, cùng ガイド 611 với 歯式 bình thường, ĐÃ
+        // bấm được mặt răng ⇒ khối có hiện. Ở đây chỉ đổi đúng một biến: 5 răng của
+        // 部位 thành 欠損歯.
+        await dismissPicker()
+        const snap = await readSiga(Number(PAT_NO))
+        expect(snap, `bệnh nhân test ${PAT_NO} phải có dòng siga (seedTestPatient)`).toBeTruthy()
+
+        try {
+            // BUI_SLOTS là index 0-based ⇒ cột se_ là slot + 1.
+            await writeSigaTeeth(Number(PAT_NO), {
+                se: Object.fromEntries(BUI_SLOTS.map((slot) => [slot + 1, SE_MISSING])),
+            })
+            await gotoTreatments()
+
+            cavityFormByGuid.delete(GUID_CD_ISHU_JUTEN)
+            itemsByGuid.delete(GUID_CD_ISHU_JUTEN)
+            const res = page.waitForResponse(
+                (r) =>
+                    r.url().includes('/tenant/guids/treatments') &&
+                    new URL(r.url()).searchParams.get('GuidCd') === String(GUID_CD_ISHU_JUTEN),
+                { timeout: 30000 },
+            )
+
+            // Không dùng `openGuideByName`: nếu 歯式 ẩn sạch mọi dòng thì dialog tự đóng
+            // kèm E00024 — nhánh đó hàm kia coi là 「không thấy」 rồi ném lỗi.
+            await enterGuideRegular()
+            const total = Math.min(await guideRows.count(), SCAN_LIMIT_DEEP)
+            let clicked = false
+            for (let i = 0; i < total; i++) {
+                const nm = (await guideRows.nth(i).locator('div').nth(1).innerText()).trim()
+                if (nm.normalize('NFKC') !== '異種充填') continue
+                await guideRows.nth(i).click()
+                clicked = true
+                break
+            }
+            expect(clicked, `không thấy ガイド 「異種充填」 trong ${total} dòng đầu`).toBe(true)
+            await res
+            const outcome = await waitPickResult()
+            // Response được parse bất đồng bộ trong handler `page.on('response')`.
+            await expect
+                .poll(() => cavityFormByGuid.get(GUID_CD_ISHU_JUTEN), { timeout: 10000 })
+                .not.toBeUndefined()
+
+            const items = itemsByGuid.get(GUID_CD_ISHU_JUTEN) ?? []
+            const showCavityForm = cavityFormByGuid.get(GUID_CD_ISHU_JUTEN)
+            dump(`kesson|outcome=${outcome}|items=${items.map((it) => `${it.trtCd}-${it.trtSb}`).join(',')}`)
+            dump(`kesson|showCavityForm=${showCavityForm}`)
+
+            // Chứng minh 歯式 THỰC SỰ ẩn được dòng 充填 — không thì testcase đo nhầm.
+            expect(
+                items.filter((it) => Number(it.trtCd) === 326),
+                'vẫn còn dòng 326 充填 sau khi 5 răng thành 欠損歯 ⇒ siga chưa ăn ' +
+                    '(cache? overlay 歯式 của phiên?) — testcase không đo được gì',
+            ).toHaveLength(0)
+
+            expect(
+                showCavityForm,
+                'showCavityForm phải false: dòng bị 歯式 ẩn không đăng ký 処置グループ ' +
+                    '(frm203017.cs:987-996, trong guard trt_cnt >= 0)',
+            ).toBe(false)
+
+            if (outcome === 'rows') {
+                await expect(
+                    picker.locator('svg[viewBox="0 0 100 100"]'),
+                    'khối 窩洞形態 (CavityToothModel) không được hiện',
+                ).toHaveCount(0)
+                await step()
+                await dismissPicker()
+            } else {
+                await dismissNoTrtAlert()
+            }
+        } finally {
+            // Trả 歯式 nguyên trạng rồi load lại, để testcase nào thêm SAU cái này vẫn
+            // đứng trên dữ liệu gốc. Bọc catch: lỗi dọn không được che lỗi thật.
+            if (snap) {
+                await restoreSiga(Number(PAT_NO), snap).catch((e) =>
+                    console.log(`trả siga của ${PAT_NO} hỏng: ${(e as Error).message}`),
+                )
+                await gotoTreatments().catch(() => {})
+            }
+        }
     })
 })

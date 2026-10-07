@@ -1104,7 +1104,7 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
         // `.first()` rơi vào TIÊU ĐỀ CỘT — bấm xong chỉ sort side panel, hộp thoại đứng
         // im và TC đỏ y như app hỏng.
         const gateDialog = page.getByRole('dialog').filter({ hasText: '保存しますか？' })
-        await gateDialog.getByRole('button', { name: 'No', exact: true }).click()
+        await gateDialog.getByRole('button', { name: /^(No|いいえ)$/ }).click()
         await expect(gate, 'bấm No mà hộp thoại không đóng').toBeHidden({ timeout: 15_000 })
         await step()
 

@@ -1,59 +1,46 @@
 /**
- * MSGTBL parity — 紹介状 (frm203053, Shift+F3): xoá xong phải báo **I00003**,
- * không phải I00002.
+ * 紹介状 (frm203053, Shift+F3) — F2 保存 / F3 削除 KHÔNG hỏi và KHÔNG báo gì.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * VÌ SAO CÓ SPEC NÀY
+ * SPEC NÀY TỪNG ĐO ĐIỀU NGƯỢC LẠI
  * ═══════════════════════════════════════════════════════════════════════════
- * Bản port gọi `ja.I00002()` sau khi xoá template thành công. Legacy KHÔNG dùng
- * I00002 cho nhánh xoá:
+ * Bản đầu assert `Q00002 → I00001` khi lưu và `Q00003 → I00003` khi xoá. Bốn hộp
+ * thoại đó là do bản port TỰ THÊM 「for safety」, WinForm không có cái nào: cả
+ * frm203053 chỉ có 11 lời gọi `MsgDialog` (E00001 ×2, Q00019, E00026, E00022 ×7)
+ * và không cái nào nằm trên đường lưu/xoá. Đã gỡ ở commit `24f6210fa`.
  *
- *   - I00002 chỉ ra ở nhánh CẬP NHẬT — frm503004.cs:405-410 `if (updFlg) msgId = "I00002";`
- *   - Nhánh XOÁ dùng I00003 — frm902003.cs:1020, frm303001.cs:1349, frm201001.cs:1824
- *
- * Sai mã kiểu này không có gì đỏ: cả hai đều là hộp info, đều đóng được, API vẫn
- * 2xx, template vẫn bị xoá thật. Chỉ chữ hiện ra là sai. Sửa ở commit 1e5afabb7.
+ * Vì vậy spec giờ đo hai thứ khó hơn: **không có gì hiện ra**, và **việc vẫn
+ * xảy ra thật**. Chỉ assert "không có dialog" là chưa đủ — một nút chết cũng
+ * thoả điều kiện đó. Nên mỗi testcase soi thẳng `shoukai_tmp` trong Postgres.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * FACT — lấy từ source
  * ═══════════════════════════════════════════════════════════════════════════
- *  - shared/locales/ja-msgtbl.ts
- *      · I00001 「登録が完了しました。」
- *      · I00003 「削除が完了しました。」  ← chuỗi spec này ghim
- *      · Q00002 「更新してよろしいですか？」 / Q00003 「削除してよろしいですか？」
- *      · I00002 「更新が完了しました。」 — KHÔNG được xuất hiện ở luồng xoá
- *  - features/treatments/components/referral-letter-dialog.tsx
- *      · Dialog mở bằng Shift+F3 (ON_LAYER F3 = 「紹介状」 —
- *        treatment-entry-detail.tsx:2411 `setReferralLetterOpen(true)`).
- *      · F2 保存 (:267-300): E00001 nếu 発行済呼出し trống → byte-cap →
- *        confirm Q00002 → POST → `setTemplateId(String(newRow.id))` → alert I00001.
- *        ⇒ Sau khi lưu, combobox TỰ trỏ vào id vừa tạo, nên F3 xoá được ngay.
- *      · F3 削除 (:315-334): E00001 nếu trống → `parseTemplateId` (id phải là số
- *        dương, nên tên vừa gõ mà chưa lưu thì im lặng) → confirm Q00003 →
- *        DELETE → alert I00003 severity 'info'.
- *      · 発行済呼出し là `Combobox creatable`: gõ tên mới rồi BLUR thì
- *        `finalizeInput → tryCreate → onValueChange(text)` (shared/ui/combobox.tsx:187-196).
- *        ⇒ phải blur, gõ xong để nguyên đó là chưa có value.
+ *  - frm203053.cs:150-160 (btnF2_Click) — `comboBox2.Text` rỗng thì E00001, quá
+ *    byte-cap thì E00022, ngược lại `insertTemplatedata` NGAY, không hỏi.
+ *  - frm203053.cs:172-180 (btnF3_Click) — rỗng thì E00001, ngược lại
+ *    `deleteTemplatedata` NGAY. Phản hồi duy nhất là combo rỗng đi.
+ *  - referral-letter-dialog.tsx — mở bằng Shift+F3 (ON_LAYER F3 = 「紹介状」,
+ *    treatment-entry-detail.tsx:2411). Sau khi lưu, `setTemplateId(String(newRow.id))`
+ *    nên F3 xoá được ngay; sau khi xoá, `setTemplateId('')`.
+ *  - 発行済呼出し là `Combobox creatable`: gõ tên mới rồi BLUR mới chốt value
+ *    (`finalizeInput → tryCreate`, shared/ui/combobox.tsx:187-196).
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * DỮ LIỆU
  * ═══════════════════════════════════════════════════════════════════════════
- * Spec TỰ TẠO template rồi TỰ XOÁ chính nó — đó là nội dung được đo, nên không
- * mượn dữ liệu có sẵn (xoá nhầm template thật là mất luôn). Vì có GHI DB nên
- * phải bật `TEST_ALLOW_SAVE=1`.
+ * Spec tự tạo template rồi tự xoá — đó chính là nội dung được đo. Có GHI DB nên
+ * cần `TEST_ALLOW_SAVE=1`, và cần `TEST_DB=1` để soi `shoukai_tmp`.
  *
- * `afterAll` dọn thêm bằng SQL khi có TEST_DB=1, phòng khi test đứt giữa chừng
- * (đã lưu nhưng chưa kịp xoá) — bảng `shoukai_tmp` không có cột soft-delete.
- *
- * ⚠️ Testcase NỐI TIẾP trạng thái (`mode: 'serial'`): TC-2 xoá đúng dòng mà TC-1
- * vừa tạo. Chạy lẻ TC-2 sẽ fail. Một TC đỏ ⇒ TC sau bị skip.
+ * ⚠️ Testcase NỐI TIẾP trạng thái (`mode: 'serial'`): TC-2 xoá đúng dòng TC-1 vừa
+ * tạo. Một TC đỏ ⇒ TC sau bị skip. Page lấy từ `authedPage` ⇒ không có trace.
  */
 import { type Page } from '@playwright/test'
 
 import { dbEnabled, withDb } from '../_shared/db'
 import { openTreatmentEntry } from '../_shared/entry'
 import { allowSave, patNo, trtDt } from '../_shared/env'
-import { captureMsg } from '../_shared/msgtbl'
+import { captureMsg, expectSeverity } from '../_shared/msgtbl'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
@@ -85,10 +72,15 @@ skipWithReason(
     !allowSave,
     'Cần TEST_ALLOW_SAVE=1: spec GHI DB thật (tạo 1 dòng shoukai_tmp rồi tự xoá)',
 )
+skipWithReason(
+    !dbEnabled,
+    'Cần TEST_DB=1: không còn hộp thoại nào để đọc, bằng chứng duy nhất rằng ' +
+        'lưu/xoá có chạy là dòng trong shoukai_tmp',
+)
 
 test.describe.configure({ mode: 'serial', retries: 0, timeout: 300_000 })
 
-test.describe('MSGTBL parity — 紹介状 xoá template báo I00003', () => {
+test.describe('紹介状 — F2 保存 / F3 削除 im lặng, đúng frm203053', () => {
     let page: Page
     let step: () => Promise<void>
     let disposeOverlays: (() => Promise<void>) | undefined
@@ -189,9 +181,32 @@ test.describe('MSGTBL parity — 紹介状 xoá template báo I00003', () => {
         })
     }
 
+    /** Số dòng `shoukai_tmp` mang đúng tên template của lượt chạy này. */
+    async function countTemplate(): Promise<number> {
+        return withDb(async (c) => {
+            const r = await c.query('SELECT 1 FROM shoukai_tmp WHERE template_nm = $1', [
+                TEMPLATE_NM,
+            ])
+            return r.rows.length
+        })
+    }
+
+    /**
+     * Không hộp thoại nào được bung ra.
+     *
+     * Chờ một nhịp ngắn rồi mới soi: nếu assert ngay lập tức thì một hộp hiện
+     * chậm 200ms vẫn lọt. `toBeHidden` của Playwright tự retry nên nó chỉ chứng
+     * minh "cuối cùng thì ẩn", không chứng minh "chưa từng hiện" — vì vậy dùng
+     * `count()` sau khi trạng thái đã ổn định (DB đã đổi).
+     */
+    async function expectNoDialog(what: string): Promise<void> {
+        const n = await page.getByRole('alertdialog').count()
+        expect(n, `${what}: WinForm không bung hộp thoại nào, web lại có ${n} cái`).toBe(0)
+    }
+
     // ── TC-1 ────────────────────────────────────────────────────────────────
 
-    test('TC-1 — Shift+F3 mở 紹介状, F2 lưu template mới báo Q00002 → I00001', async () => {
+    test('TC-1 — F2 保存 ghi thẳng, không hỏi Q00002 và không báo I00001', async () => {
         await page.keyboard.press('Shift+F3')
         await step()
         await expect(
@@ -199,74 +214,71 @@ test.describe('MSGTBL parity — 紹介状 xoá template báo I00003', () => {
             'Shift+F3 không mở được 紹介状 — phím có thể bị dialog khác nuốt (Rule 14)',
         ).toBeVisible({ timeout: DIALOG_TIMEOUT })
 
-        // Gõ tên mới vào 発行済呼出し rồi BLUR: combobox creatable chỉ chốt value ở
-        // `finalizeInput`, gõ xong để nguyên là templateId vẫn rỗng → F2 chỉ ra E00001.
         const combo = templateCombo()
         await expect(combo, 'danh sách template chưa nạp xong (placeholder còn 読込中…)').toBeVisible({
             timeout: DIALOG_TIMEOUT,
         })
         await combo.fill(TEMPLATE_NM)
         await step()
+        // Combobox creatable chỉ chốt value lúc blur; chưa blur thì F2 chỉ ra E00001.
         await atenaInput().click()
         await step()
+
+        expect(await countTemplate(), 'dòng đã tồn tại trước khi bấm F2?').toBe(0)
 
         await dialogFKey('F2 保存').click()
         await step()
 
-        const confirm = await nextDialogText('confirm — Q00002 保存')
-        expect(
-            confirm,
-            'F2 保存 phải hỏi Q00002 trước khi ghi (đúng thứ tự WinForm: hỏi rồi mới làm)',
-        ).toContain(Q00002)
-        await clickDialog('accept')
+        // Bằng chứng việc lưu CÓ chạy: dòng xuất hiện trong DB. Không có hộp
+        // thoại nào để chờ nên phải chờ ở đây.
+        await expect
+            .poll(countTemplate, {
+                timeout: DIALOG_TIMEOUT,
+                message:
+                    'F2 保存 không tạo được dòng shoukai_tmp nào — nút chết, hay byte-cap ' +
+                    'chặn (E00022), hay combo chưa chốt value?',
+            })
+            .toBe(1)
 
-        const done = await nextDialogText('info — I00001 保存完了')
-        expect(done, 'lưu xong phải báo I00001').toContain(I00001)
-        await closeInfoDialog('I00001')
+        await expectNoDialog('F2 保存')
     })
 
-    // ── TC-2 — testcase chính ───────────────────────────────────────────────
+    // ── TC-2 ────────────────────────────────────────────────────────────────
 
-    test('TC-2 — F3 xoá template vừa tạo báo Q00003 → I00003 (KHÔNG phải I00002)', async () => {
-        // Sau TC-1, combobox đang trỏ vào id vừa tạo (`setTemplateId(String(newRow.id))`),
-        // nên F3 đi thẳng vào nhánh xoá thật chứ không rơi vào `parseTemplateId === null`.
+    test('TC-2 — F3 削除 xoá thẳng, không hỏi Q00003 và không báo I00003', async () => {
+        // Sau TC-1 combo đang trỏ vào id vừa tạo (`setTemplateId(String(newRow.id))`).
         await dialogFKey('F3 削除').click()
         await step()
 
-        const confirm = await nextDialogText('confirm — Q00003 削除')
-        expect(confirm, 'F3 削除 phải hỏi Q00003 trước khi xoá').toContain(Q00003)
-        await clickDialog('accept')
+        await expect
+            .poll(countTemplate, {
+                timeout: DIALOG_TIMEOUT,
+                message: 'F3 削除 không xoá được dòng shoukai_tmp',
+            })
+            .toBe(0)
 
-        const done = await nextDialogText('info — I00003 削除完了')
+        await expectNoDialog('F3 削除')
 
-        expect(
-            done,
-            'xoá xong vẫn hiện chuỗi CŨ 「削除しました。」 — bản sửa msgtbl chưa tới được ' +
-                'browser (Vite chưa reload? nhánh đang chạy chưa có commit 1e5afabb7?)',
-        ).not.toContain(I00002_STALE)
-        expect(
-            done,
-            'xoá xong mà hiện I00002「更新が完了しました。」 — call-site vẫn gọi nhầm ' +
-                'ja.I00002(); legacy dùng I00002 CHỈ cho nhánh cập nhật (frm503004.cs:405-410)',
-        ).not.toContain(I00002_UPDATE)
-        expect(done, 'xoá xong phải báo I00003 nguyên văn theo MSGTBL').toContain(I00003)
-
-        await closeInfoDialog('I00003')
+        // Phản hồi duy nhất của WinForm: combo rỗng đi (`setTemplateId('')`).
+        await expect(
+            templateCombo(),
+            'xoá xong mà 発行済呼出し vẫn giữ lựa chọn cũ ⇒ F3 lần nữa có thể xoá nhầm dòng khác',
+        ).toHaveValue('')
     })
 
     // ── TC-3 ────────────────────────────────────────────────────────────────
 
-    test('TC-3 — sau khi xoá, 発行済呼出し rỗng lại nên F3 ra E00001 chứ không xoá tiếp', async () => {
-        // `setTemplateId('')` chạy ngay sau khi xoá ⇒ bấm F3 lần nữa KHÔNG được
-        // đụng vào dòng nào khác, chỉ báo thiếu input.
+    test('TC-3 — F3 với 発行済呼出し rỗng vẫn báo E00001 (đây là hộp duy nhất còn lại)', async () => {
         await dialogFKey('F3 削除').click()
         await step()
 
         const text = await nextDialogText('alert — E00001 発行済呼出し')
         expect(
             text,
-            'xoá xong mà combobox không được dọn ⇒ F3 lần hai có thể xoá nhầm dòng khác',
+            'combo rỗng thì frm203053.cs:177 vẫn ShowErrorMsg("E00001", "発行済呼出し")',
         ).toContain('発行済呼出しが入力されていません。')
+        // frm203053.cs:157/177 `ShowErrorMsg` ⇒ ✕ đỏ.
+        await expectSeverity(page, 'error', 'E00001: legacy dùng ShowErrorMsg')
         await closeInfoDialog('E00001')
 
         await dialogFKey('F10 戻る').click()

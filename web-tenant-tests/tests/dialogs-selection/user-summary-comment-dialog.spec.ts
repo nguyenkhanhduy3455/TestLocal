@@ -27,15 +27,15 @@
  *  - :321-349        ↑ kéo con trỏ theo (:332); ↓ KHÔNG (btnDown không set CurrentCell).
  *  - :508-513        clearData kết thúc bằng txtChiryo.Focus() ⇒ sau 追加/削除/クリア
  *                    con trỏ luôn về ô nhập.
- *  - :230-243        戻る khi có sửa → Q00004「登録せずに終了します。よろしいですか？」.
+ *  - :230-243        戻る khi có sửa → Q00004「登録せずに終了してよろしいですか？」.
  *  - BaseDialog.cs:314-326  End và ESC đều là btnF9_Click ⇒ 確定, không phải huỷ.
  *
  * frm902012 (mst_cmt2) + MstCmt2.cs:452-483
  *  - ORDER BY cmt_cd, cmt_sb ⇒ 7000-0, 7000-1, 7000-2 … (KHÔNG phải 使用回数 順).
  *  - Lọc chỉ chạy khi bấm 検索 (frm901002.cs:55-58); 0 dòng → E00003
- *    「該当するデータがありません。」; có dòng → dgvView.Focus() (frm902012.cs:228-236).
+ *    「該当データがありません。」; có dòng → dgvView.Focus() (frm902012.cs:228-236).
  *  - Designer:38     txtCmtNm.MaxLength = 40.
- *  - :159-166        F9 選択 khi lưới rỗng → E00007「選択するデータがありません。」.
+ *  - :159-166        F9 選択 khi lưới rỗng → E00007「データが選択されていません。」.
  *
  * ─── KHÔNG GHI DB ───────────────────────────────────────────────────────────
  * `entryProc` (ghi mst_cmt_pack_users) chỉ chạy khi F9 確定 trong frm203019 LÚC
@@ -381,7 +381,7 @@ test.describe('ユーザー摘要コメント選択 + 摘要２検索 (frm203019
     await userBtn(page, /戻る/).click()
     await expect(realAlert(page)).toBeVisible({ timeout: 10000 })
     expect(await alertText(page), 'Q00004 (:234)').toContain(
-      '登録せずに終了します。よろしいですか？',
+      '登録せずに終了してよろしいですか？',
     )
     await clickAlert(page, CANCEL_BTN)
     await expect(userDialog(page), 'Cancel mà dialog vẫn đóng').toHaveCount(1)
@@ -488,7 +488,7 @@ test.describe('ユーザー摘要コメント選択 + 摘要２検索 (frm203019
     await cmt2Dialog(page).getByRole('button', { name: '検索' }).click()
     await expect(realAlert(page)).toBeVisible({ timeout: 10000 })
     expect(await alertText(page), 'E00003 (frm902012.cs:229-232)').toContain(
-      '該当するデータがありません。',
+      '該当データがありません。',
     )
     await clickAlert(page, OK_BTN)
     await expect(realAlert(page)).toHaveCount(0, { timeout: 10000 })

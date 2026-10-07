@@ -1080,13 +1080,17 @@ interface UnpaidRow {
     score: number
     claimAmt: number
     sflg: number
+    receKbn: number
+    /** acc_tm dạng YYYY-MM-DD (UTC). */
+    accDay: string
 }
 
 /** Mọi dòng 未精算 CÒN SỐNG của ngày test. */
 async function readUnpaidRows(): Promise<UnpaidRow[]> {
     return withDb(async (c) => {
         const r = await c.query<Record<string, unknown>>(
-            `SELECT trt_cnt, km_cd, lflg, score, claim_amt, sflg
+            `SELECT trt_cnt, km_cd, lflg, score, claim_amt, sflg, rece_kbn,
+                    to_char(acc_tm AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS acc_day
                FROM view_unpaid_active
               WHERE pat_no = $1 AND trt_dt = $2
               ORDER BY trt_cnt, km_cd`,
@@ -1099,6 +1103,8 @@ async function readUnpaidRows(): Promise<UnpaidRow[]> {
             score: Number(x['score'] ?? 0),
             claimAmt: Number(x['claim_amt'] ?? 0),
             sflg: Number(x['sflg'] ?? 0),
+            receKbn: Number(x['rece_kbn'] ?? 0),
+            accDay: String(x['acc_day'] ?? ''),
         }))
     })
 }
@@ -1704,6 +1710,20 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
     })
 
     // ─────────────────────────────────────────────────────────────────────────
+    test('TC-4 — rece_kbn = 1 và acc_tm rỗng (1900-01-01): mặc định UnPaidData, LetAccData2 không ghi đè', async () => {
+        if (skipUnlessDayUsable()) return
+
+        // UnPaid.cs:93/99 — rece_kbn = 1 (現金), acc_tm = "" ⇒ SQL Server lưu 1900-01-01.
+        // Hai dòng gán 0 / "" ở modAcc.cs:509/516 đã bị comment. Bản port từng ghi 0 + giờ hiện tại.
+        // Không bấm F8 thêm — đọc lại chính các dòng TC-1/TC-2 vừa tạo.
+        const rows = await readUnpaidRows()
+        expect(rows, 'không còn dòng 未精算 nào của ngày test').not.toHaveLength(0)
+        for (const row of rows) {
+            expect(row.receKbn, `trt_cnt=${row.trtCnt} km_cd=${row.kmCd}: rece_kbn`).toBe(1)
+            expect(row.accDay, `trt_cnt=${row.trtCnt} km_cd=${row.kmCd}: acc_tm`).toBe('1900-01-01')
+        }
+    })
+
     test('TC-3 — sflg giống nhau ở cả hai lượt: 初診判定 quét theo NGÀY, không theo lượt', async () => {
         if (skipUnlessDayUsable()) return
 

@@ -428,7 +428,7 @@ function assertSeedPatNo(patNo: number, fn: string): void {
 }
 
 /**
- * Dựng một bệnh nhân test từ số 0 — `person` + `insurance` + `siga` + `kon`.
+ * Dựng một bệnh nhân test từ số 0 — `person` + `insurance` + `siga` + `kon` + `person_exp`.
  *
  * Idempotent: xoá sạch bệnh nhân đó (kể cả 処置行 sót lại của lần chạy trước bị
  * ngắt) rồi dựng lại, nên chạy bao nhiêu lần cũng ra đúng một trạng thái.
@@ -470,6 +470,21 @@ export async function seedTestPatient(input: SeedPatientInput): Promise<void> {
         )
         await c.query('INSERT INTO siga (pat_no) VALUES ($1)', [patNo])
         await c.query('INSERT INTO kon (pat_no) VALUES ($1)', [patNo])
+        // person_exp — BẮT BUỘC, không phải cho đủ bộ.
+        //
+        // `SeisanQueries.GetSeisanInfoAsync` nối `INNER JOIN view_person_exp_active`,
+        // nên bệnh nhân thiếu dòng này thì API 精算情報 trả RỖNG. Trên màn 診療入力
+        // hậu quả rất kín: `seisanInfo` undefined ⇒ `insureAccRate = 0` ⇒ fallback
+        // 利用者負担割合 `acc_rate == 0 ? 0 : 10` ra 0% ⇒ dòng
+        // 【介護保険一部負担金】 in ra 0 円 dù `insurance.acc_rate` đã seed khác 0.
+        // Đo được ở kaigo-hutan-row.spec.ts TC-3 (2026-09-18): kỳ vọng 879 円, lưới
+        // hiện 0 円, và nguyên nhân KHÔNG nằm ở phần port 介護 nào cả.
+        //
+        // Đây là trạng thái bệnh nhân THẬT không bao giờ có: đo trên dev DB, 16331/16331
+        // dòng `person` đều có `person_exp`. Mọi cột khác đều có default nên chỉ cần pat_no.
+        // (`counter-payment-audit-log` và `accounting-cache-invalidation` từng phải tự chèn
+        // tay dòng này; cả hai đều DELETE trước khi INSERT nên không đụng unique index.)
+        await c.query('INSERT INTO person_exp (pat_no) VALUES ($1)', [patNo])
     })
 }
 
@@ -482,6 +497,9 @@ export async function deleteTestPatient(patNo: number): Promise<void> {
         await c.query('DELETE FROM trn_trn WHERE pat_no = $1', [patNo])
         await c.query('DELETE FROM siga WHERE pat_no = $1', [patNo])
         await c.query('DELETE FROM kon WHERE pat_no = $1', [patNo])
+        // Xoá CỨNG: `ux_person_exp_active` là unique trên dòng chưa xoá mềm, bỏ lại
+        // thì lần chạy sau `seedTestPatient` vỡ ngay ở INSERT.
+        await c.query('DELETE FROM person_exp WHERE pat_no = $1', [patNo])
         await c.query('DELETE FROM insurance WHERE pat_no = $1', [patNo])
         await c.query('DELETE FROM person WHERE pat_no = $1', [patNo])
     })

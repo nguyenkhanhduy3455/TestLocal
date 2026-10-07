@@ -1,6 +1,7 @@
 import { type Locator, type Page } from '@playwright/test'
 
 import { patNo } from '../_shared/env'
+import { INP_FLAG, routeInpDeviceSettings } from '../_shared/inp-device-settings'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
 import { makeStep, skipWithReason } from '../_shared/step'
@@ -46,8 +47,9 @@ import { rows } from '../_shared/virtual-grid'
  *    bước 1, trả `{ kind: 'noData' }` → E00003, KHÔNG POST.
  *  - locales/ja.ts:
  *      · E00002 「{field}が間違っています。」  ← LƯU Ý: không phải 「正しくありません」
- *      · E00003 「該当するデータがありません。」
- *      · Q00049 「{period}の会計データを作成します。よろしいですか？」
+ *      · E00003 「該当データがありません。」
+ *      · Q00049 「{period}の会計データを一括作成します。既に入力済の会計データは全て
+ *        上書きされます。実行してよろしいですか？」
  *      · I00005 「{proc}が完了しました。」 → 「会計データ作成が完了しました。」
  *  - shared/ui/confirm-dialog-view.tsx: nút mặc định là `Yes` / `No` (TIẾNG ANH,
  *    GUIDELINE Rule 13.2), alert-dialog-view.tsx là một nút `OK`. Cả hai mang
@@ -290,6 +292,11 @@ test.describe('診療入力（患者選択）— F7 会計作成 / F2 患者情�
                 })
         })
 
+        // F7 会計作成 chỉ hiện khi 一括会計ボタンを表示する được tick
+        // (frm203001.cs:572-575); máy test không có device_config ⇒ mặc định 9 ⇒ ẩn.
+        // Ép = 1 cho cả file (releaseSharedPage gỡ route).
+        await routeInpDeviceSettings(page, { showBulkAccButton: INP_FLAG.On })
+
         await page.goto('/treatments', { waitUntil: 'domcontentloaded' })
         // Footer F-key strip dựng xong = màn danh sách sẵn sàng nhận phím.
         await expect(page.locator('[data-fkey="F7"]')).toBeVisible({ timeout: 60000 })
@@ -446,7 +453,7 @@ test.describe('診療入力（患者選択）— F7 会計作成 / F2 患者情�
             text,
             `Q00049 không nhắc đúng kỳ. Chờ "${period}" (acc_make=${inpConfig!.accMake}), thấy: ${text}`,
         ).toContain(period)
-        expect(text, 'thân Q00049 khác locales/ja.ts').toContain('会計データを作成します')
+        expect(text, 'thân Q00049 khác locales/ja.ts').toContain('会計データを一括作成します')
 
         // acc_make=1 (月単位) thì WinForm cắt 「DD日」 → chuỗi KHÔNG được còn 日.
         if (inpConfig!.accMake === ACC_MAKE_MONTH) {
@@ -527,7 +534,7 @@ test.describe('診療入力（患者選択）— F7 会計作成 / F2 患者情�
         const result = (await appDialog().innerText()).replace(/\s/g, '')
 
         if (total === 0) {
-            expect(result, '0 dòng mà không báo E00003').toContain('該当するデータがありません')
+            expect(result, '0 dòng mà không báo E00003').toContain('該当データがありません')
             console.log('会計データ 0 dòng → đã đi nhánh E00003, KHÔNG có POST bulk-create')
         } else {
             expect(result, `${total} dòng mà không báo I00005`).toContain('会計データ作成が完了しました')

@@ -218,6 +218,47 @@ test.describe('診療入力（患者選択）F8 閲覧 — 変更/閲覧モー�
             .filter((n) => Number.isInteger(n) && n >= 1 && n <= 31)
     }
 
+    /**
+     * `visibleDays()` nhưng CHỜ lưới đứng yên — bắt buộc dùng bản này, đừng gọi
+     * thẳng `visibleDays()`.
+     *
+     * Vì sao: `waitDetailLoaded()` nhận `footer-ten` làm mốc "đã nạp", mà ô đó
+     * KHÔNG chờ dữ liệu — dòng 日計 của 診療日 hiện tại là input dựng từ state
+     * local và render ngay cả khi ngày đó rỗng (registration-table.tsx:461-479,
+     * nhánh `isActiveFooter` + `showDay`). Nên mốc "đã nạp" bắn TRƯỚC khi dữ
+     * liệu tháng về, và `visibleDays()` đọc ngay sẽ trả [].
+     *
+     * Hậu quả đã ĐO ĐƯỢC: TC-SETUP-1 thấy [] → tưởng cả tháng trống → chọn
+     * `emptyDay = 1`, trong khi DB thực tế đã có 処置 ngày 1 từ 2026-09-14. Cả
+     * TC-F9-1 (xanh giả: dòng ngày 1 vốn có sẵn) lẫn TC-F8-1 (đỏ giả: tố app
+     * không chặn GetTrnRs) đều mất giá trị.
+     *
+     * Cách chờ: đọc lặp tới khi tập ngày GIỐNG NHAU 3 lần liên tiếp. Không dùng
+     * "chờ khác rỗng" vì bệnh nhân sạch dữ liệu thật sự cũng hợp lệ — cái cần là
+     * ĐỨNG YÊN, không phải "có dòng".
+     */
+    async function settledVisibleDays(): Promise<number[]> {
+        let last = '<chưa đọc>'
+        let stable = 0
+        let out: number[] = []
+        await expect
+            .poll(
+                async () => {
+                    out = await visibleDays()
+                    const key = [...out].sort((a, b) => a - b).join(',')
+                    stable = key === last ? stable + 1 : 0
+                    last = key
+                    return stable
+                },
+                {
+                    timeout: 30000,
+                    intervals: [300, 300, 300, 500, 500, 1000, 1000],
+                },
+            )
+            .toBeGreaterThanOrEqual(2)
+        return out
+    }
+
     /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
      *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
     let disposeOverlays: (() => Promise<void>) | undefined
@@ -251,7 +292,7 @@ test.describe('診療入力（患者選択）F8 閲覧 — 変更/閲覧モー�
 
         const iso = unquote(new URL(page.url()).searchParams.get('trtDt'))
         const monthDate = new Date(`${iso || new Date().toISOString().slice(0, 10)}T00:00:00`)
-        const used = new Set(await visibleDays())
+        const used = new Set(await settledVisibleDays())
         for (let d = 1; d <= daysInMonth(monthDate); d++) {
             if (!used.has(d)) {
                 emptyDay = d
@@ -262,6 +303,17 @@ test.describe('診療入力（患者選択）F8 閲覧 — 変更/閲覧モー�
             `処置月 ${iso}: ngày đã có 処置 = [${[...used].sort((a, b) => a - b).join(',')}] → ` +
                 `chọn ngày trống ${emptyDay}`,
         )
+        // Tập rỗng nghĩa là lưới KHÔNG có dòng nào, kể cả tháng lịch sử. Với bệnh
+        // nhân demo mặc định (12138, đầy dữ liệu) thì đó là dấu hiệu đọc hụt chứ
+        // không phải sự thật — in cảnh báo để người đọc log không tin nhầm vào
+        // `emptyDay` rồi đi truy app.
+        if (used.size === 0) {
+            console.log(
+                `    ⚠ lưới của 患者 ${PAT_NO} KHÔNG có dòng nào (cả tháng lịch sử) — ` +
+                    'nếu bệnh nhân này đáng lẽ có dữ liệu thì TC-F9-1/F8-1 dưới đây đang đo trên ' +
+                    'tiền đề sai, xem lại dữ liệu trước khi kết luận app hỏng',
+            )
+        }
         await step()
         await backToList()
     })
@@ -342,7 +394,7 @@ test.describe('診療入力（患者選択）F8 閲覧 — 変更/閲覧モー�
         ).toBeVisible({ timeout: 30000 })
 
         expect(
-            await visibleDays(),
+            await settledVisibleDays(),
             `F8 (変更/閲覧) vào ngày trống ${emptyDay} mà lưới lại có dòng cho ngày đó — ` +
                 'gate 更新区分 đang không chặn GetTrnRs / AutoSantei',
         ).not.toContain(emptyDay!)

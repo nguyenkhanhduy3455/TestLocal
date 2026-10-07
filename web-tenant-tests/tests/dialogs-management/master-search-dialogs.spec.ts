@@ -2,6 +2,7 @@ import { type Locator, type Page } from '@playwright/test'
 
 import { patNo } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
+import { type Severity, expectSeverity } from '../_shared/msgtbl'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
 import { makeStep, skipWithReason } from '../_shared/step'
@@ -174,10 +175,15 @@ const INP_CHK_10_SLOT_COUNT = 20
 /** required-disease-name-register-dialog.tsx ROWS_PER_COLUMN. */
 const DIS_ROWS_PER_COLUMN = 10
 
-/** ja.E00003 — 「該当するデータがありません。」 (getViewData, kết quả 0 dòng). */
-const E00003 = '該当するデータがありません。'
-/** ja.E00007 — 「選択するデータがありません。」 (btnF9_Click, lưới rỗng). */
-const E00007 = '選択するデータがありません。'
+/** ja.E00003 — 「該当データがありません。」 (getViewData, kết quả 0 dòng). */
+const E00003 = '該当データがありません。'
+/**
+ * ja.E00007 — 「データが選択されていません。」 (btnF9_Click, lưới rỗng).
+ *
+ * Chuỗi cũ 「選択するデータがありません。」 KHÔNG phải row E00007 mà là body của
+ * E00100 ở frm201045.cs:298; đã sửa ở commit ce245472d.
+ */
+const E00007 = 'データが選択されていません。'
 /** Từ khoá chắc chắn KHÔNG khớp gì, để ép nhánh 0 dòng. */
 const NO_MATCH_WORD = process.env.TEST_NO_MATCH_WORD ?? 'ZZZNOTEXIST'
 
@@ -372,11 +378,16 @@ test.describe('master search — 処置検索 (frm902011) / 病名検索 (frm902
     }
 
     /** Đóng hộp `alertDialog` đang mở và trả về nội dung của nó. */
-    async function readAndDismissAlert(): Promise<string> {
+    async function readAndDismissAlert(severity?: Severity): Promise<string> {
         // alertDialog ⇒ role="alertdialog" (Rule 13), tách hẳn khỏi role="dialog".
         const alert = page.getByRole('alertdialog')
         await expect(alert, 'không có hộp cảnh báo nào bung ra').toBeVisible({ timeout: 15_000 })
         const text = (await alert.innerText()).trim()
+        // Icon phải đọc TRƯỚC khi đóng. WinForm chọn icon ở CHỖ GỌI chứ không
+        // theo mã, nên hai hộp trong cùng một popup có thể khác màu nhau.
+        if (severity) {
+            await expectSeverity(page, severity, 'icon của popup tra master')
+        }
         await alert.getByRole('button', { name: /^(OK|はい)$/ }).click()
         await expect(alert).toBeHidden({ timeout: 10_000 })
         return text
@@ -562,13 +573,18 @@ test.describe('master search — 処置検索 (frm902011) / 病名検索 (frm902
         // thấy được (bẫy 8 — alertDialog che cả cây a11y). Đọc hộp thoại trước.
         await trtSearch.getByRole('textbox').first().fill(NO_MATCH_WORD)
         await trtSearch.getByRole('button', { name: '検索', exact: true }).click()
-        expect(await readAndDismissAlert(), 'tìm 0 dòng phải báo E00003').toContain(E00003)
+        // frm902011.cs:222 `ShowErrorMsg("E00003")` ⇒ ✕ đỏ.
+        expect(await readAndDismissAlert('error'), 'tìm 0 dòng phải báo E00003').toContain(E00003)
 
         await expect(gridRows(trtSearch)).toHaveCount(0)
         await expect(emptyState(trtSearch), 'lưới rỗng mà không hiện emptyText').toBeVisible()
 
         await trtSearch.getByRole('button', { name: 'F9 選択' }).click()
-        expect(await readAndDismissAlert(), 'F9 với lưới rỗng phải báo E00007').toContain(E00007)
+        // frm902011.cs:172 `ShowWarningMsg("E00007")` ⇒ ⚠ VÀNG, không phải ✕ đỏ.
+        // Đây đúng là chỗ bản web để rơi vào severity mặc định của `alertDialog`.
+        expect(await readAndDismissAlert('warning'), 'F9 với lưới rỗng phải báo E00007').toContain(
+            E00007,
+        )
 
         // Báo xong popup phải CÒN mở — người dùng nhập lại điều kiện, không bị
         // đẩy về dialog 登録.

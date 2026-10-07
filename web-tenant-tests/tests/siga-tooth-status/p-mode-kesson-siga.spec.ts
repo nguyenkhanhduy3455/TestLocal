@@ -617,7 +617,7 @@ test.describe('診療入力 — Ｐ変更 → 欠損自動マーキング (Chk_P
             // Khoanh trong chính hộp thoại: tiêu đề cột 「No」 của tab 病検 cũng là
             // role="button" nên .first() có thể rơi vào đó và chỉ sort side panel.
             const gateDialog = page.getByRole('dialog').filter({ hasText: '保存しますか？' })
-            await gateDialog.getByRole('button', { name: 'No', exact: true }).click()
+            await gateDialog.getByRole('button', { name: /^(No|いいえ)$/ }).click()
             await expect(gate, 'bấm No mà hộp thoại không đóng').toBeHidden({ timeout: 15_000 })
         }
         await step()
