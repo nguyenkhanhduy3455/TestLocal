@@ -32,6 +32,8 @@ import { expect, releaseSharedPage, test } from '../_shared/session'
  *  các giá trị chốt. Agent phải được build từ code có rpt30400180/200/220/240.
  *  Không có agent: mọi endpoint agent bị stub — vẫn soi trọn datasource BE trả về
  *  và luồng xem trước của FE, phần soi PDF tự skip.
+ *  /v1/print LUÔN bị chặn và trả job giả (cả khi có agent): F1 印刷 chỉ được kiểm
+ *  tới chỗ FE gửi đúng 様式, không bao giờ có job xuống spooler.
  *
  * Chỉ ĐỌC dữ liệu: mở tháng đã có, lưới không sửa ⇒ không có hộp 保存しますか
  * (nếu có thì chọn いいえ = RestoreData, không ghi DB).
@@ -225,6 +227,8 @@ test.describe('診療入力 レセプト — nội dung tờ レセプト trên 
     let disposeOverlays: (() => Promise<void>) | undefined
     /** Số lần FE gọi /v1/render từ lúc reset gần nhất. */
     let renderCalls = 0
+    /** Body /v1/print gần nhất (luôn bị chặn, xem route). */
+    let printBody: RenderRequestBody | null = null
     /** Ghi đè response rezept-datasource (TC đa 様式); null = để BE trả nguyên. */
     let rewriteDatasource: ((env: DatasourceEnvelope) => DatasourceEnvelope) | null = null
 
@@ -240,13 +244,28 @@ test.describe('診療入力 レセプト — nội dung tờ レセプト trên 
             const req = route.request()
             const url = req.url()
             if (AGENT_RENDER_URL.test(url)) renderCalls++
+            // 印刷 — chặn ở MỌI chế độ: job thật xuống spooler Windows sẽ bung hộp
+            // thoại Save As (Microsoft Print to PDF) và treo cả suite.
+            if (AGENT_PRINT_URL.test(url)) {
+                printBody = req.postDataJSON() as RenderRequestBody
+                return jsonFulfill(route, 202, {
+                    jobId: STUB_JOB_ID,
+                    eventsUrl: `/v1/jobs/${STUB_JOB_ID}/events?ticket=${STUB_TICKET}`,
+                })
+            }
+            if (url.includes(`/v1/jobs/${STUB_JOB_ID}/events`)) {
+                const complete = JSON.stringify({ type: 'complete', pdfUrl: `/tmp/${STUB_PDF_ID}.pdf`, pdfTicket: STUB_TICKET })
+                return route.fulfill({
+                    status: 200,
+                    headers: { ...CORS_HEADERS, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+                    body: `event: complete\ndata: ${complete}\n\n`,
+                })
+            }
             if (AGENT_AVAILABLE) {
                 if (AGENT_RENDER_URL.test(url)) {
                     const original = req.postDataJSON() as RenderRequestBody
                     return route.continue({ postData: JSON.stringify({ ...original, forcePreview: true }) })
                 }
-                // Job xuống spooler Windows = hộp thoại Save As treo cả suite.
-                if (AGENT_PRINT_URL.test(url)) return jsonFulfill(route, 202, { jobId: STUB_JOB_ID })
                 return route.continue()
             }
             if (/\/healthz/.test(url)) return jsonFulfill(route, 200, { ok: true })
@@ -406,6 +425,26 @@ test.describe('診療入力 レセプト — nội dung tờ レセプト trên 
             await expect(preview()).toBeHidden({ timeout: 10_000 })
         })
     }
+
+    test('F1 印刷 — in đúng 様式 đang xem; không có F2 PDF出力 (WinForm frm902009)', async () => {
+        const c = CASES[0]!
+        const env = await issueRezept(c)
+        await expect(preview()).toBeVisible({ timeout: 90_000 })
+        // frm902009: F-key chỉ có 戻る, Crystal viewer giữ nút in nhưng ẩn nút export.
+        await expect(preview().getByRole('button', { name: 'F2 PDF出力' })).toHaveCount(0)
+
+        printBody = null
+        await preview().getByRole('button', { name: 'F1 印刷' }).click()
+        await expect(page.getByText('診療報酬明細書を印刷しました')).toBeVisible({ timeout: 30_000 })
+        expect(printBody, 'phải gửi /v1/print').not.toBeNull()
+        expect(printBody!.reportId, 'in đúng 様式 đang xem').toBe(c.reportId)
+        expect(printBody!.dataJson.rcp, 'in đúng các tờ đang xem').toEqual(env.data.renderRequest!.dataJson.rcp)
+        expect(printBody!.forcePreview, '/v1/print không mang cờ preview').toBeUndefined()
+
+        await expect(preview(), 'in xong vẫn ở bản xem trước, như WinForm').toBeVisible()
+        await closePreview()
+        await expect(preview()).toBeHidden({ timeout: 10_000 })
+    })
 
     test('2 様式 trong một tháng — mở lần lượt, đóng bản này thì mở bản kế', async () => {
         // Dữ liệu dev không có tháng nào cần 2 様式 (chỉ khi 請求年月 khác đời mẫu với
