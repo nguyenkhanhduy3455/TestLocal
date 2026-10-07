@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import path from 'node:path'
+
 import { type Page, type Route } from '@playwright/test'
 
 import { installOverlayHandlers } from '../_shared/overlays'
@@ -65,6 +68,15 @@ const STUB_PDF =
     '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 10 10]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF'
 
 const PREVIEW_TITLE = '診療報酬明細書プレビュー'
+/**
+ * PDF agent render thật được lưu ra đây để soi bằng mắt (thư mục gitignore):
+ * capture-results/rezept-pdf/<YYYY-MM-DD>/<患者番号>-<処置日>[-<n>].pdf
+ */
+const PDF_DIR = path.resolve(
+    __dirname,
+    '../../capture-results/rezept-pdf',
+    new Date().toISOString().slice(0, 10),
+)
 const GRID_LOAD_TIMEOUT = 60_000
 
 type Row = Record<string, string | number | null>
@@ -308,6 +320,9 @@ test.describe('診療入力 レセプト — nội dung tờ レセプト trên 
         const pdf = await res.body()
         expect(pdf.subarray(0, 5).toString('latin1'), 'agent không trả về PDF').toBe('%PDF-')
         await test.info().attach(name, { body: pdf, contentType: 'application/pdf' })
+        fs.mkdirSync(PDF_DIR, { recursive: true })
+        fs.writeFileSync(path.join(PDF_DIR, name), pdf)
+        console.log(`PDF: ${path.join(PDF_DIR, name)}`)
         return pdf
     }
 
@@ -386,9 +401,11 @@ test.describe('診療入力 レセプト — nội dung tờ レセプト trên 
 
             await expect(preview()).toBeVisible({ timeout: 90_000 })
             await expect.poll(() => renderCalls, { message: 'render cả 2 様式 trước khi xem' }).toBe(2)
+            if (AGENT_AVAILABLE) await downloadPreviewPdf(`${CASES[1]!.patNo}-2yoshiki-1.pdf`)
 
             await closePreview()
             await expect(preview(), 'đóng bản 1 thì bản 2 mở').toBeVisible({ timeout: 10_000 })
+            if (AGENT_AVAILABLE) await downloadPreviewPdf(`${CASES[1]!.patNo}-2yoshiki-2.pdf`)
             await closePreview()
             await expect(preview(), 'đóng bản 2 thì hết').toBeHidden({ timeout: 10_000 })
         } finally {
