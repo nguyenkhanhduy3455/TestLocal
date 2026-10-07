@@ -1,0 +1,5 @@
+# pdf-parse pins @napi-rs/canvas 0.1.80, which ships no win32-arm64 binary — the
+# Windows test machine runs ARM64 Node, so pdfjs fails at import (DOMMatrix).
+# 1.0.x adds win32-arm64-msvc. Kept here (not package.json "pnpm") so pnpm 10 and 11 both read it.
+overrides:
+  '@napi-rs/canvas': 1.0.10
