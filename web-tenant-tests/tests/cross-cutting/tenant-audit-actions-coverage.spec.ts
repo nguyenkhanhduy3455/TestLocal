@@ -28,7 +28,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * NHÓM BUG ĐANG ĐO (fix ở `investigate/tenant-audit-log-findings`, commit 7b4fe6072)
  * ═══════════════════════════════════════════════════════════════════════════
  * `TenantChangeRecordingInterceptor` chỉ thấy thứ đi qua EF change tracker. Mọi
- * `ExecuteUpdateAsync` / `ExecuteDeleteAsync` / `SoftDeleteAsync` và mọi writer raw SQL
+ * `ExecuteUpdateAsync` / `ExecuteDeleteAsync` và mọi writer raw SQL
  * đều VÔ HÌNH với nó. 7 handler ghi DB bằng đúng những đường đó mà không tự khai
  * `actions`, nên dòng nhật ký của chúng hoặc rỗng hoặc chỉ có một nửa.
  *
@@ -280,10 +280,10 @@ test.describe('監査ログ — set-based / raw-SQL write phải để lại act
         await step()
     })
 
-    test('TC-3 — ccta lưu lại: phải có ĐỦ CẢ softdelete VÀ insert', async () => {
+    test('TC-3 — ccta lưu lại: phải có ĐỦ CẢ delete VÀ insert', async () => {
         await resetMark()
 
-        // Lần lưu thứ hai: handler xoá mềm toàn bộ dòng của (患者, 枝番) rồi chèn lại.
+        // Lần lưu thứ hai: handler xoá toàn bộ dòng của (患者, 枝番) rồi chèn lại.
         const res = await page.request.put(`${apiOrigin}/tenant/ccta/${PAT_NO}`, {
             headers: json(),
             data: {
@@ -307,15 +307,15 @@ test.describe('監査ログ — set-based / raw-SQL write phải để lại act
         const row = await auditRowFor(EV.cctaSaved)
         const types = actionsOn(row, 'ccta').map((a) => a.type)
 
-        // Đây là cạnh sắc của phép gộp THEO BẢNG: nửa xoá mềm là set-based (bộ ghi âm mù),
+        // Đây là cạnh sắc của phép gộp THEO BẢNG: nửa xoá là set-based (bộ ghi âm mù),
         // nửa chèn đi qua change tracker (bộ ghi âm thấy). Nêu tên `ccta` trong danh sách
         // thủ công là nhận quyền cả bảng, nên handler phải tự khai CẢ HAI — khai thiếu nửa
         // nào thì vết nói dối nửa đó.
         expect(
             types,
-            'thiếu nửa xoá mềm ⇒ vết nói dòng mới xuất hiện mà không nói dòng cũ đi đâu. ' +
+            'thiếu nửa xoá ⇒ vết nói dòng mới xuất hiện mà không nói dòng cũ đi đâu. ' +
                 `actions=${shapeOf(row)}`,
-        ).toContain('softdelete')
+        ).toContain('delete')
         expect(
             types,
             'thiếu nửa chèn ⇒ danh sách thủ công đã ghi đè bản ghi âm của chính bảng đó. ' +
@@ -357,16 +357,17 @@ test.describe('監査ログ — set-based / raw-SQL write phải để lại act
         await step()
     })
 
-    // ── DeleteCctWaitList: xoá CỨNG ⇒ vết là bản sao cuối cùng ──────────────
+    // ── DeleteCctWaitList: dòng sang ncult_deleted ⇒ vết chỉ mang id ────────
 
-    test('TC-5 — カルテ待ち xoá cứng: action delete mang ĐỦ MỌI CỘT', async () => {
+    test('TC-5 — カルテ待ち xoá: action delete chỉ mang key là id của dòng', async () => {
         // Seed dòng ncult trực tiếp: không có endpoint nào tạo nó, và ncult không có
         // helper trong db.ts (đầu tiên dùng ⇒ giữ tại chỗ theo quy ước promote-on-second-use).
-        await withDb(async (c) => {
-            await c.query(
-                `INSERT INTO ncult (pat_no, pat_br, trt_date) VALUES ($1, $2, $3::date)`,
+        const seededId = await withDb(async (c) => {
+            const r = await c.query<{ id: string }>(
+                `INSERT INTO ncult (pat_no, pat_br, trt_date) VALUES ($1, $2, $3::date) RETURNING id`,
                 [PAT_NO, PAT_BR, TRT_DT],
             )
+            return r.rows[0]!.id
         })
 
         await resetMark()
@@ -388,25 +389,13 @@ test.describe('監査ログ — set-based / raw-SQL write phải để lại act
         ).toBeGreaterThan(0)
 
         const a = gone[0]!
-        expect(a.type, 'đây là xoá CỨNG, không phải xoá mềm').toBe('delete')
-        expect(a.new, 'xoá cứng thì không còn gì ở phía new').toBeUndefined()
-        // Dòng đã mất khỏi bảng, vết là bản sao duy nhất còn lại ⇒ phải đủ mọi cột.
-        expect(
-            Object.keys(a.old ?? {}),
-            `phía old phải mang đủ mọi cột của ncult, đang có ${JSON.stringify(Object.keys(a.old ?? {}))}`,
-        ).toEqual(
-            expect.arrayContaining([
-                'id',
-                'pat_no',
-                'pat_br',
-                'trt_date',
-                'created_at',
-                'created_by',
-                'updated_at',
-                'updated_by',
-            ]),
-        )
-        expect(Number(a.old!['pat_no'])).toBe(PAT_NO)
+        expect(a.type).toBe('delete')
+        // Dòng đã chép sang ncult_deleted, vết chỉ cần chỉ đích danh nó.
+        expect(a.key, `key phải là đúng id dòng vừa seed: ${JSON.stringify(a)}`).toEqual({
+            id: seededId,
+        })
+        expect(a.old, 'delete không được mang old').toBeUndefined()
+        expect(a.new, 'delete không được mang new').toBeUndefined()
         await step()
     })
 
@@ -467,7 +456,7 @@ test.describe('監査ログ — set-based / raw-SQL write phải để lại act
 
     // ── BulkCreateAccounting: CỐ Ý không có actions, bù bằng meta ───────────
 
-    test('TC-7 — 会計一括作成: meta mang deletedAt + patNos để hoàn tác được', async () => {
+    test('TC-7 — 会計一括作成: meta mang replacedBatchId + patNos để hoàn tác được', async () => {
         await resetMark()
 
         // Khai ĐỦ mọi field còn lại của AccountingDataItemRequest: thiếu field là cột
@@ -541,23 +530,26 @@ test.describe('監査ログ — set-based / raw-SQL write phải để lại act
 
         // Handler này CỐ Ý không truyền actions: batch cả kỳ × nhiều bệnh nhân, acc_dat tới
         // ~4.000 dòng cho MỘT bệnh nhân, nên ghi từng dòng sẽ vượt cap và thành vết cụt
-        // không khôi phục được. Thay vào đó meta mang đúng thứ cần: `deletedAt` là dấu
-        // nhận diện tập dòng bị xoá mềm (lần chạy trước có dấu khác), cộng danh sách
-        // bệnh nhân và khoảng ngày ⇒ dựng lại được mệnh đề WHERE để hoàn tác.
+        // không khôi phục được. Thay vào đó meta mang đúng thứ cần: `replacedBatchId` là
+        // batch archive chứa mọi dòng pha 1 đã xoá (lần chạy trước ở batch khác), cộng danh
+        // sách bệnh nhân và khoảng ngày ⇒ xoá kỳ hiện tại rồi
+        // `restore_deleted_batch(replacedBatchId)` là hoàn tác được.
         expect(
             Object.keys(row.meta),
-            `meta thiếu deletedAt/patNos — không dựng lại được mệnh đề hoàn tác. ` +
+            `meta thiếu replacedBatchId/patNos — không hoàn tác được. ` +
                 `meta=${JSON.stringify(row.meta)}`,
-        ).toEqual(expect.arrayContaining(['deletedAt', 'patNos', 'startDate', 'endDate']))
+        ).toEqual(expect.arrayContaining(['replacedBatchId', 'patNos', 'startDate', 'endDate']))
 
-        expect(String(row.meta['deletedAt'] ?? '')).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+        expect(String(row.meta['replacedBatchId'] ?? '')).toMatch(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+        )
         expect(row.meta['patNos']).toEqual(expect.arrayContaining([PAT_NO]))
         await step()
     })
 
     // ── DeletePatient: PHẢI CHẠY CUỐI — xoá hẳn bệnh nhân test ─────────────
 
-    test('TC-8 — xoá bệnh nhân: mỗi bảng bị xoá mềm phải có action, kèm deletedRows', async () => {
+    test('TC-8 — xoá bệnh nhân: mỗi bảng bị xoá phải có action, kèm deletedRows', async () => {
         await resetMark()
 
         // Guard của handler (PatientDeleteGuard) chặn bệnh nhân còn trn_trn/unpaid/acc_dat.
@@ -589,14 +581,14 @@ test.describe('監査ログ — set-based / raw-SQL write phải để lại act
         expect(
             actions.length,
             'KHÔNG có action nào. Đây chính là trạng thái trước fix: thao tác phá huỷ nhất ' +
-                'của màn hình chỉ để lại {ai làm, mã bệnh nhân}. 16 bảng bị xoá mềm bằng ' +
-                'SoftDeleteAsync (set-based) nên bộ ghi âm không thấy gì.',
+                'của màn hình chỉ để lại {ai làm, mã bệnh nhân}. 16 bảng bị xoá set-based ' +
+                'nên bộ ghi âm không thấy gì.',
         ).toBeGreaterThan(0)
 
         // person là bảng cha, luôn có dòng ⇒ luôn phải xuất hiện.
         const person = actionsOn(row, 'person')
         expect(person.length, `thiếu action trên person. actions=${shapeOf(row)}`).toBe(1)
-        expect(person[0]!.type).toBe('softdelete')
+        expect(person[0]!.type).toBe('delete')
 
         // insurance / siga / kon đều do seedTestPatient tạo (db.ts) ⇒ cả ba phải có mặt.
         for (const table of ['insurance', 'siga', 'kon']) {
@@ -607,27 +599,15 @@ test.describe('監査ログ — set-based / raw-SQL write phải để lại act
             ).toBeGreaterThan(0)
         }
 
-        // Mỗi action xoá mềm phải mang đủ 4 cột dấu ở hai phía: khôi phục chỉ deleted_at sẽ
-        // để updated_at đứng ở đúng thời điểm xoá, dòng không trở về trạng thái cũ.
-        for (const a of actions.filter((x) => x.type === 'softdelete')) {
-            expect(a.key, `action thiếu key`).toHaveProperty('id')
-            for (const side of ['old', 'new'] as const) {
-                expect(
-                    Object.keys(a[side] ?? {}),
-                    `phía '${side}' của ${a.table} thiếu cột dấu`,
-                ).toEqual(
-                    expect.arrayContaining([
-                        'deleted_at',
-                        'deleted_by',
-                        'updated_at',
-                        'updated_by',
-                    ]),
-                )
-            }
-            expect(a.old, `${a.table}: old.deleted_at phải là null (dòng đang sống)`).toHaveProperty(
-                'deleted_at',
-                null,
+        // Mọi action là delete chỉ mang key: dòng bị xoá nằm ở <bảng>_deleted.
+        // user_patient_history khoá ghép (user_id, pat_no), các bảng còn lại khoá id.
+        for (const a of actions) {
+            expect(a.type, `${a.table}: phải là delete`).toBe('delete')
+            expect(Object.keys(a.key).sort(), `${a.table}: key sai`).toEqual(
+                a.table === 'user_patient_history' ? ['pat_no', 'user_id'] : ['id'],
             )
+            expect(a.old, `${a.table}: delete không được mang old`).toBeUndefined()
+            expect(a.new, `${a.table}: delete không được mang new`).toBeUndefined()
         }
 
         // Mọi action phải thuộc đúng tập bảng mà purge có quyền đụng. Một tên lạ ở đây

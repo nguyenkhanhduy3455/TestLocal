@@ -84,8 +84,11 @@ export function describeRow(r: AuditRow): string {
 // Không còn cột before_json / after_json. Thao tác đã làm gì với DB nằm trong
 // mảng `actions` của chính meta_json, mỗi phần tử tự đủ để khôi phục một dòng.
 
-/** Loại thao tác. `softdelete` là UPDATE đóng dấu deleted_at — dòng vẫn còn. */
-export type AuditActionType = 'insert' | 'update' | 'softdelete' | 'delete'
+/**
+ * Loại thao tác. Không còn `softdelete`: mọi xoá là xoá cứng, dòng được trigger chép
+ * sang `<bảng>_deleted`, nên `delete` chỉ mang `key` (không `old`, không `new`).
+ */
+export type AuditActionType = 'insert' | 'update' | 'delete'
 
 export interface AuditAction {
     type: AuditActionType

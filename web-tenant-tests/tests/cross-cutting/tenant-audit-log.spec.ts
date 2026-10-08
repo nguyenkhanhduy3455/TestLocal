@@ -307,7 +307,7 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
             )
         }
 
-        // Dòng 受付 phải có TRƯỚC F9 của TC-1: F9 xoá mềm nó (Wait.deleteWait) và TC-9
+        // Dòng 受付 phải có TRƯỚC F9 của TC-1: F9 xoá nó (Wait.deleteWait) và TC-9
         // đo chính action đó. `ensureWaitRow` dùng lại dòng có sẵn nếu bệnh nhân đang
         // được tiếp nhận thật — lúc đó `created` false và afterAll KHÔNG được xoá.
         const wait = await ensureWaitRow(Number(PAT_NO), null).catch((e: Error) => {
@@ -331,7 +331,7 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
         await disposeOverlays?.()
         await releaseSharedPage(page)
         if (seededWaitId !== null) {
-            // Chỉ dòng do chính lần chạy này tạo. F9 đã xoá mềm nó, đây là xoá cứng cho
+            // Chỉ dòng do chính lần chạy này tạo. F9 đã xoá nó, đây là xoá cho
             // sạch để lần chạy sau `ensureWaitRow` lại INSERT mới.
             await deleteWaitRows([seededWaitId]).catch((e) =>
                 console.log(`dọn dòng 受付 hỏng: ${(e as Error).message}`),
@@ -488,7 +488,7 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
      *
      * Đọc `updated_at` của chính bảng nghiệp vụ, không đọc nhật ký — nên nó là
      * nguồn độc lập để đối chiếu: "DB nói bảng này bị ghi, vậy vết có nhắc tới nó
-     * không?". Không lọc `deleted_at`: dòng bị xoá mềm cũng là dòng bị ghi.
+     * không?".
      *
      * Tên bảng nội suy vào SQL, nhưng lấy từ đúng hằng `RECORDER_TABLES` bên dưới
      * chứ không từ input nào.
@@ -511,8 +511,8 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
      * Chốt phép gộp THEO BẢNG của `AuditActionSet.Merge`.
      *
      * F9 一括保存 tự khai `actions` cho `trn_trn` (ghi máy móc thì 1 dòng bị xoá
-     * thành 13 softdelete + 13 insert, không đọc được) và cho `wait` (xoá bằng
-     * UPDATE set-based nên bộ ghi âm không thấy). Nhưng cùng lần lưu đó còn ghi
+     * thành 13 delete + 13 insert, không đọc được) và cho `wait` (xoá set-based nên
+     * bộ ghi âm không thấy). Nhưng cùng lần lưu đó còn ghi
      * person / insurance / pat_info / yoyaku / siga (歯式) / kon (根数) — bộ ghi âm
      * ĐÃ bắt được. Trước fix, danh sách thủ công thay thế TOÀN BỘ bản ghi âm nên
      * sáu bảng kia bị vứt: một lần lưu làm sai 歯式 để lại vết không hề nhắc tới
@@ -563,16 +563,15 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
      * `wait` (受付患者一覧 — hàng chờ tiếp nhận) phải có trong vết.
      *
      * WinForm `Wait.deleteWait` (Wait.cs:210-228, gọi từ modSave.cs:580) đưa bệnh
-     * nhân ra khỏi hàng chờ ngay khi đăng ký điều trị. Web port bằng
-     * `SoftDeleteAsync` — set-based `ExecuteUpdate`, KHÔNG qua change tracker — nên
-     * `TenantChangeRecordingInterceptor` không bao giờ thấy, mà handler cũng chưa
-     * từng tự khai ⇒ **không ai ghi lại**. Đây là bảng duy nhất của F9 mà cả hai
-     * đường đều mù.
+     * nhân ra khỏi hàng chờ ngay khi đăng ký điều trị. Web port bằng `ExecuteDelete`
+     * set-based, KHÔNG qua change tracker — nên `TenantChangeRecordingInterceptor`
+     * không thấy; handler phải tự khai. Dòng bị xoá nằm ở `wait_deleted`, nên action
+     * chỉ mang `key` (id), không `old` / `new`.
      *
      * Dòng 受付 được seed ở `beforeAll` (trước F9 của TC-1), nên đây là điều kiện
      * xác định chứ không phụ thuộc bệnh nhân có đang được tiếp nhận thật hay không.
      */
-    test('TC-9 — xoá bệnh nhân khỏi hàng chờ (wait) phải để lại action softdelete', async () => {
+    test('TC-9 — xoá bệnh nhân khỏi hàng chờ (wait) phải để lại action delete chỉ mang key', async () => {
         expect(savedRow, 'TC-1 chưa lấy được dòng audit').not.toBeNull()
         skipWithReason(
             seededWaitId === null,
@@ -583,28 +582,20 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
 
         expect(
             waitActions.length,
-            "actions không có action nào trên 'wait'. F9 xoá mềm dòng 受付 bằng " +
-                'SoftDeleteAsync (set-based) nên bộ ghi âm không thấy — handler phải tự khai ' +
-                `qua AuditActions.SoftDeleteStamps. actions=${JSON.stringify(actionsOf(savedRow!).map((a) => `${a.table}/${a.type}`))}`,
+            "actions không có action nào trên 'wait'. F9 xoá dòng 受付 set-based nên bộ " +
+                'ghi âm không thấy — handler phải tự khai. ' +
+                `actions=${JSON.stringify(actionsOf(savedRow!).map((a) => `${a.table}/${a.type}`))}`,
         ).toBeGreaterThan(0)
 
         const a = waitActions[0]!
-        expect(a.type, "action trên 'wait' phải là softdelete (dòng vẫn còn trong bảng)").toBe(
-            'softdelete',
+        expect(a.type, "action trên 'wait' phải là delete").toBe('delete')
+        expect(a.key, "action trên 'wait' phải chỉ đích danh dòng bằng id").toHaveProperty(
+            'id',
+            seededWaitId,
         )
-        // Cả hai phía phải có đủ 4 cột dấu: khôi phục thiếu updated_at thì dòng không
-        // trở về đúng trạng thái cũ (xem AuditActionTypes.SoftDelete).
-        for (const side of ['old', 'new'] as const) {
-            const cols = Object.keys(a[side] ?? {})
-            expect(
-                cols,
-                `phía '${side}' của softdelete 'wait' phải mang đủ 4 cột dấu, đang có ${JSON.stringify(cols)}`,
-            ).toEqual(
-                expect.arrayContaining(['deleted_at', 'deleted_by', 'updated_at', 'updated_by']),
-            )
-        }
-        // `old` là dòng đang sống ⇒ hai cột xoá phải là null, không phải vắng mặt.
-        expect(a.old, "phía 'old' phải giữ deleted_at: null").toHaveProperty('deleted_at', null)
+        // Dòng nằm ở wait_deleted, vết chỉ cần key.
+        expect(a.old, `delete không được mang 'old': ${JSON.stringify(a)}`).toBeUndefined()
+        expect(a.new, `delete không được mang 'new': ${JSON.stringify(a)}`).toBeUndefined()
         await step()
     })
 
@@ -661,7 +652,7 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
         // WHERE, và cả dòng nhật ký thành vô dụng cho việc khôi phục.
         for (const a of actions) {
             expect(
-                ['insert', 'update', 'softdelete', 'delete'],
+                ['insert', 'update', 'delete'],
                 `action.type lạ: ${JSON.stringify(a)}`,
             ).toContain(a.type)
             expect(String(a.table ?? ''), `action thiếu 'table': ${JSON.stringify(a)}`).not.toBe('')
@@ -674,12 +665,12 @@ test.describe('監査ログ — tenant audit trail thực sự được ghi xu�
                 expect(a.old, `insert không được có 'old': ${JSON.stringify(a)}`).toBeUndefined()
                 expect(a.new, `insert phải có 'new': ${JSON.stringify(a)}`).toBeDefined()
             }
+            // Dòng bị xoá nằm ở <bảng>_deleted (tra theo deleteBatchIds) ⇒ chỉ cần key.
             if (a.type === 'delete') {
                 expect(a.new, `delete không được có 'new': ${JSON.stringify(a)}`).toBeUndefined()
-                expect(a.old, `delete phải có 'old': ${JSON.stringify(a)}`).toBeDefined()
+                expect(a.old, `delete không được có 'old': ${JSON.stringify(a)}`).toBeUndefined()
             }
-            // softdelete là UPDATE đóng dấu — phải có đủ hai phía để gỡ lại được.
-            if (a.type === 'softdelete' || a.type === 'update') {
+            if (a.type === 'update') {
                 expect(a.old, `${a.type} phải có 'old': ${JSON.stringify(a)}`).toBeDefined()
                 expect(a.new, `${a.type} phải có 'new': ${JSON.stringify(a)}`).toBeDefined()
             }
