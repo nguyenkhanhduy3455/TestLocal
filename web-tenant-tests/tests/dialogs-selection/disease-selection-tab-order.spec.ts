@@ -161,7 +161,94 @@ test.describe('病名選択 — thứ tự Tab / tiêu đề / nhãn F-key theo 
         const seen = await tabCycle(page, CHILD_CHAIN.length + 1)
         console.log(`TC-CHILD-1: ${seen.join(' → ')}`)
         expect(seen).toEqual([...CHILD_CHAIN, SHARED_CLOSE_BUTTON, 'grid'])
+    })
 
+    // ── F10 検索 — frm902007.btnF10_Click → frm902008 ──────────────────────────
+    // frm902008 (BaseDialog2): F9 確定 / Enter / End / ESC đều XÁC NHẬN; chỉ F10 戻る là
+    // đóng không tìm. Có chuỗi ⇒ rời màn mã con, tìm TOÀN BỘ (searchKbn.F9) theo
+    // 病名/カナ chứa chuỗi, sắp theo dis_cd và đánh lại 選択番号 từ 1. Rỗng ⇒ không gì.
+    const prompt = () => page.getByRole('dialog').filter({ hasText: '検索文字列を入力して下さい' })
+    const promptInput = () => prompt().getByRole('textbox', { name: '検索文字列' })
+    const MST_DIS_LIST = /\/tenant\/mst-dis(\?|$)/
+
+    /** Request danh sách cha bắn ra trong lúc chạy `action` (chờ thêm 1.5s cho chắc). */
+    async function listRequestsDuring(action: () => Promise<void>): Promise<URL[]> {
+        const urls: URL[] = []
+        const onReq = (r: { url(): string }) => {
+            if (MST_DIS_LIST.test(r.url())) urls.push(new URL(r.url()))
+        }
+        page.on('request', onReq)
+        await action()
+        await page.waitForTimeout(1500)
+        page.off('request', onReq)
+        return urls
+    }
+
+    /** 選択番号 / コード của các dòng đang render ở danh sách cha. */
+    async function parentRows(): Promise<{ dsp: number[]; cd: number[] }> {
+        const dsp = (await dialog().getByTestId('cell-dspCd').allInnerTexts()).map((t) => Number(t.trim()))
+        const cd = (await dialog().getByTestId('cell-disCd').allInnerTexts()).map((t) => Number(t.trim()))
+        return { dsp, cd }
+    }
+
+    test('TC-F10-1 — F10 mở hộp nhập; F9 確定 tìm toàn bộ theo chuỗi, rời màn mã con, sắp theo コード', async () => {
+        await page.keyboard.press('F10')
+        await expect(prompt(), 'F10 không mở hộp nhập chuỗi tìm kiếm').toBeVisible({ timeout: 10000 })
+        await expect(promptInput(), 'ô nhập phải có focus khi mở').toBeFocused()
+        await expect(promptInput()).toHaveAttribute('maxlength', '50')
+        await captureFixedUi(page, 'disease-selection-f10-prompt')
+
+        await promptInput().fill('P')
+        const reqs = await listRequestsDuring(() => page.keyboard.press('F9'))
+        await expect(prompt()).toHaveCount(0)
+        expect(reqs.length, 'F9 確定 không gửi request tìm kiếm').toBeGreaterThan(0)
+        const url = reqs.at(-1)!
+        expect(url.searchParams.get('q'), 'q phải là chuỗi vừa nhập').toBe('P')
+        expect(url.searchParams.get('kbn'), 'F10 tìm TOÀN BỘ (searchKbn.F9 = 9)').toBe('9')
+
+        await expect(dialog().getByText('枝番'), 'F10 phải rời màn mã con').toHaveCount(0)
+        await expect(dialog().getByTestId('cell-disNm').first()).toBeVisible({ timeout: 15000 })
+        const { dsp, cd } = await parentRows()
+        console.log(`TC-F10-1: ${cd.length} dòng đang render, コード đầu = ${cd.slice(0, 6).join(',')}`)
+        expect(cd.length).toBeGreaterThan(0)
+        expect(cd, 'kết quả F10 phải sắp theo コード (dis_cd) tăng dần').toEqual([...cd].sort((a, b) => a - b))
+        expect(dsp, '選択番号 phải đánh lại liên tục từ 1').toEqual(dsp.map((_, i) => i + 1))
+        await captureFixedUi(dialog(), 'disease-selection-f10-result')
+        await step()
+    })
+
+    test('TC-F10-2 — ESC trong hộp nhập cũng là XÁC NHẬN (BaseDialog2: Escape → btnF9_Click)', async () => {
+        await page.keyboard.press('F10')
+        await expect(prompt()).toBeVisible({ timeout: 10000 })
+        await promptInput().fill('Pul')
+        const reqs = await listRequestsDuring(() => page.keyboard.press('Escape'))
+        await expect(prompt()).toHaveCount(0)
+        expect(reqs.at(-1)?.searchParams.get('q'), 'ESC phải tìm với chuỗi đã nhập').toBe('Pul')
+        await expect(dialog(), 'ESC của hộp nhập không được đóng luôn 病名選択').toBeVisible()
+    })
+
+    test('TC-F10-3 — F10 戻る trong hộp nhập: đóng, không tìm, danh sách giữ nguyên', async () => {
+        const before = await parentRows()
+        await page.keyboard.press('F10')
+        await expect(prompt()).toBeVisible({ timeout: 10000 })
+        await promptInput().fill('Per')
+        const reqs = await listRequestsDuring(() => page.keyboard.press('F10'))
+        await expect(prompt()).toHaveCount(0)
+        expect(reqs, 'F10 戻る không được gửi request tìm kiếm').toHaveLength(0)
+        expect(await parentRows()).toEqual(before)
+    })
+
+    test('TC-F10-4 — chuỗi rỗng + Enter: không làm gì', async () => {
+        const before = await parentRows()
+        await page.keyboard.press('F10')
+        await expect(prompt()).toBeVisible({ timeout: 10000 })
+        const reqs = await listRequestsDuring(() => promptInput().press('Enter'))
+        await expect(prompt()).toHaveCount(0)
+        expect(reqs, 'chuỗi rỗng không được tìm').toHaveLength(0)
+        expect(await parentRows()).toEqual(before)
+    })
+
+    test('TC-CLOSE — F12 戻る đóng 病名選択', async () => {
         await page.keyboard.press('F12')
         await expect(dialog()).toHaveCount(0)
     })
