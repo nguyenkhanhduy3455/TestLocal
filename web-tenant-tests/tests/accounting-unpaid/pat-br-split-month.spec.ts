@@ -326,7 +326,7 @@ test.describe('枝番 (pat_br) — tháng bắc qua 2 枝番', () => {
         const rows = await withDb(async (c) => {
             const r = await c.query<{ trt_dt: string; pat_br: number }>(
                 `SELECT trt_dt::text AS trt_dt, pat_br FROM trn_trn
-                  WHERE pat_no = $1 AND deleted_at IS NULL
+                  WHERE pat_no = $1
                   ORDER BY trt_dt`,
                 [PAT_NO],
             )

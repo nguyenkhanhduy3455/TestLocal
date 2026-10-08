@@ -508,7 +508,7 @@ test.describe('診療入力 — Ｓｔｅｐ編集 (frm203050)', () => {
     async function readTrtStateCell(buiIdx: number, posIdx: number): Promise<number> {
         return withDb(async (c) => {
             const r = await c.query<{ value: number | null }>(
-                `SELECT value FROM view_trt_state_active
+                `SELECT value FROM trt_state
                   WHERE pat_no = $1 AND bui_idx = $2 AND pos_idx = $3 LIMIT 1`,
                 [Number(PAT_NO), buiIdx, posIdx],
             )

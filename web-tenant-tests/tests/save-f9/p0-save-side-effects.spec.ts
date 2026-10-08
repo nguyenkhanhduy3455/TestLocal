@@ -515,7 +515,7 @@ async function readP0Rows(patNo: number, trtDt: string): Promise<P0Row[]> {
             `SELECT disp_no, trt_cd, trt_sb, trt_cnt, trt_pt, price, isl,
                     dr_no, staff_no, syosin_flg, raiin_cnt, freewd, dsp_trt
                FROM trn_trn
-              WHERE pat_no = $1 AND trt_dt = $2 AND deleted_at IS NULL
+              WHERE pat_no = $1 AND trt_dt = $2
               ORDER BY disp_no`,
             [patNo, trtDt],
         )
@@ -555,7 +555,7 @@ async function hasPastFirstVisit(patNo: number, firstOfMonth: string): Promise<b
         const r = await c.query<{ n: number }>(
             `SELECT count(*)::int AS n
                FROM trn_trn
-              WHERE pat_no = $1 AND trt_dt < $2::date AND deleted_at IS NULL
+              WHERE pat_no = $1 AND trt_dt < $2::date
                 AND (trt_cd = 100 OR (trt_cd = 107 AND trt_sb = 0))`,
             [patNo, firstOfMonth],
         )
@@ -567,7 +567,7 @@ async function hasPastFirstVisit(patNo: number, firstOfMonth: string): Promise<b
 async function countWait(patNo: number): Promise<number> {
     return withDb(async (c) => {
         const r = await c.query<{ n: number }>(
-            'SELECT count(*)::int AS n FROM wait WHERE pat_no = $1 AND deleted_at IS NULL',
+            'SELECT count(*)::int AS n FROM wait WHERE pat_no = $1',
             [patNo],
         )
         return r.rows[0]?.n ?? 0
@@ -583,7 +583,7 @@ async function countWait(patNo: number): Promise<number> {
 async function ensureWaitRow(patNo: number): Promise<boolean> {
     return withDb(async (c) => {
         const cur = await c.query<{ n: number }>(
-            'SELECT count(*)::int AS n FROM wait WHERE pat_no = $1 AND deleted_at IS NULL',
+            'SELECT count(*)::int AS n FROM wait WHERE pat_no = $1',
             [patNo],
         )
         if ((cur.rows[0]?.n ?? 0) > 0) return false
@@ -615,7 +615,7 @@ async function readInsurance(patNo: number): Promise<InsRow[]> {
         const r = await c.query<Record<string, unknown>>(
             `SELECT pat_br, to_char(med_ed_dt, 'YYYY-MM-DD') AS med_ed_dt
                FROM insurance
-              WHERE pat_no = $1 AND deleted_at IS NULL
+              WHERE pat_no = $1
               ORDER BY pat_br`,
             [patNo],
         )
@@ -645,7 +645,7 @@ async function countTrnStatus(patNo: number, sinryoYm: string): Promise<number> 
             `SELECT count(*)::int AS n
                FROM trn_status
               WHERE pat_no = $1 AND sinryo_ym = $2
-                AND jihi_flg IN (0, 1, 2) AND deleted_at IS NULL`,
+                AND jihi_flg IN (0, 1, 2)`,
             [patNo, sinryoYm],
         )
         return r.rows[0]?.n ?? 0
@@ -689,7 +689,6 @@ async function readMonthRowIds(patNo: number, trtDt: string): Promise<string[]> 
               WHERE pat_no = $1
                 AND trt_dt >= date_trunc('month', $2::date)
                 AND trt_dt <  date_trunc('month', $2::date) + interval '1 month'
-                AND deleted_at IS NULL
               ORDER BY trt_dt, disp_no`,
             [patNo, trtDt],
         )
@@ -1601,7 +1600,7 @@ async function trtVersionIdFor(onDate: string): Promise<number | null> {
     return withDb(async (c) => {
         const r = await c.query<{ version_id: number }>(
             `SELECT version_id FROM mst_trt_ver
-              WHERE start_date <= $1::date AND end_date >= $1::date AND deleted_at IS NULL
+              WHERE start_date <= $1::date AND end_date >= $1::date
               LIMIT 1`,
             [onDate],
         )
@@ -1613,7 +1612,7 @@ async function resKindOf(versionId: number, trtCd: number, trtSb: number): Promi
     return withDb(async (c) => {
         const r = await c.query<{ res_kind: number }>(
             `SELECT res_kind FROM mst_trt
-              WHERE version_id = $1 AND trt_cd = $2 AND trt_sb = $3 AND deleted_at IS NULL`,
+              WHERE version_id = $1 AND trt_cd = $2 AND trt_sb = $3`,
             [versionId, trtCd, trtSb],
         )
         return r.rows[0]?.res_kind ?? null
@@ -1624,7 +1623,7 @@ async function masterExists(versionId: number, trtCd: number, trtSb: number): Pr
     return withDb(async (c) => {
         const r = await c.query<{ n: number }>(
             `SELECT count(*)::int AS n FROM mst_trt
-              WHERE version_id = $1 AND trt_cd = $2 AND trt_sb = $3 AND deleted_at IS NULL`,
+              WHERE version_id = $1 AND trt_cd = $2 AND trt_sb = $3`,
             [versionId, trtCd, trtSb],
         )
         return (r.rows[0]?.n ?? 0) > 0
@@ -1636,7 +1635,7 @@ async function bnowCell(patNo: number, col: string): Promise<number | null> {
     if (!/^(re|rn)_\d{1,2}$/.test(col)) throw new Error(`bnowCell: cột không hợp lệ "${col}"`)
     return withDb(async (c) => {
         const r = await c.query<Record<string, unknown>>(
-            `SELECT ${col} AS v FROM bnow WHERE pat_no = $1 AND deleted_at IS NULL`,
+            `SELECT ${col} AS v FROM bnow WHERE pat_no = $1`,
             [patNo],
         )
         return r.rows.length === 0 ? null : Number(r.rows[0]?.['v'] ?? 0)
@@ -1646,7 +1645,7 @@ async function bnowCell(patNo: number, col: string): Promise<number | null> {
 async function countBnow(patNo: number): Promise<number> {
     return withDb(async (c) => {
         const r = await c.query<{ n: number }>(
-            'SELECT count(*)::int AS n FROM bnow WHERE pat_no = $1 AND deleted_at IS NULL',
+            'SELECT count(*)::int AS n FROM bnow WHERE pat_no = $1',
             [patNo],
         )
         return r.rows[0]?.n ?? 0
@@ -1657,7 +1656,7 @@ async function countBnow(patNo: number): Promise<number> {
 async function readBnow(patNo: number): Promise<Record<string, number> | null> {
     return withDb(async (c) => {
         const r = await c.query<Record<string, unknown>>(
-            'SELECT * FROM bnow WHERE pat_no = $1 AND deleted_at IS NULL',
+            'SELECT * FROM bnow WHERE pat_no = $1',
             [patNo],
         )
         const row = r.rows[0]
@@ -1725,7 +1724,7 @@ async function hokanCell(patNo: number, n: number): Promise<string | null> {
     return withDb(async (c) => {
         const r = await c.query<{ v: string | null }>(
             `SELECT to_char(hokan_${n}, 'YYYY-MM-DD') AS v
-               FROM pat_info WHERE pat_no = $1 AND deleted_at IS NULL`,
+               FROM pat_info WHERE pat_no = $1`,
             [patNo],
         )
         return r.rows.length === 0 ? null : (r.rows[0]?.v ?? null)

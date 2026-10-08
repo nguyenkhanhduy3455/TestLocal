@@ -233,14 +233,14 @@ async function findScoreCandidate(): Promise<MstTrtCandidate | null> {
         }>(
             `WITH active_ver AS (
                  SELECT version_id
-                   FROM view_mst_trt_ver_active
+                   FROM mst_trt_ver
                   WHERE CURRENT_DATE BETWEEN start_date AND end_date
                   ORDER BY end_date DESC
                   LIMIT 1
              )
              SELECT m.trt_cd, m.trt_sb, m.trt_nm, m.cct_nm,
                     m.score1, m.score2, m.score3, m.f1, m.acc_unit
-               FROM view_mst_trt_active m
+               FROM mst_trt m
                INNER JOIN active_ver av ON m.version_id = av.version_id
               WHERE m.f1 = 0
                 AND m.acc_unit BETWEEN 9 AND 12
@@ -295,14 +295,14 @@ async function findCctNmOnlyCandidate(): Promise<{
         }>(
             `WITH active_ver AS (
                  SELECT version_id
-                   FROM view_mst_trt_ver_active
+                   FROM mst_trt_ver
                   WHERE CURRENT_DATE BETWEEN start_date AND end_date
                   ORDER BY end_date DESC
                   LIMIT 1
              ),
              m AS (
                  SELECT t.trt_cd, t.trt_sb, t.trt_nm, t.cct_nm
-                   FROM view_mst_trt_active t
+                   FROM mst_trt t
                    INNER JOIN active_ver av ON t.version_id = av.version_id
              )
              SELECT m.trt_cd, m.trt_sb, m.trt_nm, m.cct_nm
@@ -336,11 +336,11 @@ async function patientScoreContext(): Promise<{ age: number; disFlg: number } | 
         const r = await c.query<{ birth: string | null; dis_flg: number }>(
             `SELECT p.pat_birth_dt AS birth,
                     COALESCE((SELECT i.dis_flg
-                                FROM view_insurance_active i
+                                FROM insurance i
                                WHERE i.pat_no = p.pat_no
                                ORDER BY i.pat_br DESC
                                LIMIT 1), 0) AS dis_flg
-               FROM view_person_active p
+               FROM person p
               WHERE p.pat_no = $1
               LIMIT 1`,
             [Number(PAT_NO)],

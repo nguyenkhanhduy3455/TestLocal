@@ -507,7 +507,7 @@ test.describe('入金指定 — F キー đợi 反映 rồi mới chốt', () =
             withDb(async (c) => {
                 const r = await c.query<{ trt_dt: string; score: string; claim_amt: string }>(
                     `SELECT trt_dt::text AS trt_dt, score, claim_amt FROM unpaid
-                      WHERE pat_no = $1 AND deleted_at IS NULL
+                      WHERE pat_no = $1
                       ORDER BY trt_cnt`,
                     [PAT_NO],
                 )

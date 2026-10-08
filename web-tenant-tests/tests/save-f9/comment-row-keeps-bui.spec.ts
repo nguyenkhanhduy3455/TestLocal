@@ -64,7 +64,7 @@ test.describe('F9 登録 — dòng 摘要コメント giữ 部位/病名 (ModMa
             const r = await c.query<{ dis_cd_1: number; dsp_bui: string; dsp_dis: string; bui_2: number; bui_15: number }>(
                 `SELECT dis_cd_1, dsp_bui, dsp_dis, bui_2, bui_15
                    FROM trn_trn
-                  WHERE pat_no = $1 AND trt_dt = $2 AND trt_cd = $3 AND deleted_at IS NULL
+                  WHERE pat_no = $1 AND trt_dt = $2 AND trt_cd = $3
                   ORDER BY disp_no`,
                 [PAT_NO, TRT_DT, trtCd],
             )

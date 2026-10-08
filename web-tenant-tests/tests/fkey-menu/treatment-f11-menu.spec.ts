@@ -400,7 +400,7 @@ async function appeared(locator: Locator, timeout: number): Promise<boolean> {
 async function readPatOutcome(): Promise<number> {
     return withDb(async (c) => {
         const r = await c.query<{ pat_outcome: number | null }>(
-            `SELECT pat_outcome FROM view_person_active WHERE pat_no = $1 LIMIT 1`,
+            `SELECT pat_outcome FROM person WHERE pat_no = $1 LIMIT 1`,
             [Number(PAT_NO)],
         )
         return Number(r.rows[0]?.pat_outcome ?? 0)

@@ -171,8 +171,8 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
         return withDb(async (client) => {
             const r = await client.query(
                 `SELECT status, progress, imported_count, skipped_count, error_message, file_name
-                 FROM ${DB_SCHEMA}.pmh_import_job
-                 WHERE master_seq = $1 AND deleted_at IS NULL
+                 FROM ${DB_SCHEMA}.import_job
+                 WHERE kind = 'pmh' AND target = $1::text
                  ORDER BY created_at DESC LIMIT 1`,
                 [seq],
             )
@@ -193,8 +193,8 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
             catalog = await withDb(async (client) => {
                 const r = await client.query(
                     `SELECT seq, name_jp, table_name, column_list
-                     FROM ${DB_SCHEMA}.pmh_mst_name
-                     WHERE deleted_at IS NULL ORDER BY seq`,
+                     FROM ${DB_SCHEMA}.mst_pmh_name
+                     ORDER BY seq`,
                 )
                 return r.rows.map((x) => ({
                     seq: x.seq as number,
@@ -205,7 +205,7 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
                         .filter((c) => c.trim() !== '').length,
                 }))
             })
-            console.log(`catalog pmh_mst_name: ${catalog.length} master`)
+            console.log(`catalog mst_pmh_name: ${catalog.length} master`)
         }
 
         await gotoScreen()
@@ -258,8 +258,8 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
     })
 
     test('TC-LIST-1 — combobox liệt kê đúng 7 master theo thứ tự catalog', async () => {
-        skipWithReason(!dbEnabled, 'cần TEST_DB=1 để đối chiếu với pmh_mst_name')
-        skipWithReason(catalog.length === 0, 'catalog pmh_mst_name rỗng — chưa migrate?')
+        skipWithReason(!dbEnabled, 'cần TEST_DB=1 để đối chiếu với mst_pmh_name')
+        skipWithReason(catalog.length === 0, 'catalog mst_pmh_name rỗng — chưa migrate?')
 
         await masterSelect().click()
         const options = page.getByRole('option')
@@ -372,7 +372,7 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
 
         await expect(
             page.getByText(/件のデータをインポートしました。/),
-            '取込 không kết thúc — xem pmh_import_job.status / log Hangfire',
+            '取込 không kết thúc — xem import_job.status / log Hangfire',
         ).toBeVisible({ timeout: IMPORT_TIMEOUT })
 
         const resultText = await page.getByText(/件のデータをインポートしました。/).innerText()
@@ -380,7 +380,7 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
 
         // Con số phải khớp DB, không chỉ khớp chữ trên màn hình.
         const job = await latestJob(local.seq)
-        expect(job, 'không thấy dòng pmh_import_job nào').toBeTruthy()
+        expect(job, 'không thấy dòng import_job (kind=pmh) nào').toBeTruthy()
         expect(job.status, `job không thành công: ${job.error_message ?? ''}`).toBe('succeeded')
         expect(job.file_name).toBe(CSV_LOCAL_OK)
 

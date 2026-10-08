@@ -408,7 +408,7 @@ test.describe('診療入力 — 2 dialog vừa port (チェック項目設定 / 
     async function readChkPrmParam(no: number): Promise<number | null> {
         return withDb(async (c) => {
             const r = await c.query<{ v: number | null }>(
-                `SELECT param_${no} AS v FROM view_chk_prm_active ORDER BY updated_at DESC LIMIT 1`,
+                `SELECT param_${no} AS v FROM chk_prm ORDER BY updated_at DESC LIMIT 1`,
             )
             const v = r.rows[0]?.v
             return v === undefined || v === null ? null : Number(v)
@@ -691,7 +691,7 @@ test.describe('診療入力 — 2 dialog vừa port (チェック項目設定 / 
             // không thì mỗi lần lưu là thêm một cấu hình và luật check thành ngẫu nhiên.
             const activeRows = await withDb(async (c) => {
                 const r = await c.query<{ n: string }>(
-                    `SELECT count(*)::text AS n FROM view_chk_prm_active`,
+                    `SELECT count(*)::text AS n FROM chk_prm`,
                 )
                 return Number(r.rows[0]?.n ?? 0)
             })

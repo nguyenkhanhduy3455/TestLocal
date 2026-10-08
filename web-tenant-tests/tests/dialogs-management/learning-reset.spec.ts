@@ -131,9 +131,9 @@ async function readCounts(): Promise<Counts> {
   return withDb(async (c) => {
     const one = async (sql: string) =>
       Number((await c.query<{ n: string }>(sql)).rows[0]!.n);
-    const nz = "deleted_at IS NULL AND use_cnt IS NOT NULL AND use_cnt <> 0";
-    const trtVer = versionSql("view_mst_trt_ver_active");
-    const disVer = versionSql("view_mst_dis_ver_active");
+    const nz = "use_cnt IS NOT NULL AND use_cnt <> 0";
+    const trtVer = versionSql("mst_trt_ver");
+    const disVer = versionSql("mst_dis_ver");
     return {
       mst_trt: {
         current: await one(

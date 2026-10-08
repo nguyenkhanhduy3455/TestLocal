@@ -769,8 +769,8 @@ test.describe('F4 当日来患 — 当日来患一覧 (frm203001)', () => {
         const union = await withDb(async (c) => {
             const { rows: r } = await c.query<{ pat_no: number }>(
                 `SELECT DISTINCT trn.pat_no
-                   FROM view_trn_trn_active AS trn
-                   INNER JOIN view_trn_status_active AS trn_s
+                   FROM trn_trn AS trn
+                   INNER JOIN trn_status AS trn_s
                      ON trn_s.pat_no = trn.pat_no
                     AND trn_s.sinryo_ym = $2
                     AND trn_s.miraiin_kbn = 0
@@ -778,7 +778,7 @@ test.describe('F4 当日来患 — 当日来患一覧 (frm203001)', () => {
                     AND trn.jihi_flg = 0
                   UNION
                  SELECT DISTINCT pat_no
-                   FROM view_acc_dat_active
+                   FROM acc_dat
                   WHERE trt_dt = $1::date
                     AND score <> 0
                     AND lflg = 0`,
@@ -824,7 +824,7 @@ test.describe('F4 当日来患 — 当日来患一覧 (frm203001)', () => {
                             COALESCE(SUM(claim_amt), 0)::text AS claim,
                             COALESCE(SUM(discount), 0)::text  AS discount,
                             COALESCE(SUM(rece_amt), 0)::text  AS rece
-                       FROM view_acc_dat_active
+                       FROM acc_dat
                       WHERE trt_dt = $1::date
                         AND pat_no = $2
                         AND score <> 0`,

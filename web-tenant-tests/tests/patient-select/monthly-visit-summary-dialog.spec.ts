@@ -959,7 +959,7 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
                     `SELECT COUNT(*)::bigint AS cnt, COALESCE(SUM(total_score), 0)::bigint AS total
                        FROM (
                          SELECT SUM(price) AS total_score
-                           FROM view_trn_trn_active
+                           FROM trn_trn
                           WHERE trt_dt >= $1::date
                             AND trt_dt < ($1::date + INTERVAL '1 month')
                             AND price <> 0
@@ -1001,7 +1001,7 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
         const ceiling = await withDb(async (c) => {
             const { rows: r } = await c.query<{ total: string }>(
                 `SELECT COALESCE(SUM(price), 0)::bigint AS total
-                   FROM view_trn_trn_active
+                   FROM trn_trn
                   WHERE trt_dt >= $1::date
                     AND trt_dt < ($1::date + INTERVAL '1 month')
                     AND jihi_flg = 0
@@ -1037,7 +1037,7 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
         const patNos = await withDb(async (c) => {
             const { rows: r } = await c.query<{ pat_no: number }>(
                 `SELECT pat_no
-                   FROM view_trn_trn_active
+                   FROM trn_trn
                   WHERE trt_dt >= $1::date
                     AND trt_dt < ($1::date + INTERVAL '1 month')
                     AND disp_no < ${SEED_DISP_BASE}

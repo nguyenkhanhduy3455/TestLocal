@@ -171,7 +171,7 @@ async function deleteSeededGuides(): Promise<void> {
 async function seedGuide(guidCd: number, guidNm: string, picks: readonly GuidePick[]): Promise<void> {
     await withDb(async (c) => {
         const clash = await c.query<{ guid_nm: string | null }>(
-            'SELECT guid_nm FROM pac_nam WHERE guid_cd = $1 AND deleted_at IS NULL LIMIT 1',
+            'SELECT guid_nm FROM pac_nam WHERE guid_cd = $1 LIMIT 1',
             [guidCd],
         )
         const existing = clash.rows[0]

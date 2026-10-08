@@ -152,7 +152,7 @@ export async function seedMstTrtRows(
     return withDb(async (c) => {
         const ver = await c.query<{ version_id: string; version_code: string }>(
             `SELECT version_id, version_code
-               FROM view_mst_trt_ver_active
+               FROM mst_trt_ver
               WHERE table_name LIKE 'MST_TRT%'
                 AND start_date <= $1::timestamptz
                 AND end_date   >= $1::timestamptz
@@ -191,7 +191,7 @@ export async function seedMstTrtRows(
                 `INSERT INTO mst_trt (${names.map((n) => `"${n}"`).join(', ')})
                  SELECT ${select}
                    FROM mst_trt
-                  WHERE version_id = $1 AND trt_cd = $5 AND trt_sb = $6 AND deleted_at IS NULL
+                  WHERE version_id = $1 AND trt_cd = $5 AND trt_sb = $6
                   LIMIT 1
                  RETURNING id`,
                 [versionId, r.trtCd, r.trtSb, r.trtNm, r.fromTrtCd, r.fromTrtSb],
@@ -263,7 +263,7 @@ export async function deleteMstMedRows(ids: readonly string[]): Promise<number> 
 export async function countGisiKanri(patNo: number): Promise<number> {
     return withDb(async (c) => {
         const r = await c.query<{ n: number }>(
-            'SELECT count(*)::int AS n FROM gisi_kanri WHERE pat_no = $1 AND deleted_at IS NULL',
+            'SELECT count(*)::int AS n FROM gisi_kanri WHERE pat_no = $1',
             [patNo],
         )
         return r.rows[0]?.n ?? 0
@@ -306,7 +306,7 @@ export interface ChiryoKanriR2Row {
 export async function countChiryoKanriR2(patNo: number): Promise<number> {
     return withDb(async (c) => {
         const r = await c.query<{ n: number }>(
-            'SELECT count(*)::int AS n FROM chiryo_kanri_r2 WHERE pat_no = $1 AND deleted_at IS NULL',
+            'SELECT count(*)::int AS n FROM chiryo_kanri_r2 WHERE pat_no = $1',
             [patNo],
         )
         return r.rows[0]?.n ?? 0
@@ -324,7 +324,7 @@ export async function latestChiryoKanriR2(patNo: number): Promise<ChiryoKanriR2R
         const r = await c.query<Record<string, unknown>>(
             `SELECT print_dt, no, tooth_cnt, doc_type, etc, special_note, ${seCols}, ${snCols}
              FROM chiryo_kanri_r2
-             WHERE pat_no = $1 AND deleted_at IS NULL
+             WHERE pat_no = $1
              ORDER BY print_dt DESC
              LIMIT 1`,
             [patNo],
@@ -701,7 +701,7 @@ export async function findTreatmentRows(
         const r = await c.query<Record<string, unknown>>(
             `SELECT trt_cd, trt_sb, dsp_trt, dsp_bui, ${buiCols.join(', ')}
                FROM trn_trn
-              WHERE pat_no = $1 AND trt_dt = $2 AND trt_cd = $3 AND deleted_at IS NULL
+              WHERE pat_no = $1 AND trt_dt = $2 AND trt_cd = $3
               ORDER BY disp_no`,
             [patNo, trtDt, trtCd],
         )
@@ -726,8 +726,7 @@ export async function countRealTreatmentRowsInMonth(
                FROM trn_trn
               WHERE pat_no = $1
                 AND date_trunc('month', trt_dt) = date_trunc('month', $2::date)
-                AND disp_no < ${SEED_DISP_BASE}
-                AND deleted_at IS NULL`,
+                AND disp_no < ${SEED_DISP_BASE}`,
             [patNo, trtDt],
         )
         return r.rows[0]?.n ?? 0
@@ -764,7 +763,7 @@ export async function readSiga(patNo: number): Promise<SigaSnapshot | null> {
         const r = await c.query<Record<string, unknown>>(
             `SELECT ${SE_COLS.join(', ')}, ${SN_COLS.join(', ')}
                FROM siga
-              WHERE pat_no = $1 AND deleted_at IS NULL
+              WHERE pat_no = $1
               LIMIT 1`,
             [patNo],
         )
@@ -788,7 +787,7 @@ export async function ensureSigaRow(patNo: number): Promise<boolean> {
             `INSERT INTO siga (pat_no)
              SELECT $1
               WHERE NOT EXISTS (
-                    SELECT 1 FROM siga WHERE pat_no = $1 AND deleted_at IS NULL)`,
+                    SELECT 1 FROM siga WHERE pat_no = $1)`,
             [patNo],
         )
         return (r.rowCount ?? 0) > 0
@@ -832,7 +831,7 @@ export async function writeSigaTeeth(
     if (sets.length === 0) return
     await withDb(async (c) => {
         await c.query(
-            `UPDATE siga SET ${sets.join(', ')} WHERE pat_no = $1 AND deleted_at IS NULL`,
+            `UPDATE siga SET ${sets.join(', ')} WHERE pat_no = $1`,
             [patNo, ...values],
         )
     })
@@ -846,7 +845,7 @@ export async function restoreSiga(patNo: number, snap: SigaSnapshot): Promise<vo
     ]
     await withDb(async (c) => {
         await c.query(
-            `UPDATE siga SET ${sets.join(', ')} WHERE pat_no = $1 AND deleted_at IS NULL`,
+            `UPDATE siga SET ${sets.join(', ')} WHERE pat_no = $1`,
             [patNo, ...snap.se, ...snap.sn],
         )
     })
@@ -996,7 +995,7 @@ export async function careInsRateFor(patNo: number, onDate: string): Promise<Car
                     acc_rate_1, acc_rate_st_dt_1, acc_rate_ed_dt_1,
                     acc_rate_2, acc_rate_st_dt_2, acc_rate_ed_dt_2
                FROM care_insurance
-              WHERE pat_no = $1 AND deleted_at IS NULL
+              WHERE pat_no = $1
               ORDER BY care_no`,
             [patNo],
         )
@@ -1075,7 +1074,7 @@ export async function dayScoreByJihiFlg(
         const r = await c.query<{ n: string | null }>(
             `SELECT COALESCE(SUM(trt_pt * trt_cnt), 0)::text AS n
                FROM trn_trn
-              WHERE pat_no = $1 AND trt_dt = $2 AND ${cond} AND deleted_at IS NULL`,
+              WHERE pat_no = $1 AND trt_dt = $2 AND ${cond}`,
             [patNo, trtDt, value],
         )
         return Number(r.rows[0]?.n ?? 0)
@@ -1227,7 +1226,7 @@ export async function readKon(patNo: number): Promise<KonSnapshot | null> {
         const r = await c.query<Record<string, unknown>>(
             `SELECT ${EKON_COLS.join(', ')}, ${NKON_COLS.join(', ')}
                FROM kon
-              WHERE pat_no = $1 AND deleted_at IS NULL
+              WHERE pat_no = $1
               LIMIT 1`,
             [patNo],
         )
@@ -1250,7 +1249,7 @@ export async function ensureKonRow(patNo: number): Promise<boolean> {
             `INSERT INTO kon (pat_no)
              SELECT $1
               WHERE NOT EXISTS (
-                    SELECT 1 FROM kon WHERE pat_no = $1 AND deleted_at IS NULL)`,
+                    SELECT 1 FROM kon WHERE pat_no = $1)`,
             [patNo],
         )
         return (r.rowCount ?? 0) > 0
@@ -1295,7 +1294,7 @@ export async function writeKonTeeth(
     if (sets.length === 0) return
     await withDb(async (c) => {
         await c.query(
-            `UPDATE kon SET ${sets.join(', ')} WHERE pat_no = $1 AND deleted_at IS NULL`,
+            `UPDATE kon SET ${sets.join(', ')} WHERE pat_no = $1`,
             [patNo, ...values],
         )
     })
@@ -1309,7 +1308,7 @@ export async function restoreKon(patNo: number, snap: KonSnapshot): Promise<void
     ]
     await withDb(async (c) => {
         await c.query(
-            `UPDATE kon SET ${sets.join(', ')} WHERE pat_no = $1 AND deleted_at IS NULL`,
+            `UPDATE kon SET ${sets.join(', ')} WHERE pat_no = $1`,
             [patNo, ...snap.ekon, ...snap.nkon],
         )
     })
@@ -1329,7 +1328,7 @@ export async function readTrtStateRow(patNo: number, buiIdx: number): Promise<nu
     return withDb(async (c) => {
         const r = await c.query<{ pos_idx: number; value: number }>(
             `SELECT pos_idx, value
-               FROM view_trt_state_active
+               FROM trt_state
               WHERE pat_no = $1 AND bui_idx = $2`,
             [patNo, buiIdx],
         )
@@ -1362,7 +1361,7 @@ export async function writeTrtStateCells(
         for (const cell of cells) {
             const upd = await c.query(
                 `UPDATE trt_state SET value = $4, updated_at = now()
-                  WHERE pat_no = $1 AND bui_idx = $2 AND pos_idx = $3 AND deleted_at IS NULL`,
+                  WHERE pat_no = $1 AND bui_idx = $2 AND pos_idx = $3`,
                 [patNo, buiIdx, cell.posIdx, cell.value],
             )
             if ((upd.rowCount ?? 0) > 0) {
@@ -1438,7 +1437,7 @@ export async function seedStepGuides(rows: readonly SeedStepGuideInput[]): Promi
         // của một dòng có thật thay vì bịa số, để nếu ai đó mở thử
         // ガイド処置選択 thì nó vẫn tra được master chứ không nổ.
         const src = await c.query<{ trt_cd: number; trt_sb: number }>(
-            `SELECT trt_cd, trt_sb FROM view_pag_trt_active
+            `SELECT trt_cd, trt_sb FROM pag_trt
               WHERE trt_cd IS NOT NULL AND trt_sb IS NOT NULL
               ORDER BY pag_id LIMIT 1`,
         )
@@ -1448,7 +1447,7 @@ export async function seedStepGuides(rows: readonly SeedStepGuideInput[]): Promi
         let n = 0
         for (const r of rows) {
             const clash = await c.query<{ guid_nm: string | null }>(
-                'SELECT guid_nm FROM pac_nam WHERE guid_cd = $1 AND deleted_at IS NULL LIMIT 1',
+                'SELECT guid_nm FROM pac_nam WHERE guid_cd = $1 LIMIT 1',
                 [r.guidCd],
             )
             const existing = clash.rows[0]
@@ -1523,7 +1522,7 @@ export async function findMstTrt(onDate: string, trtCd: number): Promise<MstTrtR
     return withDb(async (c) => {
         const ver = await c.query<{ version_id: string }>(
             `SELECT version_id
-               FROM view_mst_trt_ver_active
+               FROM mst_trt_ver
               WHERE table_name LIKE 'MST_TRT%'
                 AND start_date <= $1::timestamptz
                 AND end_date   >= $1::timestamptz
@@ -1537,7 +1536,7 @@ export async function findMstTrt(onDate: string, trtCd: number): Promise<MstTrtR
         const r = await c.query<Record<string, unknown>>(
             `SELECT trt_cd, trt_sb, trt_nm, cct_nm, score1
                FROM mst_trt
-              WHERE version_id = $1 AND trt_cd = $2 AND deleted_at IS NULL
+              WHERE version_id = $1 AND trt_cd = $2
               ORDER BY trt_sb`,
             [versionId, trtCd],
         )
@@ -1588,7 +1587,7 @@ export async function findPacsWithTrtSlot(
     return withDb(async (c) => {
         const r = await c.query<Record<string, unknown>>(
             `SELECT p.pac_cd, p.pac_nm, s.idx
-               FROM view_pac_mst_active p
+               FROM pac_mst p
                CROSS JOIN LATERAL (VALUES ${slots}) AS s(idx, dis_cd, dis_sb)
               WHERE s.dis_cd = $1 AND s.dis_sb = $2
               ORDER BY p.pac_cd, s.idx`,
@@ -1630,7 +1629,7 @@ export async function insuranceBranches(patNo: number): Promise<InsuranceBranch[
     return withDb(async (c) => {
         const r = await c.query<Record<string, unknown>>(
             `SELECT pat_br, br_dt, med_st_dt, med_ed_dt, dis_flg, old_flg
-               FROM view_insurance_active
+               FROM insurance
               WHERE pat_no = $1
               ORDER BY pat_br`,
             [patNo],
@@ -1691,7 +1690,7 @@ export interface PersonAttending {
 export async function personAttending(patNo: number): Promise<PersonAttending | null> {
     return withDb(async (c) => {
         const r = await c.query<{ att_dr: number | null; att_st: number | null }>(
-            `SELECT att_dr, att_st FROM view_person_active WHERE pat_no = $1 LIMIT 1`,
+            `SELECT att_dr, att_st FROM person WHERE pat_no = $1 LIMIT 1`,
             [patNo],
         )
         const row = r.rows[0]
@@ -1705,10 +1704,10 @@ export async function personAttending(patNo: number): Promise<PersonAttending | 
 export async function findPatientsByAttDr(): Promise<{ withDr: number | null; withoutDr: number | null }> {
     return withDb(async (c) => {
         const withDr = await c.query<{ pat_no: number }>(
-            `SELECT pat_no FROM view_person_active WHERE COALESCE(att_dr, 0) > 0 ORDER BY pat_no LIMIT 1`,
+            `SELECT pat_no FROM person WHERE COALESCE(att_dr, 0) > 0 ORDER BY pat_no LIMIT 1`,
         )
         const withoutDr = await c.query<{ pat_no: number }>(
-            `SELECT pat_no FROM view_person_active WHERE COALESCE(att_dr, 0) = 0 ORDER BY pat_no LIMIT 1`,
+            `SELECT pat_no FROM person WHERE COALESCE(att_dr, 0) = 0 ORDER BY pat_no LIMIT 1`,
         )
         return {
             withDr: withDr.rows[0] ? Number(withDr.rows[0].pat_no) : null,
@@ -1739,12 +1738,12 @@ export async function findPatientForZeroWaitRow(
     return withDb(async (c) => {
         const r = await c.query<{ pat_no: number; att_dr: number }>(
             `SELECT p.pat_no, p.att_dr
-               FROM view_person_active p
+               FROM person p
               WHERE COALESCE(p.att_dr, 0) > 0
                 AND p.pat_no <> $1
                 AND NOT EXISTS (
                       SELECT 1 FROM wait w
-                       WHERE w.pat_no = p.pat_no AND w.deleted_at IS NULL
+                       WHERE w.pat_no = p.pat_no
                     )
               ORDER BY p.pat_no
               LIMIT 1`,
@@ -1789,7 +1788,7 @@ export async function ensureWaitRow(patNo: number, userNo: number | null): Promi
         const existing = async () =>
             (
                 await c.query<{ id: string; user_no: number | null }>(
-                    `SELECT id, user_no FROM wait WHERE pat_no = $1 AND deleted_at IS NULL LIMIT 1`,
+                    `SELECT id, user_no FROM wait WHERE pat_no = $1 LIMIT 1`,
                     [patNo],
                 )
             ).rows[0]
@@ -1833,7 +1832,7 @@ export async function findPatientWithoutAttSt(): Promise<number | null> {
     return withDb(async (c) => {
         const r = await c.query<{ pat_no: number }>(
             `SELECT pat_no
-               FROM view_person_active
+               FROM person
               WHERE COALESCE(att_dr, 0) > 0 AND COALESCE(att_st, 0) = 0
               ORDER BY pat_no
               LIMIT 1`,
@@ -1847,7 +1846,7 @@ export async function listDoctors(): Promise<{ userNo: number; userNm: string }[
     return withDb(async (c) => {
         const r = await c.query<{ user_no: number; user_nm: string }>(
             `SELECT user_no, user_nm
-               FROM view_clinic_user_active
+               FROM clinic_user
               WHERE user_kbn = 0
               ORDER BY user_no`,
         )
@@ -1880,8 +1879,8 @@ export async function findPatientWithTrnThisMonth(): Promise<PatientWithTrnThisM
             `SELECT t.pat_no,
                     ARRAY_AGG(DISTINCT t.dr_no) FILTER (WHERE t.dr_no > 0) AS dr_nos,
                     MAX(p.att_dr)                                          AS att_dr
-               FROM view_trn_trn_active t
-               JOIN view_person_active p ON p.pat_no = t.pat_no
+               FROM trn_trn t
+               JOIN person p ON p.pat_no = t.pat_no
               WHERE t.trt_dt >= date_trunc('month', CURRENT_DATE)
                 AND t.trt_dt <  date_trunc('month', CURRENT_DATE) + interval '1 month'
               GROUP BY t.pat_no
@@ -1941,9 +1940,7 @@ export async function receiptTypeInputsFor(
                LEFT JOIN med_ins_inf m
                       ON m.pat_no = i.pat_no
                      AND m.medinsinf_no = i.medinsinf_no
-                     AND m.deleted_at IS NULL
-              WHERE i.pat_no = ANY($1::int[])
-                AND i.deleted_at IS NULL`,
+              WHERE i.pat_no = ANY($1::int[])`,
             [[...patNos]],
         )
         const out = new Map<number, ReceiptTypeInputs>()
@@ -2021,7 +2018,7 @@ export async function findGuideDrugSlots(
     return withDb(async (c) => {
         const ver = await c.query<{ version_id: string }>(
             `SELECT version_id
-               FROM view_mst_trt_ver_active
+               FROM mst_trt_ver
               WHERE table_name LIKE 'MST_TRT%'
                 AND start_date <= $1::timestamptz
                 AND end_date   >= $1::timestamptz
@@ -2041,14 +2038,14 @@ export async function findGuideDrugSlots(
                     coalesce(rx.usage_nm, '')        AS usage_nm,
                     coalesce(rx.usage_suppl_inf, '') AS usage_suppl_inf,
                     coalesce(dg.dg_nm, '')           AS dg_nm
-               FROM view_pag_trt_active pt
-               JOIN view_mst_trt_active mt
+               FROM pag_trt pt
+               JOIN mst_trt mt
                  ON  mt.trt_cd = pt.trt_cd AND mt.trt_sb = pt.trt_sb
                  AND mt.version_id = $1 AND mt.active_flg = 1
-               LEFT JOIN view_mst_drug_rx_active rx
+               LEFT JOIN mst_drug_rx rx
                  ON  rx.trt_cd = pt.trt_cd AND rx.trt_sb = pt.trt_sb
                  AND $2::date BETWEEN rx.app_st_dt AND rx.app_ed_dt
-               LEFT JOIN view_mst_drug_active dg
+               LEFT JOIN mst_drug dg
                  ON  dg.dg_cd = rx.dg_cd1
                  AND $2::date BETWEEN dg.app_st_dt AND dg.app_ed_dt
               WHERE pt.guid_cd = $3
@@ -2109,7 +2106,7 @@ export async function findDrugRx(
     return withDb(async (c) => {
         const ver = await c.query<{ version_id: string }>(
             `SELECT version_id
-               FROM view_mst_trt_ver_active
+               FROM mst_trt_ver
               WHERE table_name LIKE 'MST_TRT%'
                 AND start_date <= $1::timestamptz
                 AND end_date   >= $1::timestamptz
@@ -2129,11 +2126,11 @@ export async function findDrugRx(
                     coalesce(dg.dg_nm, '')           AS dg_nm,
                     coalesce(rx.cnt1, '')            AS cnt1,
                     (rx.trt_cd IS NOT NULL)          AS has_drug_rx
-               FROM view_mst_trt_active mt
-               LEFT JOIN view_mst_drug_rx_active rx
+               FROM mst_trt mt
+               LEFT JOIN mst_drug_rx rx
                  ON  rx.trt_cd = mt.trt_cd AND rx.trt_sb = mt.trt_sb
                  AND $2::date BETWEEN rx.app_st_dt AND rx.app_ed_dt
-               LEFT JOIN view_mst_drug_active dg
+               LEFT JOIN mst_drug dg
                  ON  dg.dg_cd = rx.dg_cd1
                  AND $2::date BETWEEN dg.app_st_dt AND dg.app_ed_dt
               WHERE mt.version_id = $1
@@ -2179,7 +2176,7 @@ export async function findChkAutoSlots(trtCd: number, trtSb: number): Promise<Ch
         const r = await c.query<Record<string, unknown>>(
             `SELECT cd_1, sb_1, cd_2, sb_2, cd_3, sb_3, cd_4, sb_4, cd_5, sb_5
                FROM chk_auto
-              WHERE trt_cd = $1 AND trt_sb = $2 AND deleted_at IS NULL
+              WHERE trt_cd = $1 AND trt_sb = $2
               LIMIT 1`,
             [trtCd, trtSb],
         )
@@ -2233,8 +2230,7 @@ export async function findCmtAutos(trtCd: number, trtSb: number): Promise<CmtAut
                FROM cmt_auto a
                JOIN mst_cmt2 b
                  ON b.cmt_cd = a.cmt_cd AND b.cmt_sb = a.cmt_sb
-                AND b.deleted_at IS NULL
-              WHERE a.trt_cd = $1 AND a.trt_sb = $2 AND a.deleted_at IS NULL
+              WHERE a.trt_cd = $1 AND a.trt_sb = $2
               ORDER BY a.disp_no`,
             [trtCd, trtSb],
         )
@@ -2295,7 +2291,7 @@ export async function findTreInpFlg(): Promise<number> {
         const r = await c.query<{ flg: string | null }>(
             `SELECT value->>'treInpFlg' AS flg
                FROM tenant_config
-              WHERE value ? 'treInpFlg' AND deleted_at IS NULL
+              WHERE value ? 'treInpFlg'
               LIMIT 1`,
         )
         return Number(r.rows[0]?.flg ?? 0)

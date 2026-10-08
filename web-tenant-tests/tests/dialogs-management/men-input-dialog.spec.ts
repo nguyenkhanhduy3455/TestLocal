@@ -632,7 +632,6 @@ test.describe('診療入力 — 面入力 (frm203035)', () => {
                 `SELECT dsp_trt, freewd
                    FROM trn_trn
                   WHERE pat_no = $1 AND trt_dt = $2 AND trt_cd = $3 AND trt_sb = $4
-                    AND deleted_at IS NULL
                   ORDER BY disp_no`,
                 [Number(PAT_NO), TRT_DT, TRT_CD, SB_MEN],
             )

@@ -1127,7 +1127,7 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         const row = await withDb(async (c) => {
             const r = await c.query(
                 `SELECT email, password_hash FROM ${DB_SCHEMA}.app_user
-                  WHERE user_no = $1 AND deleted_at IS NULL`,
+                  WHERE user_no = $1`,
                 [createdNo],
             )
             return r.rows[0] as { email: string | null; password_hash: string | null } | undefined
@@ -1287,7 +1287,7 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         const row = await withDb(async (c) => {
             const r = await c.query(
                 `SELECT display_name FROM ${DB_SCHEMA}.app_user
-                  WHERE user_no = $1 AND deleted_at IS NULL`,
+                  WHERE user_no = $1`,
                 [createdNo],
             )
             return r.rows[0] as { display_name: string } | undefined
@@ -1365,9 +1365,8 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
                 const r = await c.query(
                     `SELECT u.user_no
                        FROM ${DB_SCHEMA}.app_user u
-                      WHERE u.deleted_at IS NULL
-                        AND EXISTS (SELECT 1 FROM ${DB_SCHEMA}.trn_trn t
-                                     WHERE t.dr_no = u.user_no AND t.deleted_at IS NULL)
+                      WHERE EXISTS (SELECT 1 FROM ${DB_SCHEMA}.trn_trn t
+                                     WHERE t.dr_no = u.user_no)
                       ORDER BY u.user_no
                       LIMIT 1`,
                 )

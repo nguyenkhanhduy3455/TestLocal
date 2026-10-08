@@ -23,6 +23,57 @@ import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
 import { closeDialogs } from '../_shared/virtual-grid'
 
+/**
+ * Trả `unpaid` của (patNo, các ngày test) về đúng tập `keepIds` chụp trước khi chạy.
+ *
+ * F8 XOÁ dòng 未精算 cũ của ngày rồi chèn dòng mới; trigger archive chép dòng bị xoá
+ * sang `unpaid_deleted`. Nên: (1) xoá dòng do lượt chạy sinh ra và bỏ luôn bản sao
+ * trigger vừa chép của chúng; (2) chép ngược bản archive mới nhất của những dòng vốn
+ * đang sống mà F8 đã xoá, rồi bỏ bản archive đó.
+ */
+async function resetUnpaid(
+    patNo: number,
+    trtDts: string[],
+    keepIds: string[],
+): Promise<{ removed: number; revived: number }> {
+    return withDb(async (c) => {
+        const del = await c.query<{ id: string }>(
+            `DELETE FROM unpaid
+              WHERE pat_no = $1 AND trt_dt = ANY($2) AND NOT (id = ANY($3::uuid[]))
+          RETURNING id`,
+            [patNo, trtDts, keepIds],
+        )
+        const removedIds = del.rows.map((r) => r.id)
+        if (removedIds.length > 0) {
+            await c.query('DELETE FROM unpaid_deleted WHERE id = ANY($1::uuid[])', [removedIds])
+        }
+        if (keepIds.length === 0) return { removed: removedIds.length, revived: 0 }
+
+        const cols = (
+            await c.query<{ cols: string }>(
+                `SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position) AS cols
+                   FROM information_schema.columns
+                  WHERE table_schema = current_schema() AND table_name = 'unpaid'`,
+            )
+        ).rows[0]!.cols
+        const ins = await c.query<{ id: string }>(
+            `INSERT INTO unpaid (${cols})
+             SELECT DISTINCT ON (d.id) ${cols}
+               FROM unpaid_deleted d
+              WHERE d.id = ANY($1::uuid[])
+                AND NOT EXISTS (SELECT 1 FROM unpaid u WHERE u.id = d.id)
+              ORDER BY d.id, d.deleted_at DESC
+          RETURNING id`,
+            [keepIds],
+        )
+        const revivedIds = ins.rows.map((r) => r.id)
+        if (revivedIds.length > 0) {
+            await c.query('DELETE FROM unpaid_deleted WHERE id = ANY($1::uuid[])', [revivedIds])
+        }
+        return { removed: removedIds.length, revived: revivedIds.length }
+    })
+}
+
 // ═══ nguyên văn từ unpaid-insert-parity.spec.ts (đã gộp vào file này) ══════════════════════════════════════
 test.describe('cột sflg (1/2/3) và att_dr', () => {
 
@@ -84,19 +135,19 @@ test.describe('cột sflg (1/2/3) và att_dr', () => {
  * ─── Vì sao spec này phải soi DB ─────────────────────────────────────────────
  *  Cả `sflg` lẫn `att_dr` không hiện ở bất kỳ đâu trên màn hình — chính tester
  *  cũng phải mở bảng UNPAID để thấy. Không có đường nào đo qua UI, nên spec chạy
- *  F8 THẬT rồi đọc `view_unpaid_active`. Đây cũng là lý do nó KHÔNG chạy trong
+ *  F8 THẬT rồi đọc `unpaid`. Đây cũng là lý do nó KHÔNG chạy trong
  *  lượt hằng ngày mà phải bật cờ (Rule 18.1).
  *
  * ─── GHI DB — đọc kỹ trước khi chạy ──────────────────────────────────────────
- *  Spec CÓ ghi thật: mỗi lần F8 chạy `deleteTrtDtUnPaid` (xoá mềm dòng 未精算 của
+ *  Spec CÓ ghi thật: mỗi lần F8 chạy `deleteTrtDtUnPaid` (xoá dòng 未精算 của
  *  ngày đó) rồi chèn lại. Từ 2026-09-03 bước xoá đó là một endpoint RIÊNG
  *  (`POST …/accounting/clear-unpaid`, chạy ngay sau 日付チェック — modAcc.cs:428);
  *  `insert-unpaid` vẫn tự xoá lần nữa nên hành vi tổng thể không đổi. Vì vậy:
  *   · bắt buộc `TEST_DB=1` (để assert) và `TEST_ALLOW_SAVE=1` (để cho phép ghi);
- *   · chỉ chọn NGÀY CHƯA CÓ 会計 済み (`view_acc_dat_active` trống cho ngày đó),
+ *   · chỉ chọn NGÀY CHƯA CÓ 会計 済み (`acc_dat` trống cho ngày đó),
  *     nên không đụng vào dữ liệu đã quyết toán và cũng không bung hộp 既存会計;
- *   · `beforeAll` chụp lại `id` + `deleted_at` của mọi dòng `unpaid` thuộc các
- *     ngày sẽ test, `afterAll` xoá cứng dòng do lượt chạy sinh ra và bỏ xoá mềm
+ *   · `beforeAll` chụp lại `id` của mọi dòng `unpaid` thuộc các ngày sẽ test,
+ *     `afterAll` xoá dòng do lượt chạy sinh ra và chép ngược từ `unpaid_deleted`
  *     những dòng vốn đang sống. In ra số dòng đụng tới để không ai phải đoán.
  *  KHÔNG bấm Yes ở hộp 「処置データは変更されています」 — Yes ghi lại cả tháng 処置.
  *
@@ -262,12 +313,12 @@ async function readMonthDays(): Promise<DaySummary[]> {
                              OR COALESCE(dsp_trt, '') LIKE '%自費より%'
                              OR COALESCE(dsp_trt, '') LIKE '%健康診断の結果に基づき治療開始%')
                                                                              AS has_phrase
-                   FROM view_trn_trn_active
+                   FROM trn_trn
                   WHERE pat_no = $1 AND trt_dt BETWEEN $2 AND $3
                   GROUP BY trt_dt
              )
              SELECT d.trt_dt, d.has_syosin, d.has_saisin, d.has_phrase,
-                    EXISTS (SELECT 1 FROM view_acc_dat_active a
+                    EXISTS (SELECT 1 FROM acc_dat a
                              WHERE a.pat_no = $1 AND a.trt_dt = d.trt_dt) AS settled
                FROM d
               ORDER BY d.trt_dt`,
@@ -296,7 +347,7 @@ async function readHasPastFirstVisit(): Promise<boolean> {
     return withDb(async (c) => {
         const r = await c.query<{ exists: boolean }>(
             `SELECT EXISTS (
-                 SELECT 1 FROM view_trn_trn_active
+                 SELECT 1 FROM trn_trn
                   WHERE pat_no = $1
                     AND trt_dt < $2
                     AND (trt_cd = 100 OR (trt_cd = 107 AND pat_br = 0))
@@ -317,7 +368,7 @@ async function readFirstRowRaiinCnt(trtDt: string): Promise<number | null> {
     return withDb(async (c) => {
         const r = await c.query<{ raiin_cnt: number }>(
             `SELECT raiin_cnt
-               FROM view_trn_trn_active
+               FROM trn_trn
               WHERE pat_no = $1 AND trt_dt = $2
               ORDER BY disp_no, seq
               LIMIT 1`,
@@ -339,7 +390,7 @@ async function readUnpaidRows(trtDt: string): Promise<UnpaidRow[]> {
             att_dr: number
         }>(
             `SELECT trt_cnt, km_cd, lflg, sflg, att_dr
-               FROM view_unpaid_active
+               FROM unpaid
               WHERE pat_no = $1 AND trt_dt = $2
               ORDER BY trt_cnt, km_cd`,
             [PAT_NO, trtDt],
@@ -370,8 +421,8 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
     /** Giá trị kỳ vọng cho ngày 初診: 3 nếu trước tháng này đã có 初診, không thì 1. */
     let expectedSyosinFlg: number = SFLG.firstVisit
 
-    /** `id` → `deleted_at` của mọi dòng unpaid thuộc các ngày test, chụp TRƯỚC khi chạy. */
-    const unpaidSnapshot = new Map<string, string | null>()
+    /** `id` của mọi dòng unpaid thuộc các ngày test, chụp TRƯỚC khi chạy. */
+    const unpaidSnapshot = new Set<string>()
 
     /**
      * Nhãn bác sĩ trên dropdown ↔ `user_no` — bắt từ CHÍNH response mà màn hình
@@ -605,11 +656,11 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
         const targets = [syosinDay, saisinDay].filter((d): d is string => d !== null)
         if (targets.length > 0) {
             await withDb(async (c) => {
-                const r = await c.query<{ id: string; deleted_at: string | null }>(
-                    `SELECT id, deleted_at FROM unpaid WHERE pat_no = $1 AND trt_dt = ANY($2)`,
+                const r = await c.query<{ id: string }>(
+                    `SELECT id FROM unpaid WHERE pat_no = $1 AND trt_dt = ANY($2)`,
                     [PAT_NO, targets],
                 )
-                for (const row of r.rows) unpaidSnapshot.set(row.id, row.deleted_at)
+                for (const row of r.rows) unpaidSnapshot.add(row.id)
             })
             console.log(
                 `unpaid hiện có ở các ngày test: ${unpaidSnapshot.size} dòng — afterAll sẽ trả về nguyên trạng`,
@@ -654,34 +705,15 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
         const targets = [syosinDay, saisinDay].filter((d): d is string => d !== null)
         if (!dbEnabled || targets.length === 0) return
 
-        // Xoá CỨNG dòng do lượt chạy sinh ra, rồi bỏ xoá mềm những dòng vốn đang
-        // sống mà F8 vừa dọn đi. Hai bước, không phải một: `deleteTrtDtUnPaid`
-        // xoá mềm dòng cũ TRƯỚC khi chèn dòng mới.
-        await withDb(async (c) => {
-            const known = [...unpaidSnapshot.keys()]
-            const del = await c.query(
-                `DELETE FROM unpaid
-                  WHERE pat_no = $1 AND trt_dt = ANY($2)
-                    AND ($3::uuid[] = '{}' OR NOT (id = ANY($3::uuid[])))`,
-                [PAT_NO, targets, known],
+        // `deleteTrtDtUnPaid` xoá dòng cũ TRƯỚC khi chèn dòng mới — xem `resetUnpaid`.
+        await resetUnpaid(PAT_NO, targets, [...unpaidSnapshot])
+            .then(({ removed, revived }) =>
+                console.log(
+                    `afterAll: xoá ${removed} dòng unpaid do test sinh ra, ` +
+                        `khôi phục ${revived} dòng bị F8 xoá`,
+                ),
             )
-            const revive = [...unpaidSnapshot.entries()]
-                .filter(([, deletedAt]) => deletedAt === null)
-                .map(([id]) => id)
-            let revived = 0
-            if (revive.length > 0) {
-                const up = await c.query(
-                    `UPDATE unpaid SET deleted_at = NULL, deleted_by = NULL
-                      WHERE id = ANY($1::uuid[]) AND deleted_at IS NOT NULL`,
-                    [revive],
-                )
-                revived = up.rowCount ?? 0
-            }
-            console.log(
-                `afterAll: xoá ${del.rowCount ?? 0} dòng unpaid do test sinh ra, ` +
-                    `khôi phục ${revived} dòng bị F8 xoá mềm`,
-            )
-        }).catch((e: unknown) => console.log(`afterAll: dọn không xong — ${String(e)}`))
+            .catch((e: unknown) => console.log(`afterAll: dọn không xong — ${String(e)}`))
     })
 
     test('TC-SFLG-1 — ngày có 初診: sflg = 1 hoặc 3 theo quá khứ, KHÔNG BAO GIỜ 2', async () => {
@@ -918,7 +950,7 @@ test.describe('cột trt_cnt — 1 ngày 2 lượt = 2 dòng', () => {
  *     phải việc đổi URL — đọc DB sớm sẽ ra dữ liệu cũ.
  *  6. KHÔNG bấm はい ở hộp 「処置データは変更されています」 trong chuỗi F8: nó lưu lại
  *     cả tháng và làm hỏng bộ dòng vừa dựng. Trả lời いいえ.
- *  7. Ngày test phải CHƯA quyết toán (`view_acc_dat_active` trống) — nếu không F8
+ *  7. Ngày test phải CHƯA quyết toán (`acc_dat` trống) — nếu không F8
  *     bung hộp 既存会計 và rẽ sang 会計データ修正, khác hẳn nhánh đang đo.
  *
  * ─── KHÔNG kiểm ở đây ──────────────────────────────────────────────────────
@@ -1091,7 +1123,7 @@ async function readUnpaidRows(): Promise<UnpaidRow[]> {
         const r = await c.query<Record<string, unknown>>(
             `SELECT trt_cnt, km_cd, lflg, score, claim_amt, sflg, rece_kbn,
                     to_char(acc_tm AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS acc_day
-               FROM view_unpaid_active
+               FROM unpaid
               WHERE pat_no = $1 AND trt_dt = $2
               ORDER BY trt_cnt, km_cd`,
             [PAT_NO, TRT_DT],
@@ -1125,7 +1157,7 @@ async function readDayRows(): Promise<DayRow[]> {
             `SELECT trt_cd, COALESCE(dsp_trt, '') AS dsp_trt, raiin_cnt,
                     trt_pt, trt_cnt, COALESCE(jihi_flg, 0) AS jihi_flg
                FROM trn_trn
-              WHERE pat_no = $1 AND trt_dt = $2 AND deleted_at IS NULL
+              WHERE pat_no = $1 AND trt_dt = $2
               ORDER BY disp_no, seq`,
             [PAT_NO, TRT_DT],
         )
@@ -1174,7 +1206,7 @@ function scoreByVisit(rows: readonly DayRow[]): Map<number, number> {
 async function isDaySettled(): Promise<boolean> {
     return withDb(async (c) => {
         const r = await c.query<{ exists: boolean }>(
-            `SELECT EXISTS (SELECT 1 FROM view_acc_dat_active
+            `SELECT EXISTS (SELECT 1 FROM acc_dat
                              WHERE pat_no = $1 AND trt_dt = $2) AS exists`,
             [PAT_NO, TRT_DT],
         )
@@ -1232,8 +1264,8 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
      */
     let dayVisitOpeners = 0
 
-    /** `id` → `deleted_at` của mọi dòng unpaid ngày test, chụp TRƯỚC khi chạy. */
-    const unpaidSnapshot = new Map<string, string | null>()
+    /** `id` của mọi dòng unpaid ngày test, chụp TRƯỚC khi chạy. */
+    const unpaidSnapshot = new Set<string>()
 
     const dlg = (text: string | RegExp) =>
         page.locator('[role="dialog"], [role="alertdialog"]').filter({ hasText: text })
@@ -1471,11 +1503,11 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
         }
 
         await withDb(async (c) => {
-            const r = await c.query<{ id: string; deleted_at: string | null }>(
-                `SELECT id, deleted_at FROM unpaid WHERE pat_no = $1 AND trt_dt = $2`,
+            const r = await c.query<{ id: string }>(
+                `SELECT id FROM unpaid WHERE pat_no = $1 AND trt_dt = $2`,
                 [PAT_NO, TRT_DT],
             )
-            for (const row of r.rows) unpaidSnapshot.set(row.id, row.deleted_at)
+            for (const row of r.rows) unpaidSnapshot.add(row.id)
         })
         console.log(
             `unpaid hiện có ở ngày test: ${unpaidSnapshot.size} dòng — afterAll sẽ trả nguyên trạng`,
@@ -1494,33 +1526,15 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
 
         const removed = await purgeTestRows()
 
-        // Hai bước, không phải một: `clear-unpaid` xoá MỀM dòng cũ trước khi
-        // `insert-unpaid` chèn dòng mới.
-        await withDb(async (c) => {
-            const known = [...unpaidSnapshot.keys()]
-            const del = await c.query(
-                `DELETE FROM unpaid
-                  WHERE pat_no = $1 AND trt_dt = $2
-                    AND ($3::uuid[] = '{}' OR NOT (id = ANY($3::uuid[])))`,
-                [PAT_NO, TRT_DT, known],
+        // `clear-unpaid` xoá dòng cũ trước khi `insert-unpaid` chèn dòng mới — xem `resetUnpaid`.
+        await resetUnpaid(PAT_NO, [TRT_DT], [...unpaidSnapshot])
+            .then(({ removed: unpaidRemoved, revived }) =>
+                console.log(
+                    `afterAll: xoá ${removed} 処置行 test, xoá ${unpaidRemoved} dòng unpaid do ` +
+                        `test sinh ra, khôi phục ${revived} dòng bị F8 xoá`,
+                ),
             )
-            const revive = [...unpaidSnapshot.entries()]
-                .filter(([, deletedAt]) => deletedAt === null)
-                .map(([id]) => id)
-            let revived = 0
-            if (revive.length > 0) {
-                const up = await c.query(
-                    `UPDATE unpaid SET deleted_at = NULL, deleted_by = NULL
-                      WHERE id = ANY($1::uuid[]) AND deleted_at IS NOT NULL`,
-                    [revive],
-                )
-                revived = up.rowCount ?? 0
-            }
-            console.log(
-                `afterAll: xoá ${removed} 処置行 test, xoá ${del.rowCount ?? 0} dòng unpaid do ` +
-                    `test sinh ra, khôi phục ${revived} dòng bị F8 xoá mềm`,
-            )
-        }).catch((e: unknown) => console.log(`afterAll: dọn không xong — ${String(e)}`))
+            .catch((e: unknown) => console.log(`afterAll: dọn không xong — ${String(e)}`))
     })
 
     /**
@@ -1532,7 +1546,7 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
     function skipUnlessDayUsable(): boolean {
         skipWithReason(
             daySettled,
-            `ngày ${TRT_DT} của bệnh nhân ${PAT_NO} ĐÃ quyết toán (view_acc_dat_active có dòng) — ` +
+            `ngày ${TRT_DT} của bệnh nhân ${PAT_NO} ĐÃ quyết toán (acc_dat có dòng) — ` +
                 'F8 sẽ rẽ sang nhánh 既存会計/会計データ修正, khác nhánh đang đo. Đổi TEST_TRT_DT.',
         )
         skipWithReason(

@@ -223,7 +223,7 @@ test.describe('診療入力 — mục 17 Ｐ部位分割 điều khiển dòng c
     async function readChkPrmParam(no: number): Promise<number | null> {
         return withDb(async (c) => {
             const r = await c.query<{ v: number | null }>(
-                `SELECT param_${no} AS v FROM view_chk_prm_active ORDER BY updated_at DESC LIMIT 1`,
+                `SELECT param_${no} AS v FROM chk_prm ORDER BY updated_at DESC LIMIT 1`,
             )
             const v = r.rows[0]?.v
             return v === undefined || v === null ? null : Number(v)
@@ -306,7 +306,7 @@ test.describe('診療入力 — mục 17 Ｐ部位分割 điều khiển dòng c
             if (now !== null && now !== splitBefore) {
                 await withDb(async (c) => {
                     await c.query(
-                        `UPDATE chk_prm SET param_${CHK_P_BUI_SPLIT_NO} = $1 WHERE deleted_at IS NULL`,
+                        `UPDATE chk_prm SET param_${CHK_P_BUI_SPLIT_NO} = $1`,
                         [splitBefore],
                     )
                 }).catch((e) =>
@@ -419,7 +419,7 @@ test.describe('診療入力 — mục 17 Ｐ部位分割 điều khiển dòng c
         // Nếu panel đọc `value` thay vì `runtimeValue` thì nó ra 6 dòng, sai.
         await withDb(async (c) => {
             await c.query(
-                `UPDATE chk_prm SET param_${CHK_P_BUI_SPLIT_NO} = 0 WHERE deleted_at IS NULL`,
+                `UPDATE chk_prm SET param_${CHK_P_BUI_SPLIT_NO} = 0`,
             )
         })
         expect(await readChkPrmParam(CHK_P_BUI_SPLIT_NO), 'chưa ghi được 0 vào param_17').toBe(0)

@@ -430,7 +430,7 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
                 controlGCnt: 0,
             }
             const ver = await c.query<{ version_id: string }>(
-                `SELECT version_id FROM view_mst_trt_ver_active
+                `SELECT version_id FROM mst_trt_ver
                   WHERE $1::date BETWEEN start_date AND end_date
                   ORDER BY end_date DESC LIMIT 1`,
                 [TRT_DT],
@@ -440,7 +440,7 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
 
             const trt = await c.query<{ f2: number; f3: number; score1: number; g_cnt: number }>(
                 `SELECT f2::int AS f2, f3::int AS f3, score1::int AS score1, g_cnt::int AS g_cnt
-                   FROM view_mst_trt_active
+                   FROM mst_trt
                   WHERE version_id = $1 AND trt_cd = $2 AND trt_sb = $3 LIMIT 1`,
                 [versionId, TRT_CD, TRT_SB],
             )
@@ -448,7 +448,7 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
 
             const control = await c.query<{ f2: number; score1: number; g_cnt: number }>(
                 `SELECT f2::int AS f2, score1::int AS score1, g_cnt::int AS g_cnt
-                   FROM view_mst_trt_active
+                   FROM mst_trt
                   WHERE version_id = $1 AND trt_cd = $2 AND trt_sb = $3 LIMIT 1`,
                 [versionId, CONTROL_TRT_CD, CONTROL_TRT_SB],
             )
@@ -457,7 +457,7 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
             const slotCols = Array.from({ length: 10 }, (_, i) => i + 1)
                 .map(
                     (n) => `SELECT ${n} AS ord, d.dg_cd${n} AS dg_cd, d.cnt${n} AS cnt
-                              FROM view_mst_drug_rx_active d
+                              FROM mst_drug_rx d
                              WHERE d.trt_cd = $1 AND d.trt_sb = $2
                                AND $3::date BETWEEN d.app_st_dt AND d.app_ed_dt`,
                 )
@@ -476,7 +476,7 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
                         COALESCE(m.unit_nm, '')   AS unit_nm,
                         COALESCE(m.cost_type, '') AS cost_type
                    FROM s
-                   LEFT JOIN view_mst_drug_active m
+                   LEFT JOIN mst_drug m
                           ON m.dg_cd = s.dg_cd
                          AND $3::date BETWEEN m.app_st_dt AND m.app_ed_dt
                   WHERE s.dg_cd IS NOT NULL AND s.dg_cd <> ''
@@ -544,7 +544,7 @@ test.describe('診療入力 — 薬剤使用量選択 (数量変更可 の薬剤
             await withDb(async (c) => {
                 await c.query(
                     `UPDATE mst_trt t SET f2 = $1
-                       FROM view_mst_trt_ver_active v
+                       FROM mst_trt_ver v
                       WHERE t.version_id = v.version_id
                         AND $2::date BETWEEN v.start_date AND v.end_date
                         AND t.trt_cd = $3 AND t.trt_sb = $4`,

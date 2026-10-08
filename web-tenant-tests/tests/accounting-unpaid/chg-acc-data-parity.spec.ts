@@ -256,7 +256,7 @@ async function seedMarkerUnpaid(trtDt: string): Promise<string> {
 async function markerUnpaidAlive(id: string): Promise<boolean> {
     return withDb(async (c) => {
         const r = await c.query<{ n: string }>(
-            `SELECT count(*) AS n FROM view_unpaid_active WHERE id = $1`,
+            `SELECT count(*) AS n FROM unpaid WHERE id = $1`,
             [id],
         )
         return Number(r.rows[0]?.n ?? 0) > 0

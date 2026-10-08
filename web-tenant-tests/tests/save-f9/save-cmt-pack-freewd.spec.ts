@@ -75,7 +75,7 @@ async function packMastersByName(packNm: string): Promise<PackMaster[]> {
     return withDb(async (c) => {
         const defs = await c.query<{ pack_cd: string; med_kbn: number; com_cd_1: string | null }>(
             `SELECT pack_cd, med_kbn, com_cd_1 FROM mst_cmt_pack_def
-              WHERE pack_nm = $1 AND deleted_at IS NULL
+              WHERE pack_nm = $1
                 AND $2::date BETWEEN app_st_dt AND app_ed_dt`,
             [packNm, TRT_DT],
         )
@@ -83,7 +83,7 @@ async function packMastersByName(packNm: string): Promise<PackMaster[]> {
         for (const d of defs.rows) {
             const det = await c.query<{ com_cd: string | null }>(
                 `SELECT com_cd FROM mst_cmt_pack_detail
-                  WHERE pack_cd = $1 AND deleted_at IS NULL
+                  WHERE pack_cd = $1
                     AND $2::date BETWEEN app_st_dt AND app_ed_dt`,
                 [d.pack_cd, TRT_DT],
             )

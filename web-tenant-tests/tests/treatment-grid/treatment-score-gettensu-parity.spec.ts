@@ -180,14 +180,14 @@ async function findScoreCandidate(): Promise<MstTrtCandidate | null> {
         const r = await c.query(
             `WITH active_ver AS (
                  SELECT version_id
-                   FROM view_mst_trt_ver_active
+                   FROM mst_trt_ver
                   WHERE $1::date BETWEEN start_date AND end_date
                   ORDER BY end_date DESC
                   LIMIT 1
              )
              SELECT m.trt_cd, m.trt_sb, m.trt_nm, m.cct_nm,
                     m.score1, m.score2, m.score3, m.f1, m.acc_unit
-               FROM view_mst_trt_active m
+               FROM mst_trt m
                INNER JOIN active_ver av ON m.version_id = av.version_id
               WHERE m.f1 = 0
                 AND m.acc_unit BETWEEN 9 AND 12
@@ -222,9 +222,9 @@ async function findInfantPatient(): Promise<number | null> {
     return withDb(async (c) => {
         const r = await c.query(
             `SELECT p.pat_no
-               FROM view_person_active p
+               FROM person p
               WHERE p.pat_birth_dt > $1::date - INTERVAL '6 years'
-                AND COALESCE((SELECT i.dis_flg FROM view_insurance_active i
+                AND COALESCE((SELECT i.dis_flg FROM insurance i
                                WHERE i.pat_no = p.pat_no ORDER BY i.pat_br DESC LIMIT 1), 0) = 0
               ORDER BY p.pat_no
               LIMIT 1`,
@@ -239,8 +239,8 @@ async function findElderlyPatient(): Promise<number | null> {
     return withDb(async (c) => {
         const r = await c.query(
             `SELECT i.pat_no
-               FROM view_insurance_active i
-               JOIN view_person_active p ON p.pat_no = i.pat_no
+               FROM insurance i
+               JOIN person p ON p.pat_no = i.pat_no
               WHERE i.old_flg = $1
                 AND p.pat_birth_dt <= $2::date - INTERVAL '6 years'
               ORDER BY i.pat_no
@@ -258,11 +258,11 @@ async function patientContext(
     return withDb(async (c) => {
         const r = await c.query(
             `SELECT p.pat_birth_dt AS birth,
-                    COALESCE((SELECT i.dis_flg FROM view_insurance_active i
+                    COALESCE((SELECT i.dis_flg FROM insurance i
                                WHERE i.pat_no = p.pat_no ORDER BY i.pat_br DESC LIMIT 1), 0) AS dis_flg,
-                    COALESCE((SELECT i.old_flg FROM view_insurance_active i
+                    COALESCE((SELECT i.old_flg FROM insurance i
                                WHERE i.pat_no = p.pat_no ORDER BY i.pat_br DESC LIMIT 1), 0) AS old_flg
-               FROM view_person_active p
+               FROM person p
               WHERE p.pat_no = $1
               LIMIT 1`,
             [patNo],
@@ -597,12 +597,12 @@ test.describe('診療入力 — 点数 = getTensu trên mọi đường nhập +
         const probe = await withDb(async (c) => {
             const r = await c.query(
                 `WITH active_ver AS (
-                     SELECT version_id FROM view_mst_trt_ver_active
+                     SELECT version_id FROM mst_trt_ver
                       WHERE $1::date BETWEEN start_date AND end_date
                       ORDER BY end_date DESC LIMIT 1
                  ), m AS (
                      SELECT x.trt_cd, x.trt_sb, x.score1, x.score2, x.acc_unit, x.f1
-                       FROM view_mst_trt_active x
+                       FROM mst_trt x
                        INNER JOIN active_ver av ON x.version_id = av.version_id
                  )
                  SELECT score1,
@@ -716,8 +716,8 @@ test.describe('診療入力 — 点数 = getTensu trên mọi đường nhập +
         const adult = await withDb(async (cl) => {
             const r = await cl.query(
                 `SELECT i.pat_no
-                   FROM view_insurance_active i
-                   JOIN view_person_active p ON p.pat_no = i.pat_no
+                   FROM insurance i
+                   JOIN person p ON p.pat_no = i.pat_no
                   WHERE i.old_flg <> $1
                     AND p.pat_birth_dt <= $2::date - INTERVAL '6 years'
                   GROUP BY i.pat_no
@@ -730,7 +730,7 @@ test.describe('診療入力 — 点数 = getTensu trên mọi đường nhập +
             const patNo = Number(r.rows[0].pat_no)
             const b = await cl.query(
                 `SELECT pat_br, dis_flg FROM insurance
-                  WHERE pat_no = $1 AND deleted_at IS NULL ORDER BY pat_br`,
+                  WHERE pat_no = $1 ORDER BY pat_br`,
                 [patNo],
             )
             return {
@@ -750,7 +750,7 @@ test.describe('診療入力 — 点数 = getTensu trên mọi đường nhập +
         try {
             await withDb(async (cl) => {
                 await cl.query(
-                    `UPDATE insurance SET dis_flg = $1 WHERE pat_no = $2 AND deleted_at IS NULL`,
+                    `UPDATE insurance SET dis_flg = $1 WHERE pat_no = $2`,
                     [DIS_FLG_HIGH_NEEDS, adult!.patNo],
                 )
             })
