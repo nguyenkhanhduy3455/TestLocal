@@ -49,6 +49,15 @@ public static class Vk
 
     public const ushort Delete = 0x2E;
 
+    public const ushort Tab = 0x09;
+
+
+    /// <summary>Phím số hàng trên (0x30 + n) — mnemonic 「&amp;n」 của menu F11 của frm203002.</summary>
+    public const ushort D3 = 0x33;
+    public const ushort D4 = 0x34;
+    public const ushort D5 = 0x35;
+    public const ushort D9 = 0x39;
+
     /// <summary>
     /// Insert — ở <c>frm902007</c>「病名選択」 phím này ĐỔI CHẾ ĐỘ của ô nhập giữa
     /// 「選択番号」 (so với <c>dsp_cd</c>) và 「コード」 (so với <c>dis_cd</c>),

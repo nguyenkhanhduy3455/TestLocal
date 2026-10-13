@@ -76,21 +76,25 @@ public static class InpP1MenuFlow
 
         OpenMenuByF11(app, screen, trace);
 
-        var popup = WaitForContextMenuPopup(app)
-            ?? throw new InvalidOperationException(
-                "Da goi btnF11 nhung khong thay popup menu nao. Xem artifact " +
-                "inp-p1-after-f11.uia.txt — chay lai voi -Diagnostics de co cay UIA day du.");
-
-        trace?.Note($"popup menu class='{Uia.ClassNameOf(popup)}' name='{Uia.NameOf(popup)}'");
-        WriteArtifact("inp-p1-contextmenu.uia.txt", Uia.DumpTree(popup, maxDepth: 4, maxChildrenPerNode: 40));
+        // Popup có thể KHÔNG lộ ra dưới dạng cửa sổ #32768 / ControlType.Menu (đo 2026-08-26 và
+        // 2026-10-13) trong khi MenuItem vẫn có mặt trong cây UIA của cửa sổ top-level — nên
+        // không bỏ cuộc khi popup null, quét thẳng MenuItem như ClickTopLevelItem.
+        var popup = WaitForContextMenuPopup(app);
+        trace?.Note(popup is null
+            ? "khong thay cua so popup — quet thang MenuItem tren moi cua so top-level"
+            : $"popup menu class='{Uia.ClassNameOf(popup)}' name='{Uia.NameOf(popup)}'");
+        if (popup is not null)
+            WriteArtifact("inp-p1-contextmenu.uia.txt", Uia.DumpTree(popup, maxDepth: 4, maxChildrenPerNode: 40));
 
         // 1) 「オプション」 — click để focus, rồi Right Arrow để bung DropDown.
         //    Một click trái lên mục có DropDownItems KHÔNG tự bung submenu trong
         //    ContextMenuStrip của WinForms; phím điều hướng mới bung.
-        var optionItem = FindMenuItem(popup, OptionMenuId, OptionMenuText)
+        var optionItem = (popup is null ? null : FindMenuItem(popup, OptionMenuId, OptionMenuText))
+            ?? Waits.TryFor(() => FindMenuItemAcrossTopLevel(app, OptionMenuText), TimeSpan.FromSeconds(6))
             ?? throw new InvalidOperationException(
-                $"Popup menu da mo nhung khong thay muc 「{OptionMenuText}」 ({OptionMenuId}). " +
-                "Xem artifact inp-p1-contextmenu.uia.txt.");
+                $"Da bam btnF11 nhung khong thay muc menu 「{OptionMenuText}」 o bat ky cua so nao. " +
+                "Xem artifact inp-p1-after-f11.uia.txt va anh 「f11-sau-click」.");
+        trace?.Shot("f11-sau-click");
 
         var (ox, oy) = Uia.Center(optionItem);
         Uia.MoveCursorTo(ox, oy);
@@ -100,9 +104,13 @@ public static class InpP1MenuFlow
         Uia.SendKey(Vk.Right);
         Thread.Sleep(400);
 
+        trace?.Shot("sau-right-arrow");
+        WriteArtifact("inp-p1-menuitems.txt", DumpAllMenuItems(app));
+
         // 2) Mục con. Tìm trong MỌI popup đang mở — submenu là cửa sổ #32768 RIÊNG,
         //    không phải con của popup cha, nên tìm trong popup cha sẽ trượt.
-        var target = Waits.For(() => FindMenuItemAnywhere(app, item.MenuItemId, item.MenuItemText),
+        var target = Waits.For(() => FindMenuItemAnywhere(app, item.MenuItemId, item.MenuItemText)
+                                     ?? FindMenuItemAcrossTopLevel(app, item.MenuItemText),
                                $"muc menu 「{item.MenuItemText}」 ({item.MenuItemId}) trong submenu オプション",
                                TimeSpan.FromSeconds(8));
 
@@ -119,7 +127,8 @@ public static class InpP1MenuFlow
 
         // 4) initProc() xong chưa. Cả hai form đều nạp combo từ CODMST trong initProc
         //    (frm203050.cs:204 / frm203044.cs:134-158); combo còn rỗng nghĩa là chưa xong.
-        WaitUntilComboFilled(dialog, item, timeout);
+        // ReadyControlId rỗng = màn không có combo nạp từ CODMST (vd 3 màn 一覧 master).
+        if (item.ReadyControlId.Length > 0) WaitUntilComboFilled(dialog, item, timeout);
 
         trace?.Shot($"{item.DialogId}-mo");
         return dialog;
@@ -324,7 +333,7 @@ public static class InpP1MenuFlow
         return true;
     }
 
-    private static void OpenMenuByF11(OchaApp app, Window screen, TestTrace? trace)
+    internal static void OpenMenuByF11(OchaApp app, Window screen, TestTrace? trace)
     {
         var btnF11 = Uia.ByIdOrName(screen, "btnF11", "選択", ControlType.Button)
             ?? throw new InvalidOperationException("frm203002 khong co btnF11 (選択).");
@@ -347,7 +356,13 @@ public static class InpP1MenuFlow
         try { screen.Focus(); } catch { /* */ }
         Thread.Sleep(150);
 
-        Uia.Click(btnF11);
+        // Click CHUỘT THẬT: GradientButton không nhận InvokePattern, Uia.Click "thành công"
+        // mà popup không bao giờ hiện (đo 2026-10-13, Tc0a_RestrictDis).
+        var (bx, by) = Uia.Center(btnF11);
+        Uia.MoveCursorTo(bx, by);
+        Thread.Sleep(150);
+        Uia.LeftClickPhysical(bx, by);
+        Waits.Step();
         WriteArtifact("inp-p1-after-f11.uia.txt", DumpAllTopLevelWindows(app));
     }
 
@@ -435,6 +450,29 @@ public static class InpP1MenuFlow
         catch { /* */ }
 
         return found;
+    }
+
+    /// <summary>Mọi MenuItem của mọi cửa sổ top-level của app + desktop, kèm rect/offscreen.</summary>
+    internal static string DumpAllMenuItems(OchaApp app)
+    {
+        var sb = new StringBuilder();
+        var roots = new List<AutomationElement>();
+        try { roots.AddRange(app.Application.GetAllTopLevelWindows(app.Automation)); } catch { /* bận */ }
+        try { roots.AddRange(OchaApp.SharedAutomation.GetDesktop().FindAllChildren(cf => cf.ByClassName("#32768"))); } catch { /* bận */ }
+        foreach (var root in roots)
+        {
+            try
+            {
+                sb.AppendLine($"== root id='{Uia.AutomationIdOf(root)}' name='{Uia.NameOf(root)}' class='{Uia.ClassNameOf(root)}' onScreen={Uia.IsOnScreen(root)}");
+                foreach (var i in root.FindAllDescendants(cf => cf.ByControlType(ControlType.MenuItem)))
+                {
+                    var r = i.BoundingRectangle;
+                    sb.AppendLine($"   MenuItem id='{Uia.AutomationIdOf(i)}' name='{Uia.NameOf(i)}' @({r.X},{r.Y} {r.Width}x{r.Height}) onScreen={Uia.IsOnScreen(i)}");
+                }
+            }
+            catch { /* cửa sổ vừa đóng */ }
+        }
+        return sb.ToString();
     }
 
     internal static void WriteArtifact(string fileName, string content)
