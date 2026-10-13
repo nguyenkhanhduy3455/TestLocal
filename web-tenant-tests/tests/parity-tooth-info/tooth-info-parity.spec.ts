@@ -27,6 +27,20 @@ const TODAY = (() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 })()
+const BASE_ROWS = [{ trtCd: 110, trtSb: 0, trtPt: 59, trtCnt: 1, dspTrt: '歯科再診料' }]
+/** 部位病名行 (trt_cd 0) mang 2 răng — mỗi răng 4 歯面 là 4 điểm dừng Tab của PCR. */
+const PCR_BUI_LINE = {
+    trtCd: 0,
+    trtSb: 0,
+    trtPt: 0,
+    trtCnt: 0,
+    dspTrt: '',
+    bui: [0, 0, 1, 1],
+    dspBui: '32',
+    disCd: [103],
+    disSb: [0],
+    dspDis: 'PCR行Ｐ',
+}
 const PATINFO_WRITE = /\/tenant\/patinfo\/prosthetic/
 
 test.skip(!dbEnabled, 'Cần TEST_DB=1 để seed bệnh nhân test')
@@ -53,6 +67,15 @@ test.describe('Parity nhóm C — dialog sơ đồ răng', () => {
             if (!(await appeared(santei, 1_500))) break
             await page.getByRole('button', { name: /^(No|いいえ)$/ }).first().click().catch(() => {})
         }
+    }
+
+    /** Tải lại 診療入力 cho chắc: thử vài lần vì trang đôi khi không dựng xong sau khi đổi dữ liệu seed. */
+    async function freshEntry() {
+        for (let attempt = 0; attempt < 3; attempt++) {
+            await page.goto(`/treatments/${PAT_NO}?trtDt=${TODAY}`, { waitUntil: 'domcontentloaded' })
+            if (await appeared(page.getByText('合計:').first(), 25_000)) return
+        }
+        await expect(page.getByText('合計:').first()).toBeVisible({ timeout: 30_000 })
     }
 
     /** Điểm dừng Tab hiện tại: F-key hoặc `kind:nhãn`. */
@@ -96,8 +119,10 @@ test.describe('Parity nhóm C — dialog sơ đồ răng', () => {
                 [PAT_NO],
             ),
         )
-        await seedTreatmentRows(PAT_NO, TODAY, [{ trtCd: 110, trtSb: 0, trtPt: 59, trtCnt: 1, dspTrt: '歯科再診料' }])
+        await seedTreatmentRows(PAT_NO, TODAY, BASE_ROWS)
         page = authedPage
+        // beforeunload (「保存しますか？」) mặc định bị huỷ ⇒ page.goto/reload treo; chấp nhận để điều hướng đi tiếp.
+        page.on('dialog', (d) => void d.accept().catch(() => {}))
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
         await openEntry()
     })
@@ -200,8 +225,7 @@ test.describe('Parity nhóm C — dialog sơ đồ răng', () => {
     })
 
     test('TC-補綴管理-KEYS — ESC và End = F9 登録 (gửi PUT patinfo/prosthetic, không hỏi xác nhận)', async () => {
-        await page.reload({ waitUntil: 'domcontentloaded' })
-        await expect(page.getByText('合計:').first()).toBeVisible({ timeout: 60_000 })
+        await freshEntry()
         await page.route(PATINFO_WRITE, (route) => (route.request().method() === 'GET' ? route.continue() : route.abort()))
         await page.getByRole('button', { name: /補管/ }).last().click()
         const dlg = page.getByRole('dialog').filter({ hasText: /補綴管理/ }).last()
@@ -225,11 +249,12 @@ test.describe('Parity nhóm C — dialog sơ đồ răng', () => {
         await openEntry()
         const pcr = page.getByRole('dialog').filter({ has: page.getByRole('button', { name: /F1\s*デフォルト設定/ }) }).last()
         const karte = page.getByRole('dialog').filter({ has: page.getByRole('button', { name: /PCR/ }) }).last()
-        if (!(await karte.isVisible().catch(() => false))) {
+        for (let attempt = 0; attempt < 3 && !(await karte.isVisible().catch(() => false)); attempt++) {
             await page.getByText('歯科再診料').first().click()
             await page.keyboard.press('F6')
-            await karte.waitFor({ state: 'visible', timeout: 30_000 })
+            await appeared(karte, 10_000)
         }
+        await expect(karte).toBeVisible({ timeout: 10_000 })
         await karte.getByRole('button', { name: /PCR/ }).first().click()
         await expect(pcr).toBeVisible({ timeout: 30_000 })
         await page.waitForTimeout(800)
@@ -247,6 +272,44 @@ test.describe('Parity nhóm C — dialog sơ đồ răng', () => {
         await expect(pcr).toBeHidden({ timeout: 10_000 })
     })
 
+    test('TC-PCR-歯面 — 歯面 là điểm dừng Tab theo thứ tự WinForm (口蓋→遠心→頬→近心), Space bật/tắt, điểm cập nhật', async () => {
+        await seedTreatmentRows(PAT_NO, TODAY, [...BASE_ROWS, PCR_BUI_LINE])
+        await freshEntry()
+        const pcr = page.getByRole('dialog').filter({ has: page.getByRole('button', { name: /F1\s*デフォルト設定/ }) }).last()
+        const karte = page.getByRole('dialog').filter({ has: page.getByRole('button', { name: /PCR/ }) }).last()
+        if (!(await karte.isVisible().catch(() => false))) {
+            await page.getByText('PCR行Ｐ').first().click()
+            await page.keyboard.press('F6')
+            await karte.waitFor({ state: 'visible', timeout: 30_000 })
+        }
+        await karte.getByRole('button', { name: /PCR/ }).first().click()
+        await expect(pcr).toBeVisible({ timeout: 30_000 })
+        const order = () => page.evaluate(() => document.activeElement?.getAttribute('data-tab-order') ?? '(none)')
+        // Răng đầu có trong phạm vi (ô 2) → data-tab-order 8..11; focus lúc mở ở mặt đầu (口蓋側).
+        await expect.poll(order, { timeout: 5_000 }).toBe('8')
+        const seen: string[] = []
+        for (let i = 0; i < 5; i++) {
+            await page.keyboard.press('Tab')
+            seen.push(await order())
+        }
+        expect(seen).toEqual(['9', '10', '11', '12', '13'])
+        const score = pcr.getByText(/^\d+\.\d$/).first()
+        const read = async () => Number.parseFloat((await score.textContent()) ?? 'NaN')
+        const before = await read() // PCR_DEF của phòng khám có thể đã bật sẵn vài 歯面
+        await page.locator('[data-tab-order="8"]').focus()
+        await page.keyboard.press('Space')
+        // 2 răng × 4 歯面 = 8 ⇒ mỗi 歯面 đổi điểm 12.5.
+        await expect.poll(async () => Math.abs((await read()) - before)).toBe(12.5)
+        await page.keyboard.press('Space')
+        await expect.poll(read).toBe(before)
+        await page.keyboard.press('F10')
+        await expect(pcr).toBeHidden({ timeout: 10_000 })
+        // Đóng cả カルテ記載選択 để các ca sau bắt đầu sạch.
+        await karte.getByRole('button', { name: /F10\s*戻る/ }).click().catch(() => {})
+        await seedTreatmentRows(PAT_NO, TODAY, BASE_ROWS)
+        await freshEntry()
+    })
+
     for (const key of ['Escape', 'End']) {
         test(`TC-PCR-${key} — ${key} = F9 確定 (đóng PCR)`, async () => {
             const pcr = await openPcr()
@@ -261,9 +324,9 @@ test.describe('Parity nhóm C — dialog sơ đồ răng', () => {
     test('TC-欠損確認 — focus はい; Tab はい ↔ いいえ; ESC = はい (đóng)', async () => {
         await withDb((c) => c.query('INSERT INTO siga (pat_no) SELECT $1 WHERE NOT EXISTS (SELECT 1 FROM siga WHERE pat_no = $1)', [PAT_NO]))
         await withDb((c) => c.query('UPDATE siga SET se_6 = 4 WHERE pat_no = $1', [PAT_NO]))
-        await page.reload({ waitUntil: 'domcontentloaded' })
-        await openEntry()
+        await freshEntry()
         // 部位選択 → 右上 3番 (se6 = 欠損) → End → 病名選択 (F4 ダツリ) → 2 = 156 → End.
+        await expect(page.locator('[data-grid-cell$="|1"]').first()).toBeVisible({ timeout: 30_000 })
         const keys = await page
             .locator('[data-grid-cell$="|1"]')
             .evaluateAll((els) => els.map((e) => (e.getAttribute('data-grid-cell') ?? '').replace(/\|\d+$/, '')))
@@ -290,5 +353,31 @@ test.describe('Parity nhóm C — dialog sơ đồ răng', () => {
         await page.keyboard.press('Escape')
         await expect(loss, 'ESC = F9 はい: phải đóng dialog').toBeHidden({ timeout: 10_000 })
         await withDb((c) => c.query('DELETE FROM siga WHERE pat_no = $1', [PAT_NO]))
+    })
+
+    // ── 患者注意情報 (frm203047, nút Ｉ) ─────────────────────────────────────
+    test('TC-患者注意情報 — focus ô nhập; Tab F8→F9→F10→ô nhập; ESC / End / F9 = 登録 ⇒ E00001「情報」 khi trống; F8 hỏi Q00003 OK/キャンセル', async () => {
+        await openEntry()
+        await page.getByRole('button', { name: /^I$|^Ｉ$/ }).first().click()
+        const dlg = page.getByRole('dialog').filter({ hasText: /患者注意情報|注\s*意\s*情\s*報/ }).last()
+        await expect(dlg).toBeVisible({ timeout: 30_000 })
+        await page.waitForTimeout(800)
+        expect(await stop()).toMatch(/^(textbox|textarea|input):/)
+        expect(await tabStops(4)).toEqual(['F8', 'F9', 'F10', (await stop())])
+        const infoStop = await stop()
+        for (const key of ['Escape', 'End', 'F9']) {
+            await page.keyboard.press(key)
+            const e = await takeBox(/^OK$/)
+            expect(e.text, key).toContain('情報が入力されていません。')
+            expect(e.buttons, key).toEqual(['OK'])
+            await expect(dlg, `${key} không được đóng 患者注意情報`).toBeVisible()
+        }
+        await page.keyboard.press('F8')
+        const q = await takeBox(/^キャンセル$/)
+        expect(q.text).toContain('削除してよろしいですか？')
+        expect(q.buttons).toEqual(['OK', 'キャンセル'])
+        expect(infoStop).toBeTruthy()
+        await page.locator('[data-fkey="F10"]').last().click()
+        await expect(dlg).toBeHidden({ timeout: 10_000 })
     })
 })

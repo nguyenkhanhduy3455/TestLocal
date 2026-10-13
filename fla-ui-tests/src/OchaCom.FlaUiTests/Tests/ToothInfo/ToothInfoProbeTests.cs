@@ -39,6 +39,9 @@ public sealed class ToothInfoProbeTests : GuidanceProbeBase
     [Test, Order(6)] public void Tc5f_PcrKeys() => MeasurePcrKeys();
     [Test, Order(7)] public void Tc5g_KessonConfirm() => MeasureKessonConfirm();
     [Test, Order(8)] public void Tc5h_HotetsuDateKeys() => MeasureHotetsuDateKeys();
+    // frm203047 患者注意情報 (nhóm A còn lại): Ｉ (imgPI) → modal. F9 trống = E00001 nên ESC/End không ghi.
+    [Test, Order(10)] public void Tc6a_InpSettings() => MeasureInpSettings();
+    [Test, Order(9)] public void Tc5i_PatientNotice() => MeasureModal("患者注意情報", "患者注意情報", openFrom: () => ClickMain("imgPI"), parent: null, withEnter: false);
 
     /// <summary>
     /// 補綴管理: Enter / Click trên ô ngày, gõ ký tự, Leave với ngày sai (frm203045 txtDt_*).
@@ -230,6 +233,113 @@ public sealed class ToothInfoProbeTests : GuidanceProbeBase
             if (box2 is not null) MsgBoxWin32.ClickButton(box2.Hwnd, "Cancel", "OK");
         }
         catch (Exception e) { Log($"=== KQ-C1 [{tag}] === NGOẠI LỆ: {e.GetType().Name}: {e.Message}"); }
+        finally
+        {
+            foreach (var m in MsgBoxWin32.All(App.ProcessId)) MsgBoxWin32.ClickButton(m.Hwnd, "Cancel", "キャンセル", "OK");
+            for (var i = 0; i < 3; i++)
+            {
+                var top = Win32Windows.OfProcess(App.ProcessId).LastOrDefault(w => w.Visible && w.Title.Length > 0 && !w.Title.StartsWith("　診療入力", StringComparison.Ordinal));
+                if (top is null) break;
+                Uia.ForceForeground(top.Hwnd);
+                Uia.SendKey(Vk.F10);
+                Thread.Sleep(1200);
+            }
+        }
+    }
+
+    /// <summary>
+    /// frm203003 処置入力設定 (F11 → 9 → 2). F9 / ESC / End GHI Ocha.xml NGAY, không hỏi lại ⇒ probe này chỉ
+    /// chạy khi đã sao lưu Ocha.xml (xem run-edit-tooth-info.ps1 / ghi chú); các nút リセット luôn Cancel.
+    /// </summary>
+    private void MeasureInpSettings()
+    {
+        using var trace = TestTrace.Begin("Tc6a_InpSettings");
+        const string tag = "診療入力設定";
+        try
+        {
+            InpP1MenuFlow.OpenMenuByF11(App, Screen.Window, trace);
+            Thread.Sleep(500);
+            Uia.SendKey(Vk.D9);
+            Thread.Sleep(500);
+            Uia.SendKey(0x32);
+            var win = Waits.TryFor(() => FindModal("診療入力設定"), TimeSpan.FromSeconds(15));
+            if (win is null) { Log($"=== KQ-S1 [{tag}] === không mở. Cửa sổ: {string.Join(" / ", Win32Windows.OfProcess(App.ProcessId).Where(w => w.Visible).Select(w => w.Title))}"); return; }
+            Thread.Sleep(800);
+            Log($"=== KQ-S1 [{tag}] === tiêu đề=「{Uia.NameOf(win)}」");
+            Log($"=== KQ-S6 [{tag}] === focus lúc MỞ: {FocusInfo()}");
+            FKeys(win, tag);
+
+            // Mỗi tab: chọn tab (chuột thật) rồi liệt kê checkbox / combo / nút.
+            var tabs = Uia.Descendants(win, 8).Where(e => Uia.ControlTypeOf(e) == FlaUI.Core.Definitions.ControlType.TabItem).ToList();
+            Log($"=== KQ-S2 [{tag}] === {tabs.Count} tab: {string.Join(" | ", tabs.Select(t => Txt.N(Uia.NameOf(t))))}");
+            var seen = new HashSet<string>();
+            foreach (var t in tabs)
+            {
+                var name = Txt.N(Uia.NameOf(t));
+                var (x, y) = Uia.Center(t);
+                Uia.LeftClickPhysical(x, y);
+                Thread.Sleep(600);
+                Log($"=== KQ-S2 [{tag}] === ── tab 「{name}」");
+                foreach (var e in Uia.Descendants(win, 10))
+                {
+                    var id = Uia.AutomationIdOf(e);
+                    if (id.Length == 0 || !(id.StartsWith("chk") || id.StartsWith("cbo") || id.StartsWith("btn") || id.StartsWith("rdo") || id.StartsWith("txt"))) continue;
+                    if (id.StartsWith("btnF") || !Uia.IsOnScreen(e) || !seen.Add($"{name}|{id}")) continue;
+                    var toggle = "";
+                    try { toggle = e.Patterns.Toggle.PatternOrDefault?.ToggleState.ValueOrDefault.ToString() ?? ""; } catch { }
+                    var line = $"{id} [{Uia.ControlTypeOf(e)}] 「{Txt.N(Uia.NameOf(e))}」 value=「{Txt.N(Uia.ValueOf(e))}」 toggle={toggle} enabled={SafeEnabled(e)}";
+                    if (id.StartsWith("cbo"))
+                    {
+                        try { var cb = e.AsComboBox(); var items = cb.Items.Select(i => Txt.N(i.Text)).ToList(); cb.Collapse(); line += $" items=[{string.Join(" | ", items)}]"; }
+                        catch { line += " items=?"; }
+                    }
+                    Log($"=== KQ-S2 [{tag}] ===   {line}");
+                }
+            }
+
+            // Loại trừ nhau: tick 過去データを表示する ⇒ 過去データ１画面表示 bỏ tick (và ngược lại).
+            void ClickCheck(string id)
+            {
+                var c = Find(win, id);
+                if (c is null) return;
+                var (cx, cy) = Uia.Center(c);
+                Uia.LeftClickPhysical(cx, cy);
+                Thread.Sleep(300);
+            }
+            string State(string id) { var c = Find(win, id); try { return c?.Patterns.Toggle.PatternOrDefault?.ToggleState.ValueOrDefault.ToString() ?? "?"; } catch { return "?"; } }
+            foreach (var tabName in new[] { "入力形態・動作1", "表示設定" })
+            {
+                var tb = tabs.FirstOrDefault(t => Txt.N(Uia.NameOf(t)) == tabName);
+                if (tb is null) continue;
+                var (tx, ty) = Uia.Center(tb); Uia.LeftClickPhysical(tx, ty); Thread.Sleep(500);
+            }
+            Log($"=== KQ-S7 [{tag}] === trước: chkFirstDispMode={State("chkFirstDispMode")} chkOldDataSingleDsp={State("chkOldDataSingleDsp")}");
+
+            // Nút リセット → hộp xác nhận (luôn Cancel).
+            foreach (var tb in tabs.Where(t => Txt.N(Uia.NameOf(t)).Contains("学習")))
+            {
+                var (tx, ty) = Uia.Center(tb); Uia.LeftClickPhysical(tx, ty); Thread.Sleep(500);
+            }
+            var reset = Find(win, "btnResetIntelliAll");
+            if (reset is not null)
+            {
+                var (rx, ry) = Uia.Center(reset);
+                Uia.LeftClickPhysical(rx, ry);
+                var box = Waits.TryFor(() => MsgBoxWin32.First(App.ProcessId), TimeSpan.FromSeconds(6));
+                Log($"=== KQ-S8 [{tag}] === 全て(リセット) → " + (box is null ? "KHÔNG có hộp thoại" : $"「{box.Text}」 (tiêu đề 「{box.Title}」) nút=[{string.Join(", ", MsgBoxWin32.ButtonCaptions(box.Hwnd))}]"));
+                if (box is not null) MsgBoxWin32.ClickButton(box.Hwnd, "Cancel", "キャンセル");
+                Thread.Sleep(500);
+            }
+
+            TabOrder(tag, 20);
+            // ESC / End = F9 登録 ⇒ ghi Ocha.xml rồi đóng (không hỏi).
+            InpP1MenuFlow.Focus(win);
+            Uia.SendKey(Vk.Escape);
+            Thread.Sleep(1500);
+            var gone = FindModal("診療入力設定") is null;
+            Log($"=== KQ-S7 [{tag}] === Escape → form {(gone ? "ĐÃ ĐÓNG" : "còn")}; hộp thoại={MsgBoxWin32.TextOfAll(App.ProcessId)}");
+        }
+        catch (Exception e) { Log($"=== KQ-S1 [{tag}] === NGOẠI LỆ: {e.GetType().Name}: {e.Message}"); }
         finally
         {
             foreach (var m in MsgBoxWin32.All(App.ProcessId)) MsgBoxWin32.ClickButton(m.Hwnd, "Cancel", "キャンセル", "OK");

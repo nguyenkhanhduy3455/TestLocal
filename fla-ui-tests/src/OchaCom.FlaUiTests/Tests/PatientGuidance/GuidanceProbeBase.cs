@@ -49,7 +49,7 @@ public abstract class GuidanceProbeBase : UiTestBase
         try { return App.Automation.FromHandle(w32.Hwnd).AsWindow(); } catch { return null; }
     }
 
-    protected void MeasureModal(string tag, string title, Action openFrom, string? parent, ushort viaKey = 0)
+    protected void MeasureModal(string tag, string title, Action openFrom, string? parent, ushort viaKey = 0, bool withEnter = true)
     {
         using var trace = TestTrace.Begin($"Tc2_{tag}");
         Window? win = null, par = null;
@@ -73,7 +73,7 @@ public abstract class GuidanceProbeBase : UiTestBase
             Controls(win, tag, title);
             trace.Shot("mo");
             TabOrder(tag, 14);
-            Keys(win, tag, trace);
+            Keys(win, tag, trace, withEnter);
             F8(win, tag, trace);   // F8 tắt ở màn này: ghi nhận hành vi
             InpP1MenuFlow.Focus(win);
             Uia.SendKey(Vk.F9);
@@ -149,9 +149,9 @@ public abstract class GuidanceProbeBase : UiTestBase
     }
 
     /// <summary>ESC / End / Enter: có hộp thoại? form còn? (BaseForm chỉ ánh xạ khi cờ bật).</summary>
-    protected void Keys(Window win, string tag, TestTrace trace)
+    protected void Keys(Window win, string tag, TestTrace trace, bool withEnter = true)
     {
-        foreach (var (name, vk) in new[] { ("Escape", Vk.Escape), ("End", Vk.End), ("Enter", (ushort)0x0D) })
+        foreach (var (name, vk) in new[] { ("Escape", Vk.Escape), ("End", Vk.End), ("Enter", (ushort)0x0D) }.Where(k => withEnter || k.Item1 != "Enter"))
         {
             InpP1MenuFlow.Focus(win);
             Uia.SendKey(vk);

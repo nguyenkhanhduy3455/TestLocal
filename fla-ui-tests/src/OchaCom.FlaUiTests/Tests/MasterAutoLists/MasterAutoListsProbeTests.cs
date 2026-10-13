@@ -59,6 +59,7 @@ public sealed class MasterAutoListsProbeTests : UiTestBase
     [Test, Order(2)] public void Tc0b_ChkAuto() => MeasureList(ChkAuto, "自動算定", Vk.D4, "frm203039");
     [Test, Order(3)] public void Tc0c_TrtAuto() => MeasureList(TrtAuto, "処置自動入力", Vk.D5, "frm203041");
     [Test, Order(4)] public void Tc0d_DateChange() => MeasureDateChange();
+    [Test, Order(5)] public void Tc0e_TrtAutoRegisterDetail() => MeasureTrtAutoRegisterDetail();
 
     /// <summary>Probe NGẮN: chỉ đo cách nhận ra dialog modal frm203037 (UIA vs Win32).</summary>
     [Test, Order(9)]
@@ -506,6 +507,89 @@ public sealed class MasterAutoListsProbeTests : UiTestBase
     // ═════════════════════════════════════════════════════════════════════════
     // 日付変更
     // ═════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// frm203041 (chi tiết còn thiếu của nhóm A): F1 追加 → mọi ô nhập (maxlength, bật/tắt), các combo
+    /// (mục + mặc định), txtLimitCnt bật khi nào, thứ tự Tab đầy đủ. KHÔNG F9 / ESC / End (ghi).
+    /// </summary>
+    private void MeasureTrtAutoRegisterDetail()
+    {
+        using var trace = TestTrace.Begin("Tc0e_TrtAutoRegisterDetail");
+        const string tag = "処置自動入力登録";
+        Window? win = null;
+        try
+        {
+            win = OpenList(TrtAuto, Vk.D5, trace);
+            ActivateList(win);
+            Uia.SendKey(Vk.F1);
+            var dlg = Waits.TryFor(() => FindDialog(win, "frm203041", "処置自動入力登録"), TimeSpan.FromSeconds(12));
+            if (dlg is null) { Log($"=== KQ-D1 [{tag}] === dialog không mở"); return; }
+            Thread.Sleep(800);
+            Log($"=== KQ-D6 [{tag}] === focus lúc MỞ: {FocusInfo()}");
+            // Lùi bằng Shift+Tab để biết điểm dừng TRƯỚC ô đang giữ focus (có cboJiki không?).
+            for (var b = 1; b <= 3; b++)
+            {
+                Keyboard.TypeSimultaneously(FlaUI.Core.WindowsAPI.VirtualKeyShort.SHIFT, FlaUI.Core.WindowsAPI.VirtualKeyShort.TAB);
+                Thread.Sleep(250);
+                Log($"=== KQ-D6 [{tag}] === Shift+Tab#{b} → {FocusInfo()}");
+            }
+            foreach (var e in Uia.Descendants(dlg, 8))
+            {
+                var id = Uia.AutomationIdOf(e);
+                if (!(id.StartsWith("txt") || id.StartsWith("cbo"))) continue;
+                var line = $"{id} [{Uia.ControlTypeOf(e)}] value=「{Txt.N(Uia.ValueOf(e))}」 enabled={SafeEnabled(e)}";
+                if (id.StartsWith("cbo"))
+                {
+                    try
+                    {
+                        var cb = e.AsComboBox();
+                        var items = cb.Items.Select(i => Txt.N(i.Text)).ToList();
+                        cb.Collapse();
+                        line += $" items=[{string.Join(" | ", items)}]";
+                    }
+                    catch (Exception ex) { line += $" items=?({ex.GetType().Name})"; }
+                }
+                Log($"=== KQ-D2 [{tag}] === {line}");
+            }
+            // txtLimitCnt bật khi 算定時期 = 日一回?  Duyệt từng mục cboJiki.
+            var jiki = Find(dlg, "cboJiki");
+            var limit = Find(dlg, "txtLimitCnt");
+            if (jiki is not null && limit is not null)
+            {
+                var cb = jiki.AsComboBox();
+                var count = cb.Items.Length;
+                cb.Collapse();
+                for (var i = 0; i < count; i++)
+                {
+                    try
+                    {
+                        // Bàn phím thật: click mở danh sách → Home → Down i lần → Enter (chạy SelectedIndexChanged như người dùng).
+                        Uia.MouseClick(jiki);
+                        Thread.Sleep(300);
+                        Uia.SendKey(0x24);
+                        for (var k = 0; k < i; k++) { Uia.SendKey(0x28); Thread.Sleep(80); }
+                        Uia.SendKey(0x0D);
+                        Thread.Sleep(500);
+                        Log($"=== KQ-D3 [{tag}] === cboJiki[{i}]=「{Txt.N(Uia.ValueOf(jiki))}」 → txtLimitCnt enabled={SafeEnabled(limit)} value=「{Txt.N(Uia.ValueOf(limit))}」");
+                    }
+                    catch (Exception ex) { Log($"=== KQ-D3 [{tag}] === cboJiki[{i}] lỗi {ex.GetType().Name}"); }
+                }
+            }
+            InpP1MenuFlow.Focus(dlg);
+            TabOrder("KQ-D6", tag, 36);
+        }
+        catch (Exception e) { Log($"=== KQ-D1 [{tag}] === NGOẠI LỆ: {e.GetType().Name}: {e.Message}"); }
+        finally
+        {
+            try
+            {
+                foreach (var m in MsgBoxWin32.All(App.ProcessId)) MsgBoxWin32.ClickButton(m.Hwnd, "Cancel", "キャンセル", "OK");
+                if (FindDialog(win!, "frm203041", "処置自動入力登録") is { } d) { InpP1MenuFlow.Focus(d); Uia.SendKey(Vk.F10); Thread.Sleep(1200); }
+                if (win is not null) InpP1MenuFlow.CloseByBack(App, win, TrtAuto.DialogId, trace);
+            }
+            catch (Exception e) { Log($"=== KQ-D1 [{tag}] === không đóng được: {e.Message}"); }
+        }
+    }
 
     private void MeasureDateChange()
     {
