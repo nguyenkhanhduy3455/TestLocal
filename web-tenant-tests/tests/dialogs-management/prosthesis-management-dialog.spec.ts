@@ -254,7 +254,7 @@ async function saveViaF8(page: Page, dialog: Locator) {
     const confirm = page.getByRole('alertdialog')
     await expect(confirm).toBeVisible({ timeout: 10000 })
     await expect(confirm.getByText('登録してよろしいですか？')).toBeVisible()
-    await confirm.getByRole('button', { name: /^(Yes|はい)$/ }).click()
+    await confirm.getByRole('button', { name: /^(Yes|はい|OK)$/ }).click()
 
     const result = page.getByRole('alertdialog')
     await expect(result).toBeVisible({ timeout: 30000 })
@@ -308,7 +308,8 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
 
         dialog = page.getByRole('dialog').filter({ hasText: '【着脱方法】' })
         boxOf = (text: string) => dialog.getByText(text, { exact: true }).locator('..')
-        chart = dialog.locator('div.outline-none[tabindex="0"]')
+        // BuiInfoChart's root is script-focusable only (tabindex -1): its 32 cells are the Tab stops.
+        chart = dialog.locator('div.outline-none[tabindex="-1"]:has([data-tab-order]):not(:has(div.outline-none[tabindex="-1"]))')
         cells = chart.locator('button.h-8.w-8')
         labels = chart.locator('button.h-4.w-8')
         previewDialog = page.getByRole('dialog').filter({ hasText: PREVIEW_TITLE })
@@ -409,16 +410,9 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         // DraggableDialog và handler đóng popup 算定 → chỉ log khi lệch, không
         // đánh đỏ cả suite vì một cuộc đua (giống spec 実地指).
         await expect(chart).toBeVisible()
-        const focused = await chart.evaluate((el) => el === document.activeElement).catch(() => false)
-        if (!focused) {
-            const desc = await page.evaluate(() => {
-                const el = document.activeElement as HTMLElement | null
-                if (!el) return 'null'
-                const label = (el.getAttribute('aria-label') ?? el.textContent ?? '').trim()
-                return `${el.tagName.toLowerCase()}[role=${el.getAttribute('role') ?? '-'}] "${label.slice(0, 30)}"`
-            })
-            console.log(`CẢNH BÁO: chart 歯式 không được focus khi mở dialog; đang focus: ${desc}`)
-        }
+        // Đo trên WinForm: focus lúc mở là buiLabel42 — ô răng đầu tiên trong thứ tự Tab
+        // (chính chart không phải điểm dừng).
+        await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-tab-order'))).toBe('0')
         await step()
     })
 
@@ -930,7 +924,7 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
             return
         }
 
-        await confirm.getByRole('button', { name: /^(Yes|はい)$/ }).click()
+        await confirm.getByRole('button', { name: /^(Yes|はい|OK)$/ }).click()
         const result = page.getByRole('alertdialog')
         await expect(result).toBeVisible({ timeout: 30000 })
         await expect(result.getByText('登録が完了しました。')).toBeVisible({ timeout: 30000 })

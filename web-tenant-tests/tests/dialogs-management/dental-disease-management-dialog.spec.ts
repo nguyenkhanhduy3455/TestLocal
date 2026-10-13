@@ -1348,7 +1348,7 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
             const confirm = page.getByRole('alertdialog')
             await expect(confirm).toBeVisible({ timeout: 10000 })
             await expect(confirm.getByText('登録してよろしいですか？')).toBeVisible()
-            await confirm.getByRole('button', { name: /^(Yes|はい)$/ }).click()
+            await confirm.getByRole('button', { name: /^(Yes|はい|OK)$/ }).click()
 
             const done = page.getByRole('alertdialog')
             await expect(done).toBeVisible({ timeout: 30000 })
@@ -1446,7 +1446,7 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
             return
         }
 
-        await confirm.getByRole('button', { name: /^(Yes|はい)$/ }).click()
+        await confirm.getByRole('button', { name: /^(Yes|はい|OK)$/ }).click()
         const done = page.getByRole('alertdialog')
         await expect(done).toBeVisible({ timeout: 30000 })
         await expect(done.getByText('登録が完了しました。')).toBeVisible({
@@ -1548,7 +1548,7 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
         await dialog.getByRole('button', { name: 'F8 登録' }).click()
         const confirm = page.getByRole('alertdialog')
         await expect(confirm).toBeVisible({ timeout: 10000 })
-        await confirm.getByRole('button', { name: /^(Yes|はい)$/ }).click()
+        await confirm.getByRole('button', { name: /^(Yes|はい|OK)$/ }).click()
         const done = page.getByRole('alertdialog')
         await expect(done.getByText('登録が完了しました。')).toBeVisible({
             timeout: 30000,

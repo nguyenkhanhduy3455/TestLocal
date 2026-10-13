@@ -1295,17 +1295,17 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await step()
     })
 
-    test('F8 登録 — confirm Q00002 「更新してよろしいですか？」', async () => {
+    test('F8 登録 — confirm Q00001 「登録してよろしいですか？」 (frm203022.btnF8_Click)', async () => {
         await dialog.getByRole('button', { name: 'F8 登録' }).click()
         const confirm = page.getByRole('alertdialog')
         await expect(confirm).toBeVisible({ timeout: 10000 })
-        await expect(confirm.getByText('更新してよろしいですか？')).toBeVisible()
+        await expect(confirm.getByText('登録してよろしいですか？')).toBeVisible()
 
         if (!ALLOW_SAVE) {
             // Mặc định KHÔNG ghi DB: chọn No → handleRegister return sớm, dialog
             // 実地指１ vẫn mở nguyên trạng. (Nút của confirmDialog đang là Yes/No,
             // chấp nhận cả はい/いいえ phòng khi label đổi lại.)
-            await confirm.getByRole('button', { name: /^(No|いいえ)$/ }).click()
+            await confirm.getByRole('button', { name: /^(キャンセル|No|いいえ)$/ }).click()
             await expect(confirm).toBeHidden({ timeout: 10000 })
             await expect(dialog).toBeVisible()
             console.log('F8 登録: dừng ở confirm (đặt TEST_ALLOW_SAVE=1 để ghi thật)')
@@ -1313,7 +1313,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
             return
         }
 
-        await confirm.getByRole('button', { name: /^(Yes|はい)$/ }).click()
+        await confirm.getByRole('button', { name: /^(Yes|はい|OK)$/ }).click()
         // Thành công → I00001; lỗi → 「登録に失敗しました: ...」. Cả hai đều là alert,
         // nên phải assert đúng nhánh thành công.
         const result = page.getByRole('alertdialog')
