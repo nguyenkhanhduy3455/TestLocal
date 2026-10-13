@@ -248,6 +248,36 @@ test.describe('病名選択 — thứ tự Tab / tiêu đề / nhãn F-key theo 
         expect(await parentRows()).toEqual(before)
     })
 
+    // ── F9 全て表示 — frm902007.btnF9_Click → getViewData(searchKbn.F9) ──────────
+    // getViewData gán lại DataSource MỖI LẦN: danh sách được đọc lại và con trỏ về dòng 1,
+    // kể cả khi đang ở sẵn 全て表示. Bản web từng không làm gì ở lần bấm thứ hai vì
+    // state không đổi (query key giữ nguyên).
+    const selNoInput = () => dialog().locator('input[inputmode="numeric"]')
+    const f9Button = () => dialog().locator('[data-fkey="F9"]')
+
+    test('TC-F9-1 — F9 sau khi tìm F10: bỏ kết quả tìm, hiện lại TOÀN BỘ và con trỏ về dòng 1', async () => {
+        // Sau TC-F10-4 danh sách vẫn là kết quả tìm 「Pul」 (TC-F10-2).
+        const searched = await parentRows()
+        await f9Button().click()
+        await expect
+            .poll(async () => (await parentRows()).cd, {
+                message: 'F9 phải thay kết quả tìm F10 bằng danh sách toàn bộ',
+            })
+            .not.toEqual(searched.cd)
+        await expect(selNoInput()).toHaveValue('1')
+    })
+
+    test('TC-F9-2 — đang ở 全て表示, con trỏ ở dòng 3: F9 nạp lại và đưa con trỏ về dòng 1', async () => {
+        await selNoInput().focus()
+        await page.keyboard.press('ArrowDown')
+        await page.keyboard.press('ArrowDown')
+        await expect(selNoInput(), 'ArrowDown x2 phải đưa con trỏ tới dòng 3').toHaveValue('3')
+
+        const reqs = await listRequestsDuring(() => f9Button().click())
+        expect(reqs.length, 'bấm lại F9 khi đang ở 全て表示 vẫn phải nạp lại danh sách').toBeGreaterThan(0)
+        await expect(selNoInput(), 'con trỏ phải về dòng 1').toHaveValue('1')
+    })
+
     test('TC-CLOSE — F12 戻る đóng 病名選択', async () => {
         await page.keyboard.press('F12')
         await expect(dialog()).toHaveCount(0)
