@@ -400,7 +400,7 @@ test.describe('診療入力 — 会計 chạy theo ngày của dòng con trỏ (
                 continue
             }
             if (await dirtyGate().isVisible().catch(() => false)) {
-                await btn(dirtyGate(), 'No').first().click()
+                await btn(dirtyGate(), 'いいえ').first().click()
                 continue
             }
             if (await dateGate().isVisible().catch(() => false)) {

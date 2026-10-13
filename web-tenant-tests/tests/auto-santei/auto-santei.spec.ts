@@ -17,7 +17,17 @@
  */
 
 import { type Page, type Route } from '@playwright/test'
-import { branchInForceOn, dbEnabled, findMstTrt, insuranceBranches, type InsuranceBranch } from '../_shared/db'
+import {
+  branchInForceOn,
+  dbEnabled,
+  deleteTestPatient,
+  findMstTrt,
+  insuranceBranches,
+  seedTestPatient,
+  seedTreatmentRows,
+  type InsuranceBranch,
+} from '../_shared/db'
+import { seedInsuranceBranches } from '../_shared/test-patient'
 import { BASE_URL, TODAY_ISO, trtDt } from '../_shared/env'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep } from '../_shared/step'
@@ -41,17 +51,29 @@ function cascadeUrlOf(req: { url(): string; postDataJSON(): unknown }): string {
 test.describe('dữ liệu THẬT', () => {
 
 const BASE_URL = process.env.BASE_URL ?? "https://tenant1.ochacom.local/";
-const PAT_NO = process.env.TEST_PAT_NO ?? "11";
+/**
+ * Bệnh nhân do spec TỰ DỰNG (dải 990000+) và xoá hẳn ở `afterAll` — không mượn
+ * bệnh nhân thật, nên kết quả không đổi theo lịch sử khám của ai.
+ */
+const PAT_NO = "990101";
 const TRT_DT = trtDt(TODAY_ISO);
 /**
  * Bệnh nhân cho nhóm 自動算定２ (TC-10/TC-11).
  *
- * `…_DENTURE` phải là người KHÔNG có 歯周病検査 nào mang 病名 Ｐ/単Ｇ ⇒ pack
- * 歯管-有床義歯 hiện; `…_PERIO` phải là người CÓ, và 検査 đó còn 現存歯 ⇒ pack bị
- * cổng lọc chặn. Trên tenant demo: 100 và 12138.
+ * `…_DENTURE` KHÔNG có 歯周病検査 nào mang 病名 Ｐ/単Ｇ ⇒ pack 歯管-有床義歯 hiện;
+ * `…_PERIO` được seed MỘT dòng 歯周病検査 (137/0) mang 病名 Ｐ trên răng còn (siga
+ * mặc định = 32 răng nguyên) ⇒ pack bị cổng lọc chặn.
  */
-const PAT_NO_DENTURE = process.env.TEST_PAT_NO_DENTURE ?? "100";
-const PAT_NO_PERIO = process.env.TEST_PAT_NO_PERIO ?? "12138";
+const PAT_NO_DENTURE = "990102";
+const PAT_NO_PERIO = "990103";
+/** Ngày của dòng 歯周病検査 seed: đầu tháng trước 診療日, để luôn nằm trong lịch sử. */
+const PERIO_TEST_DT = (() => {
+  const d = new Date(`${TRT_DT}T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() - 1, 1);
+  return d.toISOString().slice(0, 10);
+})();
+const PERIO_TEST_TRT_CD = 137;
+const DIS_CD_PERIO = 103;
 /** 処置 mà tenant demo đăng ký trong TRTAUTO (歯科疾患管理料). */
 const TRT_CD_SHIKAN = 116;
 const TRT_SB_SHIKAN = 7;
@@ -254,6 +276,20 @@ test.describe("自動算定 — 初診/再診 (modSave.AutoSantei)", () => {
   };
 
   test.beforeAll(async ({ browser }) => {
+    for (const patNo of [PAT_NO, PAT_NO_DENTURE, PAT_NO_PERIO]) {
+      await seedTestPatient({ patNo: Number(patNo) });
+    }
+    await seedTreatmentRows(Number(PAT_NO_PERIO), PERIO_TEST_DT, [
+      {
+        trtCd: PERIO_TEST_TRT_CD,
+        trtSb: 0,
+        dspTrt: "Ｐ検",
+        bui: [0, 0, 0, 0, 0, 0, 0, 1, 1],
+        disCd: [DIS_CD_PERIO],
+        disSb: [1],
+        dspDis: "Ｐ",
+      },
+    ]);
     // browser.newPage() KHÔNG kế thừa `use` của config → truyền tay.
     page = await browser.newPage({
       baseURL: BASE_URL,
@@ -323,6 +359,9 @@ test.describe("自動算定 — 初診/再診 (modSave.AutoSantei)", () => {
 
   test.afterAll(async () => {
     await page?.close();
+    for (const patNo of [PAT_NO, PAT_NO_DENTURE, PAT_NO_PERIO]) {
+      await deleteTestPatient(Number(patNo));
+    }
   });
 
   // ── Prompt ────────────────────────────────────────────────────────────────
@@ -758,13 +797,17 @@ test.describe("自動算定 — 初診/再診 (modSave.AutoSantei)", () => {
 test.describe('dữ liệu GIẢ — bảng nhánh quyết định', () => {
 
 const BASE_URL = process.env.BASE_URL ?? "https://tenant1.ochacom.local/";
-const PAT_NO = process.env.TEST_PAT_NO ?? "11";
+/** Bệnh nhân TỰ DỰNG (dải 990000+), xoá hẳn ở `afterAll`. */
+const PAT_NO = "990104";
 const TRT_DT = trtDt(TODAY_ISO);
 
 /** RegiCol — treatment-entry-shared.ts:105. */
 const RegiCol = { day: 0, ryo: 2 } as const;
 const ryoCell = (page: Page) =>
   page.locator(`[data-grid-cell$="|${RegiCol.ryo}"]`);
+/** Ô 日 có mặt cả khi lưới trống (bệnh nhân seed chưa có 履歴) — mốc "lưới đã nạp". */
+const dayCell = (page: Page) =>
+  page.locator(`[data-grid-cell$="|${RegiCol.day}"]`);
 const anyDialog = (page: Page) => page.locator('[role="dialog"]');
 const santeiDialog = (page: Page) =>
   anyDialog(page).filter({ hasText: /を算定しますか？/ });
@@ -987,7 +1030,7 @@ test.describe("自動算定 — bảng nhánh (data giả)", () => {
       await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, {
         waitUntil: "domcontentloaded",
       });
-      const ok = await ryoCell(page)
+      const ok = await dayCell(page)
         .last()
         .waitFor({ state: "visible", timeout: 30000 })
         .then(() => true)
@@ -1016,6 +1059,7 @@ test.describe("自動算定 — bảng nhánh (data giả)", () => {
   };
 
   test.beforeAll(async ({ browser }) => {
+    await seedTestPatient({ patNo: Number(PAT_NO) });
     page = await browser.newPage({
       baseURL: BASE_URL,
       ignoreHTTPSErrors: true,
@@ -1143,6 +1187,7 @@ test.describe("自動算定 — bảng nhánh (data giả)", () => {
 
   test.afterAll(async () => {
     await page?.close();
+    await deleteTestPatient(Number(PAT_NO));
   });
 
   // ══ A. CÓ confirm ═════════════════════════════════════════════════════════
@@ -1947,8 +1992,17 @@ test.describe("自動算定 — bảng nhánh (data giả)", () => {
 // ═══ nguyên văn từ auto-santei-insurance-branch.spec.ts (đã gộp vào file này) ══════════════════════════
 test.describe('dữ liệu THẬT + nhập lùi ngày — 枝番', () => {
 
-/** Bệnh nhân đổi thẻ giữa chừng — xem "ĐIỀU KIỆN DỮ LIỆU". */
-const PAT_NO = process.env.TEST_PAT_NO_INS_BR ?? '11307'
+/**
+ * Bệnh nhân đổi thẻ giữa chừng — TỰ DỰNG (dải 990000+) với 4 枝番 như bên dưới,
+ * xoá hẳn ở `afterAll`.
+ */
+const PAT_NO = '990105'
+const SEED_BRANCHES = [
+    { patBr: 1, brDt: '2003-02-01', medStDt: '2006-03-31', medEdDt: '2006-09-30', disFlg: 2, oldFlg: 0 },
+    { patBr: 2, brDt: '2006-10-01', medStDt: '2006-10-28', medEdDt: '2006-10-28', disFlg: 2, oldFlg: 0 },
+    { patBr: 3, brDt: '2006-11-01', medStDt: '2007-03-10', medEdDt: '2007-05-19', disFlg: 2, oldFlg: 1 },
+    { patBr: 4, brDt: '2008-04-01', medStDt: '2011-03-05', medEdDt: '2011-03-08', disFlg: 0, oldFlg: 5 },
+] as const
 /** 診療日 nằm TRƯỚC 資格取得年月日 của 枝番 mới nhất. */
 const TRT_DT_BACK = process.env.TEST_TRT_DT_INS_BR_BACK ?? '2007-06-15'
 /** 診療日 SAU khi 枝番 mới nhất đã có hiệu lực — đối chứng. */
@@ -2101,6 +2155,8 @@ test.describe('自動算定 — 枝番 có hiệu lực tại 診療日 (GetVali
     }
 
     test.beforeAll(async ({ authedPage }) => {
+        await seedTestPatient({ patNo: Number(PAT_NO), birthDt: '2003-01-15' })
+        await seedInsuranceBranches(Number(PAT_NO), SEED_BRANCHES)
         // Page chia sẻ theo worker (`_shared/session.ts`): đăng nhập một lượt cho cả
         // worker thay vì mỗi file một lần — app chặn ở 10 login/khung thời gian
         // (Rule 10.1). `afterAll` gọi `releaseSharedPage`, KHÔNG `page.close()`.
@@ -2139,6 +2195,7 @@ test.describe('自動算定 — 枝番 có hiệu lực tại 診療日 (GetVali
 
     test.afterAll(async () => {
         await releaseSharedPage(page)
+        await deleteTestPatient(Number(PAT_NO))
     })
 
     test('TC-0 dữ liệu test còn phân biệt được hai luật', async () => {
@@ -2224,8 +2281,19 @@ test.describe('自動算定 — 枝番 có hiệu lực tại 診療日 (GetVali
 
         await openFresh(TRT_DT_BACK)
 
-        // Không đủ điều kiện 初診 ⇒ FE áp thẳng `picks` KHÔNG hỏi 3 nút; nhưng có
-        // `disabilityAddon` nên confirm 特２ bung TRƯỚC khi dòng nào được chèn
+        // Đủ điều kiện 初診 (bệnh nhân seed chưa có lịch sử) ⇒ FE hỏi 3 nút TRƯỚC;
+        // Yes = áp bộ `picks` + `disabilityAddon`, đúng bộ mà các assert dưới đọc.
+        // Không đủ điều kiện ⇒ FE áp thẳng `picks`, không có hộp này.
+        if (body.isInitialVisitEligible) {
+            await expect(
+                santeiDialog(page),
+                'BE báo đủ điều kiện 初診 nên FE phải hỏi 「〜を算定しますか？」',
+            ).toBeVisible({ timeout: 20000 })
+            await santeiBtn(page, 'Yes').click()
+            await expect(santeiDialog(page)).toHaveCount(0, { timeout: 15000 })
+        }
+
+        // Có `disabilityAddon` nên confirm 特２ bung TRƯỚC khi dòng nào được chèn
         // (treatment-entry-detail.tsx: dialog chạy trước `handleKobetuPicks`).
         // Trả lời いいえ để giữ 特１ — chính là dòng 105 mà `dis_flg` của 枝番 hiệu lực sinh ra.
         if (body.disabilityAddon !== null) {

@@ -1,7 +1,8 @@
 import { type Page } from '@playwright/test'
 
+import { SEED_PAT_NO_BASE, dbEnabled, deleteTestPatient, seedTestPatient, seedTreatmentRows } from '../_shared/db'
 import { openTreatmentEntry, ryoCells } from '../_shared/entry'
-import { TODAY_ISO, patNo, trtDt } from '../_shared/env'
+import { TODAY_ISO, trtDt } from '../_shared/env'
 import { closeDialogs, installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
@@ -85,7 +86,13 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * Nothing here presses F9 登録, so the DB stays untouched.
  */
 
-const PAT_NO = patNo('12138')
+/**
+ * Bệnh nhân TỰ DỰNG (dải 990000+) với đúng một 部位病名行 + một dòng 処置 ở 診療日; xoá hẳn
+ * ở afterAll. TC-2 đo cặp (病名行 → 処置) này nên không còn phụ thuộc dữ liệu của ai.
+ */
+const PAT_NO = String(SEED_PAT_NO_BASE + 210)
+
+test.skip(!dbEnabled, 'Cần TEST_DB=1 để seed bệnh nhân test')
 /** Today = the current month, the only month whose rows can still be typed into. */
 const TRT_DT = trtDt(TODAY_ISO)
 
@@ -213,6 +220,22 @@ test.describe('診療入力 — 療法・処置 column indent (REGIRYO_PADLEFT /
     let newCells: RyoCell[] = []
 
     test.beforeAll(async ({ authedPage }) => {
+        await seedTestPatient({ patNo: Number(PAT_NO) })
+        await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
+            {
+                trtCd: 0,
+                trtSb: 0,
+                trtPt: 0,
+                trtCnt: 0,
+                dspTrt: '',
+                bui: [0, 0, 0, 0, 0, 0, 0, 0, 1],
+                dspBui: '左上1',
+                disCd: [100],
+                disSb: [2],
+                dspDis: 'Ｃ',
+            },
+            { trtCd: 110, trtSb: 0, trtPt: 59, trtCnt: 1, dspTrt: '歯科再診料' },
+        ])
         page = authedPage
         // Install BEFORE navigating: 「〜を算定しますか？」 fires the moment the grid
         // finishes loading. 'cancel' instead of 'no' — trap 3.
@@ -229,6 +252,7 @@ test.describe('診療入力 — 療法・処置 column indent (REGIRYO_PADLEFT /
     test.afterAll(async () => {
         await disposeOverlays?.()
         await releaseSharedPage(page)
+        await deleteTestPatient(Number(PAT_NO)).catch(() => {})
     })
 
     // ─────────────────────────────────────────────────────────────────────────

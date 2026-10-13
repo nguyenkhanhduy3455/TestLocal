@@ -51,23 +51,27 @@
  * 23.4 đóng-mở lại reset (TC-B8).
  *
  * ─── ENV ────────────────────────────────────────────────────────────────────
- *   TEST_PAT_NO (10 — bệnh nhân KHÔNG làm AutoSantei bung カルテ記載選択 chồng lên) ·
- *   TEST_TRT_DT (hôm nay) · TEST_USER_CMT_PACK (A000-1).
+ *   Bệnh nhân TỰ DỰNG (seedTestPatient) kèm một dòng 処置 ở 診療日 để AutoSantei không
+ *   bung hộp chồng lên; xoá hẳn ở afterAll. TEST_TRT_DT (hôm nay) · TEST_USER_CMT_PACK (A000-1).
  */
 import { type Page } from '@playwright/test'
 
-import { TODAY_ISO, patNo, trtDt } from '../_shared/env'
+import { SEED_PAT_NO_BASE, dbEnabled, deleteTestPatient, seedTestPatient, seedTreatmentRows } from '../_shared/db'
+import { TODAY_ISO, trtDt } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
 import { makeStep } from '../_shared/step'
 
-const PAT_NO = patNo('10')
+/** Bệnh nhân TỰ DỰNG (dải 990000+) kèm một dòng 処置 ở 診療日 để FE bỏ qua AutoSantei; xoá ở afterAll. */
+const PAT_NO = String(SEED_PAT_NO_BASE + 160)
 const TRT_DT = trtDt(TODAY_ISO)
 /** 記載事項 mở frm203019 trực tiếp (pack_type 90). */
 const PACK_CD = process.env.TEST_USER_CMT_PACK ?? 'A000-1'
 
 const SANTEI_CONFIRM = /を算定しますか？/
+
+test.skip(!dbEnabled, 'Cần TEST_DB=1 để seed bệnh nhân test')
 
 /** CSS chứ không getByRole: Radix alert gắn aria-hidden lên portal khác (Rule 12). */
 const anyDialog = (page: Page) => page.locator('[role="dialog"]')
@@ -176,6 +180,10 @@ test.describe('ユーザー摘要コメント選択 + 摘要２検索 (frm203019
   let disposeOverlays: (() => Promise<void>) | undefined
 
   test.beforeAll(async ({ authedPage }) => {
+    await seedTestPatient({ patNo: Number(PAT_NO) })
+    await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
+      { trtCd: 110, trtSb: 0, trtPt: 59, trtCnt: 1, dspTrt: '歯科再診料' },
+    ])
     page = authedPage
     disposeOverlays = await installOverlayHandlers(page, { santei: true })
     step = makeStep(page)
@@ -190,6 +198,7 @@ test.describe('ユーザー摘要コメント選択 + 摘要２検索 (frm203019
   test.afterAll(async () => {
     await disposeOverlays?.()
     await releaseSharedPage(page)
+    await deleteTestPatient(Number(PAT_NO)).catch(() => {})
   })
 
   // ── A. nền F7 (frm203012 gType.Tekiyo) ───────────────────────────────────

@@ -10,14 +10,49 @@
  */
 
 import { Page, Locator, type Route } from '@playwright/test'
-import { dbEnabled, withDb } from '../_shared/db'
-import { patNo } from '../_shared/env'
+import { SEED_PAT_NO_BASE, dbEnabled, seedTestPatient, seedTreatmentRows, withDb } from '../_shared/db'
+import { TODAY_ISO } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
+import { dropTestPatient } from '../_shared/test-patient'
+
+test.skip(!dbEnabled, 'Cần TEST_DB=1 để seed bệnh nhân test')
+
+/**
+ * Bệnh nhân TỰ DỰNG (dải 990000+) — mỗi khối một số riêng vì hai khối có thể chạy ở hai
+ * worker cùng lúc. Kèm một dòng 処置 ở ngày test để FE bỏ qua AutoSantei; `dropTestPatient`
+ * xoá hẳn ở afterAll (cả bảng phát sinh và bản archive `_deleted`).
+ */
+const seedF11Patient = async (patNo: number, dt: string) => {
+    await seedTestPatient({ patNo })
+    // Màn chọn bệnh nhân báo 「ドクターを特定出来ません」 nếu person không có 担当医 — gán bác sĩ
+    // đang được dùng nhiều nhất trong dữ liệu (không gõ cứng mã).
+    await withDb((c) =>
+        c.query(
+            `UPDATE person
+                SET att_dr = (SELECT att_dr FROM person WHERE att_dr > 0
+                              GROUP BY att_dr ORDER BY count(*) DESC LIMIT 1)
+              WHERE pat_no = $1`,
+            [patNo],
+        ),
+    )
+    await seedTreatmentRows(patNo, dt, [
+        { trtCd: 110, trtSb: 0, trtPt: 59, trtCnt: 1, dspTrt: '歯科再診料' },
+    ])
+}
+const PAT_NO_MENU = SEED_PAT_NO_BASE + 170
 
 // ═══ nguyên văn từ treatment-f11-fkey-button-show-modal.spec.ts (đã gộp vào file này) ══════════════════════
 test.describe('hiển thị: 9 オプション submenu không bị cut off', () => {
+
+test.beforeAll(async () => {
+    await seedF11Patient(PAT_NO_MENU, TODAY_ISO)
+})
+
+test.afterAll(async () => {
+    await dropTestPatient(PAT_NO_MENU).catch(() => {})
+})
 
 /**
  * 診療入力 F11 「選択」 menu — the WinForm frm203002 grdRegi context menu popped out
@@ -112,7 +147,7 @@ test('F11 選択 menu + 9 オプション submenu hiển thị và không bị c
     // 患者番号 = PatientNoInput (role=combobox + aria-controls), Enter -> mở màn detail.
     const patientNo = page.locator('input[role="combobox"][aria-controls="patient-no-history-list"]');
     await patientNo.waitFor({ state: 'visible', timeout: 15000 });
-    await patientNo.fill('10');
+    await patientNo.fill(String(PAT_NO_MENU));
     await patientNo.press('Enter');
 
     // Màn detail đã mở khi header 患者情報 render 「合計:」 (patient-info-header.tsx).
@@ -296,7 +331,7 @@ test.describe('hành vi các mục vừa port', () => {
  * Kỳ vọng: tất cả XANH. TC-TENKI-3 tự skip khi không có TEST_DB.
  */
 
-const PAT_NO = patNo('12138')
+const PAT_NO = String(SEED_PAT_NO_BASE + 171)
 
 /** Ngày test = HÔM NAY — phải thuộc tháng hiện hành thì mới thao tác được. */
 const TRT_DT =
@@ -610,6 +645,7 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
     let disposeOverlays: (() => Promise<void>) | undefined
 
     test.beforeAll(async ({ authedPage }) => {
+        await seedF11Patient(Number(PAT_NO), TRT_DT)
         if (dbEnabled) outcomeBefore = await readPatOutcome()
 
         page = authedPage
@@ -640,6 +676,7 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
                 console.log(`afterAll: đã trả 転帰 về ${outcomeBefore}`)
             }
         }
+        await dropTestPatient(Number(PAT_NO)).catch(() => {})
     })
 
     // ── Cấu trúc menu ────────────────────────────────────────────────────────
@@ -1014,32 +1051,17 @@ test.describe('診療入力 menu 選択 — các mục vừa port (frm203002 con
     test('TC-GATE-1 — lưới còn sửa dở thì 8 患者登録（患者選択）phải hỏi trước khi rời màn', async () => {
         await backToEntry()
 
-        // Thêm một dòng cho phần "sửa dở" trở nên CÓ CHỦ Ý.
-        //
-        // Đây là bước BEST-EFFORT, không phải điều kiện của testcase: theo bẫy (9)
-        // màn hình đã bị coi là sửa dở ngay sau khi nạp, nên hộp chốt lưu bung ra
-        // dù có thêm dòng hay không. Trước đây chỗ này `skip` khi 行追加 bị disabled
-        // (`canEditRow` cần một ô đang focus, mà cú click không phải lúc nào cũng
-        // rơi vào ô sửa được) — hoá ra là tự bỏ chạy một testcase vẫn chạy đúng.
-        // Click vào ô 療法・処置 (`|2`), KHÔNG phải một ô bất kỳ. `[data-grid-cell]`
-        // trần thì `.last()` hay rơi trúng ô 部位, mà một cú click đơn lên ô 部位 MỞ
-        // LUÔN 「部位選択」 — đúng parity WinForm grdRegi_CellClick (registration-table.tsx
-        // :731-737), không phải bug. Dialog đó là modal nên FKeyScope nuốt sạch F-key của
-        // màn nền ⇒ `openMenu()` ngay bên dưới bấm F11 ba lần đều vô hiệu và TC đỏ ở chỗ
-        // chẳng liên quan gì tới thứ nó đang đo. Ô 療法 chỉ đặt con trỏ, không kéo theo gì.
-        const editableCells = page.locator('[data-grid-cell$="|2"]:not([data-footer-cell])')
-        await expect(editableCells.first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
-        await editableCells.last().click()
-
-        await openMenu()
-        const addRow = rowMenu.getByRole('button', { name: '行追加' })
-        if (await addRow.isEnabled()) {
-            await addRow.click()
-            await expect(rowMenu).toBeHidden({ timeout: 10_000 })
-        } else {
-            console.log('行追加 đang disabled — dựa vào phần sửa dở sẵn có của màn hình')
-            await closeMenu()
-        }
+        // Làm lưới "sửa dở" CÓ CHỦ Ý bằng 行追加 ở menu CHUỘT PHẢI trên cột 点: menu F11 cố ý
+        // ẩn コピー / 貼り付け / 行追加 / 行削除 (WinForm btnF11_Click, frm203002.cs:946-949).
+        // Bệnh nhân seed không có sửa dở sẵn như bệnh nhân thật (AutoSantei đã chèn dòng),
+        // nên không thêm dòng thì app KHÔNG hỏi — và đó là hành vi đúng.
+        const tenCells = page.locator('[data-grid-cell$="|3"]:not([data-footer-cell])')
+        await expect(tenCells.first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
+        await tenCells.last().click({ button: 'right' })
+        const addRow = page.getByRole('menu').getByRole('button', { name: '行追加' })
+        await expect(addRow, 'menu chuột phải cột 点 phải có 行追加').toBeEnabled({ timeout: 10_000 })
+        await addRow.click()
+        await expect(addRow).toBeHidden({ timeout: 10_000 })
 
         // Giờ mới thử rời màn. `menuGate` phải chặn lại bằng hộp 3 nút của
         // ModSave.ExitWithoutSaving. KHÔNG gọi `leaveDiscardingEdits()` ở đây —

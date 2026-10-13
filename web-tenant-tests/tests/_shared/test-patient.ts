@@ -243,6 +243,8 @@ export async function dropTestPatient(patNo: number): Promise<Record<string, num
             try {
                 const res = await client.query(`DELETE FROM ${table} WHERE pat_no = $1`, [patNo])
                 if ((res.rowCount ?? 0) > 0) deleted[table] = res.rowCount ?? 0
+                // Dòng vừa xoá đã được trigger archive sang `<bảng>_deleted` — dọn nốt.
+                await client.query(`DELETE FROM ${table}_deleted WHERE pat_no = $1`, [patNo])
             } catch {
                 // Bảng không có / không có cột pat_no ở tenant này — không phải lỗi.
                 // ⚠️ Postgres huỷ cả transaction khi một câu lỗi, nhưng withDb chạy
@@ -251,6 +253,60 @@ export async function dropTestPatient(patNo: number): Promise<Record<string, num
         }
     })
     return deleted
+}
+
+export interface SeedInsuranceBranch {
+    patBr: number
+    /** 資格取得年月日 (`br_dt`) — thứ quyết định 枝番 nào có hiệu lực tại 診療日. */
+    brDt: string
+    medStDt: string
+    medEdDt: string
+    disFlg: number
+    oldFlg: number
+}
+
+/**
+ * Thay toàn bộ 枝番 (`insurance`) của một bệnh nhân test bằng danh sách cho trước.
+ *
+ * Mỗi 枝番 là bản sao của dòng bảo hiểm sẵn có, chỉ ghi đè các cột spec định nghĩa.
+ * Dùng cho spec cần cấu trúc 枝番 đặc thù mà không muốn mượn bệnh nhân thật.
+ */
+export async function seedInsuranceBranches(
+    patNo: number,
+    branches: readonly SeedInsuranceBranch[],
+): Promise<void> {
+    requireTestRange(patNo)
+    await withDb(async (client) => {
+        const cols = await writableColumns(client, 'insurance')
+        const sentinel = 9999
+        const moved = await client.query(
+            `UPDATE insurance SET pat_br = ${sentinel}
+              WHERE pat_no = $1 AND pat_br = (SELECT min(pat_br) FROM insurance WHERE pat_no = $1)`,
+            [patNo],
+        )
+        if ((moved.rowCount ?? 0) === 0) {
+            throw new Error(`bệnh nhân test ${patNo} chưa có dòng insurance để nhân bản 枝番`)
+        }
+        const override: Record<string, string> = {
+            pat_br: '$2::int',
+            br_dt: '$3::date',
+            med_st_dt: '$4::date',
+            med_ed_dt: '$5::date',
+            dis_flg: '$6::int',
+            old_flg: '$7::int',
+        }
+        const target = cols.map((c) => `"${c}"`).join(', ')
+        const source = cols.map((c) => override[c] ?? `"${c}"`).join(', ')
+        for (const b of branches) {
+            await client.query(
+                `INSERT INTO insurance (${target})
+                 SELECT ${source} FROM insurance WHERE pat_no = $1 AND pat_br = ${sentinel}`,
+                [patNo, b.patBr, b.brDt, b.medStDt, b.medEdDt, b.disFlg, b.oldFlg],
+            )
+        }
+        await client.query(`DELETE FROM insurance WHERE pat_no = $1 AND pat_br = ${sentinel}`, [patNo])
+        await client.query(`DELETE FROM insurance_deleted WHERE pat_no = $1 AND pat_br = ${sentinel}`, [patNo])
+    })
 }
 
 /**

@@ -552,7 +552,7 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
                 continue
             }
             if (await dirtyGate().isVisible().catch(() => false)) {
-                await btn(dirtyGate(), 'No').first().click()
+                await btn(dirtyGate(), 'いいえ').first().click()
                 continue
             }
             if (await dateGate().isVisible().catch(() => false)) {

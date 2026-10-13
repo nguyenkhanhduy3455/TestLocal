@@ -2,7 +2,7 @@ import { type Locator, type Page } from '@playwright/test'
 
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
-import { SEED_PAT_NO_BASE, dbEnabled, deleteTestPatient, seedTestPatient } from '../_shared/db'
+import { SEED_PAT_NO_BASE, dbEnabled, deleteTestPatient, seedTestPatient, withDb } from '../_shared/db'
 import { TODAY_ISO } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { makeStep } from '../_shared/step'
@@ -41,6 +41,13 @@ import { closeDialogs } from '../_shared/virtual-grid'
 
 const PAT_NO = SEED_PAT_NO_BASE + 82
 
+/**
+ * Dòng 地方公費 seed (hiragana) cho ca 「ヒトリ」: master dev có thể trống bảng này nên
+ * spec tự dựng đúng dòng nó cần, xoá ở afterAll (kể cả bản archive `_deleted`).
+ */
+const LOCAL_PUBEXP_NAME = 'ひとり親家庭等医療費助成(E2E)'
+let localPubexpId: string | null = null
+
 /** (trt_cd, trt_sb) mà 「CT」 bản thô bỏ sót — toàn 全角 hoặc chữ thường. */
 const KOBE_CT_MISSED: { key: string; nm: string }[] = [
     { key: '139-0', nm: 'ＣＴ電' },
@@ -75,6 +82,14 @@ test.describe('検索 theo tên — khớp như Japanese_CI_AS (JapaneseTextMatc
 
     test.beforeAll(async ({ authedPage }) => {
         await seedTestPatient({ patNo: PAT_NO })
+        localPubexpId = await withDb(async (c) => {
+            const r = await c.query<{ id: string }>(
+                `INSERT INTO mst_pmh_local_pubexp (project_name_full, project_name_short)
+                 VALUES ($1, $1) RETURNING id`,
+                [LOCAL_PUBEXP_NAME],
+            )
+            return r.rows[0]!.id
+        })
         page = authedPage
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
@@ -99,6 +114,13 @@ test.describe('検索 theo tên — khớp như Japanese_CI_AS (JapaneseTextMatc
         await disposeOverlays?.()
         await releaseSharedPage(page)
         await deleteTestPatient(PAT_NO).catch(() => {})
+        if (localPubexpId !== null) {
+            const id = localPubexpId
+            await withDb(async (c) => {
+                await c.query('DELETE FROM mst_pmh_local_pubexp WHERE id = $1', [id])
+                await c.query('DELETE FROM mst_pmh_local_pubexp_deleted WHERE id = $1', [id])
+            }).catch(() => {})
+        }
     })
 
     test('TC-1 — tab 個別, 名称 「CT」 ra cả dòng 全角/chữ thường (GetWhereKobeNyuryokuInfo)', async () => {

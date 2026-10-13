@@ -291,6 +291,17 @@ test.describe('診療入力 — 行単位 診療チェック W00100 (SingleChk)'
         return texts
     }
 
+    /**
+     * 確定 để ô 回 ở chế độ nhập và KHÔNG bắn SingleChk; điểm gọi thật là Enter ở ô 回
+     * (frm203002.cs:5678). Gọi sau 確定 trước khi chờ lượt SingleChk.
+     */
+    async function confirmKaiEnter() {
+        const kaiEditor = page.locator('[data-grid-cell$="|4"] input:not([data-footer-cell])')
+        await expect(kaiEditor).toHaveCount(1, { timeout: 20000 })
+        await expect.poll(() => kaiEditor.evaluate((el) => el === document.activeElement)).toBe(true)
+        await kaiEditor.press('Enter')
+    }
+
     /** Bật コードモード (WinForm KeyFunc(F10) → flgInpMode = eCod). */
     async function setCodeMode() {
         if ((await modeBtn.innerText()).trim() !== 'コード') await modeBtn.click()
@@ -305,13 +316,18 @@ test.describe('診療入力 — 行単位 診療チェック W00100 (SingleChk)'
         await footerTen.click()
         await footerTen.fill(code)
         await footerTen.press('Enter')
-        // Handler xoá input trước khi tra cứu → value === '' là tín hiệu CÓ THẬT
-        // cho biết Enter đã được xử lý (Rule 7: không sleep).
-        await expect(footerTen, 'Enter chưa được xử lý (ô 点 chưa bị xoá)').toHaveValue('')
-        return trtPicker
+        // Handler xoá input rồi tra cứu; khi 処置選択 mở, app GHI LẠI mã đã gõ vào ô 点
+        // (力技 của GetTrtmasCod, treatment-entry-detail.tsx `footerInput.value = text`).
+        // Nên "ô rỗng" chỉ đúng trong khoảnh khắc ngắn → KHÔNG dùng làm tín hiệu khi
+        // picker mở; picker hiện ra mới là bằng chứng Enter đã được xử lý.
+        const opened = await trtPicker
             .waitFor({ state: 'visible', timeout: 20000 })
             .then(() => true)
             .catch(() => false)
+        if (!opened) {
+            await expect(footerTen, 'Enter chưa được xử lý (ô 点 chưa bị xoá)').toHaveValue('')
+        }
+        return opened
     }
 
     /**
@@ -563,6 +579,7 @@ test.describe('診療入力 — 行単位 診療チェック W00100 (SingleChk)'
         await trtPicker.getByTestId('cell-trtNm').first().click()
         await trtPicker.getByRole('button', { name: /F9\s*確定/ }).click()
         await expect(trtPicker).toBeHidden({ timeout: 15000 })
+        await confirmKaiEnter()
         await waitCalls(1)
 
         const body = calls[0]!.body
@@ -722,6 +739,7 @@ test.describe('診療入力 — 行単位 診療チェック W00100 (SingleChk)'
             await dismissTrtPicker()
             test.skip(true, `master tháng này không có ${MED_CARE_2_CD}-${MED_CARE_2_SB} (歯在管)`)
         }
+        await confirmKaiEnter()
         await waitCalls(1)
 
         const infos = calls[0]!.infos
@@ -772,6 +790,7 @@ test.describe('診療入力 — 行単位 診療チェック W00100 (SingleChk)'
             await dismissTrtPicker()
             test.skip(true, ijyoUnreachableReason(IJYO_REEXAM_SB, '医情３'))
         }
+        await confirmKaiEnter()
         await waitCalls(1)
 
         const infos = calls[0]!.infos
@@ -817,6 +836,7 @@ test.describe('診療入力 — 行単位 診療チェック W00100 (SingleChk)'
             await dismissTrtPicker()
             test.skip(true, ijyoUnreachableReason(IJYO_INIT_SB, '医情１'))
         }
+        await confirmKaiEnter()
         await waitCalls(1)
 
         const infos = calls[0]!.infos

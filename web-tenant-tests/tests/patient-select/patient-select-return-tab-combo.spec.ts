@@ -86,8 +86,12 @@ test.describe('診療入力（患者選択）— combo nhập tay / Tab 検索�
             while (el && el.parentElement && !el.parentElement.classList.contains('items-center')) {
                 el = el.parentElement
             }
-            for (let sib: Element | null = el; sib; sib = sib.previousElementSibling) {
-                if (sib.tagName === 'LABEL') return sib.textContent?.trim() ?? ''
+            // EraDateField nằm trong một div.items-center riêng (col-start-2): nhãn là anh
+            // em của div đó, không phải của ô bên trong ⇒ thử cả phần tử bọc.
+            for (const start of [el, el.parentElement]) {
+                for (let sib: Element | null = start; sib; sib = sib.previousElementSibling) {
+                    if (sib.tagName === 'LABEL') return sib.textContent?.trim() ?? ''
+                }
             }
             return `<${active.tagName.toLowerCase()}>`
         })

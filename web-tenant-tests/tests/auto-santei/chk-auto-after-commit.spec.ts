@@ -3,20 +3,18 @@ import { type Locator, type Page } from '@playwright/test'
 import {
     dbEnabled,
     deleteChkAutoCompanionRows,
+    deleteTestPatient,
     deleteTreatmentRows,
     deleteTreatmentRowsByTrtCd,
-    ensureSigaRow,
     findChkAutoSlots,
     findCmtAutos,
     findMstTrt,
     findTreInpFlg,
-    readSiga,
-    restoreSiga,
+    seedTestPatient,
     seedTreatmentRows,
     writeSigaTeeth,
     type ChkAutoSlot,
     type CmtAutoRow,
-    type SigaSnapshot,
 } from '../_shared/db'
 import {
     GRID_LOAD_ATTEMPTS,
@@ -24,7 +22,6 @@ import {
     GRID_RELOAD_TIMEOUT,
     TODAY_ISO,
     allowSave,
-    patNo,
     trtDt,
 } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
@@ -112,12 +109,16 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * Spec KHÔNG bấm F9 登録 (không đụng `trn_trn` ngoài vùng seed `disp_no >= 9000`),
  * nhưng CÓ ghi bảng `siga` qua đường ghi nóng — đó là lý do cần cờ.
  *
- * Mặc định: 患者 10 (bệnh nhân parity, ít dòng TRNTRN), 診療日 = hôm nay (WinForm
- * chặn thao tác sang tháng khác), 処置 179/2 抜歯手術(臼歯). Đổi bằng TEST_PAT_NO /
- * TEST_TRT_DT / TEST_TRIGGER_CD / TEST_TRIGGER_SB.
+ * Mặc định: bệnh nhân seed 990111, 診療日 = hôm nay (WinForm chặn thao tác sang
+ * tháng khác), 処置 179/2 抜歯手術(臼歯). Đổi bằng TEST_TRT_DT / TEST_TRIGGER_CD /
+ * TEST_TRIGGER_SB.
  */
 
-const PAT_NO = patNo('10')
+/**
+ * Bệnh nhân TỰ DỰNG (dải 990000+, `seedTestPatient`) và xoá hẳn ở `afterAll` —
+ * không mượn bệnh nhân thật. Chưa có lịch sử khám, `siga` = 32 răng nguyên.
+ */
+const PAT_NO = '990111'
 const TRT_DT = trtDt(TODAY_ISO)
 
 /** 処置 đem chốt — mã có CẢ `chk_auto` lẫn `cmt_auto` trong master dev. */
@@ -159,6 +160,28 @@ const BUI_VAL = 1
  */
 const SE_VITAL = 1
 
+/**
+ * `siga.se_*` = 4 → 欠損歯. `ChkKesson` (116/7 + 病名 Ｐ) hỏi 「欠損歯に指定しますか？」 về mọi
+ * răng còn mà KHÔNG nằm trên dòng 検査 (ResolveKessonCandidatesHandler), và hộp modal đó
+ * lấy mất focus của ô 回. Bệnh nhân seed có đủ 32 răng nên luôn bị hỏi; để mọi răng
+ * khác 欠損 thì không còn gì để hỏi và spec không phải đoán thời điểm hộp bung.
+ */
+const SE_MISSING = 4
+
+/** `siga.se_n` (n = 1..32): răng đem thử 生活歯, mọi răng còn lại 欠損. */
+const sigaSeOnlyTestTooth = (): Record<number, number> =>
+    Object.fromEntries(
+        Array.from({ length: 32 }, (_, i) => [i + 1, i === BUI_SLOT ? SE_VITAL : SE_MISSING]),
+    )
+
+/**
+ * 処置 của TC-5: 歯科疾患管理料 116/7 — 処置 duy nhất vừa có `chk_auto` (→ 116/13) vừa
+ * có 摘要コメントパック 「歯管-有床義歯」 (`mst_cmt_pack`). 179/2 không có pack nào nên
+ * không thể dựng lại bug "pack bung thì nuốt dòng 自動算定" (báo lỗi 2026-09-16).
+ */
+const PACK_TRIGGER_CD = 116
+const PACK_TRIGGER_SB = 7
+
 /** Hạn chờ cho chuỗi chèn dòng sau 回 Enter (mỗi bảng một vòng request). */
 const FOLLOWUP_TIMEOUT = 30_000
 
@@ -196,10 +219,12 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
 
     /** Dialog カルテ記載選択 (frm203011/12) — AutoSantei tự bung khi vào màn. */
     let karteCmtDialog: Locator
-
-    /** Nguyên trạng `siga` trước khi test đụng vào — trả lại ở afterAll. */
-    let sigaBefore: SigaSnapshot | null = null
-    let sigaRowCreated = false
+    /**
+     * Dialog 摘要選択 của 摘要コメントパック (frm203018/19, `runCmtAutoCascade`) — modal,
+     * chuỗi 回 Enter ĐỨNG CHỜ nó (`waitForCascadeDrain`) nên không ai trả lời thì
+     * `chk_auto` không bao giờ chạy. Người dùng chọn dòng 1 rồi F9 確定.
+     */
+    let packDialog: Locator
 
     /** Master của 処置 đem chốt — đọc một lần ở beforeAll. */
     let triggerNm = ''
@@ -311,7 +336,7 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
             dspDis: 'Ｃ',
         },
     ) {
-        await writeSigaTeeth(Number(PAT_NO), { se: { [BUI_SLOT + 1]: SE_VITAL } })
+        await writeSigaTeeth(Number(PAT_NO), { se: sigaSeOnlyTestTooth() })
         await purgeTestRows()
         await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
             {
@@ -334,7 +359,10 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
      * Chốt 処置 `TRIGGER_CD/TRIGGER_SB` qua コードモード → 処置選択 → F9 確定 →
      * Enter ở ô 回. Đúng đường người dùng đi khi báo lỗi.
      */
-    async function commitTrigger(seedDisNm = 'Ｃ') {
+    async function commitTrigger(
+        seedDisNm = 'Ｃ',
+        trigger: { cd: number; sb: number } = { cd: TRIGGER_CD, sb: TRIGGER_SB },
+    ) {
         await closeDialogs(page)
         const modeBtn = page.locator('button[title^="点数/コード 入力モード切替"]')
         const footerTen = page.locator('input[data-footer-cell$=":footer-ten"]').last()
@@ -351,22 +379,22 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
         await step()
 
         await footerTen.click()
-        await footerTen.fill(String(TRIGGER_CD))
+        await footerTen.fill(String(trigger.cd))
         await footerTen.press('Enter')
         // Handler xoá input trước khi tra cứu → value === '' là mốc CÓ THẬT rằng
         // Enter đã được xử lý (Rule 7: không sleep).
         await expect(footerTen, 'Enter chưa được xử lý (ô 点 chưa bị xoá)').toHaveValue('')
         await expect(
             trtPicker,
-            `mã ${TRIGGER_CD} không mở được 処置選択 — master tháng này có mã đó không?`,
+            `mã ${trigger.cd} không mở được 処置選択 — master tháng này có mã đó không?`,
         ).toBeVisible({ timeout: 20_000 })
         await step()
 
         const sbTexts = await trtPicker.getByTestId('cell-trtSb').allTextContents()
-        const idx = sbTexts.findIndex((t) => Number(t.trim()) === TRIGGER_SB)
+        const idx = sbTexts.findIndex((t) => Number(t.trim()) === trigger.sb)
         expect(
             idx,
-            `処置選択 không có 枝番 ${TRIGGER_SB} của mã ${TRIGGER_CD} — đổi TEST_TRT_DT ` +
+            `処置選択 không có 枝番 ${trigger.sb} của mã ${trigger.cd} — đổi TEST_TRT_DT ` +
                 'về tháng master còn hiệu lực rồi chạy lại',
         ).toBeGreaterThanOrEqual(0)
         await trtPicker.getByTestId('cell-trtNm').nth(idx).click()
@@ -446,6 +474,15 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
             { times: 30 },
         )
 
+        packDialog = page.locator('[role="dialog"]').filter({ hasText: '摘要選択' })
+        await page.addLocatorHandler(
+            packDialog,
+            async () => {
+                await page.keyboard.press('F9')
+            },
+            { times: 30 },
+        )
+
         // ── Master: kỳ vọng tính từ đây, không hardcode ──────────────────────
         treInpFlg = await findTreInpFlg()
         const displayName = (m: { trtNm: string; cctNm: string }) =>
@@ -474,19 +511,17 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
                 `tre_inp_flg=${treInpFlg} (${treInpFlg === 1 ? 'cct_nm' : 'trt_nm'})`,
         )
 
-        // ── DB: chụp nguyên trạng siga rồi dựng trạng thái xuất phát ─────────
-        sigaRowCreated = await ensureSigaRow(Number(PAT_NO))
-        sigaBefore = await readSiga(Number(PAT_NO))
+        // ── DB: dựng bệnh nhân rồi trạng thái xuất phát ─────────────────────
+        await seedTestPatient({ patNo: Number(PAT_NO) })
         await resetPhase()
     })
 
     test.afterAll(async () => {
-        await purgeTestRows().catch(() => 0)
-        if (sigaBefore && !sigaRowCreated) {
-            await restoreSiga(Number(PAT_NO), sigaBefore).catch(() => {})
-        }
+        // Ghi nóng `siga` không cần trả lại: bệnh nhân bị xoá hẳn ngay sau đây.
+        await deleteTestPatient(Number(PAT_NO)).catch(() => {})
         await disposeOverlays?.()
         await page.removeLocatorHandler(karteCmtDialog).catch(() => {})
+        await page.removeLocatorHandler(packDialog).catch(() => {})
         await releaseSharedPage(page)
     })
 
@@ -622,9 +657,15 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
     // TC-2/3/4 đều đọc state do TC-1 để lại (spec chạy serial, chung một page).
     // Đặt nó trước TC-4 làm TC-4 đỏ — đã vấp 2026-09-17.
     test('TC-5 摘要コメントパック bung ra KHÔNG được nuốt mất dòng 自動算定', async () => {
+        const packSlots = await findChkAutoSlots(PACK_TRIGGER_CD, PACK_TRIGGER_SB)
         skipWithReason(
-            slots.length === 0,
-            `処置 ${TRIGGER_CD}/${TRIGGER_SB} không có dòng chk_auto — đặt TEST_TRIGGER_CD/SB sang mã khác`,
+            packSlots.length === 0,
+            `処置 ${PACK_TRIGGER_CD}/${PACK_TRIGGER_SB} không có dòng chk_auto trong master`,
+        )
+        const packSlotMasters = await Promise.all(
+            packSlots.map(async (sl) =>
+                (await findMstTrt(TRT_DT, sl.trtCd)).find((r) => r.trtSb === sl.trtSb),
+            ),
         )
 
         // TC-1 chốt với 病名 Ｃ(100), mà 100 nằm trong ToothPresentDisCds nên pack
@@ -649,11 +690,11 @@ test.describe('診療入力 — đuôi của một cú chốt 処置 (Chk_CmtAut
         })
 
         await resetPhase({ disCd: DIS_CD_P, disSb: DIS_SB_P, dspDis: 'Ｐ' })
-        await commitTrigger('Ｐ')
+        await commitTrigger('Ｐ', { cd: PACK_TRIGGER_CD, sb: PACK_TRIGGER_SB })
 
-        const expected = slots
-            .map((s) => slotMaster.get(`${s.trtCd}/${s.trtSb}`))
-            .filter((m): m is { trtNm: string; score1: number } => m !== undefined)
+        const expected = packSlotMasters
+            .filter((m): m is NonNullable<typeof m> => m !== undefined)
+            .map((m) => ({ trtNm: treInpFlg === 1 ? m.cctNm : m.trtNm }))
         skipWithReason(
             expected.length === 0,
             'các slot chk_auto không có dòng mst_trt hiệu lực trong tháng test',

@@ -72,7 +72,11 @@ test('trouble-2 TC-7 — 患者検索一覧 giữ nguyên đường server-windo
   ).toBeGreaterThan(0)
   const fetchesAfterSearch = windowUrls.length
 
-  const firstBefore = (await rows(page).first().getAttribute('data-testid')) ?? ''
+  // Dòng đang chọn được virtualizer giữ mounted (luôn đứng đầu DOM) nên KHÔNG so
+  // `rows().first()` — so tập dòng đang render.
+  const rowIds = (): Promise<string[]> =>
+    rows(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-testid') ?? ''))
+  const idsBefore = await rowIds()
 
   // Cuộn mạnh xuống cuối để ép fetch cửa sổ mới.
   let sawSkeleton = false
@@ -97,11 +101,12 @@ test('trouble-2 TC-7 — 患者検索一覧 giữ nguyên đường server-windo
   )
   await expect(rows(page).first()).toBeVisible()
 
-  // Dòng đầu trong khung nhìn phải ĐỔI so với lúc chưa cuộn → đúng là virtual list.
-  const firstAfter = (await rows(page).first().getAttribute('data-testid')) ?? ''
-  expect(firstAfter, 'cuộn xuống mà dòng đầu không đổi → không phải virtual list').not.toBe(
-    firstBefore,
-  )
+  // Tập dòng trong khung nhìn phải ĐỔI so với lúc chưa cuộn → đúng là virtual list.
+  const idsAfter = await rowIds()
+  expect(
+    idsAfter.some((id) => !idsBefore.includes(id)),
+    'cuộn xuống mà không có dòng mới nào được render → không phải virtual list',
+  ).toBe(true)
 
   const scrollFetches = windowUrls.length - fetchesAfterSearch
   const pages = [...new Set(windowUrls.map((u) => u.match(/[?&]page=(\d+)/)?.[1] ?? '—'))]

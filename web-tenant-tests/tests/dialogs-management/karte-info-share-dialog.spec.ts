@@ -1,15 +1,19 @@
 import { type Locator, type Page } from '@playwright/test'
 
-import { patNo, trtDt } from '../_shared/env'
+import { trtDt } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
 import {
+    SEED_PAT_NO_BASE,
     dbEnabled,
     deleteRxSharingViewHistory,
+    deleteTestPatient,
     listRxSharingViewHistory,
     MINIMAL_PDF,
     seedRxSharingViewHistory,
+    seedTestPatient,
+    seedTreatmentRows,
     type RxSharingRow,
 } from '../_shared/db'
 import { makeStep } from '../_shared/step'
@@ -100,10 +104,15 @@ import { cells, rows, scroller } from '../_shared/virtual-grid'
  *     TEST_DB=1 TEST_ALLOW_DELETE=1 npx playwright test tests/dialogs-management/karte-info-share-dialog.spec.ts
  */
 
-const PAT_NO = patNo('12138')
+/** Bệnh nhân TỰ DỰNG (dải 990000+), xoá hẳn ở `afterAll` — không mượn bệnh nhân thật. */
+const PAT_NO = String(SEED_PAT_NO_BASE + 120)
 const TRT_DT = trtDt('2025-12-24')
+/** Dòng 処置 seed ở THÁNG TRƯỚC 診療日 — để TC-A13 có ô thuộc "tháng khác" mà trỏ vào. */
+const HISTORY_MONTH_DT = '2025-11-10'
 /** F8 削除 nhánh Yes (UPDATE thật). Mặc định chỉ tới confirm rồi bấm No. */
 const ALLOW_DELETE = process.env.TEST_ALLOW_DELETE === '1'
+
+test.skip(!dbEnabled, 'Cần TEST_DB=1 để seed bệnh nhân test + lịch sử chia sẻ')
 
 /** DEFAULT_PERIOD_MONTHS_BACK — karte-info-share-dialog.tsx (WinForm AddMonths(-60)). */
 const PERIOD_MONTHS_BACK = 60
@@ -200,6 +209,12 @@ test.describe('Shift+F7 カルテ情報共有 — 電子カルテ情報共有サ
 
     test.beforeAll(async ({ authedPage }) => {
         if (dbEnabled) {
+            await seedTestPatient({ patNo: Number(PAT_NO) })
+            const visit = [{ trtCd: 107, trtSb: 0, trtPt: 58, trtCnt: 1, dspTrt: '再診料' }]
+            await seedTreatmentRows(Number(PAT_NO), HISTORY_MONTH_DT, visit)
+            // Ngày 診療日 đã có 処置 lưu ⇒ FE bỏ qua AutoSantei (không bung hộp 初診 /
+            // カルテ記載選択 nuốt phím Shift+F7, F9 của spec này).
+            await seedTreatmentRows(Number(PAT_NO), TRT_DT, visit)
             // Seed TRƯỚC khi mở màn: dialog nạp lưới ngay lúc open.
             await seedRxSharingViewHistory(PAT_NO, [
                 { ifId: '21', reqDt: DRUG_ACTIVE_AT, startDate: '2021-07-01', endDate: '2026-07-01' },
@@ -236,7 +251,9 @@ test.describe('Shift+F7 カルテ情報共有 — 電子カルテ情報共有サ
         // 「取得年月」 chỉ có ở dialog này.
         dialog = page.getByRole('dialog').filter({ hasText: '取得年月' })
         boxOf = (text: string) => dialog.getByText(text, { exact: true }).locator('..')
-        previewDialog = page.getByRole('dialog').filter({ has: page.locator('iframe') })
+        // Preview là thẻ <dialog open> nằm TRONG hộp cha 「電子カルテ情報共有サービス」 (div role=dialog),
+        // nên `getByRole('dialog')` + has iframe khớp cả hai → strict mode violation.
+        previewDialog = page.locator('dialog[open]').filter({ has: page.locator('iframe') })
     })
 
     test.afterAll(async () => {
@@ -245,6 +262,7 @@ test.describe('Shift+F7 カルテ情報共有 — 電子カルテ情報共有サ
         if (dbEnabled) {
             const n = await deleteRxSharingViewHistory(PAT_NO, SEED_REQ_DTS)
             console.log(`dọn rx_sharing_view_history: ${n} dòng`)
+            await deleteTestPatient(Number(PAT_NO)).catch(() => {})
         }
     })
 

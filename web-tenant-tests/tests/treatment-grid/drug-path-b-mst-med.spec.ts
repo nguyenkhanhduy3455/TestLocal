@@ -1,16 +1,20 @@
 import { type Locator, type Page } from '@playwright/test'
 
 import {
+    SEED_PAT_NO_BASE,
     dbEnabled,
     deleteMstMedRows,
     deleteMstTrtRows,
+    deleteTestPatient,
     findDrugRx,
     seedMstMedRows,
     seedMstTrtRows,
+    seedTestPatient,
+    seedTreatmentRows,
     type DrugRxRow,
 } from '../_shared/db'
 import { openTreatmentEntry, ryoCells } from '../_shared/entry'
-import { TODAY_ISO, patNo, trtDt } from '../_shared/env'
+import { TODAY_ISO, trtDt } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
@@ -96,11 +100,12 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * KHÔNG bấm F9 登録 nên `trn_trn` thật không bị đụng; dòng 処置 chèn vào lưới chỉ
  * sống trong RAM và được `deleteTreatmentRows` dọn cho chắc.
  *
- * Mặc định: 患者 10 (bệnh nhân parity, ít dòng TRNTRN), 診療日 = hôm nay (WinForm
- * chặn thao tác sang tháng khác). Đổi bằng TEST_PAT_NO / TEST_TRT_DT.
+ * Mặc định: bệnh nhân seed (xem PAT_NO), 診療日 = hôm nay (WinForm chặn thao tác sang
+ * tháng khác). Đổi bằng TEST_TRT_DT.
  */
 
-const PAT_NO = patNo('10')
+/** Bệnh nhân TỰ DỰNG (dải 990000+) kèm một dòng 処置 ở 診療日 để FE bỏ qua AutoSantei; xoá ở afterAll. */
+const PAT_NO = String(SEED_PAT_NO_BASE + 200)
 const TRT_DT = trtDt(TODAY_ISO)
 
 /**
@@ -294,6 +299,12 @@ test.describe('診療入力 — 薬剤 path B (mst_trt 名称 + mst_med 用法)'
             { times: 30 },
         )
 
+        await seedTestPatient({ patNo: Number(PAT_NO) })
+        // Ngày 診療日 đã có 処置 lưu ⇒ FE bỏ qua AutoSantei (hộp 初診 / カルテ記載選択 chặn ô 点).
+        await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
+            { trtCd: 110, trtSb: 0, trtPt: 59, trtCnt: 1, dspTrt: '歯科再診料' },
+        ])
+
         // Seed master TRƯỚC khi mở màn — mã phải tra được ngay lần gõ đầu.
         seededTrtIds = await seedMstTrtRows(TRT_DT, [
             {
@@ -319,11 +330,8 @@ test.describe('診療入力 — 薬剤 path B (mst_trt 名称 + mst_med 用法)'
         // ĐỐI CHỨNG ở cuối file.
         cloneRx = (await findDrugRx(CLONE_TRT_CD, CLONE_TRT_SB, TRT_DT)) ?? undefined
 
-        // KHÔNG deleteTreatmentRows ở đây: spec này chỉ chèn dòng vào lưới trong RAM
-        // (không bấm F9 登録) nên chẳng để lại gì trong trn_trn. Xoá "cho sạch" lại
-        // cuốn theo dòng mà spec khác dùng chung 患者 10 + hôm nay vừa seed —
-        // `side-panel/guide-drug-usage-line` seed 部位病名行 để lọc tab ガイド, mất nó là
-        // spec đó đỏ khi Playwright chạy song song.
+        // Spec này chỉ chèn dòng vào lưới trong RAM (không bấm F9 登録); bệnh nhân seed
+        // riêng nên không dẫm lên spec nào khác.
         await openTreatmentEntry(page, PAT_NO, TRT_DT)
         await drainAutoSantei()
 
@@ -337,6 +345,7 @@ test.describe('診療入力 — 薬剤 path B (mst_trt 名称 + mst_med 用法)'
     test.afterAll(async () => {
         await deleteMstMedRows(seededMedIds).catch(() => 0)
         await deleteMstTrtRows(seededTrtIds).catch(() => 0)
+        await deleteTestPatient(Number(PAT_NO)).catch(() => {})
         await disposeOverlays?.()
         await page.removeLocatorHandler(karteCmtDialog).catch(() => {})
         await releaseSharedPage(page)

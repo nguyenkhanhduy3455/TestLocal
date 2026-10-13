@@ -1,7 +1,8 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { makeStep } from '../_shared/step'
-import { BASE_URL, patNo } from '../_shared/env'
+import { SEED_PAT_NO_BASE, dbEnabled, deleteTestPatient, seedTestPatient, seedTreatmentRows } from '../_shared/db'
+import { BASE_URL, TODAY_ISO } from '../_shared/env'
 import { ADMIN_USER, JA } from '../_shared/test-data'
 
 /**
@@ -111,7 +112,10 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  * F9 登録 nên KHÔNG ghi vào DB — tải lại trang là sạch.
  */
 
-const PAT_NO = patNo('12138')
+/** Bệnh nhân TỰ DỰNG (dải 990000+) kèm một dòng 処置 hôm nay để FE bỏ qua AutoSantei; xoá ở afterAll. */
+const PAT_NO = String(SEED_PAT_NO_BASE + 220)
+
+test.skip(!dbEnabled, 'Cần TEST_DB=1 để seed bệnh nhân test')
 
 /**
  * Danh sách 点数 để dò một giá trị có ≥2 処置 (mở được 処置選択). Ghim cứng một số
@@ -296,10 +300,25 @@ test.describe('診療入力 — ô 点/回 với 点数モード / コードモ�
     }
 
     test.beforeAll(async ({ browser }) => {
+        await seedTestPatient({ patNo: Number(PAT_NO) })
+        await seedTreatmentRows(Number(PAT_NO), TODAY_ISO, [
+            { trtCd: 110, trtSb: 0, trtPt: 59, trtCnt: 1, dspTrt: '歯科再診料' },
+        ])
         // Page tự tạo để cả file dùng chung MỘT lần login; ignoreHTTPSErrors vì
         // *.ochacom.local dùng cert tự ký (browser.newPage không kế thừa `use`).
         page = await browser.newPage({ baseURL: BASE_URL, ignoreHTTPSErrors: true, locale: 'ja-JP' })
         step = makeStep(page)
+
+        // 202 笑気 / 50 酸素 chỉ mở form nhập IS khi `inp-legacy.isAutoFlg` = 1 (IS自動算定 ON,
+        // frm203016.cs:485/541); tenant dev đang để 0 nên web commit thẳng — đúng WinForm.
+        // Spec đo nhánh ON nên ép cờ này cho lượt đọc của FE, KHÔNG ghi cấu hình thật.
+        await page.route(/\/tenant\/inp-config(\?|\/|$)/, async (route) => {
+            if (route.request().method() !== 'GET') return route.fallback()
+            const res = await route.fetch()
+            const json = (await res.json()) as { data?: Record<string, unknown> }
+            if (json.data && 'isAutoFlg' in json.data) json.data.isAutoFlg = 1
+            await route.fulfill({ response: res, json })
+        })
 
         // AutoSantei bung SanteiConfirmDialog 「…を算定しますか？」 đè lên mọi thứ và
         // nuốt click. Bấm 「No」 (bấm Yes lại kéo theo dialog カルテ記載選択).
@@ -357,6 +376,7 @@ test.describe('診療入力 — ô 点/回 với 点数モード / コードモ�
 
     test.afterAll(async () => {
         await page?.close()
+        await deleteTestPatient(Number(PAT_NO)).catch(() => {})
     })
 
     // ───────────────────────── 入力モード ─────────────────────────
@@ -918,6 +938,15 @@ test.describe('診療入力 — ô 点/回 với 点数モード / コードモ�
         // 点数 bằng điểm tại ngày算定 印象, ghi dòng rồi return true. 999 KHÔNG hề
         // được query trong mst_trt ⇒ tuyệt đối không được ra alert 0 kết quả.
         try {
+            // 999 cần một 印象採得 đã tính trước đó (BE `GetImpressionDateAsync` đọc trn_trn, không
+            // giới hạn dưới về ngày); không có thì app báo E00100 và không ghi dòng nào — đúng
+            // WinForm. Seed NGAY TẠI ĐÂY (DB, không đổi lưới đang mở) để các bước khác của file
+            // không bị thêm dòng làm lệch con trỏ.
+            const impDay = new Date(`${TODAY_ISO}T00:00:00Z`)
+            impDay.setUTCMonth(impDay.getUTCMonth() - 1, 1)
+            await seedTreatmentRows(Number(PAT_NO), impDay.toISOString().slice(0, 10), [
+                { trtCd: 240, trtSb: 0, trtPt: 50, trtCnt: 1, dspTrt: '印象採得' },
+            ])
             const { outcome } = await tryCode('コード', '999')
             if (outcome === 'commit') good('999', '未装着 được ghi thẳng (Misoutyaku)')
             else bad('999', `Misoutyaku phải ghi thẳng dòng 未装着, thực tế: ${outcome}`)

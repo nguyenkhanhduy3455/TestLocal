@@ -144,9 +144,13 @@ test.describe('診療入力（患者選択）— 当月来患 / F7 / 受付一�
     const trtDtRow = (): Locator => page.getByText('診療日', { exact: true }).locator('..')
     const statusBar = (): Locator => page.getByText(/^(選択中: .*|患者を選択してください)$/)
 
-    /** Hàng EraDateField của 検索条件 — nhãn trong panel đứng trước header lưới. */
+    /**
+     * EraDateField của 検索条件 — khối đứng NGAY SAU nhãn trong panel (nhãn trong panel
+     * đứng trước header lưới). KHÔNG lấy cha của nhãn: cha là cả lưới điều kiện nên
+     * textbox đầu tiên là ô 氏名(カナ).
+     */
     const condDateRow = (label: string): Locator =>
-        page.getByText(label, { exact: true }).first().locator('..')
+        page.getByText(label, { exact: true }).first().locator('xpath=following-sibling::*[1]')
 
     function patNoInput(): Locator {
         return page.getByText('患者番号', { exact: true }).first().locator('..').getByRole('combobox')

@@ -281,8 +281,8 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
     /**
      * Trả lời các cổng của chuỗi 会計 cho tới khi hết.
      *
-     * Hộp 「保存しますか」 luôn trả lời 「No」 ở đây. TC-GRID-5 cần chính cái hộp đó
-     * nên nó tự bấm TRƯỚC rồi mới gọi hàm này. Không bao giờ chọn 「Yes」 —
+     * Hộp 「保存しますか」 luôn trả lời 「いいえ」 ở đây. TC-GRID-5 cần chính cái hộp đó
+     * nên nó tự bấm TRƯỚC rồi mới gọi hàm này. Không bao giờ chọn 「はい」 —
      * Yes ghi lại cả tháng 処置.
      */
     async function settleAccountingDialogs(rounds = 8) {
@@ -302,7 +302,7 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
                 continue
             }
             if (await dirtyGate().isVisible().catch(() => false)) {
-                await btn(dirtyGate(), 'No').first().click()
+                await btn(dirtyGate(), 'いいえ').first().click()
                 continue
             }
             if (await dateGate().isVisible().catch(() => false)) {
@@ -733,7 +733,7 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
         }
 
         // 「いいえ」 = bỏ qua việc lưu, KHÔNG phải bỏ qua sửa dở.
-        await btn(dirtyGate(), 'No').first().click()
+        await btn(dirtyGate(), 'いいえ').first().click()
         await settleAccountingDialogs()
         await waitPrecheck()
 

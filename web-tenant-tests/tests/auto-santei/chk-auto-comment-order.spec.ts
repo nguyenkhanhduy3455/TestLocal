@@ -203,9 +203,10 @@ const buiAt = (slot: number, val: number) =>
  * Text sau khi frm203048 được điền: mỗi CỤM `*` liền nhau là MỘT tham số
  * (`getAsta` gom run cùng ký tự, frm203048.cs:159-246), đổi thành `PARAM_FILL`.
  */
-const filledText = (s: string) => s.replace(/\*+/g, PARAM_FILL)
+const filledText = (s: string) => s.replace(/[*＊]+/g, PARAM_FILL)
 
-const hasParam = (s: string) => s.includes('*')
+/** Hộp frm203048 hiển thị `＊` toàn-góc (26510daba) còn `cmt_auto.cmt_nm` lưu `*` nửa-góc. */
+const hasParam = (s: string) => /[*＊]/.test(s)
 
 // Rule 5.3 — skip cấp file phải nói rõ vì sao.
 if (!dbEnabled || !ALLOW_SAVE) {

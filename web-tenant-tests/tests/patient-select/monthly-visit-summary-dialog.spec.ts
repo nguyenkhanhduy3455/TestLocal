@@ -2,7 +2,7 @@ import { type Locator, type Page } from '@playwright/test'
 
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
-import { SEED_DISP_BASE, dbEnabled, deleteTreatmentRows, seedTreatmentRows, withDb } from '../_shared/db'
+import { SEED_PAT_NO_BASE, dbEnabled, deleteTestPatient, seedTestPatient, seedTreatmentRows, withDb } from '../_shared/db'
 import { captureFixedUi } from '../_shared/capture'
 import { makeStep, skipWithReason } from '../_shared/step'
 import { emptyState, rows, scroller, skeletons } from '../_shared/virtual-grid'
@@ -67,8 +67,8 @@ import { emptyState, rows, scroller, skeletons } from '../_shared/virtual-grid'
  *
  * Nhóm TC-DB-* và TC-KAIGO-2 cần TEST_DB=1 (xem tests/db.ts), tự skip khi không bật.
  *
- * TC-KAIGO-2 là testcase DUY NHẤT ghi DB: nó tự dựng vài dòng 居宅 / 居宅（衛）
- * trong vùng disp_no >= SEED_DISP_BASE rồi xoá ở afterAll (dataset demo không có
+ * TC-KAIGO-2 là testcase DUY NHẤT ghi DB: nó tự dựng vài BỆNH NHÂN TEST (dải 990000+,
+ * `seedTestPatient`) mang dòng 居宅 / 居宅（衛） rồi xoá hẳn ở afterAll (dataset demo không có
  * ca 介護 hợp lệ nào nên nhánh đó vĩnh viễn bằng 0). Vì nó sửa một CON SỐ TOÀN
  * CỤC (来患集計 gộp mọi bệnh nhân), hai lần chạy song song sẽ giẫm lên nhau —
  * chạy lặp phải kèm `--workers=1`:
@@ -237,8 +237,8 @@ const HOME_CARE_HYGIENIST_TRT_SBS = [1, 11, 13, 15, 17, 19, 20, 21, 22, 23]
  * Vì sao cần: dataset demo không có ca 居宅療養管理指導 hợp lệ nào (dòng
  * trt_cd=599 duy nhất mang trt_sb ngoài cả hai tập), nên hai dòng 居宅 /
  * 居宅（衛）luôn bằng 0 — nhánh kbn 5/6 và quy tắc "合計 cộng thêm 介護" không
- * bao giờ được kiểm bằng số thật. Đây KHÔNG phải seed dữ liệu nền: dòng nằm
- * trong vùng disp_no >= SEED_DISP_BASE và bị xoá ở afterAll.
+ * bao giờ được kiểm bằng số thật. Đây KHÔNG phải seed dữ liệu nền: bệnh nhân và dòng
+ * thuộc dải 990000+ và bị xoá hẳn ở afterAll (kể cả bản archive).
  *
  * Một mảng con = một BỆNH NHÂN. SQL gom 人数 theo (pat_no, pat_br) nên mỗi bệnh
  * nhân chỉ cộng 1 vào 人数 dù có mấy dòng — dùng 2 bệnh nhân để phân biệt được
@@ -537,12 +537,12 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
     })
 
     test.afterAll(async () => {
-        // Dọn TRƯỚC khi đóng page: dòng 介護 do TC-KAIGO-2 dựng là dữ liệu test
-        // thuần, để lại sẽ làm lệch 来患集計 của mọi lần chạy sau (và của người
-        // đang xem app). Xoá cứng vì đây là dòng do test tạo, không cần lịch sử.
+        // Dọn TRƯỚC khi đóng page: bệnh nhân + dòng 介護 do TC-KAIGO-2 dựng là dữ liệu test
+        // thuần, để lại sẽ làm lệch 来患集計 của mọi lần chạy sau (và của người đang xem app).
         for (const patNo of seededPatNos) {
-            const removed = await deleteTreatmentRows(patNo, TRT_DT)
-            console.log(`dọn ${removed} dòng 介護 test của 患者番号 ${patNo} (${TRT_DT})`)
+            await deleteTestPatient(patNo).catch((e) =>
+                console.log(`dọn bệnh nhân test ${patNo} hỏng: ${(e as Error).message}`),
+            )
         }
         seededPatNos = []
         await releaseSharedPage(page)
@@ -1030,32 +1030,15 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
     test('TC-KAIGO-2 — dựng dòng 居宅 / 居宅（衛）rồi mở lại: số khớp đúng phần vừa tạo', async () => {
         skipWithReason(!dbEnabled, 'cần TEST_DB=1 để dựng dòng 介護 test (xem tests/db.ts)')
 
-        // Mượn bệnh nhân CÓ dòng thật trong tháng (seedTreatmentRows clone
-        // pat_br/insu_cd từ một dòng có sẵn của họ — không có dòng nào thì INSERT
-        // chèn 0 bản ghi và test sẽ pass sai) và CHƯA có dòng 599 nào trong tháng
-        // (đã có thì họ được đếm sẵn vào 人数, phép so delta hoá vô nghĩa).
-        const patNos = await withDb(async (c) => {
-            const { rows: r } = await c.query<{ pat_no: number }>(
-                `SELECT pat_no
-                   FROM trn_trn
-                  WHERE trt_dt >= $1::date
-                    AND trt_dt < ($1::date + INTERVAL '1 month')
-                    AND disp_no < ${SEED_DISP_BASE}
-                  GROUP BY pat_no
-                 HAVING COUNT(*) FILTER (WHERE trt_cd = $2) = 0
-                  ORDER BY pat_no
-                  LIMIT $3`,
-                [monthStartOf(TRT_DT), KAIGO_TRT_CD, KAIGO_SEED_ROWS.length],
-            )
-            return r.map((row) => row.pat_no)
-        })
-        skipWithReason(
-            patNos.length < KAIGO_SEED_ROWS.length,
-            `tháng ${TRT_DT.slice(0, 7)} không đủ ${KAIGO_SEED_ROWS.length} bệnh nhân sạch dòng 599 để dựng dữ liệu 介護`,
-        )
+        // Mỗi nhóm dòng 介護 thuộc một bệnh nhân TỰ DỰNG (dải 990000+, chưa có dòng 599 nào
+        // nên phép so delta 人数 luôn đúng), xoá hẳn ở afterAll — không mượn bệnh nhân thật.
+        const patNos = KAIGO_SEED_ROWS.map((_, i) => SEED_PAT_NO_BASE + 180 + i)
 
         for (let i = 0; i < KAIGO_SEED_ROWS.length; i++) {
             const patNo = patNos[i]!
+            // Nhớ NGAY để afterAll dọn được kể cả khi seed/assert bên dưới ném.
+            seededPatNos = [...seededPatNos, patNo]
+            await seedTestPatient({ patNo })
             await seedTreatmentRows(
                 patNo,
                 TRT_DT,
@@ -1070,8 +1053,6 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
                     dspTrt: `居宅療養管理指導(E2E ${row.trtSb})`,
                 })),
             )
-            // Nhớ NGAY để afterAll dọn được kể cả khi assert bên dưới ném.
-            seededPatNos = [...seededPatNos, patNo]
         }
         console.log(`dựng dòng 介護 test cho 患者番号 ${patNos.join(', ')} (${TRT_DT})`)
 

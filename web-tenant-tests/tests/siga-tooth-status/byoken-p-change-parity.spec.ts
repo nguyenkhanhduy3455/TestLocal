@@ -1,14 +1,16 @@
 import { type Page } from '@playwright/test'
 
-import { patNo } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
 import {
+    SEED_PAT_NO_BASE,
     dbEnabled,
+    deleteTestPatient,
     deleteTreatmentRows,
     deleteTreatmentRowsByBui,
     deleteTreatmentRowsByDspTrt,
+    seedTestPatient,
     seedTreatmentRows,
 } from '../_shared/db'
 import { makeStep } from '../_shared/step'
@@ -83,8 +85,8 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * KHÔNG bấm F9 nên KHÔNG cần TEST_ALLOW_SAVE: cả hai TC chỉ mở/không mở một hộp thoại.
  */
 
-/** Bệnh nhân test — spec chỉ seed 部位病名行 rồi xoá, không đụng 歯式. */
-const PAT_NO = patNo('12138')
+/** Bệnh nhân TỰ DỰNG (dải 990000+) — spec chỉ seed 部位病名行, không đụng 歯式; xoá hẳn ở afterAll. */
+const PAT_NO = String(SEED_PAT_NO_BASE + 190)
 
 const TRT_DT =
     process.env.TEST_TRT_DT ??
@@ -227,6 +229,7 @@ test.describe('診療入力 — cổng vào của Ｐ変更 (MonthP)', () => {
     let disposeOverlays: (() => Promise<void>) | undefined
 
     test.beforeAll(async ({ authedPage }) => {
+        await seedTestPatient({ patNo: Number(PAT_NO) })
         page = authedPage
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
@@ -235,6 +238,7 @@ test.describe('診療入力 — cổng vào của Ｐ変更 (MonthP)', () => {
 
     test.afterAll(async () => {
         await cleanupSeed()
+        await deleteTestPatient(Number(PAT_NO)).catch(() => {})
         await disposeOverlays?.()
         await releaseSharedPage(page)
     })

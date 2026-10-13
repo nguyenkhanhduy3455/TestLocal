@@ -31,19 +31,21 @@
  *      · A000-5-2 (com_cd_1 851100077 + com_cd_2) → 「診療の開始終了時間（特） ＊＊:＊＊～＊＊:＊＊」.
  *
  * ─── ENV ─────────────────────────────────────────────────────────────────────
- *   TEST_PAT_NO (10) · TEST_TRT_DT (hôm nay) · TEST_PARAM_PACK_CD (A000-5-2 —
- *   đổi nếu master của tenant không có 記載事項 này).
- *   KHÔNG ghi DB: spec đóng dialog bằng F10, không bao giờ 確定.
+ *   TEST_TRT_DT (hôm nay) · TEST_PARAM_PACK_CD (A000-5-2 — đổi nếu master của tenant
+ *   không có 記載事項 này).
+ *   Bệnh nhân TỰ DỰNG (seedTestPatient, dải 990000+) + một dòng 処置 ở 診療日 để FE bỏ
+ *   qua AutoSantei; xoá hẳn ở afterAll. Spec đóng dialog bằng F10, không bao giờ 確定.
  */
 import { type Page } from '@playwright/test'
 
-import { TODAY_ISO, patNo, trtDt } from '../_shared/env'
+import { SEED_PAT_NO_BASE, dbEnabled, deleteTestPatient, seedTestPatient, seedTreatmentRows } from '../_shared/db'
+import { TODAY_ISO, trtDt } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
 import { makeStep } from '../_shared/step'
 
-const PAT_NO = patNo('10')
+const PAT_NO = String(SEED_PAT_NO_BASE + 130)
 const TRT_DT = trtDt(TODAY_ISO)
 const PACK_CD = process.env.TEST_PARAM_PACK_CD ?? 'A000-5-2'
 
@@ -83,6 +85,8 @@ const readSel = (page: Page) =>
     const i = el as HTMLInputElement
     return { start: i.selectionStart, end: i.selectionEnd, focused: document.activeElement === i }
   })
+
+test.skip(!dbEnabled, 'Cần TEST_DB=1 để seed bệnh nhân test')
 
 test.describe.configure({ mode: 'serial', timeout: 180_000 })
 
@@ -135,6 +139,12 @@ test.describe('パラメータ入力 — 初期フォーカス (frm203048)', () 
   let disposeOverlays: (() => Promise<void>) | undefined
 
   test.beforeAll(async ({ authedPage }) => {
+    await seedTestPatient({ patNo: Number(PAT_NO) })
+    // Ngày 診療日 đã có 処置 lưu ⇒ FE bỏ qua AutoSantei (hộp 初診 / カルテ記載選択 sẽ
+    // nuốt phím F7 của spec này).
+    await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
+      { trtCd: 107, trtSb: 0, trtPt: 58, trtCnt: 1, dspTrt: '再診料' },
+    ])
     page = authedPage
     disposeOverlays = await installOverlayHandlers(page, { santei: true })
     step = makeStep(page)
@@ -148,6 +158,7 @@ test.describe('パラメータ入力 — 初期フォーカス (frm203048)', () 
   test.afterAll(async () => {
     await disposeOverlays?.()
     await releaseSharedPage(page)
+    await deleteTestPatient(Number(PAT_NO)).catch(() => {})
   })
 
   test('TC-1 mở lên là focus ô パラメータ và bôi đen cụm `＊` đầu tiên', async () => {

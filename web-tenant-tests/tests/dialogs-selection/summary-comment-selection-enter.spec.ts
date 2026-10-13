@@ -85,16 +85,20 @@
  * 摘要コメント選択 chỉ bật khi pack có pack_type===1 VÀ candidates.length>1
  * (treatment-entry-detail.tsx:3118-3132), quá hẹp để brute-force.
  *
- * TEST_PAT_NO / TEST_TRT_DT — đổi bệnh nhân / ngày.
+ * Bệnh nhân TỰ DỰNG (seedTestPatient, dải 990000+) kèm một dòng 処置 ở 診療日 để FE bỏ
+ * qua AutoSantei; xoá hẳn ở afterAll. TEST_TRT_DT — đổi ngày.
  */
 import { expect, test, type Page } from '@playwright/test'
 
+import { SEED_PAT_NO_BASE, dbEnabled, deleteTestPatient, seedTestPatient, seedTreatmentRows } from '../_shared/db'
 import { ADMIN_USER, JA } from '../_shared/test-data'
-import { BASE_URL, TODAY_ISO, patNo, trtDt } from '../_shared/env'
+import { BASE_URL, TODAY_ISO, trtDt } from '../_shared/env'
 import { makeStep } from '../_shared/step'
 
-const PAT_NO = patNo('11')
+const PAT_NO = String(SEED_PAT_NO_BASE + 140)
 const TRT_DT = trtDt(TODAY_ISO)
+
+test.skip(!dbEnabled, 'Cần TEST_DB=1 để seed bệnh nhân test')
 /** 処置コード gõ vào cell 点 ở コードモード. */
 const TRT_CD = process.env.TEST_TRT_CD ?? '153'
 /** 点数 của dòng cần chọn trong 処置選択 (phân biệt các 枝番 của cùng mã). */
@@ -517,6 +521,11 @@ test.describe('摘要コメント選択 — Enter window-level (frm203018)', () 
   })
 
   test.beforeAll(async ({ browser }) => {
+    await seedTestPatient({ patNo: Number(PAT_NO) })
+    // Ngày 診療日 đã có 処置 lưu ⇒ FE bỏ qua AutoSantei (hộp 初診 / 摘要選択 sẽ chen vào).
+    await seedTreatmentRows(Number(PAT_NO), TRT_DT, [
+      { trtCd: 110, trtSb: 0, trtPt: 59, trtCnt: 1, dspTrt: '歯科再診料' },
+    ])
     // browser.newPage() KHÔNG kế thừa `use` của playwright.config.ts → truyền tay
     // baseURL + ignoreHTTPSErrors (cert tự ký) + locale.
     page = await browser.newPage({
@@ -560,6 +569,7 @@ test.describe('摘要コメント選択 — Enter window-level (frm203018)', () 
 
   test.afterAll(async () => {
     await page?.close()
+    await deleteTestPatient(Number(PAT_NO)).catch(() => {})
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -785,10 +795,12 @@ test.describe('摘要コメント選択 — Enter window-level (frm203018)', () 
         .join(' / ')})`,
     ).toBe(true)
 
+    // frm203018.Designer.cs: `lblRemarks_.Text = "<<備考>>"` là nhãn CỐ ĐỊNH của khung 備考
+    // (commit 3522a8bb7), còn initProc ghi remarks vào `lblRemarks` (frm203018.cs:204).
     expect(
       await dialogBox(page).getByText('<<備考>>').count(),
-      'initProc ghi remarks thẳng vào lblRemarks → không được thêm nhãn <<備考>>',
-    ).toBe(0)
+      'khung 備考 phải có nhãn cố định <<備考>> (lblRemarks_) đúng một lần',
+    ).toBe(1)
   })
 
   test('TC-6 — End 確定 như F9', async () => {

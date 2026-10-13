@@ -207,6 +207,8 @@ export async function deleteMstTrtRows(ids: readonly string[]): Promise<number> 
     if (ids.length === 0) return 0
     return withDb(async (c) => {
         const r = await c.query('DELETE FROM mst_trt WHERE id = ANY($1::uuid[])', [ids])
+        // DELETE chỉ chuyển dòng sang `mst_trt_deleted` (trigger archive) — dọn nốt theo id.
+        await c.query('DELETE FROM mst_trt_deleted WHERE id = ANY($1::uuid[])', [ids])
         return r.rowCount ?? 0
     })
 }
@@ -255,6 +257,7 @@ export async function deleteMstMedRows(ids: readonly string[]): Promise<number> 
     if (ids.length === 0) return 0
     return withDb(async (c) => {
         const r = await c.query('DELETE FROM mst_med WHERE id = ANY($1::uuid[])', [ids])
+        await c.query('DELETE FROM mst_med_deleted WHERE id = ANY($1::uuid[])', [ids])
         return r.rowCount ?? 0
     })
 }
@@ -502,6 +505,11 @@ export async function deleteTestPatient(patNo: number): Promise<void> {
         await c.query('DELETE FROM person_exp WHERE pat_no = $1', [patNo])
         await c.query('DELETE FROM insurance WHERE pat_no = $1', [patNo])
         await c.query('DELETE FROM person WHERE pat_no = $1', [patNo])
+        // DELETE chỉ chuyển dòng sang `<bảng>_deleted` (trigger archive) chứ không làm
+        // nó biến mất — bệnh nhân test phải sạch cả ở đó.
+        for (const t of ['trn_trn', 'siga', 'kon', 'person_exp', 'insurance', 'person']) {
+            await c.query(`DELETE FROM ${t}_deleted WHERE pat_no = $1`, [patNo])
+        }
     })
 }
 

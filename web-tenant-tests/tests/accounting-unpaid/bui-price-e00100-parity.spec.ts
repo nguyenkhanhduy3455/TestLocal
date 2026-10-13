@@ -1,7 +1,7 @@
 import { type Locator, type Page, type Route } from '@playwright/test'
 
 import { ACC_BUTTON, routeAccButton, type AccButtonRoute } from '../_shared/acc-button'
-import { patNo } from '../_shared/env'
+import { GRID_LOAD_ATTEMPTS, GRID_RELOAD_TIMEOUT, patNo } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
@@ -328,12 +328,29 @@ test.describe('E00100 一部負担金計算失敗 — 診療入力 / 当日来�
      * assert `observed.monthlyHasField` chạy trước khi route handler kịp chạy.
      */
     async function backToEntry() {
-        const waiter = page.waitForResponse((r) => MONTHLY_COPAYMENTS_URL.test(r.url()), {
-            timeout: 120_000,
-        })
-        await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
-        await expect(page.getByText('合計:').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
-        await waiter
+        // Vite dev server thi thoảng nhả hụt một module /src/*.ts (net::ERR_FAILED) →
+        // React không mount, trang trắng mãi. Nạp lại như `openTreatmentEntry` (entry.ts).
+        let lastErr: unknown
+        for (let attempt = 1; attempt <= GRID_LOAD_ATTEMPTS; attempt++) {
+            const waiter = page.waitForResponse((r) => MONTHLY_COPAYMENTS_URL.test(r.url()), {
+                timeout: 120_000,
+            })
+            waiter.catch(() => {}) // lượt bỏ dở không được làm rớt unhandled rejection
+            await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, {
+                waitUntil: 'domcontentloaded',
+            })
+            try {
+                await expect(page.getByText('合計:').first()).toBeVisible({
+                    timeout: attempt === 1 ? GRID_LOAD_TIMEOUT : GRID_RELOAD_TIMEOUT,
+                })
+            } catch (e) {
+                lastErr = e
+                continue
+            }
+            await waiter
+            return
+        }
+        throw lastErr
     }
 
     /**
@@ -454,7 +471,7 @@ test.describe('E00100 一部負担金計算失敗 — 診療入力 / 当日来�
                 continue
             }
             if (await dirtyGate().isVisible().catch(() => false)) {
-                await btn(dirtyGate(), 'No').first().click()
+                await btn(dirtyGate(), 'いいえ').first().click()
                 continue
             }
             if (await dateGate().isVisible().catch(() => false)) {

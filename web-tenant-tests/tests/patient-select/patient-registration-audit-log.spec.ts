@@ -380,16 +380,23 @@ test.describe('監査ログ — 患者登録画面 ghi audit đủ để khôi p
             ).toBeGreaterThan(0)
         }
 
-        // Một action mang trạng thái đầy đủ (insert hoặc delete) phải đủ cột để dựng
-        // lại dòng, không chỉ vài field lẻ.
-        const full = actions.find((a) => a.type === 'insert' || a.type === 'delete')
-        if (full) {
-            const side = full.type === 'insert' ? full.new : full.old
+        // insert mang đủ cột để dựng lại dòng. delete CHỈ mang key: từ 2026-10-08 dòng bị
+        // xoá nằm trong `insurance_deleted` (khôi phục bằng deleteBatchIds), không chép
+        // lại vào audit (8832f881f).
+        const insert = actions.find((a) => a.type === 'insert')
+        if (insert) {
             expect(
-                Object.keys(side ?? {}).length,
-                `${full.type} chỉ có vài cột — khôi phục tay cần đủ cột của dòng: ` +
-                    JSON.stringify(full),
+                Object.keys(insert.new ?? {}).length,
+                'insert chỉ có vài cột — khôi phục tay cần đủ cột của dòng: ' + JSON.stringify(insert),
             ).toBeGreaterThan(5)
+        }
+        const del = actions.find((a) => a.type === 'delete')
+        if (del) {
+            expect(del.old, 'delete chỉ ghi key, không old: ' + JSON.stringify(del)).toBeUndefined()
+            expect(
+                (savedRow!.meta['deleteBatchIds'] as unknown[] | undefined)?.length ?? 0,
+                'có action delete thì meta phải có deleteBatchIds để khôi phục từ bảng _deleted',
+            ).toBeGreaterThan(0)
         }
     })
 })

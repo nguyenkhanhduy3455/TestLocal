@@ -30,10 +30,9 @@ import { emptyState, rows, scroller, skeletons } from '../_shared/virtual-grid'
  *      · 12 cột đúng `_viewItem` của frm204008, id theo thứ tự:
  *        patNo / patNm / rcpTypeNm / trtDt / syosinLabel / insScore / insPrice /
  *        careScore / carePrice / jihiPrice / jihiTax / priceTotal.
- *      · CHỈ patNo + patNm sortable (`SORT_COMPARATORS`) — xem chú thích ở
- *        SORTABLE_COLS: đây là hành vi của web, KHÁC WinForm; mọi cột khác
- *        `enableSorting: false` ⇒ header của chúng KHÔNG có `aria-sort`
- *        (sort-header-dom.ts:43). レセプト種別 nằm trong nhóm không sort.
+ *      · MỌI cột sortable trừ patNo (`enableSorting: false`, khớp WinForm) —
+ *        xem chú thích ở SORTABLE_COLS. Cột không sort thì header KHÔNG có
+ *        `aria-sort` (sort-header-dom.ts:43). 氏名 sort theo kana (patKn).
  *      · `title="来患一覧"`, `emptyText="対象データがありません"`.
  *  - lib/patient-visit-list-row-grouping.ts
  *      · Banding phân cấp port `IsTheSameCellValue`: `rcpTypeSame = patNmSame &&
@@ -99,11 +98,9 @@ import { emptyState, rows, scroller, skeletons } from '../_shared/virtual-grid'
  *   · nhãn dòng 合計 — ĐÃ SỬA. WinForm (frm204008.cs:807) dùng khoảng trắng 全角
  *     U+3000 sau 「名」 và độn 件数 4 ký tự; handler từng dùng 半角 + độn 5.
  *     `GetPatientVisitListHandlerTests` chốt đúng chuỗi WinForm nên không trôi lại;
- *   · WinForm sort được 10 cột mà bản web khoá `enableSorting: false` — CHƯA xử lý,
- *     chờ quyết định sản phẩm (xem chú thích ở SORTABLE_COLS);
- *   · ngược lại, bấm 患者番号 ở WinForm KHÔNG sort (handler dò nhầm tên cột
- *     「dsp_pat_no」, frm204008.cs:242) trong khi bản web sort được — CHƯA xử lý.
- *     Lưu ý 氏名 thì WinForm CÓ sort, bằng ComLibrary.kanaSort (50音順).
+ *   · sort cột — ĐÃ SỬA, web khớp WinForm: mọi cột sort được trừ 患者番号 (handler
+ *     dò nhầm tên cột 「dsp_pat_no」, frm204008.cs:242), 氏名 sort 50音順 theo patKn
+ *     (xem chú thích ở SORTABLE_COLS).
  */
 
 /** 診療年月 yyyyMM. Xem khối DỮ LIỆU ở doc-comment cho lý do chọn 200601. */
@@ -148,19 +145,15 @@ const HEADER_LABELS: Record<ColId, string> = {
 }
 
 /**
- * 2 cột web cho sort (SORT_COMPARATORS).
- *
- * KHÔNG phải parity — đo thật trên WinForm bằng bộ FlaUI thì ngược lại gần hết:
+ * Cột sort được trên web = parity WinForm (frm204008):
  *  - 患者番号 KHÔNG sort: init() hạ xuống SortMode.Programmatic (frm204008.cs:411)
  *    rồi handler dò tên cột "dsp_pat_no" (frm204008.cs:242) trong khi cột tên
- *    "pat_no" → nhánh chết. Web sort được cột này là THÊM so với WinForm.
- *  - 氏名 CÓ sort, qua ComLibrary.kanaSort (frm204008.cs:261) — 50音順, mà
- *    comparator 'text' của web chưa chắc cho cùng thứ tự.
- *  - 10 cột còn lại (kể cả レセプト種別) CÓ sort ở WinForm: InitViewItem để
+ *    "pat_no" → nhánh chết. Web để `enableSorting: false`.
+ *  - 氏名 sort qua ComLibrary.kanaSort (frm204008.cs:261) — web sort theo `patKn`.
+ *  - 10 cột còn lại (kể cả レセプト種別) sort được: InitViewItem để
  *    SortMode.Automatic và frm204008 không gọi columnSortModeOff().
- * Nên assert dưới đây chốt HÀNH VI HIỆN TẠI CỦA WEB, không phải luật WinForm.
  */
-const SORTABLE_COLS: ReadonlySet<ColId> = new Set<ColId>(['patNo', 'patNm'])
+const SORTABLE_COLS: ReadonlySet<ColId> = new Set<ColId>(COL_IDS.filter((c) => c !== 'patNo'))
 
 /** Một dòng của payload API (đã bỏ dòng 合計). */
 interface VisitRow {
@@ -495,7 +488,7 @@ test.describe('来患一覧 (frm204008) — レセプト種別 + chịu lỗi �
         await step()
     })
 
-    test('TC-OPEN-2 — 12 cột đúng nhãn, đúng thứ tự _viewItem, và chỉ 患者番号/氏名 sort được', async () => {
+    test('TC-OPEN-2 — 12 cột đúng nhãn, đúng thứ tự _viewItem, và mọi cột sort được trừ 患者番号', async () => {
         requireRows()
         for (const col of COL_IDS) {
             const header = page.getByTestId(`header-${col}`)
@@ -512,7 +505,7 @@ test.describe('来患一覧 (frm204008) — レセプト種別 + chịu lỗi �
             } else {
                 expect(
                     ariaSort,
-                    `cột ${col} sort được, nhưng web đang cố ý tắt sort cột này`,
+                    `cột ${col} không được sort (WinForm không sort cột này)`,
                 ).toBeNull()
             }
         }

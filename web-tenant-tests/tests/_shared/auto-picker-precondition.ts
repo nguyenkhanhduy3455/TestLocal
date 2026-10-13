@@ -25,10 +25,19 @@ import { expect, type Page } from '@playwright/test'
 
 export async function expectAutoPickerOpened(page: Page, patNo: string, trtDt: string) {
   const picker = page.getByText('カルテ記載選択')
+  // 歯科疾患管理料 có 摘要コメントパック: hộp 摘要選択 (frm203018/19) bung TRƯỚC và phải được
+  // trả lời thì カルテ記載選択 mới tới (WinForm showDialog lần lượt; xem
+  // auto-santei/auto-santei-dialog-sequence.spec.ts). 確定 để chuỗi đi tiếp.
+  const packDialog = page.locator('[role="dialog"]').filter({ hasText: '摘要選択' })
 
   // Chờ ngắn thôi: nếu queue 自動表示 có chạy thì dialog bật trong vài giây sau
   // khi confirm 初診料 được trả lời. Chờ 45s chỉ tổ kéo dài một thất bại chắc chắn.
-  await picker.waitFor({ state: 'visible', timeout: 20000 }).catch(() => {})
+  for (let i = 0; i < 5; i++) {
+    await picker.or(packDialog).first().waitFor({ state: 'visible', timeout: 20000 }).catch(() => {})
+    if (!(await packDialog.isVisible().catch(() => false))) break
+    await packDialog.getByRole('button', { name: /確定/ }).click()
+    await expect(packDialog).toHaveCount(0, { timeout: 10000 })
+  }
   if (await picker.count()) return
 
   // Lưới 診療入力 render CẢ THÁNG, nên con số này là của THÁNG chứ không của ngày —
