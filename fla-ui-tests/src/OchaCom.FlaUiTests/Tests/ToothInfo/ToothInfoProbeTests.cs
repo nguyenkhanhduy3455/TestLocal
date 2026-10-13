@@ -1,0 +1,217 @@
+using FlaUI.Core.AutomationElements;
+using NUnit.Framework;
+using OchaCom.FlaUiTests.Infrastructure;
+using OchaCom.FlaUiTests.Screens;
+using OchaCom.FlaUiTests.Tests.InpP1Dialogs;
+using OchaCom.FlaUiTests.Tests.MasterAutoLists;
+using OchaCom.FlaUiTests.Tests.PatientGuidance;
+using OchaCom.FlaUiTests.Tests.SigaToothStatus;
+
+namespace OchaCom.FlaUiTests.Tests.ToothInfo;
+
+/// <summary>
+/// <b>PROBE — nhóm C: các dialog sơ đồ răng / ảnh mở từ 診療入力. KHÔNG assert, không ném.</b>
+///
+/// <code>
+///  imgPCond (Ｐ)   → frm203032 歯周情報
+///  imgTCond (Ｔ)   → frm203031 治療情報
+///  btnHotetu 補管  → frm203045 補綴管理
+///  btnGazou  画像  → frm203024 画像 (nút chỉ hiện theo cấu hình)
+///  F6 → カルテ記載選択 (frm203011) → F3 → frm203030 ＰＣＲ
+/// </code>
+///
+/// Cùng khuôn với <see cref="PatientGuidanceProbeTests"/>: F-key, control có id, focus lúc mở,
+/// Tab, ESC / End / Enter, F8. KHÔNG ghi DB, KHÔNG bấm F9 (in/ghi).
+///
+/// <para>Chạy: <c>.\run-edit-tooth-info.ps1 -Diagnostics [-Case Tc5a]</c></para>
+/// </summary>
+[TestFixture]
+[Explicit("PROBE — chỉ chạy đích danh")]
+[Category("tooth-info")]
+public sealed class ToothInfoProbeTests : GuidanceProbeBase
+{
+    [Test, Order(1)] public void Tc5a_PerioInfo() => MeasureDiff("歯周情報", () => ClickMain("imgPCond"), 12);
+    [Test, Order(2)] public void Tc5b_TreatInfo() => MeasureDiff("治療情報", () => ClickMain("imgTCond"), 12);
+    [Test, Order(3)] public void Tc5c_Hotetsu() => MeasureDiff("補綴管理", () => ClickMain("btnHotetu"), 20);
+    [Test, Order(4)] public void Tc5d_Gazou() => MeasureDiff("画像", () => ClickMain("btnGazou"), 20);
+    [Test, Order(5)] public void Tc5e_Pcr() => MeasureDiff("PCR", OpenPcr, 20);
+    [Test, Order(6)] public void Tc5f_PcrKeys() => MeasurePcrKeys();
+    [Test, Order(7)] public void Tc5g_KessonConfirm() => MeasureKessonConfirm();
+
+    /// <summary>
+    /// frm203034 欠損確認: nhập 部位 chứa răng mà SIGA ghi 欠損 (se6 = 4 — SET TRƯỚC khi chạy, xem
+    /// run-edit-tooth-info.ps1) ⇒ sau End của 病名選択 app bung dialog này (frm203002.cs:8540).
+    /// F9 はい chỉ bỏ ô 欠損 khỏi dòng lưới trong bộ nhớ (không ghi DB nếu không F9 ở 診療入力).
+    /// </summary>
+    private void MeasureKessonConfirm()
+    {
+        using var trace = TestTrace.Begin("Tc5g_KessonConfirm");
+        const string tag = "欠損確認";
+        try
+        {
+            var flow = new SigaToothFlow(App, Screen);
+            var row = flow.InputRow();
+            if (row is null) { Log($"=== KQ-C1 [{tag}] === không có dòng nhập"); return; }
+            // 病名 thuộc nhóm cần 現存歯 (dis_kbn 41 ダツリ, vd 156 ｲﾝﾚｰﾀﾞﾂﾘC) + 部位 chứa răng 欠損 ⇒ ChkDisMissingTheeth.
+            var r = flow.SetBuiOnRow(row, 5, false, 156, trace, beforePick: d =>
+            {
+                ToothSelectDialog.FocusWindow(d);
+                Uia.SendKey(Vk.F4);   // F4 ダツリ・ハソン — thu hẹp danh sách về dis_kbn 41..43
+                Thread.Sleep(800);
+            });
+            Log($"=== KQ-C1 [{tag}] === SetBuiOnRow: 部位選択={r.ToothDialogOpened} 病名選択={r.DiseaseDialogOpened} hộp thoại gặp: {string.Join(" / ", r.Dialogs)}");
+            var win = Waits.TryFor(() => FindModal("欠損確認") ?? FindModal("欠損指定"), TimeSpan.FromSeconds(12));
+            Log($"=== KQ-C1 [{tag}] === dialog 欠損: {(win is null ? "KHÔNG mở. Cửa sổ: " + string.Join(" / ", Win32Windows.OfProcess(App.ProcessId).Where(w => w.Visible).Select(w => w.Title)) : "mở: " + Uia.NameOf(win))}");
+            if (win is null) return;
+            Log($"=== KQ-C6 [{tag}] === focus lúc MỞ: {FocusInfo()}");
+            FKeys(win, tag);
+            Controls(win, tag, "c-kesson");
+            trace.Shot("mo");
+            TabOrder(tag, 6);
+            // Enter / ESC: BaseDialog2 — ESC và End = F9 はい.
+            foreach (var (name, vk) in new[] { ("Enter", (ushort)0x0D), ("Escape", Vk.Escape) })
+            {
+                if (FindModal("欠損確認") is null && FindModal("欠損指定") is null) break;
+                var w = FindModal("欠損確認") ?? FindModal("欠損指定")!;
+                InpP1MenuFlow.Focus(w);
+                Uia.SendKey(vk);
+                Thread.Sleep(1500);
+                var box = MsgBoxWin32.First(App.ProcessId);
+                var gone = FindModal("欠損確認") is null && FindModal("欠損指定") is null;
+                Log($"=== KQ-C7 [{tag}] === {name}: dialog {(gone ? "ĐÃ ĐÓNG" : "còn")}, hộp thoại={(box is null ? "không" : box.Text)}; ô 部位 của dòng nhập sau đó: {string.Join(" // ", flow.DescribeGrid(8))}");
+                if (box is not null) MsgBoxWin32.ClickButton(box.Hwnd, "Cancel", "OK");
+            }
+        }
+        catch (Exception e) { Log($"=== KQ-C1 [{tag}] === NGOẠI LỆ: {e.GetType().Name}: {e.Message}"); }
+        finally
+        {
+            foreach (var m in MsgBoxWin32.All(App.ProcessId)) MsgBoxWin32.ClickButton(m.Hwnd, "Cancel", "キャンセル", "OK");
+            for (var i = 0; i < 3; i++)
+            {
+                var top = Win32Windows.OfProcess(App.ProcessId).LastOrDefault(w => w.Visible && w.Title.Length > 0 && !w.Title.StartsWith("　診療入力", StringComparison.Ordinal));
+                if (top is null) break;
+                Uia.ForceForeground(top.Hwnd);
+                Uia.SendKey(Vk.F10);
+                Thread.Sleep(1200);
+            }
+        }
+    }
+
+    /// <summary>F6 → カルテ記載選択 → F3 → ＰＣＲ. Dừng sau khi PCR mở; đóng cả hai bằng F10.</summary>
+    private void OpenPcr()
+    {
+        InpP1MenuFlow.Focus(Screen.Window);
+        Uia.SendKey(Vk.F6);
+        var karte = Waits.TryFor(() => FindModal("カルテ記載選択"), TimeSpan.FromSeconds(15));
+        Log($"=== KQ-C1 [PCR] === カルテ記載選択: {(karte is null ? "KHÔNG mở" : "mở")}");
+        if (karte is null) return;
+        InpP1MenuFlow.Focus(karte);
+        Uia.SendKey(Vk.F3);
+    }
+
+    /// <summary>ＰＣＲ: điểm プラークスコア sau F2/F3/F8, F1 (Q00002 → Cancel), rồi End (= F9 確定?).</summary>
+    private void MeasurePcrKeys()
+    {
+        using var trace = TestTrace.Begin("Tc5f_PcrKeys");
+        const string tag = "PCR-keys";
+        try
+        {
+            OpenPcr();
+            var pcr = Waits.TryFor(() => FindModal("ＰＣＲ"), TimeSpan.FromSeconds(15));
+            if (pcr is null) { Log($"=== KQ-C1 [{tag}] === PCR không mở"); return; }
+            string Score() { var l = Find(pcr, "lblPercent"); return l is null ? "(không có lblPercent)" : Txt.N(Uia.NameOf(l)); }
+            Log($"=== KQ-C7 [{tag}] === điểm lúc mở = {Score()}");
+            foreach (var (name, vk) in new[] { ("F2 反転", Vk.F2), ("F8 クリア", Vk.F8), ("F3 隣接面", Vk.F3), ("F2 反転", Vk.F2), ("F8 クリア", Vk.F8) })
+            {
+                InpP1MenuFlow.Focus(pcr);
+                Uia.SendKey(vk);
+                Thread.Sleep(900);
+                var box = MsgBoxWin32.First(App.ProcessId);
+                Log($"=== KQ-C7 [{tag}] === {name} → điểm = {Score()}" + (box is null ? "" : $"; hộp thoại 「{box.Text}」"));
+                if (box is not null) MsgBoxWin32.ClickButton(box.Hwnd, "OK");
+            }
+            InpP1MenuFlow.Focus(pcr);
+            Uia.SendKey(Vk.F1);
+            var q = Waits.TryFor(() => MsgBoxWin32.First(App.ProcessId), TimeSpan.FromSeconds(6));
+            Log($"=== KQ-C7 [{tag}] === F1 → " + (q is null ? "KHÔNG có hộp thoại" : $"「{q.Text}」 nút=[{string.Join(", ", MsgBoxWin32.ButtonCaptions(q.Hwnd))}]"));
+            if (q is not null) MsgBoxWin32.ClickButton(q.Hwnd, "Cancel", "キャンセル");   // KHÔNG OK: OK ghi PCR_DEF
+            Thread.Sleep(600);
+
+            InpP1MenuFlow.Focus(pcr);
+            Uia.SendKey(Vk.End);
+            Thread.Sleep(1500);
+            var box2 = MsgBoxWin32.First(App.ProcessId);
+            Log($"=== KQ-C7 [{tag}] === End → PCR {(FindModal("ＰＣＲ") is null ? "ĐÃ ĐÓNG" : "còn")}, カルテ記載選択 {(FindModal("カルテ記載選択") is null ? "đã đóng" : "còn")}, hộp thoại={(box2 is null ? "không" : box2.Text)}");
+            if (box2 is not null) MsgBoxWin32.ClickButton(box2.Hwnd, "Cancel", "OK");
+        }
+        catch (Exception e) { Log($"=== KQ-C1 [{tag}] === NGOẠI LỆ: {e.GetType().Name}: {e.Message}"); }
+        finally
+        {
+            foreach (var m in MsgBoxWin32.All(App.ProcessId)) MsgBoxWin32.ClickButton(m.Hwnd, "Cancel", "キャンセル", "OK");
+            for (var i = 0; i < 3; i++)
+            {
+                var top = Win32Windows.OfProcess(App.ProcessId).LastOrDefault(w => w.Visible && w.Title.Length > 0 && !w.Title.StartsWith("　診療入力", StringComparison.Ordinal));
+                if (top is null) break;
+                Uia.ForceForeground(top.Hwnd);
+                Uia.SendKey(Vk.F10);
+                Thread.Sleep(1200);
+            }
+        }
+    }
+
+    private static readonly string[] Ignored = ["Minimize", "Maximize", "Close"];
+
+    private void MeasureDiff(string tag, Action open, int tabs)
+    {
+        using var trace = TestTrace.Begin($"Tc5_{tag}");
+        string? title = null;
+        try
+        {
+            var before = Win32Windows.OfProcess(App.ProcessId).Where(w => w.Visible).Select(w => w.Title).ToHashSet();
+            open();
+            Thread.Sleep(4000);
+            var all = Win32Windows.OfProcess(App.ProcessId).Where(w => w.Visible && w.Title.Length > 0).Select(w => w.Title).ToList();
+            Log($"=== KQ-C1 [{tag}] === cửa sổ sau khi mở: {string.Join(" / ", all)} (trước: {string.Join(" / ", before)})");
+            // PCR đứng sau カルテ記載選択: cửa sổ mới nhất là cái cần đo.
+            title = all.LastOrDefault(t => !before.Contains(t) && t != "カルテ記載選択") ?? all.FirstOrDefault(t => !before.Contains(t));
+            if (title is null) { Log($"=== KQ-C1 [{tag}] === không có cửa sổ mới (nút ẩn / không mở)"); return; }
+            // Hộp thoại đi kèm lúc mở (vd 画像: báo thiếu thư mục) — đọc rồi bấm OK để đo được form phía sau.
+            foreach (var m in MsgBoxWin32.All(App.ProcessId))
+            {
+                Log($"=== KQ-C1 [{tag}] === hộp thoại lúc mở: 「{m.Text}」 nút=[{string.Join(", ", MsgBoxWin32.ButtonCaptions(m.Hwnd))}]");
+                MsgBoxWin32.ClickButton(m.Hwnd, "OK");
+            }
+            Thread.Sleep(800);
+            var win = FindModal(title);
+            if (win is null) { Log($"=== KQ-C1 [{tag}] === không FromHandle được 「{title}」"); return; }
+
+            Log($"=== KQ-C1 [{tag}] === tiêu đề=「{Uia.NameOf(win)}」");
+            Log($"=== KQ-C6 [{tag}] === focus lúc MỞ: {FocusInfo()}");
+            FKeys(win, tag);
+            Controls(win, tag, $"c-{tag}");
+            trace.Shot("mo");
+            TabOrder(tag, tabs);
+            Keys(win, tag, trace);
+            F8(win, tag, trace);
+        }
+        catch (Exception e) { Log($"=== KQ-C1 [{tag}] === NGOẠI LỆ: {e.GetType().Name}: {e.Message}"); }
+        finally
+        {
+            try
+            {
+                foreach (var m in MsgBoxWin32.All(App.ProcessId)) MsgBoxWin32.ClickButton(m.Hwnd, "Cancel", "キャンセル", "いいえ", "No", "OK");
+                for (var i = 0; i < 4; i++)
+                {
+                    var top = Win32Windows.OfProcess(App.ProcessId).LastOrDefault(w => w.Visible && w.Title.Length > 0 && !w.Title.StartsWith("　診療入力", StringComparison.Ordinal));
+                    if (top is null) break;
+                    Uia.ForceForeground(top.Hwnd);
+                    Uia.SendKey(Vk.F10);
+                    Thread.Sleep(1200);
+                    foreach (var m in MsgBoxWin32.All(App.ProcessId)) MsgBoxWin32.ClickButton(m.Hwnd, "OK", "はい", "Yes");
+                    Thread.Sleep(500);
+                }
+            }
+            catch (Exception e) { Log($"=== KQ-C1 [{tag}] === không đóng được: {e.Message}"); }
+        }
+    }
+}
