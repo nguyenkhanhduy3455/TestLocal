@@ -397,7 +397,8 @@ test.describe('処置自動入力 — 一覧 (frm203040) / 登録 (frm203041)', 
             timeout: 15_000,
         })
         const text = (await confirm.innerText()).trim()
-        await confirm.getByRole('button', { name: /^(No|いいえ)$/ }).click()
+        // WinForm ShowOKCancelMsg: OK / キャンセル.
+        await confirm.getByRole('button', { name: /^(キャンセル|No|いいえ)$/ }).click()
         await expect(confirm).toBeHidden({ timeout: 10_000 })
         return text
     }
@@ -406,7 +407,7 @@ test.describe('処置自動入力 — 一覧 (frm203040) / 登録 (frm203041)', 
      * Bấm F9 登録 và kỳ vọng một hộp LỖI (chưa tới bước xác nhận).
      *
      * Phân biệt với {@link pressRegisterAndCancel} bằng chính nút: hộp lỗi có
-     * OK, hộp xác nhận có Yes/No.
+     * OK, hộp xác nhận có OK/キャンセル.
      */
     async function pressRegisterExpectingError(): Promise<string> {
         await register.getByRole('button', { name: 'F9 登録' }).click()

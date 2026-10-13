@@ -74,6 +74,8 @@ test.describe('診療入力 — End/Esc 登録 · 日付変更 mọi dòng · me
     const alert = () => page.getByRole('alertdialog')
     const saveConfirm = () => page.locator('[role="dialog"], [role="alertdialog"]').filter({ hasText: SAVE_CONFIRM })
     const dateChgDialog = () => page.getByRole('dialog').filter({ hasText: '日付変更' })
+    /** WinForm: chuột phải ô 日 hiện menu một mục 「日付変更」; dialog chỉ mở sau khi chọn mục đó. */
+    const pickDateChgMenu = () => page.getByRole('menu').getByRole('button', { name: '日付変更' }).click()
     const rowMenu = () => page.getByRole('menu').filter({ hasText: '1 メニュー' })
 
     async function drain() {
@@ -216,6 +218,7 @@ test.describe('診療入力 — End/Esc 登録 · 日付変更 mọi dòng · me
         skipWithReason(!key, 'không có dòng thứ 2 của ngày nào trong tháng hiện tại (bật TEST_DB=1)')
         await cell(key!, COL_DAY).click()
         await cell(key!, COL_DAY).click({ button: 'right' })
+        await pickDateChgMenu()
         await expect(dateChgDialog(), 'web cũ chỉ mở ở dòng đầu mỗi ngày').toBeVisible({ timeout: 10_000 })
         await dateChgDialog().getByRole('button', { name: /F10\s*戻る|キャンセル|戻る/ }).first().click()
         await expect(dateChgDialog()).toBeHidden({ timeout: 10_000 })
@@ -229,6 +232,7 @@ test.describe('診療入力 — End/Esc 登録 · 日付変更 mọi dòng · me
         const cur = (await dayKeys()).find((k) => !HISTORY_KEY_RE.test(k.key) && !k.key.includes(':'))?.key
         skipWithReason(!cur, 'không có dòng tháng hiện tại cùng lúc trong vùng render')
         await cell(cur!, COL_DAY).click({ button: 'right' })
+        await pickDateChgMenu()
         await expectAlert(MSG_DATE_CHG)
         await expect(dateChgDialog(), 'IDM_DateChg lấy dòng CON TRỎ, không phải dòng vừa click').toHaveCount(0)
         await step()

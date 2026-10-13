@@ -247,6 +247,8 @@ test.describe('診療入力 — 当月以外操作不可 (ArrowEvents + side pan
         // right-click does not move it — put the cursor on the past row first.
         await cell!.click()
         await cell!.click({ button: 'right' })
+        // WinForm: the 日 column opens a one-item 日付変更 menu first; the guard answers on pick.
+        await page.getByRole('menu').getByRole('button', { name: '日付変更' }).click()
         await expectBlocked('日付変更', MSG_DATE_CHG)
         await expect(page.getByRole('dialog').filter({ hasText: '日付変更' })).toHaveCount(0)
         await step()
