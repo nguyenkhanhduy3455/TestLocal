@@ -1,4 +1,5 @@
 using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Input;
 using NUnit.Framework;
 using OchaCom.FlaUiTests.Infrastructure;
 using OchaCom.FlaUiTests.Screens;
@@ -37,6 +38,90 @@ public sealed class ToothInfoProbeTests : GuidanceProbeBase
     [Test, Order(5)] public void Tc5e_Pcr() => MeasureDiff("PCR", OpenPcr, 20);
     [Test, Order(6)] public void Tc5f_PcrKeys() => MeasurePcrKeys();
     [Test, Order(7)] public void Tc5g_KessonConfirm() => MeasureKessonConfirm();
+    [Test, Order(8)] public void Tc5h_HotetsuDateKeys() => MeasureHotetsuDateKeys();
+
+    /// <summary>
+    /// 補綴管理: Enter / Click trên ô ngày, gõ ký tự, Leave với ngày sai (frm203045 txtDt_*).
+    /// KHÔNG F9 / ESC / End (= 登録 ghi PATINFO). Đóng bằng F10.
+    /// </summary>
+    private void MeasureHotetsuDateKeys()
+    {
+        using var trace = TestTrace.Begin("Tc5h_HotetsuDateKeys");
+        const string tag = "補綴日付";
+        try
+        {
+            ClickMain("btnHotetu");
+            var win = Waits.TryFor(() => FindModal("補綴管理"), TimeSpan.FromSeconds(15));
+            if (win is null) { Log($"=== KQ-C1 [{tag}] === 補綴管理 không mở"); return; }
+            Log($"=== KQ-C6 [{tag}] === focus lúc mở: {FocusInfo()}");
+
+            string Titles() => string.Join(" / ", Win32Windows.OfProcess(App.ProcessId).Where(w => w.Visible && w.Title.Length > 0).Select(w => w.Title));
+            void CloseExtra()
+            {
+                var pick = Win32Windows.OfProcess(App.ProcessId).LastOrDefault(w => w.Visible && w.Title.Length > 0 && w.Title != "補綴管理" && !w.Title.StartsWith("　診療入力", StringComparison.Ordinal));
+                if (pick is not null) { Uia.ForceForeground(pick.Hwnd); Uia.SendKey(Vk.F10); Thread.Sleep(1000); }
+            }
+
+            // (a) Enter trên txtDt11 (có 2015/02/06).
+            InpP1MenuFlow.Focus(win);
+            Uia.SendKey(0x0D);
+            Thread.Sleep(1500);
+            Log($"=== KQ-C7 [{tag}] === (a) Enter trên ô có ngày → cửa sổ: {Titles()}; focus: {FocusInfo()}");
+            CloseExtra();
+            win = FindModal("補綴管理") ?? win;
+
+            // (b) Tab sang ô trống kế tiếp rồi Enter.
+            InpP1MenuFlow.Focus(win);
+            Uia.SendKey(Vk.Tab);
+            Thread.Sleep(300);
+            var empty = FocusInfo();
+            Uia.SendKey(0x0D);
+            Thread.Sleep(1500);
+            Log($"=== KQ-C7 [{tag}] === (b) ô trống {empty}; sau Enter → cửa sổ: {Titles()}; focus: {FocusInfo()}");
+            CloseExtra();
+            win = FindModal("補綴管理") ?? win;
+
+            // (c) gõ chữ + số + '/' vào ô trống: ký tự nào lọt vào.
+            InpP1MenuFlow.Focus(win);
+            Keyboard.Type("ab1/2c3-4");
+            Thread.Sleep(400);
+            var f = App.Automation.FocusedElement();
+            Log($"=== KQ-C7 [{tag}] === (c) gõ 「ab1/2c3-4」 → ô=「{(f is null ? "?" : Txt.N(Uia.ValueOf(f)))}」");
+
+            // (d) ngày sai + rời ô (Tab) ⇒ E00002 「日付」?
+            Uia.SendKey(Vk.Tab);
+            var box = Waits.TryFor(() => MsgBoxWin32.First(App.ProcessId), TimeSpan.FromSeconds(5));
+            Log($"=== KQ-C7 [{tag}] === (d) rời ô với 「1/23」: " + (box is null ? "KHÔNG có hộp thoại" : $"「{box.Text}」 nút=[{string.Join(", ", MsgBoxWin32.ButtonCaptions(box.Hwnd))}]; focus sau: {FocusInfo()}"));
+            if (box is not null) { MsgBoxWin32.ClickButton(box.Hwnd, "OK"); Thread.Sleep(500); }
+
+            // (e) 8 chữ số → tự thành yyyy/MM/dd khi rời ô.
+            var cur = App.Automation.FocusedElement();
+            if (cur is not null)
+            {
+                Uia.MouseClick(cur);
+                Keyboard.TypeSimultaneously(FlaUI.Core.WindowsAPI.VirtualKeyShort.CONTROL, FlaUI.Core.WindowsAPI.VirtualKeyShort.KEY_A);
+                Keyboard.Type("20260115");
+                Uia.SendKey(Vk.Tab);
+                Thread.Sleep(600);
+                var prev = Win32Windows.OfProcess(App.ProcessId).Count();
+                Log($"=== KQ-C7 [{tag}] === (e) gõ 20260115 + Tab → ô vừa gõ = 「{Txt.N(Uia.ValueOf(cur))}」; hộp thoại: {MsgBoxWin32.TextOfAll(App.ProcessId)}");
+            }
+        }
+        catch (Exception e) { Log($"=== KQ-C1 [{tag}] === NGOẠI LỆ: {e.GetType().Name}: {e.Message}"); }
+        finally
+        {
+            foreach (var m in MsgBoxWin32.All(App.ProcessId)) MsgBoxWin32.ClickButton(m.Hwnd, "Cancel", "OK");
+            for (var i = 0; i < 3; i++)
+            {
+                var top = Win32Windows.OfProcess(App.ProcessId).LastOrDefault(w => w.Visible && w.Title.Length > 0 && !w.Title.StartsWith("　診療入力", StringComparison.Ordinal));
+                if (top is null) break;
+                Uia.ForceForeground(top.Hwnd);
+                Uia.SendKey(Vk.F10);
+                Thread.Sleep(1200);
+                foreach (var m in MsgBoxWin32.All(App.ProcessId)) MsgBoxWin32.ClickButton(m.Hwnd, "OK", "はい", "Yes");
+            }
+        }
+    }
 
     /// <summary>
     /// frm203034 欠損確認: nhập 部位 chứa răng mà SIGA ghi 欠損 (se6 = 4 — SET TRƯỚC khi chạy, xem
