@@ -58,6 +58,7 @@ describeListChrome(
             open: open('/counter-payments'),
             prompt: null,
             unit: '人',
+            allowIdleCount: true, // an empty live list shows 「－」 like an unsearched /patients
             pickRow: tickedRow,
             statusPattern: /^1件選択中/,
         },
@@ -76,6 +77,7 @@ describeListChrome(
             open: open('/medical-records/print-patient-select'),
             prompt: null,
             unit: '人',
+            allowIdleCount: true, // an empty live list shows 「－」 like an unsearched /patients
             // The real list is thousands of rows long (virtualised), so tick the first rendered one.
             pickRow: (_page, root) =>
                 root.locator('[data-testid^="row-"]').first().getByRole('checkbox'),
@@ -100,6 +102,7 @@ describeListChrome(
             open: open('/treatments'),
             prompt: null,
             unit: '人',
+            allowIdleCount: true, // an empty live list shows 「－」 like an unsearched /patients
             pickRow: seededRow,
         },
         patientList('診療入力 患者検索 (F1) /treatments', '/treatments', {
