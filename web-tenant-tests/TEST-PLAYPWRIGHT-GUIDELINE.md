@@ -491,6 +491,12 @@ await expect(h1).toHaveCSS('letter-spacing', /6\.4px/)     // tracking-[0.4em]
 await expect(page.locator('.medical-gradient').first()).toBeVisible()
 ```
 
+### 24.1b — Khoảng cách header → khung đầu tiên
+Dải header cao 56px; khung đầu tiên (thẻ tìm kiếm, hoặc chính panel danh sách nếu không có thẻ)
+cách dải 4px, cách mép trái 4px, viền ĐỦ 4 cạnh và bo góc `rounded-lg` (≥ 6px) như `/treatments`
+(`border border-border bg-card shadow-sm rounded-lg`). KHÔNG dùng `border-t-0 rounded-b-lg` —
+viền trên bị bỏ làm khoảng 4px đó vô hình, nhìn như header dính sát khung. Helper: `expectHeaderSpacing`.
+
 ### 24.2 — Padding hai bên và đáy
 Panel danh sách và FKeyBar phải thụt đúng như `/patients`: panel cách mép root
 4px (`mx-1`), FKeyBar cách mép 8px (`px-2`), đáy FKeyBar cách đáy root 6px

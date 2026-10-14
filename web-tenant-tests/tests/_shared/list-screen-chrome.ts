@@ -105,11 +105,15 @@ export async function expectHeaderSpacing(root: Locator) {
             }
             const r = el.getBoundingClientRect()
             const b = band.getBoundingClientRect()
-            const box = first(band.nextElementSibling)?.getBoundingClientRect()
+            const boxEl = first(band.nextElementSibling)
+            const box = boxEl?.getBoundingClientRect()
+            const bs = boxEl ? getComputedStyle(boxEl) : null
             return {
                 height: b.height,
                 gap: box ? box.top - b.bottom : null,
                 left: box ? box.left - r.left : null,
+                borderTop: bs ? parseFloat(bs.borderTopWidth) : null,
+                radius: bs ? parseFloat(bs.borderTopLeftRadius) : null,
             }
         })
         expect(m, 'header band').not.toBeNull()
@@ -121,6 +125,9 @@ export async function expectHeaderSpacing(root: Locator) {
             Math.abs(m!.gap! - HEADER_TO_FIRST_BOX_GAP),
             'gap header → first search box',
         ).toBeLessThanOrEqual(TOLERANCE)
+        // /treatments look: a full border and rounded corners, so the 4px gap under the band is visible.
+        expect(m!.borderTop, 'first box has a top border').toBeGreaterThan(0)
+        expect(m!.radius, 'first box has rounded top corners').toBeGreaterThanOrEqual(6)
         expect(
             Math.abs(m!.left! - PANEL_INSET),
             'left inset of first search box',
