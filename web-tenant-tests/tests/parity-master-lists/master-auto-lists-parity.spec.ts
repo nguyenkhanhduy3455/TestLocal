@@ -230,7 +230,9 @@ test.describe('Parity nhóm A — 一覧 master × 3, 登録 × 3, 日付変更'
                 await list.getByRole('button', { name: '検索', exact: true }).click()
                 const search = await takeBox(/^OK$/)
                 expect(search.text).toContain(E00003)
-                await expect(list.getByText(/該当件数/).first()).toContainText('0')
+                await expect(
+                    list.getByText('合　計', { exact: true }).locator('xpath=..').getByText(/^[\d,]+件$/),
+                ).toHaveText('0件')
                 await list.getByRole('button', { name: /F9\s*選択/ }).click()
                 const f9 = await takeBox(/^OK$/)
                 expect(f9.text).toContain(E00003)

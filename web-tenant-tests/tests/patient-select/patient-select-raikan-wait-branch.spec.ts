@@ -142,7 +142,7 @@ test.describe('診療入力（患者選択）— 当月来患 / F7 / 受付一�
 
     const raikanLabel = (): Locator => page.getByText(/^当月来患：\d*$/)
     const trtDtRow = (): Locator => page.getByText('診療日', { exact: true }).locator('..')
-    const statusBar = (): Locator => page.getByText(/^(選択中: .*|患者を選択してください)$/)
+    const statusBar = (): Locator => page.getByText(/^選択中: .*$/)
 
     /**
      * EraDateField của 検索条件 — khối đứng NGAY SAU nhãn trong panel (nhãn trong panel
@@ -317,7 +317,7 @@ test.describe('診療入力（患者選択）— 当月来患 / F7 / 受付一�
         await expect(page.getByTestId('row-990102')).toBeVisible({ timeout: 15_000 })
 
         await page.getByTestId('row-990102').click()
-        await expect(statusBar()).toHaveText('選択中: テスト　Ｂ')
+        await expect(statusBar()).toHaveText('選択中: 990102')
         await step()
 
         // Người C chen lên đầu: B trượt từ vị trí 2 xuống 3. Giữ theo index thì dòng
@@ -325,13 +325,13 @@ test.describe('診療入力（患者選択）— 当月来患 / F7 / 受付一�
         items = [waitRow(990_100, 'テスト　Ｃ'), ...items]
         await page.waitForResponse(WAIT_LIST_URL, { timeout: WAIT_POLL_MS + 5_000 })
         await expect(page.getByTestId('row-990100')).toBeVisible()
-        await expect(statusBar(), 'sau poll dòng chọn phải vẫn là B').toHaveText('選択中: テスト　Ｂ')
+        await expect(statusBar(), 'sau poll dòng chọn phải vẫn là B').toHaveText('選択中: 990102')
 
         // B rời danh sách ⇒ không còn dòng chọn (F9 rơi về dòng đầu như trước).
         items = items.filter((r) => r.patNo !== 990_102)
         await page.waitForResponse(WAIT_LIST_URL, { timeout: WAIT_POLL_MS + 5_000 })
         await expect(page.getByTestId('row-990102')).toHaveCount(0)
-        await expect(statusBar()).toHaveText('患者を選択してください')
+        await expect(statusBar()).toHaveCount(0)
         await page.unroute(WAIT_LIST_URL)
     })
 
@@ -341,14 +341,14 @@ test.describe('診療入力（患者選択）— 当月来患 / F7 / 受付一�
         await page.route(WAIT_LIST_URL, (route) => route.fulfill({ json: waitEnvelope(items) }))
         await page.keyboard.press('F5')
         await page.getByTestId('row-12').click()
-        await expect(statusBar()).toHaveText('選択中: クセ　十二')
+        await expect(statusBar()).toHaveText('選択中: 12')
 
         // `"12,".Contains("2,")` = true, MultiSelect=false ⇒ dòng khớp CUỐI thắng.
         items = [...items, waitRow(2, 'クセ　二')]
         await page.waitForResponse(WAIT_LIST_URL, { timeout: WAIT_POLL_MS + 5_000 })
         await expect(page.getByTestId('row-2')).toBeVisible()
         await expect(statusBar(), 'port nguyên quirk chuỗi con của getWaitViewData').toHaveText(
-            '選択中: クセ　二',
+            '選択中: 2',
         )
         await page.unroute(WAIT_LIST_URL)
         await page.keyboard.press('F5')

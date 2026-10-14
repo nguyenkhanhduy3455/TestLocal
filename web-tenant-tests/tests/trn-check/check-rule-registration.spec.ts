@@ -125,9 +125,9 @@ import { makeStep } from '../_shared/step'
  *     "visible" — dùng `toHaveCount` trên header hoặc cuộn tới. Testcase ở đây
  *     chỉ đụng vài cột đầu.
  *  4. Lưới 一覧 nạp TOÀN BỘ 処置マスタ (~1700 dòng) rồi mới render ⇒ timeout chờ
- *     phải rộng. Mốc đáng tin là ô 該当件数 có số > 0, không phải dòng đầu tiên.
+ *     phải rộng. Mốc đáng tin là ô 合　計 (footer) có số > 0, không phải dòng đầu tiên.
  *  5. `VirtualListTable` chỉ render dòng trong viewport ⇒ `getByRole('row')`
- *     KHÔNG đếm được tổng số. Dùng ô 該当件数.
+ *     KHÔNG đếm được tổng số. Dùng ô 合　計 (footer).
  *  6. Hub và 一覧 loại trừ nhau trong DOM (xem trên) ⇒ sau khi bấm một nút, chờ
  *     tiêu đề hub BIẾN MẤT là mốc chắc hơn chờ tiêu đề 一覧 hiện ra.
  *  7. Dialog 登録 là DraggableDialog thật (portal), KHÁC takeover của 一覧. Cả
@@ -247,7 +247,7 @@ const E00003_NO_DATA = '該当データがありません。'
  * Chuỗi 処置名 chắc chắn không khớp dòng nào — dùng để ép 検索 về 0 dòng.
  *
  * ĐÃ ĐO ĐƯỢC (lần chạy 6): mã '999' KHÔNG phải mã không tồn tại — master có
- * thật dòng `999-0 未装着`. Lọc theo mã vẫn "xanh" được là vì `該当件数` đọc
+ * thật dòng `999-0 未装着`. Lọc theo mã vẫn "xanh" được là vì footer `合　計` đọc
  * `rows`, mà `rows` rỗng trong lúc query đổi khoá đang chạy: assert `0 件` bắt
  * trúng nhịp loading rồi 1 dòng mới về sau đó. Lọc theo một cái tên vô nghĩa
  * mới cho trạng thái rỗng THẬT.
@@ -417,13 +417,13 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
         // 8b) nên hiện chưa trúng bẫy, nhưng đừng để nó phụ thuộc vào điều đó.
         await page
             .getByRole('alertdialog')
-            .getByRole('button', { name: 'No', exact: true })
+            .getByRole('button', { name: 'いいえ', exact: true })
             .click()
     }
 
-    /** Chờ lưới 一覧 nạp xong — mốc là 該当件数 có số > 0 (BẪY 4, 5). */
+    /** Chờ lưới 一覧 nạp xong — mốc là ô 合　計 (footer) có số > 0 (BẪY 4, 5). */
     async function waitRowsLoaded(list: Locator) {
-        await expect(list.getByText(/該当件数:\s*[1-9]\d*\s*件/), '一覧 nạp 0 dòng').toBeVisible({
+        await expect(list.getByText('合　計', { exact: true }).locator('xpath=..').getByText(/^[1-9][\d,]*件$/), '一覧 nạp 0 dòng').toBeVisible({
             timeout: GRID_LOAD_TIMEOUT,
         })
     }
@@ -431,7 +431,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
     /**
      * Ép 一覧 về trạng thái RỖNG THẬT rồi mới trả về.
      *
-     * Chỉ chờ `該当件数: 0 件` là KHÔNG đủ: khi 検索 đổi khoá query, `data` là
+     * Chỉ chờ footer `0件` là KHÔNG đủ: khi 検索 đổi khoá query, `data` là
      * undefined nên bộ đếm hiện 0 trong lúc lưới còn đang tải. `empty-state`
      * chỉ được VirtualListTable dựng khi đã tải xong mà đếm ra 0
      * (`isCountLoading` = false), nên đó mới là mốc chờ đúng.
@@ -443,7 +443,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
             list.getByTestId('empty-state'),
             '検索 bằng tên vô nghĩa mà lưới vẫn còn dòng',
         ).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
-        await expect(list.getByText(/該当件数:\s*0\s*件/)).toBeVisible()
+        await expect(list.getByText('合　計', { exact: true }).locator('xpath=..').getByText(/^0件$/)).toBeVisible()
     }
 
     /**
@@ -588,15 +588,15 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
         const list = await openList(pair)
         await waitRowsLoaded(list)
 
-        const before = await list.getByText(/該当件数:/).innerText()
+        const before = await list.getByText('合　計', { exact: true }).locator('xpath=..').getByText(/^[\d,]+件$/).innerText()
 
         // Gõ mà CHƯA bấm 検索: getViewData chỉ chạy trong btnSearch_Click, nên số
         // dòng phải y nguyên. Đây là hành vi WinForm, không phải tối ưu của web.
         await list.getByRole('textbox').first().fill('100')
-        await expect(list.getByText(/該当件数:/)).toHaveText(before)
+        await expect(list.getByText('合　計', { exact: true }).locator('xpath=..').getByText(/^[\d,]+件$/)).toHaveText(before)
 
         await list.getByRole('button', { name: '検索', exact: true }).click()
-        await expect(list.getByText(/該当件数:/), '検索 không đổi số dòng').not.toHaveText(before, {
+        await expect(list.getByText('合　計', { exact: true }).locator('xpath=..').getByText(/^[\d,]+件$/), '検索 không đổi số dòng').not.toHaveText(before, {
             timeout: GRID_LOAD_TIMEOUT,
         })
 
@@ -1052,7 +1052,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
         let list = await openList(pair)
         await waitRowsLoaded(list)
 
-        const fullCount = await list.getByText(/該当件数:/).innerText()
+        const fullCount = await list.getByText('合　計', { exact: true }).locator('xpath=..').getByText(/^[\d,]+件$/).innerText()
 
         // Gõ + tìm + sort để bẩn hết mọi thứ có thể sống sót.
         await searchNoMatch(list)
@@ -1067,7 +1067,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
             list.getByRole('textbox').nth(1),
             'mở lại mà ô 検索 còn chữ — WinForm dựng form mới',
         ).toHaveValue('')
-        await expect(list.getByText(/該当件数:/), 'mở lại phải nạp lại đủ dòng').toHaveText(
+        await expect(list.getByText('合　計', { exact: true }).locator('xpath=..').getByText(/^[\d,]+件$/), 'mở lại phải nạp lại đủ dòng').toHaveText(
             fullCount,
         )
         // Đọc `aria-sort` chứ không đếm glyph ▲/▼ (Rule 10.5): thuộc tính là thứ

@@ -450,6 +450,94 @@ không còn glyph sort.
 
 ---
 
+## Rule 24 — Spec cho MÀN HÌNH DANH SÁCH phải có đủ 5 testcase bắt buộc
+
+Áp dụng cho **mọi màn (không phải dialog) hiển thị danh sách**: màn master
+(`/masters/*`, `settings/*`), màn chọn bệnh nhân (`PatientSearchList`), màn chọn
+item master. Chuẩn là `/patients` (xem `PROJECT_GUIDELINE_ver18.md` §3.35). Viết
+spec cho màn **mới**, hoặc **sửa** màn kiểu này, thì phải có các testcase dưới
+đây — thiếu là thiếu thật. Đặt trong một `test.describe('khung danh sách', ...)`
+dùng chung `page` của spec (Rule 19), mở màn một lần.
+
+**Có sẵn helper — dùng nó, đừng viết lại từng assert.** `tests/_shared/list-screen-chrome.ts`
+export `describeListChrome(defs, suite?)`: mỗi màn khai `open(page)` + vài tuỳ chọn
+(`prompt`, `hint`, `unit`, `root`, `skipStatus`, `codeInRow`…) là có đủ 5 testcase 24.1-24.5.
+Spec mẫu: `tests/list-screen-chrome/` (`master-screens-chrome` · `patient-select-chrome` ·
+`treatment-takeover-chrome` · `admin-list-chrome` · `treatments-top-row`). Màn mới/sửa ⇒ thêm
+một dòng khai báo vào spec nhóm tương ứng (hoặc tạo spec mới theo mẫu), KHÔNG bỏ qua.
+
+Bẫy đã gặp khi viết các spec này:
+- Màn tự chọn dòng 0 ngay khi mở (`prompt: 'auto-selected'`) ⇒ 24.5 bấm dòng thứ hai.
+- Màn mở ở danh sách "sống" (未精算患者一覧, カルテ待ち, 受付患者一覧) chứ không phải tìm kiếm ⇒
+  khai thêm một def vào chế độ tìm kiếm bằng F1 患者検索.
+- Danh sách "sống" rỗng trên tenant mới (受付 `wait`, 未精算 `unpaid`, カルテ待ち `ncult`, 地方公費
+  `mst_pmh_local_pubexp`) ⇒ seed bằng `_shared/list-chrome-seed.ts` qua tham số `suite`
+  (`setup` / `teardown`); bệnh nhân 990880, dọn cả bảng `<t>_deleted`. Danh sách checkbox (未精算,
+  カルテ待ち) hiện `N件選択中 | タイマー停止中` chứ không phải `選択中: <mã>` ⇒ `statusPattern`.
+  Cột 地方公費 lọc `valid_from >= 基準日` (quirk legacy) nên dòng seed phải có `valid_from = hôm nay`.
+- Số đo layout dao động ~2px lúc danh sách vừa mount ⇒ `expectInsets` đã bọc `toPass`.
+- Ô mã bị làm trống khi bằng dòng trên (IsTheSameCellValue: パック, カルテ自動算定) ⇒ `codeInRow: 'inherit'`.
+- Dev server thỉnh thoảng trả trang trắng ⇒ dùng `gotoListScreen` (tự nạp lại tối đa 3 lần).
+- Đừng chạy `prettier --write` trên cả thư mục `_shared`/`tests` (repo không có cấu hình prettier,
+  sẽ viết lại hàng chục file không liên quan).
+
+### 24.1 — Header
+Dải gradient + h1 cỡ chuẩn, không phải `text-lg`/`text-2xl`.
+```ts
+const h1 = page.getByRole('heading', { level: 1 })
+await expect(h1).toBeVisible()
+await expect(h1).toHaveCSS('font-size', '16px')           // text-base
+await expect(h1).toHaveCSS('letter-spacing', /6\.4px/)     // tracking-[0.4em]
+await expect(page.locator('.medical-gradient').first()).toBeVisible()
+```
+
+### 24.2 — Padding hai bên và đáy
+Panel danh sách và FKeyBar phải thụt đúng như `/patients`: panel cách mép root
+4px (`mx-1`), FKeyBar cách mép 8px (`px-2`), đáy FKeyBar cách đáy root 6px
+(`pb-1.5`). So bằng `boundingBox`, dung sai ±1px, KHÔNG so class.
+```ts
+const root = await page.locator('.animate-fade-in').first().boundingBox()
+const panel = await page.getByTestId('virtual-scroll-container').boundingBox()
+expect(Math.abs(panel!.x - root!.x - 4)).toBeLessThanOrEqual(1)   // mx-1; trái và phải đối xứng
+```
+Đo trên `/patients` trước rồi so màn đang test với **cùng con số** — đừng bịa số;
+nếu `/patients` đổi thì cả hai cùng đổi.
+
+### 24.3 — Hint `ダブルクリックで選択`
+Có đúng một nhãn, nằm bên phải thanh tiêu đề `≪…≫`; và hint phải **đúng**:
+double-click một dòng thật sự chọn/mở dòng đó (màn chỉ-xem không có hint — ghi
+FACT vào doc-comment).
+```ts
+await expect(page.getByText('ダブルクリックで選択')).toHaveCount(1)
+```
+
+### 24.4 — Footer 合　計 và cách đếm
+- Có ô `合　計` (khoảng trắng全角 U+3000, không phải space thường).
+- Số lượng định dạng `N人` / `N件` có dấu phẩy ngàn (`16,325人`).
+- `（登録：N人）` xuất hiện **chỉ khi** tổng đăng ký ≠ số đang hiển thị; lọc ra
+  ít hơn thì có, không lọc thì không.
+- **Không còn chữ `該当件数`** ở bất kỳ đâu trên màn.
+```ts
+await expect(page.getByText('合　計')).toBeVisible()
+await expect(page.getByText('該当件数')).toHaveCount(0)
+```
+
+### 24.5 — Dòng trạng thái `選択中`
+Chưa chọn: hiện câu nhắc đúng của màn (`患者を選択してください` /
+`項目を選択してください`); fetch dở: `検索中…`; chọn dòng: `選択中: <mã>` và mã
+khớp cột mã của dòng vừa bấm. Ngoại lệ có chủ ý: `/treatments` KHÔNG có câu nhắc
+(chỉ `選択中:` khi đã chọn).
+```ts
+await expect(page.getByText('項目を選択してください')).toBeVisible()
+await row.click()
+await expect(page.getByText(`選択中: ${code}`)).toBeVisible()
+```
+
+> Màn `web-admin` (không chọn dòng) chỉ cần 24.1, 24.2, 24.4 (bỏ `選択中`/hint).
+> Chụp màn sau khi sửa gửi user: `captureFixedUi` (xem `_shared/capture.ts`).
+
+---
+
 ## Ghi chú về Rule 6 (`Viết nhanh, KHÔNG tự chạy thử`)
 
 Lần viết spec này **có chạy thử**, và mỗi lỗi dưới đây đều **không thể phát hiện bằng đọc source**:
