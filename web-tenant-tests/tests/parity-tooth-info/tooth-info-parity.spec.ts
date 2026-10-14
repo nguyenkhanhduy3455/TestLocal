@@ -62,6 +62,10 @@ test.describe('Parity nhóm C — dialog sơ đồ răng', () => {
         if (page.url().includes(`/treatments/${PAT_NO}`) && (await appeared(page.getByText('合計:').first(), 1_500))) return
         await page.goto(`/treatments/${PAT_NO}?trtDt=${TODAY}`, { waitUntil: 'domcontentloaded' })
         await expect(page.getByText('合計:').first()).toBeVisible({ timeout: 60_000 })
+        await dismissSantei()
+    }
+
+    async function dismissSantei() {
         const santei = page.getByText(/を算定しますか？/).first()
         for (let i = 0; i < 10; i++) {
             if (!(await appeared(santei, 1_500))) break
@@ -73,7 +77,10 @@ test.describe('Parity nhóm C — dialog sơ đồ răng', () => {
     async function freshEntry() {
         for (let attempt = 0; attempt < 3; attempt++) {
             await page.goto(`/treatments/${PAT_NO}?trtDt=${TODAY}`, { waitUntil: 'domcontentloaded' })
-            if (await appeared(page.getByText('合計:').first(), 25_000)) return
+            if (await appeared(page.getByText('合計:').first(), 25_000)) {
+                await dismissSantei()
+                return
+            }
         }
         await expect(page.getByText('合計:').first()).toBeVisible({ timeout: 30_000 })
     }

@@ -110,8 +110,17 @@ test.describe('Parity nhóm A — 一覧 master × 3, 登録 × 3, 日付変更'
     }
 
     async function openEntry() {
-        await page.goto(`/treatments/${PAT_NO}?trtDt=${TODAY}`, { waitUntil: 'domcontentloaded' })
-        await expect(page.getByText('合計:').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
+        // The entry screen occasionally renders blank on a cold navigation inside a long chain: retry once.
+        for (let attempt = 0; ; attempt++) {
+            await page.goto(`/treatments/${PAT_NO}?trtDt=${TODAY}`, { waitUntil: 'domcontentloaded' })
+            const loaded = await page
+                .getByText('合計:')
+                .first()
+                .waitFor({ state: 'visible', timeout: GRID_LOAD_TIMEOUT })
+                .then(() => true, () => false)
+            if (loaded) break
+            if (attempt >= 1) throw new Error('診療入力 grid did not load')
+        }
         await drain()
     }
 
@@ -184,6 +193,8 @@ test.describe('Parity nhóm A — 一覧 master × 3, 登録 × 3, 日付変更'
             { trtCd: 108, trtSb: 9, trtPt: 2, trtCnt: 1, dspTrt: '外安全１(再診)' },
         ])
         page = authedPage
+        // An unaccepted beforeunload dialog makes page.goto hang silently.
+        page.on('dialog', (d) => void d.accept().catch(() => {}))
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
         await openEntry()
     })

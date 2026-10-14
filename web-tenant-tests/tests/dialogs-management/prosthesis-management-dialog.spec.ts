@@ -392,6 +392,8 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
 
     test('mở dialog bằng nút 補管・義歯 của CategoryTabs', async () => {
         // 「補管・義歯」 (frm203023) KHÁC 「補管(&H)」 (frm203045) → phải exact.
+        // Wait for the grid's late initial focus so it cannot land on top of the dialog's own focus.
+        await expect.poll(() => page.evaluate(() => document.activeElement?.hasAttribute('data-grid-cell'))).toBe(true)
         await page.getByRole('button', { name: '補管・義歯', exact: true }).click()
         await expect(dialog).toBeVisible({ timeout: 30000 })
 
@@ -481,6 +483,23 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         await expect(labels).toHaveCount(TOOTH_COUNT)
         await expect(dialog.getByRole('button', { name: /上顎.*削除/ })).toBeVisible()
         await expect(dialog.getByRole('button', { name: /下顎.*削除/ })).toBeVisible()
+        await step()
+    })
+
+    test('歯式 — Tab đi qua 32 ô theo thứ tự WinForm, rồi 下顎削除 → 上顎削除; 歯番 không là điểm dừng Tab', async () => {
+        await page.evaluate(() => (document.querySelector('[data-tab-order="0"]') as HTMLElement | null)?.focus())
+        const ranks: string[] = []
+        for (let i = 0; i < TOOTH_COUNT; i++) {
+            ranks.push(await page.evaluate(() => document.activeElement?.getAttribute('data-tab-order') ?? 'none'))
+            await page.keyboard.press('Tab')
+        }
+        expect(ranks).toEqual(Array.from({ length: TOOTH_COUNT }, (_, i) => String(i)))
+        await expect(page.locator(':focus')).toHaveText(/下顎\s*削除/)
+        await page.keyboard.press('Tab')
+        await expect(page.locator(':focus')).toHaveText(/上顎\s*削除/)
+        for (let i = 0; i < TOOTH_COUNT; i++) {
+            await expect(labels.nth(i)).toHaveAttribute('tabindex', '-1')
+        }
         await step()
     })
 
