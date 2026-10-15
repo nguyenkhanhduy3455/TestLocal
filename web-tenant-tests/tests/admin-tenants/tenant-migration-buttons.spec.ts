@@ -64,11 +64,11 @@ import { ADMIN_USER } from '../_shared/test-data'
  * ═══════════════════════════════════════════════════════════════════════════
  *  - Chuỗi UI: features/tenants/migrations/locales/ja.ts.
  *  - Danh sách là virtual list (WindowedListTable): mỗi dòng tenant có role=row.
- *  - Badge: 最新 / 更新あり / 実行中 / 失敗 / 未記録. Tenant vừa 復元 (BE: status held,
- *    rollout bỏ qua tới khi 更新) hiện NHƯ THƯỜNG: 更新あり + ID sau 復元, không có badge
- *    保留（復元済み）; lý do giữ chỉ nằm ở title. Tenant mở mà có error = lần 復元 gần nhất
- *    thất bại ⇒ "前回の復元に失敗しました" (RolloutExecutor.RestoreTenantAsync ghi error
- *    khi trả trạng thái cũ).
+ *  - Badge: 最新 / 更新あり / 復元済み / 実行中 / 失敗 / 未記録. Tenant vừa 復元 (BE: status
+ *    held) hiện 復元済み + ID sau 復元; rollout BỎ QUA nó tới khi bấm 更新 riêng, và hộp xác
+ *    nhận rollout liệt kê các tenant đó ("…はロールアウトの対象外です…「更新」を押してください").
+ *    Tenant mở mà có error = lần 復元 gần nhất thất bại ⇒ "前回の復元に失敗しました"
+ *    (RolloutExecutor.RestoreTenantAsync ghi error khi trả trạng thái cũ).
  *  - 更新: Dialog có dropdown 更新先のマイグレーション = migration CHƯA áp
  *    (GET /admin/tenant-migrations/{id}/targets), mặc định bản mới nhất.
  *  - 復元: Dialog chỉ HIỂN THỊ マイグレーションID (testid restore-migration-id) =
@@ -148,6 +148,9 @@ const JA = {
     upToDate: '最新',
     outdated: '更新あり',
     heldBadge: '保留（復元済み）',
+    restored: '復元済み',
+    restoredSkipped:
+        /はロールアウトの対象外です。最新にするには、各テナントの「更新」を押してください。/,
     restoreFailed: '前回の復元に失敗しました',
     errorGeneric: 'マイグレーションでエラーが発生しました。',
     update: '更新',
@@ -353,7 +356,7 @@ function removeProbeBackups(ids: string[]): void {
 
 /**
  * Creates the extra tenants through the admin API (one API login; the UI logs in separately)
- * and waits until provisioning has made each one ready_for_setup.
+ * and waits until each provisioning job has succeeded.
  */
 async function createExtraTenants(api: APIRequestContext): Promise<void> {
     const login = await api.post('api/admin/auth/login', {
@@ -368,23 +371,27 @@ async function createExtraTenants(api: APIRequestContext): Promise<void> {
         })
         expect(res.status(), `tạo tenant ${slug}: ${await res.text()}`).toBe(201)
     }
+    // Wait for the provisioning JOB, not only the tenant status: the tenant is ready_for_setup
+    // before the last step (setup invitation) ends, and a job still running when demo1
+    // restarts is run again by Hangfire on the new build — which would apply the probes.
     await expect
         .poll(
             () =>
                 withDb(async (c) => {
-                    const r = await c.query<{ status: string }>(
-                        'SELECT status FROM platform.tenants WHERE slug = ANY($1)',
+                    const r = await c.query<{ state: string }>(
+                        `SELECT j.state FROM platform.provisioning_jobs j
+                         JOIN platform.tenants t ON t.id = j.tenant_id WHERE t.slug = ANY($1)`,
                         [EXTRA_TENANTS],
                     )
-                    return r.rows.map((x) => x.status).sort()
+                    return r.rows.map((x) => x.state).sort()
                 }),
             {
                 timeout: PROVISION_TIMEOUT,
                 intervals: [3_000],
-                message: 'tenant tạm chưa provisioning xong (ready_for_setup)',
+                message: 'job provisioning của tenant tạm chưa xong (succeeded)',
             },
         )
-        .toEqual(EXTRA_TENANTS.map(() => 'ready_for_setup'))
+        .toEqual(EXTRA_TENANTS.map(() => 'succeeded'))
 }
 
 /** Hard-deletes the extra tenants: schema, then the tenant row (its platform rows cascade). */
@@ -457,7 +464,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         row(slug).getByText(text, { exact: true })
     /** Cột migration tải riêng (GET /admin/tenant-migrations) — chờ nó trước khi đọc badge (Rule 10.8). */
     const migrationLoaded = (slug: string) =>
-        expect(row(slug).getByText(/^(最新|更新あり|失敗|未記録|実行中)$/)).toBeVisible()
+        expect(row(slug).getByText(/^(最新|更新あり|復元済み|失敗|未記録|実行中)$/)).toBeVisible()
     const updateButton = (slug: string): Locator =>
         row(slug).getByRole('button', { name: JA.update, exact: true })
     const restoreButton = (slug: string): Locator =>
@@ -512,12 +519,32 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         return body.data?.latestRollout?.id ?? null
     }
 
+    /** Tenants restored from a backup (BE status held): a rollout leaves them out. */
+    async function restoredSlugs(): Promise<string[]> {
+        return withDb(async (c) => {
+            const r = await c.query<{ slug: string }>(
+                `SELECT t.slug FROM platform.tenant_migration_state s
+                 JOIN platform.tenants t ON t.id = s.tenant_id WHERE s.status = 'held'`,
+            )
+            return r.rows.map((x) => x.slug)
+        })
+    }
+
     async function startRollout(label: string): Promise<void> {
         const before = await nextRolloutId()
+        const restored = await restoredSlugs()
         const button = section().getByRole('button', { name: label })
         await expect(button, 'không có rollout nào đang chạy ⇒ nút phải bật').toBeEnabled()
         await button.click()
-        await page.getByRole('dialog').getByRole('button', { name: JA.run }).click()
+        const dialog = page.getByRole('dialog')
+        if (restored.length > 0) {
+            // The confirmation names every restored tenant and says to update them one by one.
+            await expect(dialog.getByText(JA.restoredSkipped)).toBeVisible()
+            for (const slug of restored) await expect(dialog).toContainText(slug)
+        } else {
+            await expect(dialog.getByText(JA.restoredSkipped)).toHaveCount(0)
+        }
+        await dialog.getByRole('button', { name: JA.run }).click()
         await expect(page.getByText(JA.queued).first()).toBeVisible()
         await expect
             .poll(nextRolloutId, {
@@ -582,7 +609,11 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         skipWithReason(skipReason !== '', skipReason)
         await expect(page.getByText(/^最新マイグレーション /)).toHaveText(JA.latest(PROBE_HIGH))
         await migrationLoaded(TENANT.slug)
-        await expect(badge(TENANT.slug, JA.outdated), 'probe chưa áp ⇒ 更新あり').toBeVisible()
+        // Còn migration chưa áp: 更新あり, hoặc 復元済み nếu vừa được 復元 (test tay) — 更新 bật.
+        await expect(
+            row(TENANT.slug).getByText(new RegExp(`^(${JA.outdated}|${JA.restored})$`)),
+            'probe chưa áp ⇒ 更新あり / 復元済み',
+        ).toBeVisible()
         await expect(updateButton(TENANT.slug)).toBeEnabled()
         expect(await probeVals(TENANT.schema), 'chưa có bảng probe').toBeNull()
     })
@@ -721,8 +752,8 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
                 timeout: JOB_TIMEOUT,
             },
         )
-        await expect(badge(TENANT.slug, JA.outdated)).toBeVisible()
-        await expect(badge(TENANT.slug, JA.heldBadge), 'không còn badge 保留').toHaveCount(0)
+        await expect(badge(TENANT.slug, JA.restored), 'vừa 復元 ⇒ 復元済み').toBeVisible()
+        await expect(badge(TENANT.slug, JA.heldBadge), 'không còn badge 保留 cũ').toHaveCount(0)
         await expect(updateButton(TENANT.slug), 'chưa ở bản mới nhất ⇒ 更新 bật').toBeEnabled()
         await expect(
             badge(TENANT.slug, JA.errorGeneric),
@@ -820,7 +851,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         await startRollout(label)
         await expect(rolloutStatus()).toHaveText(e.status, { timeout: JOB_TIMEOUT })
         await expect(section(), 'đếm 成功 / 失敗 / スキップ / 全 như RolloutPlanner').toContainText(
-            `成功 ${e.ok} ／ 失敗 0 ／ スキップ（適用済み・保留） ${e.skipped} ／ 全 ${e.total}`,
+            `成功 ${e.ok} ／ 失敗 0 ／ スキップ（適用済み・復元済み） ${e.skipped} ／ 全 ${e.total}`,
         )
         for (const slug of e.migrated)
             await expect(badge(slug, JA.upToDate), `${slug} vừa được rollout`).toBeVisible({
@@ -845,7 +876,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         await dialog.getByRole('button', { name: JA.restoreConfirm }).click()
         await expect(page.getByText(JA.queued).first()).toBeVisible()
         await expect(row(TENANT.slug)).toContainText(PROBE_LOW, { timeout: JOB_TIMEOUT })
-        await expect(badge(TENANT.slug, JA.outdated)).toBeVisible()
+        await expect(badge(TENANT.slug, JA.restored)).toBeVisible()
         expect(await needsWork(TENANT.slug), 'tenant1 vừa 復元 ⇒ held, rollout bỏ qua').toBe(false)
     })
 
@@ -868,7 +899,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         const e = await runRollout(JA.all, false)
         expect(e.status).toBe(JA.completed)
         expect(e.migrated, 'held ⇒ không rollout').not.toContain(TENANT.slug)
-        await expect(badge(TENANT.slug, JA.outdated)).toBeVisible()
+        await expect(badge(TENANT.slug, JA.restored), 'vẫn 復元済み, chờ 更新 riêng').toBeVisible()
         expect(await probeVals(TENANT.schema), 'tenant1 giữ nguyên dữ liệu sau 復元').toEqual(
             VALS_LOW_ONLY,
         )
