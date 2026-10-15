@@ -779,6 +779,10 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         ).toBeGreaterThan(0)
 
         const dialog = await openRestore(TENANT.slug, PROBE_HIGH, 'fkey')
+        await expect(
+            dialog.getByTestId('restore-restores-to'),
+            'hiện ID sẽ quay về sau 復元 = migration áp ngay trước (probe Low)',
+        ).toHaveText(PROBE_LOW)
         await expect(dialog.getByText(JA.restoreLoss), 'liệt kê bảng bị ghi đè').toContainText(
             PROBE_TABLE,
         )
