@@ -784,6 +784,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         )
         const submit = dialog.getByRole('button', { name: JA.restoreConfirm })
         await expect(submit, 'chưa gõ slug thì chưa được 復元').toBeDisabled()
+        await captureFixedUi(page, 'admin-tenant-restore-slug-input')
         await dialog.getByLabel(JA.restoreTypeSlug).fill(TENANT.slug)
         await submit.click()
         await expectQueued()
