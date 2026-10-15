@@ -6,7 +6,8 @@
  * FACT (2026-10-15, feat/admin-tenant-migrate-merge): every admin list is a virtual
  * list (WindowedListTable, scroll container `windowed-scroll-container`) loaded a
  * window at a time — no ページ: x / y pager — with a one-line 合　計 footer like
- * /patients (24.6); the app shell has no side margin, as in web-tenant (24.7).
+ * /patients (24.6); the app shell has no side margin, as in web-tenant (24.7). /tenants also has
+ * the FKeyBar (F1/F2/F3/F4/F5/F9), so its insets are measured like /patients.
  * One login in a private context (the shared `authedPage` is a TENANT session).
  */
 import { expect, test, type Browser, type Page } from '@playwright/test'
@@ -14,6 +15,7 @@ import { expect, test, type Browser, type Page } from '@playwright/test'
 import {
     expectHeader,
     expectHint,
+    expectInsets,
     expectSelectionStatus,
     expectHeaderSpacing,
 } from '../_shared/list-screen-chrome'
@@ -33,10 +35,12 @@ type AdminScreen = {
     /** ≪…≫ title bar of the list panel. */
     panelTitle: string
     selectable?: boolean
+    /** Has the FKeyBar at the bottom (24.2 measured like /patients instead of the 6px gap). */
+    fkey?: boolean
 }
 
 const SCREENS: AdminScreen[] = [
-    { name: 'テナント一覧', path: '/tenants', panelTitle: '≪テナント一覧≫' },
+    { name: 'テナント一覧', path: '/tenants', panelTitle: '≪テナント一覧≫', fkey: true },
     { name: '管理者一覧', path: '/super-admins', panelTitle: '≪管理者一覧≫' },
     { name: '監査ログ', path: '/audit-logs', panelTitle: '' },
     {
@@ -83,6 +87,12 @@ test.describe('Rule 24 — web-admin lists', () => {
                 await expectHeaderSpacing(root())
             })
 
+            if (screen.fkey) {
+                test('24.2 panel / FKeyBar insets match /patients', async () => {
+                    await expectInsets(root())
+                })
+            }
+
             test('24.2 panel left/right inset', async () => {
                 const rootBox = (await root().boundingBox())!
                 const footer = (await page
@@ -100,6 +110,7 @@ test.describe('Rule 24 — web-admin lists', () => {
             })
 
             test('24.2b bottom: last box ends 6px above the screen bottom (pb-1.5)', async () => {
+                test.skip(!!screen.fkey, 'the FKeyBar is the last box; 24.2 measures it')
                 const gap = await root().evaluate((el) => {
                     const r = el.getBoundingClientRect()
                     let lowest = 0

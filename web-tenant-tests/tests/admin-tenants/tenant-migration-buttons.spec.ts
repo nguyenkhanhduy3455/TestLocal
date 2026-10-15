@@ -64,6 +64,9 @@ import { ADMIN_USER } from '../_shared/test-data'
  * ═══════════════════════════════════════════════════════════════════════════
  *  - Chuỗi UI: features/tenants/migrations/locales/ja.ts.
  *  - Danh sách là virtual list (WindowedListTable): mỗi dòng tenant có role=row.
+ *  - FKeyBar: F1 新規テナント作成 / F2 次の段階を実行 / F3 残りをすべて実行 / F4 更新 / F5 復元 /
+ *    F9 選択 (F4/F5/F9 tác động lên dòng đang chọn). Rollout chỉ chạy qua F2/F3; 更新/復元 vừa có
+ *    nút trên dòng vừa có F4/F5 (spec dùng cả hai).
  *  - Badge: 最新 / 更新あり / 復元済み / 実行中 / 失敗 / 未記録. Tenant vừa 復元 (BE: status
  *    held) hiện 復元済み + ID sau 復元; rollout BỎ QUA nó tới khi bấm 更新 riêng, và hộp xác
  *    nhận rollout liệt kê các tenant đó ("…はロールアウトの対象外です…「更新」を押してください").
@@ -469,14 +472,45 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         row(slug).getByRole('button', { name: JA.update, exact: true })
     const restoreButton = (slug: string): Locator =>
         row(slug).getByRole('button', { name: JA.restore, exact: true })
+    /**
+     * The "job queued" toast is shown. Matches ANY visible copy: an earlier toast may still be
+     * leaving the DOM (hidden), so `.first()` could pick that one instead of the new toast.
+     */
+    async function expectQueued(): Promise<void> {
+        const toasts = page.getByText(JA.queued)
+        await expect
+            .poll(
+                async () => {
+                    for (const t of await toasts.all()) if (await t.isVisible()) return true
+                    return false
+                },
+                { message: 'toast ジョブを登録しました' },
+            )
+            .toBe(true)
+    }
+
+    /** A key of the FKeyBar ("F4" + label); its name starts with the F-number. */
+    const fkey = (n: number): Locator =>
+        page.getByRole('button', { name: new RegExp(`^F${n}(?!\\d)`) })
+    /** Picks the tenant's row (click), as F4 / F5 / F9 act on the picked row. */
+    const pick = (slug: string) => row(slug).getByText(slug, { exact: true }).first().click()
     const section = (): Locator =>
         page.locator('div.mb-1').filter({ has: page.getByText(JA.section, { exact: true }) })
     const rolloutStatus = (): Locator =>
         section().locator('dt', { hasText: '状態' }).locator('xpath=following-sibling::dd[1]')
 
     /** 更新 tới `target` (chọn trong dropdown); mô tả phải ghi "… から <target> まで". */
-    async function update(slug: string, target: string): Promise<void> {
-        await updateButton(slug).click()
+    async function update(
+        slug: string,
+        target: string,
+        via: 'row' | 'fkey' = 'row',
+    ): Promise<void> {
+        if (via === 'fkey') {
+            await pick(slug)
+            await fkey(4).click()
+        } else {
+            await updateButton(slug).click()
+        }
         const dialog = page.getByRole('dialog')
         const picker = dialog.getByLabel(JA.updateTarget)
         await expect(picker, 'dropdown liệt kê migration chưa áp').toBeEnabled()
@@ -484,13 +518,22 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         await picker.selectOption(target)
         await expect(dialog, 'mô tả ghi "từ X tới bản chọn"').toContainText(`から ${target} まで`)
         await dialog.getByRole('button', { name: JA.updateConfirm }).click()
-        await expect(page.getByText(JA.queued).first()).toBeVisible()
+        await expectQueued()
         await expect(dialog).toBeHidden()
     }
 
     /** Mở 復元: hộp thoại hiện ID migration áp gần nhất (không chọn, không nhập). */
-    async function openRestore(slug: string, latestApplied: string): Promise<Locator> {
-        await restoreButton(slug).click()
+    async function openRestore(
+        slug: string,
+        latestApplied: string,
+        via: 'row' | 'fkey' = 'row',
+    ): Promise<Locator> {
+        if (via === 'fkey') {
+            await pick(slug)
+            await fkey(5).click()
+        } else {
+            await restoreButton(slug).click()
+        }
         const dialog = page.getByRole('dialog')
         await expect(dialog.getByTestId('restore-migration-id')).toHaveText(latestApplied)
         return dialog
@@ -533,7 +576,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
     async function startRollout(label: string): Promise<void> {
         const before = await nextRolloutId()
         const restored = await restoredSlugs()
-        const button = section().getByRole('button', { name: label })
+        const button = fkey(label === JA.next ? 2 : 3)
         await expect(button, 'không có rollout nào đang chạy ⇒ nút phải bật').toBeEnabled()
         await button.click()
         const dialog = page.getByRole('dialog')
@@ -545,7 +588,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
             await expect(dialog.getByText(JA.restoredSkipped)).toHaveCount(0)
         }
         await dialog.getByRole('button', { name: JA.run }).click()
-        await expect(page.getByText(JA.queued).first()).toBeVisible()
+        await expectQueued()
         await expect
             .poll(nextRolloutId, {
                 timeout: JOB_TIMEOUT,
@@ -643,7 +686,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
 
     test('TC-3 — 更新 lên probe High (mặc định bản mới nhất): runner backup rồi áp High', async () => {
         skipWithReason(skipReason !== '', skipReason)
-        await update(TENANT.slug, PROBE_HIGH)
+        await update(TENANT.slug, PROBE_HIGH, 'fkey')
         await expect(badge(TENANT.slug, JA.upToDate)).toBeVisible({
             timeout: JOB_TIMEOUT,
         })
@@ -697,7 +740,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         const dialog = await openRestore(TENANT.slug, PROBE_HIGH)
         await dialog.getByLabel(JA.restoreTypeSlug).fill(TENANT.slug)
         await dialog.getByRole('button', { name: JA.restoreConfirm }).click()
-        await expect(page.getByText(JA.queued).first(), 'server nhận job').toBeVisible()
+        await expectQueued()
         await expect(dialog).toBeHidden()
 
         await expect(
@@ -735,7 +778,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
             'runner chụp backup mới trước khi áp High',
         ).toBeGreaterThan(0)
 
-        const dialog = await openRestore(TENANT.slug, PROBE_HIGH)
+        const dialog = await openRestore(TENANT.slug, PROBE_HIGH, 'fkey')
         await expect(dialog.getByText(JA.restoreLoss), 'liệt kê bảng bị ghi đè').toContainText(
             PROBE_TABLE,
         )
@@ -743,7 +786,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         await expect(submit, 'chưa gõ slug thì chưa được 復元').toBeDisabled()
         await dialog.getByLabel(JA.restoreTypeSlug).fill(TENANT.slug)
         await submit.click()
-        await expect(page.getByText(JA.queued).first()).toBeVisible()
+        await expectQueued()
         await expect(dialog).toBeHidden()
         // Sau 復元: hiện như thường — 更新あり + ID migration hiện tại (probe Low), không badge 保留.
         await expect(row(TENANT.slug), 'job 復元 xong ⇒ lùi về probe Low').toContainText(
@@ -874,7 +917,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         const dialog = await openRestore(TENANT.slug, PROBE_HIGH)
         await dialog.getByLabel(JA.restoreTypeSlug).fill(TENANT.slug)
         await dialog.getByRole('button', { name: JA.restoreConfirm }).click()
-        await expect(page.getByText(JA.queued).first()).toBeVisible()
+        await expectQueued()
         await expect(row(TENANT.slug)).toContainText(PROBE_LOW, { timeout: JOB_TIMEOUT })
         await expect(badge(TENANT.slug, JA.restored)).toBeVisible()
         expect(await needsWork(TENANT.slug), 'tenant1 vừa 復元 ⇒ held, rollout bỏ qua').toBe(false)
