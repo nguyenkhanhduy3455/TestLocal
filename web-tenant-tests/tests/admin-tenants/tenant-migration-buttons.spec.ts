@@ -74,8 +74,8 @@ import { ADMIN_USER } from '../_shared/test-data'
  *    (RolloutExecutor.RestoreTenantAsync ghi error khi trả trạng thái cũ).
  *  - 更新: Dialog có dropdown 更新先のマイグレーション = migration CHƯA áp
  *    (GET /admin/tenant-migrations/{id}/targets), mặc định bản mới nhất.
- *  - 復元: Dialog chỉ HIỂN THỊ マイグレーションID (testid restore-migration-id) =
- *    migration áp gần nhất (theo applied_at). Không phải High ⇒ "復元できる…ありません";
+ *  - 復元: Dialog chỉ HIỂN THỊ 復元後のマイグレーション (testid restore-restores-to) =
+ *    migration áp ngay trước bản High sẽ bị gỡ (theo applied_at). Không phải High ⇒ "復元できる…ありません";
  *    High nhưng không có backup chụp TRƯỚC applied_at (BackupManifest.ReadAsync) ⇒
  *    "…実行前のバックアップがないため…"; cả hai: 復元する mờ, không có ô gõ slug.
  *  - Key backup (BackupManifest.cs), sau tiền tố MigrationBackupOptions.Prefix (migration-backups/):
@@ -162,7 +162,6 @@ const JA = {
     restore: '復元',
     restoreConfirm: /^F9.*復元する/,
     restoreTypeSlug: /確認のため/,
-    restoreLoss: /次の表への適用後の変更/,
     restoreNone: /復元できるマイグレーションはありません/,
     restoreNoBackup: /実行前のバックアップがないため/,
     queued: 'ジョブを登録しました。進行状況は一覧に反映されます。',
@@ -522,10 +521,13 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         await expect(dialog).toBeHidden()
     }
 
-    /** Mở 復元: hộp thoại hiện ID migration áp gần nhất (không chọn, không nhập). */
+    /**
+     * Mở 復元: hộp thoại chỉ hiện 復元後のマイグレーション = ID tenant quay về sau 復元
+     * (migration áp ngay trước); null = không 復元 được ⇒ không có dòng đó.
+     */
     async function openRestore(
         slug: string,
-        latestApplied: string,
+        restoresTo: string | null,
         via: 'row' | 'fkey' = 'row',
     ): Promise<Locator> {
         if (via === 'fkey') {
@@ -535,13 +537,17 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
             await restoreButton(slug).click()
         }
         const dialog = page.getByRole('dialog')
-        await expect(dialog.getByTestId('restore-migration-id')).toHaveText(latestApplied)
+        // null: expectRestoreRefused kiểm (sau khi thông báo hiện) là không có dòng đó.
+        if (restoresTo !== null) {
+            await expect(dialog.getByTestId('restore-restores-to')).toHaveText(restoresTo)
+        }
         return dialog
     }
 
     /** Hộp thoại 復元 không cho chạy: chỉ có thông báo, không có ô gõ slug, 復元する mờ. */
     async function expectRestoreRefused(dialog: Locator, message: RegExp): Promise<void> {
         await expect(dialog.getByText(message)).toBeVisible()
+        await expect(dialog.getByTestId('restore-restores-to')).toHaveCount(0)
         await expect(dialog.getByLabel(JA.restoreTypeSlug)).toHaveCount(0)
         await expect(dialog.getByRole('button', { name: JA.restoreConfirm })).toBeDisabled()
         await dialog.getByRole('button', { name: JA.cancel }).click()
@@ -679,7 +685,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
 
     test('TC-2 — 復元 khi migration áp gần nhất là Low: chỉ báo không có gì để 復元', async () => {
         skipWithReason(skipReason !== '', skipReason)
-        const dialog = await openRestore(TENANT.slug, PROBE_LOW)
+        const dialog = await openRestore(TENANT.slug, null)
         await expectRestoreRefused(dialog, JA.restoreNone)
         expect(await probeVals(TENANT.schema), 'không có gì bị đụng').toEqual(VALS_LOW_ONLY)
     })
@@ -737,7 +743,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         // Giữ manifest (kiểm tra trước khi nhận 復元 qua), xoá dữ liệu bảng (job đọc thì lỗi).
         s3Delete(backup.data)
 
-        const dialog = await openRestore(TENANT.slug, PROBE_HIGH)
+        const dialog = await openRestore(TENANT.slug, PROBE_LOW)
         await dialog.getByLabel(JA.restoreTypeSlug).fill(TENANT.slug)
         await dialog.getByRole('button', { name: JA.restoreConfirm }).click()
         await expectQueued()
@@ -760,7 +766,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
     test('TC-5 — High không còn backup nào trên S3: hộp thoại 復元 báo không có backup, không cho chạy', async () => {
         skipWithReason(skipReason !== '', skipReason)
         s3Delete(highBackup().manifests)
-        const dialog = await openRestore(TENANT.slug, PROBE_HIGH)
+        const dialog = await openRestore(TENANT.slug, null)
         await expectRestoreRefused(dialog, JA.restoreNoBackup)
         expect(await probeVals(TENANT.schema), 'không có gì bị đụng').toEqual(VALS_APPLIED)
     })
@@ -778,14 +784,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
             'runner chụp backup mới trước khi áp High',
         ).toBeGreaterThan(0)
 
-        const dialog = await openRestore(TENANT.slug, PROBE_HIGH, 'fkey')
-        await expect(
-            dialog.getByTestId('restore-restores-to'),
-            'hiện ID sẽ quay về sau 復元 = migration áp ngay trước (probe Low)',
-        ).toHaveText(PROBE_LOW)
-        await expect(dialog.getByText(JA.restoreLoss), 'liệt kê bảng bị ghi đè').toContainText(
-            PROBE_TABLE,
-        )
+        const dialog = await openRestore(TENANT.slug, PROBE_LOW, 'fkey')
         const submit = dialog.getByRole('button', { name: JA.restoreConfirm })
         await expect(submit, 'chưa gõ slug thì chưa được 復元').toBeDisabled()
         await captureFixedUi(page, 'admin-tenant-restore-slug-input')
@@ -919,7 +918,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         ).toBeGreaterThanOrEqual(3)
         for (const slug of EXTRA_TENANTS) await expect(badge(slug, JA.outdated)).toBeVisible()
 
-        const dialog = await openRestore(TENANT.slug, PROBE_HIGH)
+        const dialog = await openRestore(TENANT.slug, PROBE_LOW)
         await dialog.getByLabel(JA.restoreTypeSlug).fill(TENANT.slug)
         await dialog.getByRole('button', { name: JA.restoreConfirm }).click()
         await expectQueued()
