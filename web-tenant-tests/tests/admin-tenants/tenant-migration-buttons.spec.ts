@@ -61,7 +61,8 @@ import { ADMIN_USER } from '../_shared/test-data'
  *  - Danh sách là virtual list (WindowedListTable): mỗi dòng tenant có role=row.
  *  - Badge: 最新 / 更新あり / 実行中 / 失敗 / 保留（復元済み） / 未記録; tenant mở mà
  *    có error = lần 復元 gần nhất thất bại ⇒ "前回の復元に失敗しました"
- *    (RolloutExecutor.RestoreTenantAsync ghi error khi trả trạng thái cũ).
+ *    (RolloutExecutor.RestoreTenantAsync ghi error khi trả trạng thái cũ); tenant 保留 thì
+ *    error là LÝ DO 保留 ⇒ chỉ nằm ở title, ô hiện badge 保留 + ID sau 復元, không chữ lỗi.
  *  - 更新: Dialog có dropdown 更新先のマイグレーション = migration CHƯA áp
  *    (GET /admin/tenant-migrations/{id}/targets), mặc định bản mới nhất.
  *  - 復元: Dialog chỉ HIỂN THỊ マイグレーションID (testid restore-migration-id) =
@@ -126,6 +127,7 @@ const JA = {
     outdated: '更新あり',
     held: '保留（復元済み）',
     restoreFailed: '前回の復元に失敗しました',
+    errorGeneric: 'マイグレーションでエラーが発生しました。',
     update: '更新',
     updateConfirm: '更新する',
     updateTarget: '更新先のマイグレーション',
@@ -509,7 +511,12 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         skipWithReason(skipReason !== '', skipReason)
         await expect(page.getByText(/^最新マイグレーション /)).toHaveText(JA.latest(PROBE_HIGH))
         await migrationLoaded(TENANT.slug)
-        await expect(badge(TENANT.slug, JA.outdated), 'probe chưa áp ⇒ 更新あり').toBeVisible()
+        // Tenant còn migration chưa áp: 更新あり, hoặc 保留 nếu vừa được 復元 (test tay) — 更新 bật.
+        await expect(
+            row(TENANT.slug).getByText(new RegExp(`^(${JA.outdated}|${JA.held})$`)),
+            'probe chưa áp ⇒ 更新あり / 保留',
+        ).toBeVisible()
+        await expect(updateButton(TENANT.slug)).toBeEnabled()
         expect(await probeVals(TENANT.schema), 'chưa có bảng probe').toBeNull()
     })
 
@@ -644,6 +651,12 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
             timeout: JOB_TIMEOUT,
         })
         await expect(updateButton(TENANT.slug), '保留 ⇒ 更新 bật lại').toBeEnabled()
+        // Sau 復元: badge 保留 + ID migration hiện tại (probe Low); lý do 保留 chỉ ở title, không có chữ lỗi.
+        await expect(row(TENANT.slug)).toContainText(PROBE_LOW)
+        await expect(
+            badge(TENANT.slug, JA.errorGeneric),
+            'không báo lỗi sau 復元 thành công',
+        ).toHaveCount(0)
         expect(await probeVals(TENANT.schema), 'bảng probe chép lại từ backup').toEqual(
             VALS_LOW_ONLY,
         )
