@@ -175,7 +175,8 @@ test.describe('web-admin /tenants — FKeyBar, chọn / mở dòng, sort cột',
         const restore = page.getByRole('dialog')
         await expect(restore).toContainText('バックアップから復元')
         await expect(restore).toContainText(slug)
-        await restore.getByRole('button', { name: 'キャンセル' }).click()
+        await captureFixedUi(page, 'admin-tenant-restore-dialog')
+        await restore.getByRole('button', { name: /^F10.*キャンセル/ }).click()
         await expect(restore).toBeHidden()
 
         if (await fkey(4).isEnabled()) {
@@ -183,7 +184,8 @@ test.describe('web-admin /tenants — FKeyBar, chọn / mở dòng, sort cột',
             const update = page.getByRole('dialog')
             await expect(update).toContainText('マイグレーションの更新')
             await expect(update).toContainText(slug)
-            await update.getByRole('button', { name: 'キャンセル' }).click()
+            await captureFixedUi(page, 'admin-tenant-update-dialog')
+            await update.getByRole('button', { name: /^F10.*キャンセル/ }).click()
             await expect(update).toBeHidden()
         } else {
             console.log(`${slug} đã 最新 ⇒ F4 mờ (đúng); bỏ qua bước mở dialog 更新`)
@@ -230,7 +232,13 @@ test.describe('web-admin /tenants — FKeyBar, chọn / mở dòng, sort cột',
                 dialog.getByRole('button', { name: /^F9.*実行する/ }),
                 `F${n}: Enter = F9 実行する`,
             ).toBeFocused()
-            await expect(dialog.getByRole('button', { name: /^F10.*キャンセル/ })).toBeVisible()
+            const cancel = dialog.getByRole('button', { name: /^F10.*キャンセル/ })
+            if (n === 2) await captureFixedUi(page, 'admin-tenant-rollout-dialog')
+            // ←/→ move between F9 and F10, as in a WinForm MessageBox.
+            await page.keyboard.press('ArrowRight')
+            await expect(cancel).toBeFocused()
+            await page.keyboard.press('ArrowLeft')
+            await expect(dialog.getByRole('button', { name: /^F9.*実行する/ })).toBeFocused()
             // The F10 key itself closes it; nothing is queued.
             await page.keyboard.press('F10')
             await expect(dialog).toBeHidden()
