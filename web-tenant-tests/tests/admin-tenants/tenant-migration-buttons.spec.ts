@@ -39,7 +39,12 @@ import { ADMIN_USER } from '../_shared/test-data'
  *    (path-style): TEST_S3_URL / TEST_S3_BUCKET / TEST_S3_PREFIX / TEST_S3_ACCESS_KEY / TEST_S3_SECRET_KEY,
  *    mặc định như appsettings.Development.json, secret đọc từ <demo1>/apps/api/.env.
  *    Dùng để làm hỏng backup THẬT (TC-4/5) và dọn backup probe.
- *  - Rollout (TC-8/9) và 更新 áp MỌI migration còn thiếu của build cho tới bản đích,
+ *  - Rollout nhiều đợt như thật: beforeAll tạo 6 tenant tạm e2e-roll-01…06 qua
+ *    POST /api/admin/tenants (provisioning thật, 1 login API), TRƯỚC khi ghi probe ⇒ chúng
+ *    chờ probe như mọi tenant. Spec tính trước từng lần rollout theo RolloutPlanner
+ *    (8 tenant ⇒ đợt [5] [1] [còn lại]) và đối chiếu 成功 / スキップ / 全 + badge từng dòng.
+ *    afterAll xoá hẳn các tenant tạm (DROP SCHEMA + xoá dòng platform.tenants, cascade).
+ *  - Rollout và 更新 áp MỌI migration còn thiếu của build cho tới bản đích,
  *    kể cả migration chưa commit đang nằm trong demo1 — dọn chúng trước khi chạy.
  *  - Probe High có RequiresMaintenance ⇒ tenant ĐÓNG (503) vài giây lúc 更新 / 復元.
  *    Restart demo1 2 lần ⇒ mọi người dùng demo1 bị ngắt. Chạy RIÊNG file này:
@@ -98,6 +103,22 @@ const VALS_APPLIED = [10, 20]
 const VALS_LOW_ONLY = [1, 2]
 
 const TENANT = { slug: 'tenant1', schema: 't_tenant1' }
+
+/**
+ * Extra tenants created (real provisioning) before the probes, so a rollout has several waves
+ * like production: with tenant1 / tenant2 that makes 8 → waves [5] [1] [rest] (RolloutPlanner).
+ */
+const EXTRA_TENANTS = Array.from(
+    { length: 6 },
+    (_, i) => `e2e-roll-${String(i + 1).padStart(2, '0')}`,
+)
+/** Provisioning one tenant (schema + baseline data) on a dev machine. */
+const PROVISION_TIMEOUT = 300_000
+
+/** RolloutOptions defaults (demo1 has no MigrationRollout override). */
+const PLAN = { secondWaveSize: 5, thirdWaveShare: 0.1 }
+
+const schemaOf = (slug: string) => `t_${slug.replace(/-/g, '_')}`
 
 /** Một job migration (gồm drain 3s + backup S3) — rộng tay cho dev server. */
 const JOB_TIMEOUT = 120_000
@@ -330,6 +351,52 @@ function removeProbeBackups(ids: string[]): void {
     for (const id of ids) s3Delete(s3Keys(`${id}/`))
 }
 
+/**
+ * Creates the extra tenants through the admin API (one API login; the UI logs in separately)
+ * and waits until provisioning has made each one ready_for_setup.
+ */
+async function createExtraTenants(api: APIRequestContext): Promise<void> {
+    const login = await api.post('api/admin/auth/login', {
+        data: { email: ADMIN_USER.email, password: ADMIN_USER.password },
+    })
+    expect(login.ok(), `login API admin: ${login.status()}`).toBeTruthy()
+    const token = ((await login.json()) as { data: { accessToken: string } }).data.accessToken
+    for (const slug of EXTRA_TENANTS) {
+        const res = await api.post('api/admin/tenants', {
+            headers: { authorization: `Bearer ${token}` },
+            data: { slug, name: `E2E rollout ${slug}`, ownerEmail: `${slug}@example.com` },
+        })
+        expect(res.status(), `tạo tenant ${slug}: ${await res.text()}`).toBe(201)
+    }
+    await expect
+        .poll(
+            () =>
+                withDb(async (c) => {
+                    const r = await c.query<{ status: string }>(
+                        'SELECT status FROM platform.tenants WHERE slug = ANY($1)',
+                        [EXTRA_TENANTS],
+                    )
+                    return r.rows.map((x) => x.status).sort()
+                }),
+            {
+                timeout: PROVISION_TIMEOUT,
+                intervals: [3_000],
+                message: 'tenant tạm chưa provisioning xong (ready_for_setup)',
+            },
+        )
+        .toEqual(EXTRA_TENANTS.map(() => 'ready_for_setup'))
+}
+
+/** Hard-deletes the extra tenants: schema, then the tenant row (its platform rows cascade). */
+async function removeExtraTenants(): Promise<void> {
+    await withDb(async (c) => {
+        for (const slug of EXTRA_TENANTS) {
+            await c.query(`DROP SCHEMA IF EXISTS "${schemaOf(slug)}" CASCADE`)
+        }
+        await c.query('DELETE FROM platform.tenants WHERE slug = ANY($1)', [EXTRA_TENANTS])
+    })
+}
+
 /** Restarts demo1 and waits until web-admin answers again. */
 async function restartDemo1(api: APIRequestContext): Promise<void> {
     execFileSync('bash', [DEMO1_RESTART], {
@@ -461,7 +528,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
     }
 
     test.beforeAll(async ({ browser }) => {
-        test.setTimeout(RESTART_TIMEOUT * 2)
+        test.setTimeout(RESTART_TIMEOUT * 2 + PROVISION_TIMEOUT)
         if (!ALLOW_MIGRATE) {
             skipReason =
                 'TEST_ALLOW_MIGRATE=1 chưa bật — spec ghi migration probe vào demo1 và áp THẬT (Rule 18.1)'
@@ -488,7 +555,11 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         })
         // A crashed earlier run may have left probes behind: clear them before adding new ones.
         await removeProbesFromDb()
+        await removeExtraTenants()
         removeProbeFolders()
+        // Before the probes exist: the new tenants are provisioned without them, so they wait
+        // for them like every other tenant.
+        await createExtraTenants(api)
         writeProbeMigrations()
         probesWritten = true
         await restartDemo1(api)
@@ -499,6 +570,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         test.setTimeout(RESTART_TIMEOUT * 2)
         await context?.close()
         if (probesWritten && api) {
+            await removeExtraTenants()
             await removeProbesFromDb()
             removeProbeFolders()
             await restartDemo1(api)
@@ -671,30 +743,153 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         expect(await probeVals(TENANT.schema)).toEqual(VALS_APPLIED)
     })
 
-    test('TC-8 — 次の段階を実行: rollout áp lại probe High thật', async () => {
-        skipWithReason(skipReason !== '', skipReason)
-        await revertHigh()
+    /** Provisioned tenants as a rollout lists them, split into waves like RolloutPlanner.Plan. */
+    async function plannedWaves(): Promise<string[][]> {
+        const slugs = await withDb(async (c) => {
+            const r = await c.query<{ slug: string }>(
+                `SELECT slug FROM platform.tenants
+                 WHERE deleted_at IS NULL AND status IN ('ready_for_setup', 'active', 'suspended', 'archived')`,
+            )
+            return r.rows.map((x) => x.slug).sort()
+        })
+        const second = slugs.slice(0, PLAN.secondWaveSize)
+        const rest = slugs.slice(second.length)
+        const thirdSize =
+            rest.length === 0 ? 0 : Math.max(1, Math.ceil(slugs.length * PLAN.thirdWaveShare))
+        return [second, rest.slice(0, thirdSize), rest.slice(thirdSize)].filter((w) => w.length > 0)
+    }
 
-        await startRollout(JA.next)
-        await expect(rolloutStatus()).toHaveText(new RegExp(`^(${JA.completed}|${JA.paused})$`), {
-            timeout: JOB_TIMEOUT,
+    /** Tenants a rollout would migrate now: probe High not applied and not held (restored). */
+    async function needsWork(slug: string): Promise<boolean> {
+        return withDb(async (c) => {
+            const applied = await c.query(
+                `SELECT 1 FROM "${schemaOf(slug)}".schema_migrations WHERE id = $1`,
+                [PROBE_HIGH],
+            )
+            const held = await c.query(
+                `SELECT 1 FROM platform.tenant_migration_state s JOIN platform.tenants t ON t.id = s.tenant_id
+                 WHERE t.slug = $1 AND s.status = 'held'`,
+                [slug],
+            )
+            return applied.rowCount === 0 && held.rowCount === 0
         })
-        await expect(section(), 'không tenant nào lỗi').toContainText('失敗 0')
-        await expect(badge(TENANT.slug, JA.upToDate)).toBeVisible({
-            timeout: 15_000,
-        })
+    }
+
+    type Expected = {
+        status: string
+        ok: number
+        skipped: number
+        total: number
+        migrated: string[]
+        untouched: string[]
+    }
+
+    /**
+     * What the next rollout should do (RolloutExecutor.RunWavesAsync): waves in order, a tenant
+     * with nothing to do is skipped, and "next wave only" pauses after the first wave with work
+     * unless it is the last one.
+     */
+    async function expectedRollout(nextWaveOnly: boolean): Promise<Expected> {
+        const waves = await plannedWaves()
+        const e: Expected = {
+            status: JA.completed,
+            ok: 0,
+            skipped: 0,
+            total: waves.flat().length,
+            migrated: [],
+            untouched: [],
+        }
+        for (let i = 0; i < waves.length; i++) {
+            const work: string[] = []
+            for (const slug of waves[i]!) if (await needsWork(slug)) work.push(slug)
+            e.ok += work.length
+            e.skipped += waves[i]!.length - work.length
+            e.migrated.push(...work)
+            if (nextWaveOnly && work.length > 0 && i < waves.length - 1) {
+                e.status = JA.paused
+                for (const later of waves.slice(i + 1).flat())
+                    if (await needsWork(later)) e.untouched.push(later)
+                break
+            }
+        }
+        return e
+    }
+
+    async function runRollout(label: string, nextWaveOnly: boolean): Promise<Expected> {
+        const e = await expectedRollout(nextWaveOnly)
+        await startRollout(label)
+        await expect(rolloutStatus()).toHaveText(e.status, { timeout: JOB_TIMEOUT })
+        await expect(section(), 'đếm 成功 / 失敗 / スキップ / 全 như RolloutPlanner').toContainText(
+            `成功 ${e.ok} ／ 失敗 0 ／ スキップ（適用済み・保留） ${e.skipped} ／ 全 ${e.total}`,
+        )
+        for (const slug of e.migrated)
+            await expect(badge(slug, JA.upToDate), `${slug} vừa được rollout`).toBeVisible({
+                timeout: 15_000,
+            })
+        for (const slug of e.untouched)
+            await expect(badge(slug, JA.outdated), `${slug} thuộc đợt sau, chưa chạy`).toBeVisible()
+        return e
+    }
+
+    test('TC-8 — có ≥ 3 đợt; 復元 tenant1 để rollout phải BỎ QUA nó (BE: held)', async () => {
+        skipWithReason(skipReason !== '', skipReason)
+        const waves = await plannedWaves()
+        expect(
+            waves.length,
+            `cần ≥ 3 đợt (tenant: ${waves.flat().join(', ')})`,
+        ).toBeGreaterThanOrEqual(3)
+        for (const slug of EXTRA_TENANTS) await expect(badge(slug, JA.outdated)).toBeVisible()
+
+        const dialog = await openRestore(TENANT.slug, PROBE_HIGH)
+        await dialog.getByLabel(JA.restoreTypeSlug).fill(TENANT.slug)
+        await dialog.getByRole('button', { name: JA.restoreConfirm }).click()
+        await expect(page.getByText(JA.queued).first()).toBeVisible()
+        await expect(row(TENANT.slug)).toContainText(PROBE_LOW, { timeout: JOB_TIMEOUT })
+        await expect(badge(TENANT.slug, JA.outdated)).toBeVisible()
+        expect(await needsWork(TENANT.slug), 'tenant1 vừa 復元 ⇒ held, rollout bỏ qua').toBe(false)
+    })
+
+    test('TC-9 — 次の段階を実行 (lần 1): chỉ chạy đợt đầu có việc rồi 一時停止', async () => {
+        skipWithReason(skipReason !== '', skipReason)
+        const e = await runRollout(JA.next, true)
+        expect(e.status, 'còn đợt sau có việc ⇒ phải dừng').toBe(JA.paused)
+        expect(e.migrated.length).toBeGreaterThan(0)
+        await captureFixedUi(page, 'admin-tenants-rollout-wave-1')
+    })
+
+    test('TC-10 — 次の段階を実行 (lần 2): bỏ qua đợt đã xong, chạy đợt kế tiếp', async () => {
+        skipWithReason(skipReason !== '', skipReason)
+        const e = await runRollout(JA.next, true)
+        expect(e.migrated.length).toBeGreaterThan(0)
+    })
+
+    test('TC-11 — 残りをすべて実行: chạy hết các đợt còn lại; tenant vừa 復元 bị bỏ qua', async () => {
+        skipWithReason(skipReason !== '', skipReason)
+        const e = await runRollout(JA.all, false)
+        expect(e.status).toBe(JA.completed)
+        expect(e.migrated, 'held ⇒ không rollout').not.toContain(TENANT.slug)
+        await expect(badge(TENANT.slug, JA.outdated)).toBeVisible()
+        expect(await probeVals(TENANT.schema), 'tenant1 giữ nguyên dữ liệu sau 復元').toEqual(
+            VALS_LOW_ONLY,
+        )
+    })
+
+    test('TC-12 — 更新 tenant vừa 復元: áp lại probe High, hết held', async () => {
+        skipWithReason(skipReason !== '', skipReason)
+        await update(TENANT.slug, PROBE_HIGH)
+        await expect(badge(TENANT.slug, JA.upToDate)).toBeVisible({ timeout: JOB_TIMEOUT })
         expect(await probeVals(TENANT.schema)).toEqual(VALS_APPLIED)
     })
 
-    test('TC-9 — 残りをすべて実行: mọi tenant đã 最新 ⇒ chỉ bỏ qua, 完了', async () => {
+    test('TC-13 — 残りをすべて実行 khi mọi tenant đã 最新: chỉ bỏ qua, 完了', async () => {
         skipWithReason(skipReason !== '', skipReason)
-        await startRollout(JA.all)
-        await expect(rolloutStatus()).toHaveText(JA.completed, {
-            timeout: JOB_TIMEOUT,
-        })
-        await expect(section()).toContainText('成功 0 ／ 失敗 0')
-        await expect(badge(TENANT.slug, JA.upToDate)).toBeVisible()
+        const e = await runRollout(JA.all, false)
+        expect(e.ok).toBe(0)
         await expect(page.getByRole('row').getByText(JA.outdated, { exact: true })).toHaveCount(0)
+        for (const slug of [TENANT.slug, ...EXTRA_TENANTS])
+            expect(await probeVals(schemaOf(slug)), `${slug} đã áp probe High`).toEqual(
+                VALS_APPLIED,
+            )
         await captureFixedUi(page, 'admin-tenants-after-rollout')
     })
 })
