@@ -17,6 +17,8 @@ import { ADMIN_USER } from '../_shared/test-data'
  *    lần 2 ⇒ giảm (sort phía server, TenantSortColumns). Cột 操作 không sort.
  *  - Tên nút F-key bắt đầu bằng số phím ("F9" + nhãn).
  *  - Ô キーワード autoFocus: có focus mỗi khi màn /tenants được mở.
+ *  - routes/_authenticated/tenants/new.tsx (テナントを追加): form căn trái, ô nhập kéo hết chiều ngang; F9 登録 (gửi form, form
+ *    trống ⇒ chỉ báo lỗi validate) / F10 戻る → /tenants; không còn nút キャンセル / テナントを作成.
  *  - routes/_authenticated/tenants/$id.tsx (テナント情報): tiêu đề căn giữa như danh sách, không còn
  *    nút 戻る trên thanh tiêu đề; FKeyBar F10 戻る → /tenants.
  *
@@ -83,10 +85,44 @@ test.describe('web-admin /tenants — FKeyBar, chọn / mở dòng, sort cột',
         await captureFixedUi(page, 'admin-tenants-fkeybar')
     })
 
-    test('TC-2 — F1 新規テナント作成 mở /tenants/new', async () => {
+    test('TC-2 — F1 新規テナント作成 mở テナントを追加: F9 登録 / F10 戻る, form căn trái', async () => {
         await fkey(1).click()
         await expect(page).toHaveURL(/\/tenants\/new$/)
-        await backToList()
+        await expect(page.getByRole('heading', { name: 'テナントを追加' })).toBeVisible()
+        await expect(fkey(9)).toContainText('登録')
+        await expect(fkey(10)).toContainText('戻る')
+        for (const old of ['キャンセル', 'テナントを作成'])
+            await expect(
+                page.getByRole('button', { name: old, exact: true }),
+                `không còn nút ${old}`,
+            ).toHaveCount(0)
+
+        // Left-aligned: the form starts at the body's padding, not centred in it.
+        const tenantForm = page.locator('form').filter({ hasText: 'クリニック名' })
+        const form = (await tenantForm.boundingBox())!
+        const body = (await tenantForm.locator('xpath=..').boundingBox())!
+        expect(form.x - body.x, 'form căn trái (chỉ cách lề p-6)').toBeLessThanOrEqual(25)
+        // Full width: the inputs reach the body's right padding.
+        const name = (await page.locator('#tenant-name').boundingBox())!
+        expect(
+            body.x + body.width - (name.x + name.width),
+            'ô nhập kéo hết chiều ngang',
+        ).toBeLessThanOrEqual(30)
+
+        await page
+            .locator('.animate-fade-in')
+            .first()
+            .evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
+        await captureFixedUi(page, 'admin-tenant-new-fkeybar')
+
+        // F9 with an empty form only validates: nothing is created, the page stays.
+        await fkey(9).click()
+        await expect(page.getByText('クリニック名を入力してください')).toBeVisible()
+        await expect(page).toHaveURL(/\/tenants\/new$/)
+
+        await fkey(10).click()
+        await expect(page).toHaveURL(/\/tenants$/)
+        await expect(dataRows().first()).toBeVisible({ timeout: 30_000 })
     })
 
     test('TC-3 — chọn dòng rồi F9 選択 mở chi tiết tenant đó', async () => {
