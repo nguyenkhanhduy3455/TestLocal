@@ -16,6 +16,7 @@ import { ADMIN_USER } from '../_shared/test-data'
  *    header role=columnheader có aria-sort none/ascending/descending; click header lần 1 ⇒ tăng,
  *    lần 2 ⇒ giảm (sort phía server, TenantSortColumns). Cột 操作 không sort.
  *  - Tên nút F-key bắt đầu bằng số phím ("F9" + nhãn).
+ *  - Ô キーワード autoFocus: có focus mỗi khi màn /tenants được mở.
  *  - routes/_authenticated/tenants/$id.tsx (テナント情報): tiêu đề căn giữa như danh sách, không còn
  *    nút 戻る trên thanh tiêu đề; FKeyBar F10 戻る → /tenants.
  *
@@ -38,6 +39,7 @@ test.describe('web-admin /tenants — FKeyBar, chọn / mở dòng, sort cột',
     /** Text of the first cell (クリニック名) of every loaded row, top to bottom. */
     const names = async (): Promise<string[]> =>
         (await dataRows().locator('[role="cell"]:first-child').allInnerTexts()).map((t) => t.trim())
+    const keyword = (): Locator => page.getByPlaceholder('クリニック名 / スラグで検索')
     const header = (title: string): Locator =>
         page.getByRole('columnheader', { name: new RegExp(`^${title}`) })
 
@@ -60,6 +62,10 @@ test.describe('web-admin /tenants — FKeyBar, chọn / mở dòng, sort cột',
 
     test.afterAll(async () => {
         await context?.close()
+    })
+
+    test('TC-0 — mở màn: ô キーワード có focus ngay', async () => {
+        await expect(keyword()).toBeFocused()
     })
 
     test('TC-1 — chưa chọn dòng: F4 / F5 / F9 mờ; F1 bật; không còn nút tạo mới / rollout trên màn', async () => {
@@ -175,5 +181,6 @@ test.describe('web-admin /tenants — FKeyBar, chọn / mở dòng, sort cột',
         await fkey(10).click()
         await expect(page).toHaveURL(/\/tenants$/)
         await expect(dataRows().first()).toBeVisible({ timeout: 30_000 })
+        await expect(keyword(), 'quay lại danh sách ⇒ focus ô キーワード').toBeFocused()
     })
 })
