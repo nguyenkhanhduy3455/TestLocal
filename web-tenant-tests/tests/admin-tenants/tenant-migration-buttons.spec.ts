@@ -59,10 +59,11 @@ import { ADMIN_USER } from '../_shared/test-data'
  * ═══════════════════════════════════════════════════════════════════════════
  *  - Chuỗi UI: features/tenants/migrations/locales/ja.ts.
  *  - Danh sách là virtual list (WindowedListTable): mỗi dòng tenant có role=row.
- *  - Badge: 最新 / 更新あり / 実行中 / 失敗 / 保留（復元済み） / 未記録; tenant mở mà
- *    có error = lần 復元 gần nhất thất bại ⇒ "前回の復元に失敗しました"
- *    (RolloutExecutor.RestoreTenantAsync ghi error khi trả trạng thái cũ); tenant 保留 thì
- *    error là LÝ DO 保留 ⇒ chỉ nằm ở title, ô hiện badge 保留 + ID sau 復元, không chữ lỗi.
+ *  - Badge: 最新 / 更新あり / 実行中 / 失敗 / 未記録. Tenant vừa 復元 (BE: status held,
+ *    rollout bỏ qua tới khi 更新) hiện NHƯ THƯỜNG: 更新あり + ID sau 復元, không có badge
+ *    保留（復元済み）; lý do giữ chỉ nằm ở title. Tenant mở mà có error = lần 復元 gần nhất
+ *    thất bại ⇒ "前回の復元に失敗しました" (RolloutExecutor.RestoreTenantAsync ghi error
+ *    khi trả trạng thái cũ).
  *  - 更新: Dialog có dropdown 更新先のマイグレーション = migration CHƯA áp
  *    (GET /admin/tenant-migrations/{id}/targets), mặc định bản mới nhất.
  *  - 復元: Dialog chỉ HIỂN THỊ マイグレーションID (testid restore-migration-id) =
@@ -125,7 +126,7 @@ const S3 = {
 const JA = {
     upToDate: '最新',
     outdated: '更新あり',
-    held: '保留（復元済み）',
+    heldBadge: '保留（復元済み）',
     restoreFailed: '前回の復元に失敗しました',
     errorGeneric: 'マイグレーションでエラーが発生しました。',
     update: '更新',
@@ -389,9 +390,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         row(slug).getByText(text, { exact: true })
     /** Cột migration tải riêng (GET /admin/tenant-migrations) — chờ nó trước khi đọc badge (Rule 10.8). */
     const migrationLoaded = (slug: string) =>
-        expect(
-            row(slug).getByText(/^(最新|更新あり|保留（復元済み）|失敗|未記録|実行中)$/),
-        ).toBeVisible()
+        expect(row(slug).getByText(/^(最新|更新あり|失敗|未記録|実行中)$/)).toBeVisible()
     const updateButton = (slug: string): Locator =>
         row(slug).getByRole('button', { name: JA.update, exact: true })
     const restoreButton = (slug: string): Locator =>
@@ -511,11 +510,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         skipWithReason(skipReason !== '', skipReason)
         await expect(page.getByText(/^最新マイグレーション /)).toHaveText(JA.latest(PROBE_HIGH))
         await migrationLoaded(TENANT.slug)
-        // Tenant còn migration chưa áp: 更新あり, hoặc 保留 nếu vừa được 復元 (test tay) — 更新 bật.
-        await expect(
-            row(TENANT.slug).getByText(new RegExp(`^(${JA.outdated}|${JA.held})$`)),
-            'probe chưa áp ⇒ 更新あり / 保留',
-        ).toBeVisible()
+        await expect(badge(TENANT.slug, JA.outdated), 'probe chưa áp ⇒ 更新あり').toBeVisible()
         await expect(updateButton(TENANT.slug)).toBeEnabled()
         expect(await probeVals(TENANT.schema), 'chưa có bảng probe').toBeNull()
     })
@@ -624,7 +619,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         expect(await probeVals(TENANT.schema), 'không có gì bị đụng').toEqual(VALS_APPLIED)
     })
 
-    test('TC-6 — 更新 áp lại probe High (backup mới) rồi 復元 THẬT: dữ liệu quay lại, tenant 保留', async () => {
+    test('TC-6 — 更新 áp lại probe High (backup mới) rồi 復元 THẬT: dữ liệu quay lại, hiện 更新あり', async () => {
         skipWithReason(skipReason !== '', skipReason)
         await revertHigh()
         await update(TENANT.slug, PROBE_HIGH)
@@ -647,12 +642,16 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         await submit.click()
         await expect(page.getByText(JA.queued).first()).toBeVisible()
         await expect(dialog).toBeHidden()
-        await expect(badge(TENANT.slug, JA.held), 'sau 復元 phải là 保留').toBeVisible({
-            timeout: JOB_TIMEOUT,
-        })
-        await expect(updateButton(TENANT.slug), '保留 ⇒ 更新 bật lại').toBeEnabled()
-        // Sau 復元: badge 保留 + ID migration hiện tại (probe Low); lý do 保留 chỉ ở title, không có chữ lỗi.
-        await expect(row(TENANT.slug)).toContainText(PROBE_LOW)
+        // Sau 復元: hiện như thường — 更新あり + ID migration hiện tại (probe Low), không badge 保留.
+        await expect(row(TENANT.slug), 'job 復元 xong ⇒ lùi về probe Low').toContainText(
+            PROBE_LOW,
+            {
+                timeout: JOB_TIMEOUT,
+            },
+        )
+        await expect(badge(TENANT.slug, JA.outdated)).toBeVisible()
+        await expect(badge(TENANT.slug, JA.heldBadge), 'không còn badge 保留').toHaveCount(0)
+        await expect(updateButton(TENANT.slug), 'chưa ở bản mới nhất ⇒ 更新 bật').toBeEnabled()
         await expect(
             badge(TENANT.slug, JA.errorGeneric),
             'không báo lỗi sau 復元 thành công',
