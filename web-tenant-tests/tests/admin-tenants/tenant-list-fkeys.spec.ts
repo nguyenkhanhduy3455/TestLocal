@@ -17,7 +17,7 @@ import { ADMIN_USER } from '../_shared/test-data'
  *    lần 2 ⇒ giảm (sort phía server, TenantSortColumns). Cột 操作 không sort.
  *  - Tên nút F-key bắt đầu bằng số phím ("F9" + nhãn).
  *  - Ô キーワード autoFocus: có focus mỗi khi màn /tenants được mở.
- *  - Hộp xác nhận rollout (F2 / F3) mở ra thì focus ở 実行する (ConfirmDialog focusConfirm).
+ *  - Hộp xác nhận rollout (F2 / F3): FKeyBar riêng F9 実行する (có focus khi mở) / F10 キャンセル.
  *  - routes/_authenticated/tenants/new.tsx (テナントを追加): form căn trái, ô nhập kéo hết chiều ngang; F9 登録 (gửi form, form
  *    trống ⇒ chỉ báo lỗi validate) / F10 戻る → /tenants; không còn nút キャンセル / テナントを作成.
  *  - routes/_authenticated/tenants/$id.tsx (テナント情報): tiêu đề căn giữa như danh sách, không còn
@@ -221,16 +221,18 @@ test.describe('web-admin /tenants — FKeyBar, chọn / mở dòng, sort cột',
         await expect(keyword(), 'quay lại danh sách ⇒ focus ô キーワード').toBeFocused()
     })
 
-    test('TC-9 — F2 / F3 mở hộp xác nhận rollout với focus ở 実行する (rồi キャンセル)', async () => {
+    test('TC-9 — F2 / F3 mở hộp xác nhận rollout: F9 実行する có focus, F10 キャンセル đóng (phím thật)', async () => {
         for (const n of [2, 3]) {
             await fkey(n).click()
             const dialog = page.getByRole('dialog')
             await expect(dialog).toContainText('ロールアウトの実行')
             await expect(
-                dialog.getByRole('button', { name: '実行する' }),
-                `F${n}: Enter = 実行する`,
+                dialog.getByRole('button', { name: /^F9.*実行する/ }),
+                `F${n}: Enter = F9 実行する`,
             ).toBeFocused()
-            await dialog.getByRole('button', { name: 'キャンセル' }).click()
+            await expect(dialog.getByRole('button', { name: /^F10.*キャンセル/ })).toBeVisible()
+            // The F10 key itself closes it; nothing is queued.
+            await page.keyboard.press('F10')
             await expect(dialog).toBeHidden()
         }
     })

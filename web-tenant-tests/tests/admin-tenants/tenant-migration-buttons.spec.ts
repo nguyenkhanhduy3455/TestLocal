@@ -587,7 +587,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         } else {
             await expect(dialog.getByText(JA.restoredSkipped)).toHaveCount(0)
         }
-        await dialog.getByRole('button', { name: JA.run }).click()
+        await dialog.getByRole('button', { name: new RegExp(`^F9.*${JA.run}`) }).click()
         await expectQueued()
         await expect
             .poll(nextRolloutId, {
