@@ -1,9 +1,15 @@
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import {
+    type APIRequestContext,
     type Browser,
     type BrowserContext,
     type Locator,
     type Page,
     expect,
+    request,
     test,
 } from '@playwright/test'
 
@@ -15,118 +21,347 @@ import { ADMIN_USER } from '../_shared/test-data'
 /**
  * web-admin /tenants — 4 nút migration: 更新 / 復元 (trên từng dòng tenant) và
  * 次の段階を実行 / 残りをすべて実行 (khung ≪マイグレーション≫). CHẠY THẬT: job
- * migration thật trên Hangfire, đổi schema thật của t_tenant1 / t_tenant2.
+ * migration thật trên Hangfire, backup S3 thật, đổi schema thật của các tenant.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * ⚠️ GHI THẬT — CHỈ CHẠY KHI TEST_ALLOW_MIGRATE=1 VÀ TEST_DB=1 (Rule 18.1)
  * ═══════════════════════════════════════════════════════════════════════════
- *  - 更新 / rollout áp MỌI migration còn thiếu của build lên tenant, không chỉ
- *    migration probe (lần chạy đầu trên demo1 còn áp cả add-trn-trn-del-flg).
- *  - Migration probe High có RequiresMaintenance ⇒ tenant ĐÓNG (503) vài giây
- *    lúc 更新 / 復元. Chạy RIÊNG file này, đừng chạy chung suite tenant:
+ *  Spec TỰ CHUẨN BỊ, không phụ thuộc nhánh nào trên demo1:
+ *   1. beforeAll ghi 2 folder migration probe vào worktree demo1
+ *      (TEST_DEMO1_DIR, mặc định …/userapp/ochacom-saas) với id = giờ chạy (UTC)
+ *      ⇒ luôn là 2 migration mới nhất của build; rồi restart demo1
+ *      (TEST_DEMO1_RESTART, mặc định …/userapp/restart-demo1-dev.sh) để API nạp chúng.
+ *   2. afterAll gỡ sạch: bảng probe + journal của MỌI schema tenant, trạng thái
+ *      tenant đang trỏ tới probe, rollout nhắm tới probe (không gỡ ⇒ BUILD_MISMATCH),
+ *      backup S3 của probe, xoá 2 folder rồi restart lại. Lần chạy trước bị ngắt giữa chừng ⇒ beforeAll
+ *      gỡ phần sót trước khi tạo mới.
+ *  - S3 = RustFS local (bucket backup migration). Spec gọi S3 bằng `curl --aws-sigv4`
+ *    (path-style): TEST_S3_URL / TEST_S3_BUCKET / TEST_S3_PREFIX / TEST_S3_ACCESS_KEY / TEST_S3_SECRET_KEY,
+ *    mặc định như appsettings.Development.json, secret đọc từ <demo1>/apps/api/.env.
+ *    Dùng để làm hỏng backup THẬT (TC-4/5) và dọn backup probe.
+ *  - Rollout (TC-8/9) và 更新 áp MỌI migration còn thiếu của build cho tới bản đích,
+ *    kể cả migration chưa commit đang nằm trong demo1 — dọn chúng trước khi chạy.
+ *  - Probe High có RequiresMaintenance ⇒ tenant ĐÓNG (503) vài giây lúc 更新 / 復元.
+ *    Restart demo1 2 lần ⇒ mọi người dùng demo1 bị ngắt. Chạy RIÊNG file này:
  *      TEST_DB=1 TEST_ALLOW_MIGRATE=1 npx playwright test tests/admin-tenants/tenant-migration-buttons.spec.ts
- *  - DB dùng để: soi bảng probe, và gỡ cờ 保留 của tenant2 (xem TC-5).
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * MIGRATION PROBE (chỉ có trên demo1, nhánh test/e2e-migration-probe)
+ * MIGRATION PROBE (sinh trong beforeAll, bảng theo shape chuẩn §3.16)
  * ═══════════════════════════════════════════════════════════════════════════
- *  - 20261008034546-add-e2e-migration-probe   Low : CREATE TABLE e2e_migration_probe
- *    (id, label, val) + 2 dòng (1,'a',1), (2,'b',2).
- *  - 20261008034549-scale-e2e-migration-probe High: UPDATE … SET val = val * 10,
- *    BackupTables = [e2e_migration_probe], RequiresMaintenance.
- *  ⇒ áp đủ: val = [10, 20]; 復元 về trước High: val = [1, 2].
- *  復元 chỉ nhận migration High ÁP GẦN NHẤT ⇒ PROBE_HIGH phải là migration mới
- *  nhất của build. Có migration mới hơn ⇒ spec skip kèm lý do (TC-0).
+ *  - <id>-e2e-probe-create  Low : CREATE TABLE e2e_probe (id uuid, probe_no, label,
+ *    val, 4 cột audit) + enable_archive + 2 dòng val = 1, 2.
+ *  - <id+1>-e2e-probe-scale High: UPDATE … SET val = val * 10,
+ *    BackupTables = [e2e_probe], RequiresMaintenance.
+ *  ⇒ chỉ Low: val = [1, 2]; áp đủ: val = [10, 20]; 復元 về trước High: val = [1, 2].
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * LẶP LẠI ĐƯỢC — CHẠY LẦN 2, 3… VẪN ĐO THẬT
- * ═══════════════════════════════════════════════════════════════════════════
- *  - tenant1: TC-1 更新 (lần đầu áp thật; lần sau đã 最新 ⇒ chỉ đo nút mờ) →
- *    TC-2 復元 về trước PROBE_HIGH → TC-3 更新 áp lại PROBE_HIGH. TC-3 luôn đo
- *    更新 thật vì TC-2 vừa đẩy tenant1 lùi lại.
- *  - tenant2: rollout BỎ QUA tenant 保留 (RolloutExecutor: includeHeld chỉ cho
- *    rerun). Nên TC-5 nếu tenant2 đã 最新 thì 復元 nó rồi UPDATE thẳng
- *    platform.tenant_migration_state về 'ready' — schema vẫn đang thiếu
- *    PROBE_HIGH, rollout sẽ áp nó thật.
- *
- * ═══════════════════════════════════════════════════════════════════════════
- * FACTS GHIM TỪ SOURCE (Rule 21) — ochacom-saas demo1, web-admin
+ * FACTS GHIM TỪ SOURCE (Rule 21) — ochacom-saas demo1, web-admin + API
  * ═══════════════════════════════════════════════════════════════════════════
  *  - Chuỗi UI: features/tenants/migrations/locales/ja.ts.
- *  - Dòng tenant là `div.grid … border-b` (không có role=row) — tenant-list-table.tsx.
- *  - Badge: 最新 / 更新あり / 実行中 / 失敗 / 保留（復元済み） / 未記録.
- *  - Danh sách migration tự tải lại mỗi 5s (use-tenant-migrations.ts) ⇒ chờ bằng
- *    expect auto-retry, không reload.
- *  - 更新 / rollout dùng ConfirmDialog và Dialog của 復元 đều role dialog (mỗi lúc chỉ mở một).
- *  - Không có InternalSlugs ⇒ 2 tenant chung 1 đợt ⇒ 次の段階を実行 kết thúc
+ *  - Danh sách là virtual list (WindowedListTable): mỗi dòng tenant có role=row.
+ *  - Badge: 最新 / 更新あり / 実行中 / 失敗 / 保留（復元済み） / 未記録; tenant mở mà
+ *    có error = lần 復元 gần nhất thất bại ⇒ "前回の復元に失敗しました"
+ *    (RolloutExecutor.RestoreTenantAsync ghi error khi trả trạng thái cũ).
+ *  - 更新: Dialog có dropdown 更新先のマイグレーション = migration CHƯA áp
+ *    (GET /admin/tenant-migrations/{id}/targets), mặc định bản mới nhất.
+ *  - 復元: Dialog chỉ HIỂN THỊ マイグレーションID (testid restore-migration-id) =
+ *    migration áp gần nhất (theo applied_at). Không phải High ⇒ "復元できる…ありません";
+ *    High nhưng không có backup chụp TRƯỚC applied_at (BackupManifest.ReadAsync) ⇒
+ *    "…実行前のバックアップがないため…"; cả hai: 復元する mờ, không có ô gõ slug.
+ *  - Key backup (BackupManifest.cs), sau tiền tố MigrationBackupOptions.Prefix (migration-backups/):
+ *    <migrationId>/<schema>/<run>/manifest.json và
+ *    <run>/<table>.bin. Kiểm tra trước khi nhận 復元 chỉ đọc manifest; job đọc .bin.
+ *  - Danh sách migration tự tải lại mỗi 5s ⇒ chờ bằng expect auto-retry, không reload.
+ *  - Không có InternalSlugs ⇒ mọi tenant chung 1 đợt ⇒ 次の段階を実行 kết thúc
  *    ở 完了 (không phải 一時停止). Spec nhận cả hai.
  *
- * ═══════════════════════════════════════════════════════════════════════════
- * 1 LOGIN (Rule 10.1) — page riêng, KHÔNG dùng authedPage (Rule 19.2)
- * ═══════════════════════════════════════════════════════════════════════════
- * authedPage login vào app TENANT; đây cần phiên super-admin ở admin.ochacom.local.
- * `serial`: các testcase nối trạng thái, thứ tự có ý nghĩa — chạy lẻ một test ở
- * giữa sẽ sai; một test đỏ thì các test sau bị skip.
+ * 1 LOGIN (Rule 10.1) — page riêng, KHÔNG dùng authedPage (Rule 19.2): cần phiên
+ * super-admin ở admin.ochacom.local. `serial`: các testcase nối trạng thái.
  */
 
 test.describe.configure({ mode: 'serial', retries: 0, timeout: 300_000 })
 
 const ADMIN_BASE_URL = process.env.TEST_ADMIN_BASE_URL ?? 'https://admin.ochacom.local/'
 const ALLOW_MIGRATE = process.env.TEST_ALLOW_MIGRATE === '1'
+const DEMO1_DIR =
+    process.env.TEST_DEMO1_DIR ?? '/Users/thinhnn/Documents/GitHub/userapp/ochacom-saas'
+const DEMO1_RESTART =
+    process.env.TEST_DEMO1_RESTART ?? '/Users/thinhnn/Documents/GitHub/userapp/restart-demo1-dev.sh'
+const MIGRATIONS_DIR = join(DEMO1_DIR, 'apps/api/src/Ochacom.Migrations/Tenant')
 
-const PROBE_LOW = '20261008034546'
-const PROBE_HIGH = '20261008034549'
-const PROBE_TABLE = 'e2e_migration_probe'
+const PROBE_TABLE = 'e2e_probe'
+const PROBE_LOW_NAME = 'e2e-probe-create'
+const PROBE_HIGH_NAME = 'e2e-probe-scale'
 const VALS_APPLIED = [10, 20]
-const VALS_RESTORED = [1, 2]
+const VALS_LOW_ONLY = [1, 2]
 
-const TENANT1 = { slug: 'tenant1', schema: 't_tenant1' }
-const TENANT2 = { slug: 'tenant2', schema: 't_tenant2' }
+const TENANT = { slug: 'tenant1', schema: 't_tenant1' }
 
 /** Một job migration (gồm drain 3s + backup S3) — rộng tay cho dev server. */
 const JOB_TIMEOUT = 120_000
+/** Restart demo1 = build API + sinh lại spec OpenAPI + 3 Vite. */
+const RESTART_TIMEOUT = 300_000
+
+/** Secret of the migration backup store, as demo1's API reads it from its .env. */
+function demo1BackupSecret(): string {
+    const env = join(DEMO1_DIR, 'apps/api/.env')
+    if (!existsSync(env)) return ''
+    const line = readFileSync(env, 'utf8')
+        .split('\n')
+        .find((l) => l.startsWith('MigrationBackup__S3__SecretKey='))
+    return line?.slice(line.indexOf('=') + 1).trim() ?? ''
+}
+
+const S3 = {
+    url: (process.env.TEST_S3_URL ?? 'http://localhost:9000').replace(/\/$/, ''),
+    bucket: process.env.TEST_S3_BUCKET ?? 'ochacom-migration-backups',
+    accessKey: process.env.TEST_S3_ACCESS_KEY ?? 'ochacom',
+    secretKey: process.env.TEST_S3_SECRET_KEY ?? demo1BackupSecret(),
+    /** MigrationBackupOptions.Prefix: every backup key starts with it. */
+    prefix: (process.env.TEST_S3_PREFIX ?? 'migration-backups').replace(/\/$/, ''),
+}
 
 const JA = {
     upToDate: '最新',
     outdated: '更新あり',
     held: '保留（復元済み）',
-    failed: '失敗',
+    restoreFailed: '前回の復元に失敗しました',
     update: '更新',
     updateConfirm: '更新する',
+    updateTarget: '更新先のマイグレーション',
     restore: '復元',
     restoreConfirm: '復元する',
-    restoreMigrationId: 'マイグレーションID',
     restoreTypeSlug: /確認のため/,
     restoreLoss: /次の表への適用後の変更/,
-    notRestorable:
-        'このテナントに適用済みの、影響度 High のマイグレーションではないため復元できません。',
+    restoreNone: /復元できるマイグレーションはありません/,
+    restoreNoBackup: /実行前のバックアップがないため/,
     queued: 'ジョブを登録しました。進行状況は一覧に反映されます。',
     latest: (id: string) => `最新マイグレーション ${id}`,
     section: '≪マイグレーション≫',
     next: '次の段階を実行',
     all: '残りをすべて実行',
     run: '実行する',
+    cancel: 'キャンセル',
     completed: '完了',
     paused: '一時停止',
     upToDateHint: '最新のマイグレーションまで適用済みです',
 } as const
 
+// ---------------------------------------------------------------------------
+// Probe migrations: written into demo1, loaded by a restart, removed afterwards
+// ---------------------------------------------------------------------------
+
+/** 14-digit migration id (UTC, as `pnpm ddl:new` makes it) of `date`. */
+function migrationId(date: Date): string {
+    return date.toISOString().replace(/\D/g, '').slice(0, 14)
+}
+
+const now = new Date()
+const PROBE_LOW = migrationId(now)
+const PROBE_HIGH = migrationId(new Date(now.getTime() + 1000))
+
+function probeFolders(): string[] {
+    if (!existsSync(MIGRATIONS_DIR)) return []
+    return readdirSync(MIGRATIONS_DIR).filter(
+        (f) => f.endsWith(`-${PROBE_LOW_NAME}`) || f.endsWith(`-${PROBE_HIGH_NAME}`),
+    )
+}
+
+function migrationClass(id: string, name: string, className: string, attributes: string): string {
+    return `using Ochacom.Migrations.Framework;
+
+namespace Ochacom.Migrations.Tenant._${id}_${name.replace(/-/g, '_')};
+
+// E2E probe written by TestLocal tenant-migration-buttons.spec.ts; removed when the spec ends.
+[Migration("${id}", "${name}", ${attributes})]
+public sealed class ${className} : TenantMigration
+{
+    public override Task Up(MigrationContext context) => context.ExecuteSqlFileAsync("up.sql");
+
+    public override Task Down(MigrationContext context) => context.ExecuteSqlFileAsync("down.sql");
+}
+`
+}
+
+function writeMigration(id: string, name: string, files: Record<string, string>): void {
+    const dir = join(MIGRATIONS_DIR, `${id}-${name}`)
+    mkdirSync(dir, { recursive: true })
+    for (const [file, content] of Object.entries(files)) writeFileSync(join(dir, file), content)
+}
+
+function writeProbeMigrations(): void {
+    writeMigration(PROBE_LOW, PROBE_LOW_NAME, {
+        'E2eProbeCreate.cs': migrationClass(
+            PROBE_LOW,
+            PROBE_LOW_NAME,
+            'E2eProbeCreate',
+            'Impact = MigrationImpact.Low',
+        ),
+        'up.sql': `CREATE TABLE ${PROBE_TABLE} (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    probe_no smallint NOT NULL,
+    label character varying(20) COLLATE pg_catalog."ja-JP-x-icu",
+    val integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by uuid,
+    CONSTRAINT ${PROBE_TABLE}_pkey PRIMARY KEY (id)
+);
+
+CREATE UNIQUE INDEX ux_${PROBE_TABLE} ON ${PROBE_TABLE} USING btree (probe_no);
+
+SELECT enable_archive('${PROBE_TABLE}');
+
+INSERT INTO ${PROBE_TABLE} (probe_no, label, val) VALUES (1, 'a', 1), (2, 'b', 2);
+`,
+        'down.sql': `DROP TABLE ${PROBE_TABLE}_deleted;
+DROP TABLE ${PROBE_TABLE};
+`,
+    })
+    writeMigration(PROBE_HIGH, PROBE_HIGH_NAME, {
+        'E2eProbeScale.cs': migrationClass(
+            PROBE_HIGH,
+            PROBE_HIGH_NAME,
+            'E2eProbeScale',
+            `Impact = MigrationImpact.High, BackupTables = ["${PROBE_TABLE}"], RequiresMaintenance = true`,
+        ),
+        'up.sql': `UPDATE ${PROBE_TABLE} SET val = val * 10, updated_at = now();
+`,
+        'down.sql': `UPDATE ${PROBE_TABLE} SET val = val / 10, updated_at = now();
+`,
+    })
+}
+
+/**
+ * Removes every trace of probe migrations (this run's or a crashed earlier run's) from
+ * the database and the backup store, so the build without them still matches every tenant.
+ */
+async function removeProbesFromDb(): Promise<void> {
+    await withDb(async (c) => {
+        const schemas = await c.query<{ nspname: string }>(
+            "SELECT nspname FROM pg_namespace WHERE nspname LIKE 't\\_%'",
+        )
+        const ids: string[] = []
+        for (const { nspname } of schemas.rows) {
+            const journal = await c.query<{ id: string }>(
+                `SELECT id FROM "${nspname}".schema_migrations WHERE name IN ($1, $2)`,
+                [PROBE_LOW_NAME, PROBE_HIGH_NAME],
+            )
+            ids.push(...journal.rows.map((r) => r.id))
+            await c.query('BEGIN')
+            await c.query(`DROP TABLE IF EXISTS "${nspname}".${PROBE_TABLE}_deleted`)
+            await c.query(`DROP TABLE IF EXISTS "${nspname}".${PROBE_TABLE}`)
+            await c.query(`DELETE FROM "${nspname}".schema_migrations WHERE name IN ($1, $2)`, [
+                PROBE_LOW_NAME,
+                PROBE_HIGH_NAME,
+            ])
+            await c.query('COMMIT')
+        }
+        const probeIds = [...new Set([...ids, PROBE_LOW, PROBE_HIGH])]
+        removeProbeBackups(probeIds)
+        // A tenant left pointing at a probe goes back to its newest remaining migration.
+        const states = await c.query<{ tenant_id: string; slug: string }>(
+            `SELECT s.tenant_id, t.slug FROM platform.tenant_migration_state s
+             JOIN platform.tenants t ON t.id = s.tenant_id
+             WHERE s.last_migration_id = ANY($1) OR s.error LIKE ANY($2)`,
+            [probeIds, probeIds.map((id) => `%${id}%`)],
+        )
+        for (const { tenant_id, slug } of states.rows) {
+            const schema = `t_${slug.replace(/-/g, '_')}`
+            const latest = await c.query<{ id: string | null }>(
+                `SELECT max(id) AS id FROM "${schema}".schema_migrations`,
+            )
+            await c.query(
+                `UPDATE platform.tenant_migration_state
+                 SET status = 'ready', maintenance = false, error = NULL, last_migration_id = $2,
+                     updated_at = now()
+                 WHERE tenant_id = $1`,
+                [tenant_id, latest.rows[0]?.id ?? null],
+            )
+        }
+        // The build check refuses every action while the last rollout targets an unknown migration.
+        await c.query(
+            'DELETE FROM platform.migration_rollout WHERE target_migration_id = ANY($1)',
+            [probeIds],
+        )
+    })
+}
+
+function removeProbeFolders(): void {
+    for (const f of probeFolders())
+        rmSync(join(MIGRATIONS_DIR, f), { recursive: true, force: true })
+}
+
+/** One signed S3 request (path-style, SigV4) through curl; returns the body. */
+function s3(method: 'GET' | 'DELETE', path: string): string {
+    return execFileSync(
+        'curl',
+        [
+            '-sS',
+            '--fail-with-body',
+            '-X',
+            method,
+            '--aws-sigv4',
+            'aws:amz:us-east-1:s3',
+            '--user',
+            `${S3.accessKey}:${S3.secretKey}`,
+            `${S3.url}/${S3.bucket}/${path}`,
+        ],
+        { encoding: 'utf8', timeout: 30_000 },
+    )
+}
+
+/** Every full key under `<S3.prefix>/<prefix>` (one ListObjectsV2 page is plenty for probe backups). */
+function s3Keys(prefix: string): string[] {
+    const xml = s3('GET', `?list-type=2&prefix=${encodeURIComponent(`${S3.prefix}/${prefix}`)}`)
+    return [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map((m) => m[1]!)
+}
+
+function s3Delete(keys: string[]): void {
+    for (const key of keys) s3('DELETE', key.split('/').map(encodeURIComponent).join('/'))
+}
+
+/** Backups of every probe migration in every schema (`<id>/<schema>/…`). */
+function removeProbeBackups(ids: string[]): void {
+    for (const id of ids) s3Delete(s3Keys(`${id}/`))
+}
+
+/** Restarts demo1 and waits until web-admin answers again. */
+async function restartDemo1(api: APIRequestContext): Promise<void> {
+    execFileSync('bash', [DEMO1_RESTART], {
+        stdio: 'inherit',
+        timeout: RESTART_TIMEOUT,
+    })
+    await expect
+        .poll(async () => (await api.get('/login').catch(() => null))?.status() ?? 0, {
+            timeout: RESTART_TIMEOUT,
+            intervals: [3_000],
+            message: 'web-admin không lên lại sau restart demo1 — xem userapp/demo1-dev.log',
+        })
+        .toBe(200)
+}
+
+// ---------------------------------------------------------------------------
+
 async function probeVals(schema: string): Promise<number[] | null> {
     return withDb(async (c) => {
-        const exists = await c.query<{ ok: boolean }>(
-            'SELECT to_regclass($1) IS NOT NULL AS ok',
-            [`${schema}.${PROBE_TABLE}`],
-        )
+        const exists = await c.query<{ ok: boolean }>('SELECT to_regclass($1) IS NOT NULL AS ok', [
+            `${schema}.${PROBE_TABLE}`,
+        ])
         if (!exists.rows[0]?.ok) return null
         const r = await c.query<{ val: number }>(
-            `SELECT val FROM "${schema}".${PROBE_TABLE} ORDER BY id`,
+            `SELECT val FROM "${schema}".${PROBE_TABLE} ORDER BY probe_no`,
         )
         return r.rows.map((x) => x.val)
     })
 }
 
 async function newAdminPage(browser: Browser): Promise<{ context: BrowserContext; page: Page }> {
-    const context = await browser.newContext({ baseURL: ADMIN_BASE_URL, ignoreHTTPSErrors: true })
+    const context = await browser.newContext({
+        baseURL: ADMIN_BASE_URL,
+        ignoreHTTPSErrors: true,
+    })
     const page = await context.newPage()
     await page.goto('/login?from=%2Ftenants', { waitUntil: 'domcontentloaded' })
     await page.getByLabel('メールアドレス').fill(ADMIN_USER.email)
@@ -140,14 +375,14 @@ async function newAdminPage(browser: Browser): Promise<{ context: BrowserContext
 }
 
 test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 残りをすべて実行 (chạy thật)', () => {
+    let api: APIRequestContext | undefined
     let context: BrowserContext | undefined
     let page: Page
     let skipReason = ''
+    let probesWritten = false
 
     const row = (slug: string): Locator =>
-        page
-            .locator('div.grid.border-b')
-            .filter({ has: page.getByText(slug, { exact: true }) })
+        page.getByRole('row').filter({ has: page.getByText(slug, { exact: true }) })
     const badge = (slug: string, text: string): Locator =>
         row(slug).getByText(text, { exact: true })
     /** Cột migration tải riêng (GET /admin/tenant-migrations) — chờ nó trước khi đọc badge (Rule 10.8). */
@@ -157,36 +392,42 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         ).toBeVisible()
     const updateButton = (slug: string): Locator =>
         row(slug).getByRole('button', { name: JA.update, exact: true })
+    const restoreButton = (slug: string): Locator =>
+        row(slug).getByRole('button', { name: JA.restore, exact: true })
     const section = (): Locator =>
-        page.locator('div.mt-3').filter({ has: page.getByText(JA.section, { exact: true }) })
+        page.locator('div.mb-1').filter({ has: page.getByText(JA.section, { exact: true }) })
     const rolloutStatus = (): Locator =>
         section().locator('dt', { hasText: '状態' }).locator('xpath=following-sibling::dd[1]')
 
-    async function confirmUpdate(slug: string, from: RegExp): Promise<void> {
+    /** 更新 tới `target` (chọn trong dropdown); mô tả phải ghi "… から <target> まで". */
+    async function update(slug: string, target: string): Promise<void> {
         await updateButton(slug).click()
         const dialog = page.getByRole('dialog')
-        await expect(dialog, 'hộp xác nhận ghi "từ X lên bản mới nhất"').toContainText(from)
-        await expect(dialog).toContainText(`${PROBE_HIGH} まで`)
+        const picker = dialog.getByLabel(JA.updateTarget)
+        await expect(picker, 'dropdown liệt kê migration chưa áp').toBeEnabled()
+        await expect(picker, 'mặc định chọn bản mới nhất chưa áp').toHaveValue(PROBE_HIGH)
+        await picker.selectOption(target)
+        await expect(dialog, 'mô tả ghi "từ X tới bản chọn"').toContainText(`から ${target} まで`)
         await dialog.getByRole('button', { name: JA.updateConfirm }).click()
         await expect(page.getByText(JA.queued).first()).toBeVisible()
+        await expect(dialog).toBeHidden()
     }
 
-    async function restoreHigh(slug: string): Promise<void> {
-        await row(slug).getByRole('button', { name: JA.restore, exact: true }).click()
+    /** Mở 復元: hộp thoại hiện ID migration áp gần nhất (không chọn, không nhập). */
+    async function openRestore(slug: string, latestApplied: string): Promise<Locator> {
+        await restoreButton(slug).click()
         const dialog = page.getByRole('dialog')
-        await dialog.getByLabel(JA.restoreMigrationId).fill(PROBE_HIGH)
-        await expect(dialog.getByText(JA.restoreLoss), 'preview liệt kê bảng bị ghi đè').toContainText(
-            PROBE_TABLE,
-        )
-        const submit = dialog.getByRole('button', { name: JA.restoreConfirm })
-        await expect(submit, 'chưa gõ slug thì chưa được 復元').toBeDisabled()
-        await dialog.getByLabel(JA.restoreTypeSlug).fill(slug)
-        await submit.click()
-        await expect(page.getByText(JA.queued).first()).toBeVisible()
+        await expect(dialog.getByTestId('restore-migration-id')).toHaveText(latestApplied)
+        return dialog
+    }
+
+    /** Hộp thoại 復元 không cho chạy: chỉ có thông báo, không có ô gõ slug, 復元する mờ. */
+    async function expectRestoreRefused(dialog: Locator, message: RegExp): Promise<void> {
+        await expect(dialog.getByText(message)).toBeVisible()
+        await expect(dialog.getByLabel(JA.restoreTypeSlug)).toHaveCount(0)
+        await expect(dialog.getByRole('button', { name: JA.restoreConfirm })).toBeDisabled()
+        await dialog.getByRole('button', { name: JA.cancel }).click()
         await expect(dialog).toBeHidden()
-        await expect(badge(slug, JA.held), `${slug} sau 復元 phải là 保留`).toBeVisible({
-            timeout: JOB_TIMEOUT,
-        })
     }
 
     /**
@@ -197,7 +438,9 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         const res = await page.waitForResponse(
             (r) => r.request().method() === 'GET' && /\/admin\/tenant-migrations$/.test(r.url()),
         )
-        const body = (await res.json()) as { data?: { latestRollout?: { id?: string } } }
+        const body = (await res.json()) as {
+            data?: { latestRollout?: { id?: string } }
+        }
         return body.data?.latestRollout?.id ?? null
     }
 
@@ -209,132 +452,237 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         await page.getByRole('dialog').getByRole('button', { name: JA.run }).click()
         await expect(page.getByText(JA.queued).first()).toBeVisible()
         await expect
-            .poll(nextRolloutId, { timeout: JOB_TIMEOUT, message: 'phải có rollout MỚI' })
+            .poll(nextRolloutId, {
+                timeout: JOB_TIMEOUT,
+                message: 'phải có rollout MỚI',
+            })
             .not.toBe(before)
     }
 
     test.beforeAll(async ({ browser }) => {
+        test.setTimeout(RESTART_TIMEOUT * 2)
         if (!ALLOW_MIGRATE) {
             skipReason =
-                'TEST_ALLOW_MIGRATE=1 chưa bật — spec áp migration THẬT lên tenant1/tenant2 (Rule 18.1)'
+                'TEST_ALLOW_MIGRATE=1 chưa bật — spec ghi migration probe vào demo1 và áp THẬT (Rule 18.1)'
             return
         }
         if (!dbEnabled) {
-            skipReason = 'TEST_DB=1 chưa bật — cần DB để soi bảng probe và gỡ 保留 của tenant2'
+            skipReason =
+                'TEST_DB=1 chưa bật — cần DB để soi bảng probe, giả trạng thái và dọn probe'
             return
         }
+        if (!existsSync(MIGRATIONS_DIR) || !existsSync(DEMO1_RESTART)) {
+            skipReason = `không thấy ${MIGRATIONS_DIR} hoặc ${DEMO1_RESTART} — đặt TEST_DEMO1_DIR / TEST_DEMO1_RESTART`
+            return
+        }
+        try {
+            s3Keys('none/')
+        } catch (e) {
+            skipReason = `không gọi được S3 (${S3.url}/${S3.bucket}) — đặt TEST_S3_*: ${String(e).slice(0, 200)}`
+            return
+        }
+        api = await request.newContext({
+            baseURL: ADMIN_BASE_URL,
+            ignoreHTTPSErrors: true,
+        })
+        // A crashed earlier run may have left probes behind: clear them before adding new ones.
+        await removeProbesFromDb()
+        removeProbeFolders()
+        writeProbeMigrations()
+        probesWritten = true
+        await restartDemo1(api)
         ;({ context, page } = await newAdminPage(browser))
     })
 
     test.afterAll(async () => {
+        test.setTimeout(RESTART_TIMEOUT * 2)
         await context?.close()
-    })
-
-    test('TC-0 — build có migration probe và PROBE_HIGH là migration mới nhất', async () => {
-        skipWithReason(skipReason !== '', skipReason)
-        const latest = page.getByText(/^最新マイグレーション /)
-        await expect(latest).toBeVisible()
-        const text = await latest.innerText()
-        if (text !== JA.latest(PROBE_HIGH)) {
-            skipReason =
-                `build không ở PROBE_HIGH (${text}) — demo1 thiếu nhánh test/e2e-migration-probe, ` +
-                'hoặc đã có migration mới hơn nên 復元 PROBE_HIGH không còn hợp lệ'
+        if (probesWritten && api) {
+            await removeProbesFromDb()
+            removeProbeFolders()
+            await restartDemo1(api)
         }
-        skipWithReason(skipReason !== '', skipReason)
-        await migrationLoaded(TENANT1.slug)
-        await migrationLoaded(TENANT2.slug)
+        await api?.dispose()
     })
 
-    test('TC-1 — 更新 tenant1: áp lần lượt migration còn thiếu tới bản mới nhất (lần sau: nút mờ)', async () => {
+    test('TC-0 — build đã nạp 2 migration probe, probe High là migration mới nhất', async () => {
+        skipWithReason(skipReason !== '', skipReason)
+        await expect(page.getByText(/^最新マイグレーション /)).toHaveText(JA.latest(PROBE_HIGH))
+        await migrationLoaded(TENANT.slug)
+        await expect(badge(TENANT.slug, JA.outdated), 'probe chưa áp ⇒ 更新あり').toBeVisible()
+        expect(await probeVals(TENANT.schema), 'chưa có bảng probe').toBeNull()
+    })
+
+    test('TC-1 — 更新 chỉ tới probe Low (chọn trong dropdown): High chưa áp', async () => {
         skipWithReason(skipReason !== '', skipReason)
         const step = makeStep(page)
-        await migrationLoaded(TENANT1.slug)
-
-        if (await badge(TENANT1.slug, JA.upToDate).isVisible()) {
-            console.log('tenant1 đã 最新 từ lần chạy trước → chỉ đo nút mờ; 更新 thật đo ở TC-3')
-            await expect(updateButton(TENANT1.slug)).toBeDisabled()
-            await expect(updateButton(TENANT1.slug)).toHaveAttribute('title', JA.upToDateHint)
-            return
-        }
-
-        await confirmUpdate(TENANT1.slug, /から/)
+        await update(TENANT.slug, PROBE_LOW)
         await step()
-        await expect(badge(TENANT1.slug, JA.upToDate), 'job 更新 xong ⇒ 最新').toBeVisible({
-            timeout: JOB_TIMEOUT,
-        })
-        await expect(row(TENANT1.slug)).toContainText(PROBE_HIGH)
-        await expect(updateButton(TENANT1.slug)).toBeDisabled()
-        expect(await probeVals(TENANT1.schema), 'Low tạo bảng + High nhân 10').toEqual(VALS_APPLIED)
+        await expect(row(TENANT.slug), 'job 更新 xong ⇒ dừng ở probe Low').toContainText(
+            PROBE_LOW,
+            {
+                timeout: JOB_TIMEOUT,
+            },
+        )
+        await expect(badge(TENANT.slug, JA.outdated), 'còn probe High ⇒ 更新あり').toBeVisible()
+        expect(await probeVals(TENANT.schema), 'chỉ Low: chưa nhân 10').toEqual(VALS_LOW_ONLY)
+        await captureFixedUi(page, 'admin-tenants-update-to-low')
     })
 
-    test('TC-2 — 復元 tenant1 về trước PROBE_HIGH: dữ liệu quay lại, tenant 保留', async () => {
+    test('TC-2 — 復元 khi migration áp gần nhất là Low: chỉ báo không có gì để 復元', async () => {
         skipWithReason(skipReason !== '', skipReason)
-        await restoreHigh(TENANT1.slug)
-        await expect(updateButton(TENANT1.slug), '保留 ⇒ 更新 bật lại').toBeEnabled()
-        expect(await probeVals(TENANT1.schema), 'bảng probe chép lại từ backup').toEqual(VALS_RESTORED)
+        const dialog = await openRestore(TENANT.slug, PROBE_LOW)
+        await expectRestoreRefused(dialog, JA.restoreNone)
+        expect(await probeVals(TENANT.schema), 'không có gì bị đụng').toEqual(VALS_LOW_ONLY)
+    })
+
+    test('TC-3 — 更新 lên probe High (mặc định bản mới nhất): runner backup rồi áp High', async () => {
+        skipWithReason(skipReason !== '', skipReason)
+        await update(TENANT.slug, PROBE_HIGH)
+        await expect(badge(TENANT.slug, JA.upToDate)).toBeVisible({
+            timeout: JOB_TIMEOUT,
+        })
+        await expect(row(TENANT.slug)).toContainText(PROBE_HIGH)
+        await expect(updateButton(TENANT.slug)).toBeDisabled()
+        await expect(updateButton(TENANT.slug)).toHaveAttribute('title', JA.upToDateHint)
+        expect(await probeVals(TENANT.schema), 'Low tạo bảng + High nhân 10').toEqual(VALS_APPLIED)
+    })
+
+    /** Backup objects of probe High for the tenant: run manifests and table data. */
+    const highBackup = () => {
+        const keys = s3Keys(`${PROBE_HIGH}/${TENANT.schema}/`)
+        return {
+            data: keys.filter((k) => k.endsWith('.bin')),
+            manifests: keys.filter((k) => k.endsWith('/manifest.json')),
+        }
+    }
+
+    /** Lùi probe High bằng DB (journal + dữ liệu) để 更新 / rollout áp lại nó. */
+    async function revertHigh(): Promise<void> {
+        const reverted = await withDb(async (c) => {
+            await c.query('BEGIN')
+            await c.query(`UPDATE "${TENANT.schema}".${PROBE_TABLE} SET val = val / 10`)
+            await c.query(`DELETE FROM "${TENANT.schema}".schema_migrations WHERE id = $1`, [
+                PROBE_HIGH,
+            ])
+            const r = await c.query(
+                `UPDATE platform.tenant_migration_state s
+                 SET status = 'ready', error = NULL, last_migration_id = $2, updated_at = now()
+                 FROM platform.tenants t WHERE t.id = s.tenant_id AND t.slug = $1`,
+                [TENANT.slug, PROBE_LOW],
+            )
+            await c.query('COMMIT')
+            return r.rowCount
+        })
+        expect(reverted, 'lùi probe High').toBe(1)
+        await expect(badge(TENANT.slug, JA.outdated)).toBeVisible({
+            timeout: 15_000,
+        })
+        expect(await probeVals(TENANT.schema)).toEqual(VALS_LOW_ONLY)
+    }
+
+    test('TC-4 — dữ liệu backup trên S3 đã mất: job 復元 lỗi THẬT, tenant mở lại kèm "前回の復元に失敗しました"', async () => {
+        skipWithReason(skipReason !== '', skipReason)
+        const backup = highBackup()
+        expect(backup.manifests.length, 'TC-3 phải để lại backup trên S3').toBeGreaterThan(0)
+        expect(backup.data.length).toBeGreaterThan(0)
+        // Giữ manifest (kiểm tra trước khi nhận 復元 qua), xoá dữ liệu bảng (job đọc thì lỗi).
+        s3Delete(backup.data)
+
+        const dialog = await openRestore(TENANT.slug, PROBE_HIGH)
+        await dialog.getByLabel(JA.restoreTypeSlug).fill(TENANT.slug)
+        await dialog.getByRole('button', { name: JA.restoreConfirm }).click()
+        await expect(page.getByText(JA.queued).first(), 'server nhận job').toBeVisible()
+        await expect(dialog).toBeHidden()
+
+        await expect(
+            badge(TENANT.slug, JA.restoreFailed),
+            'job lỗi ⇒ báo trên dòng tenant',
+        ).toBeVisible({
+            timeout: JOB_TIMEOUT,
+        })
+        await expect(
+            row(TENANT.slug).getByTitle(new RegExp(`^Restore of ${PROBE_HIGH} failed`)),
+        ).toBeVisible()
+        await expect(badge(TENANT.slug, JA.upToDate), 'không đổi gì ⇒ vẫn 最新').toBeVisible()
+        expect(await probeVals(TENANT.schema), 'schema không bị đụng').toEqual(VALS_APPLIED)
+        await captureFixedUi(page, 'admin-tenants-restore-failed')
+    })
+
+    test('TC-5 — High không còn backup nào trên S3: hộp thoại 復元 báo không có backup, không cho chạy', async () => {
+        skipWithReason(skipReason !== '', skipReason)
+        s3Delete(highBackup().manifests)
+        const dialog = await openRestore(TENANT.slug, PROBE_HIGH)
+        await expectRestoreRefused(dialog, JA.restoreNoBackup)
+        expect(await probeVals(TENANT.schema), 'không có gì bị đụng').toEqual(VALS_APPLIED)
+    })
+
+    test('TC-6 — 更新 áp lại probe High (backup mới) rồi 復元 THẬT: dữ liệu quay lại, tenant 保留', async () => {
+        skipWithReason(skipReason !== '', skipReason)
+        await revertHigh()
+        await update(TENANT.slug, PROBE_HIGH)
+        await expect(badge(TENANT.slug, JA.upToDate)).toBeVisible({
+            timeout: JOB_TIMEOUT,
+        })
+        expect(await probeVals(TENANT.schema)).toEqual(VALS_APPLIED)
+        expect(
+            highBackup().data.length,
+            'runner chụp backup mới trước khi áp High',
+        ).toBeGreaterThan(0)
+
+        const dialog = await openRestore(TENANT.slug, PROBE_HIGH)
+        await expect(dialog.getByText(JA.restoreLoss), 'liệt kê bảng bị ghi đè').toContainText(
+            PROBE_TABLE,
+        )
+        const submit = dialog.getByRole('button', { name: JA.restoreConfirm })
+        await expect(submit, 'chưa gõ slug thì chưa được 復元').toBeDisabled()
+        await dialog.getByLabel(JA.restoreTypeSlug).fill(TENANT.slug)
+        await submit.click()
+        await expect(page.getByText(JA.queued).first()).toBeVisible()
+        await expect(dialog).toBeHidden()
+        await expect(badge(TENANT.slug, JA.held), 'sau 復元 phải là 保留').toBeVisible({
+            timeout: JOB_TIMEOUT,
+        })
+        await expect(updateButton(TENANT.slug), '保留 ⇒ 更新 bật lại').toBeEnabled()
+        expect(await probeVals(TENANT.schema), 'bảng probe chép lại từ backup').toEqual(
+            VALS_LOW_ONLY,
+        )
         await captureFixedUi(page, 'admin-tenants-after-restore')
     })
 
-    test('TC-3 — 更新 tenant1 lần nữa: áp lại PROBE_HIGH thật', async () => {
+    test('TC-7 — 更新 tenant đang 保留: áp lại probe High thật, gỡ 保留', async () => {
         skipWithReason(skipReason !== '', skipReason)
-        await confirmUpdate(TENANT1.slug, new RegExp(`${PROBE_LOW} から`))
-        await expect(badge(TENANT1.slug, JA.upToDate)).toBeVisible({ timeout: JOB_TIMEOUT })
-        expect(await probeVals(TENANT1.schema)).toEqual(VALS_APPLIED)
+        await update(TENANT.slug, PROBE_HIGH)
+        await expect(badge(TENANT.slug, JA.upToDate)).toBeVisible({
+            timeout: JOB_TIMEOUT,
+        })
+        expect(await probeVals(TENANT.schema)).toEqual(VALS_APPLIED)
     })
 
-    test('TC-4 — 復元 migration Low: server từ chối ngay ở bước xem trước, nút 復元する mờ', async () => {
+    test('TC-8 — 次の段階を実行: rollout áp lại probe High thật', async () => {
         skipWithReason(skipReason !== '', skipReason)
-        await row(TENANT1.slug).getByRole('button', { name: JA.restore, exact: true }).click()
-        const dialog = page.getByRole('dialog')
-        await dialog.getByLabel(JA.restoreMigrationId).fill(PROBE_LOW)
-        await expect(dialog.getByText(JA.notRestorable)).toBeVisible()
-        await expect(dialog.getByRole('button', { name: JA.restoreConfirm })).toBeDisabled()
-        await dialog.getByRole('button', { name: 'キャンセル' }).click()
-        await expect(dialog).toBeHidden()
-        expect(await probeVals(TENANT1.schema), 'không có gì bị đụng').toEqual(VALS_APPLIED)
-    })
-
-    test('TC-5 — 次の段階を実行: rollout migrate tenant2 thật', async () => {
-        skipWithReason(skipReason !== '', skipReason)
-        await migrationLoaded(TENANT2.slug)
-
-        if (await badge(TENANT2.slug, JA.upToDate).isVisible()) {
-            console.log('tenant2 đã 最新 → 復元 về trước PROBE_HIGH rồi gỡ 保留 để rollout có việc')
-            await restoreHigh(TENANT2.slug)
-            const cleared = await withDb((c) =>
-                c.query(
-                    `UPDATE platform.tenant_migration_state s SET status = 'ready', error = NULL,
-                            updated_at = now()
-                     FROM platform.tenants t
-                     WHERE t.id = s.tenant_id AND t.slug = $1 AND s.status = 'held'`,
-                    [TENANT2.slug],
-                ),
-            )
-            expect(cleared.rowCount, 'gỡ 保留 của tenant2').toBe(1)
-            await expect(badge(TENANT2.slug, JA.outdated)).toBeVisible({ timeout: 15_000 })
-        }
-        expect(await probeVals(TENANT2.schema), 'trước rollout tenant2 chưa có PROBE_HIGH').not.toEqual(
-            VALS_APPLIED,
-        )
+        await revertHigh()
 
         await startRollout(JA.next)
         await expect(rolloutStatus()).toHaveText(new RegExp(`^(${JA.completed}|${JA.paused})$`), {
             timeout: JOB_TIMEOUT,
         })
         await expect(section(), 'không tenant nào lỗi').toContainText('失敗 0')
-        await expect(badge(TENANT2.slug, JA.upToDate)).toBeVisible({ timeout: 15_000 })
-        expect(await probeVals(TENANT2.schema)).toEqual(VALS_APPLIED)
+        await expect(badge(TENANT.slug, JA.upToDate)).toBeVisible({
+            timeout: 15_000,
+        })
+        expect(await probeVals(TENANT.schema)).toEqual(VALS_APPLIED)
     })
 
-    test('TC-6 — 残りをすべて実行: rollout chạy hết, mọi tenant đã 最新 ⇒ chỉ bỏ qua, 完了', async () => {
+    test('TC-9 — 残りをすべて実行: mọi tenant đã 最新 ⇒ chỉ bỏ qua, 完了', async () => {
         skipWithReason(skipReason !== '', skipReason)
         await startRollout(JA.all)
-        await expect(rolloutStatus()).toHaveText(JA.completed, { timeout: JOB_TIMEOUT })
+        await expect(rolloutStatus()).toHaveText(JA.completed, {
+            timeout: JOB_TIMEOUT,
+        })
         await expect(section()).toContainText('成功 0 ／ 失敗 0')
-        for (const t of [TENANT1, TENANT2]) {
-            await expect(badge(t.slug, JA.upToDate)).toBeVisible()
-            expect(await probeVals(t.schema)).toEqual(VALS_APPLIED)
-        }
+        await expect(badge(TENANT.slug, JA.upToDate)).toBeVisible()
+        await expect(page.getByRole('row').getByText(JA.outdated, { exact: true })).toHaveCount(0)
         await captureFixedUi(page, 'admin-tenants-after-rollout')
     })
 })

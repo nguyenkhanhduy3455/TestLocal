@@ -1,8 +1,12 @@
 /**
  * Rule 24 — web-admin list screens (admin.ochacom.local). FACT: admin lists have
- * no double-click selection, no FKeyBar and are server-paged, so only 24.1,
- * 24.2 (panel inset), 24.4 (合　計 footer) apply; the 郵便番号 master is the one
- * admin list with row selection and also gets 24.5.
+ * no double-click selection and no FKeyBar, so only 24.1, 24.2 (panel inset),
+ * 24.4 (合　計 footer) apply; the 郵便番号 master is the one admin list with row
+ * selection and also gets 24.5.
+ * FACT (2026-10-15, feat/admin-tenant-migrate-merge): every admin list is a virtual
+ * list (WindowedListTable, scroll container `windowed-scroll-container`) loaded a
+ * window at a time — no ページ: x / y pager — with a one-line 合　計 footer like
+ * /patients (24.6); the app shell has no side margin, as in web-tenant (24.7).
  * One login in a private context (the shared `authedPage` is a TENANT session).
  */
 import { expect, test, type Browser, type Page } from '@playwright/test'
@@ -18,6 +22,8 @@ import { ADMIN_USER } from '../_shared/test-data'
 const ADMIN_BASE_URL = process.env.TEST_ADMIN_BASE_URL ?? 'https://admin.ochacom.local/'
 const PANEL_INSET = 4
 const TOLERANCE = 1.5
+/** One text line of the 合　計 footer: py-2 (16px) + one 16px line + border. */
+const ONE_LINE_FOOTER_MAX = 40
 
 test.describe.configure({ mode: 'serial', timeout: 300_000 })
 
@@ -120,6 +126,38 @@ test.describe('Rule 24 — web-admin lists', () => {
                     .locator("xpath=ancestor::div[contains(@class,'grid')][1]")
                 await expect(footer.getByText(/\d+\s?件/).first()).toBeVisible()
                 await expect(page.getByText('該当件数')).toHaveCount(0)
+            })
+
+            test('24.6 virtual list, no pager', async () => {
+                await expect(root().getByTestId('windowed-scroll-container')).toBeVisible()
+                await expect(root().getByText(/^ページ:/)).toHaveCount(0)
+            })
+
+            test('24.6b 合　計 footer is one line', async () => {
+                const footer = (await page
+                    .getByText('合　計', { exact: true })
+                    .locator("xpath=ancestor::div[contains(@class,'grid')][1]")
+                    .boundingBox())!
+                expect(footer.height, 'footer height').toBeLessThanOrEqual(ONE_LINE_FOOTER_MAX)
+            })
+
+            test('24.7 no side margin around the screen (as in web-tenant)', async () => {
+                const edges = await root().evaluate((el) => {
+                    const main = el.closest('main')!
+                    const shell = main.parentElement!
+                    const s = getComputedStyle(shell)
+                    return {
+                        marginLeft: parseFloat(s.marginLeft),
+                        marginRight: parseFloat(s.marginRight),
+                        rightGap: window.innerWidth - main.getBoundingClientRect().right,
+                    }
+                })
+                expect(edges.marginLeft, 'left margin').toBe(0)
+                expect(edges.marginRight, 'right margin').toBe(0)
+                expect(
+                    Math.abs(edges.rightGap),
+                    'content reaches the right edge',
+                ).toBeLessThanOrEqual(TOLERANCE)
             })
 
             if (screen.selectable) {
