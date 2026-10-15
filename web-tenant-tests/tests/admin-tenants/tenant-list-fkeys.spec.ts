@@ -16,6 +16,8 @@ import { ADMIN_USER } from '../_shared/test-data'
  *    header role=columnheader có aria-sort none/ascending/descending; click header lần 1 ⇒ tăng,
  *    lần 2 ⇒ giảm (sort phía server, TenantSortColumns). Cột 操作 không sort.
  *  - Tên nút F-key bắt đầu bằng số phím ("F9" + nhãn).
+ *  - routes/_authenticated/tenants/$id.tsx (テナント情報): tiêu đề căn giữa như danh sách, không còn
+ *    nút 戻る trên thanh tiêu đề; FKeyBar F10 戻る → /tenants.
  *
  * Cần ≥ 2 tenant (demo1: tenant1, tenant2). 1 LOGIN (Rule 10.1), page riêng (Rule 19.2).
  */
@@ -143,5 +145,35 @@ test.describe('web-admin /tenants — FKeyBar, chọn / mở dòng, sort cột',
         } else {
             console.log(`${slug} đã 最新 ⇒ F4 mờ (đúng); bỏ qua bước mở dialog 更新`)
         }
+    })
+
+    test('TC-8 — テナント情報: tiêu đề ở giữa, không nút 戻る trên màn, F10 戻る về danh sách', async () => {
+        await dataRows().first().dblclick()
+        await expect(page).toHaveURL(/\/tenants\/[0-9a-f-]{36}$/)
+        const title = page.getByRole('heading', { level: 1, name: 'テナント情報' })
+        await expect(title).toBeVisible()
+        const bar = (await title
+            .locator('xpath=ancestor::div[contains(@class,"relative")][1]')
+            .boundingBox())!
+        const box = (await title.boundingBox())!
+        // Icon + heading are centred together: the heading sits right of the bar's centre.
+        expect(
+            Math.abs(box.x + box.width / 2 - (bar.x + bar.width / 2)),
+            'title centred',
+        ).toBeLessThan(40)
+        await expect(
+            page.getByRole('button', { name: /^戻る$/ }),
+            'không còn nút 戻る',
+        ).toHaveCount(0)
+        await expect(fkey(10)).toContainText('戻る')
+        // The screen fades in: capture once its animation is over, not half transparent.
+        await page
+            .locator('.animate-fade-in')
+            .first()
+            .evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
+        await captureFixedUi(page, 'admin-tenant-detail-fkeybar')
+        await fkey(10).click()
+        await expect(page).toHaveURL(/\/tenants$/)
+        await expect(dataRows().first()).toBeVisible({ timeout: 30_000 })
     })
 })
