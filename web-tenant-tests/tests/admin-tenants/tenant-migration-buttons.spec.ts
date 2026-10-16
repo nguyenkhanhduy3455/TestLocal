@@ -85,6 +85,18 @@ import { ADMIN_USER } from '../_shared/test-data'
  *  - Không có InternalSlugs ⇒ mọi tenant chung 1 đợt ⇒ 次の段階を実行 kết thúc
  *    ở 完了 (không phải 一時停止). Spec nhận cả hai.
  *
+ * TƯƠNG THÍCH API ↔ SCHEMA (feat/migration-api-compat)
+ *  - Probe High khai `[assembly: ApiRequiresTenantMigration("<High>")]` ⇒ build mới CẦN probe High:
+ *    tenant nào chưa có nó (chưa 更新, hoặc vừa 復元 về trước nó) bị middleware trả 503
+ *    TENANT_MIGRATING (không phục vụ) và dòng tenant hiện badge "API非互換" (title = lý do).
+ *    Khung ≪概要≫ hiện "API必須マイグレーション <High>" + "APIと非互換で利用停止中のテナント N件".
+ *  - Hộp thoại 更新: chọn đích dừng trước bản cần ⇒ cảnh báo (testid update-leaves-incompatible).
+ *    Hộp thoại 復元: 復元 xong sẽ thiếu bản cần ⇒ cảnh báo (testid restore-api-incompatible-after).
+ *  - Chiều ngược (DB cao hơn API): dòng journal của build mới hơn có breaks_api_below lớn hơn
+ *    bản build này cần ⇒ cũng 503 + API非互換. Spec giả bằng 1 dòng journal FUTURE (TC-7b).
+ *  - Middleware cache tenant ĐƯỢC phục vụ 60s (Redis) ⇒ chờ 503/401 bằng poll ≤ 90s.
+ *  - tenant2 và tenant tạm cũng bị chặn tới khi rollout áp probe High cho chúng.
+ *
  * 1 LOGIN (Rule 10.1) — page riêng, KHÔNG dùng authedPage (Rule 19.2): cần phiên
  * super-admin ở admin.ochacom.local. `serial`: các testcase nối trạng thái.
  */
@@ -106,6 +118,16 @@ const VALS_APPLIED = [10, 20]
 const VALS_LOW_ONLY = [1, 2]
 
 const TENANT = { slug: 'tenant1', schema: 't_tenant1' }
+/** Tenant API of TENANT: an anonymous call answers 401 when served, 503 when refused. */
+const TENANT_API_BASE = process.env.TEST_TENANT_API_BASE_URL ?? 'https://tenant1.ochacom.local/'
+/** Middleware caches a served tenant for 60s: a refusal shows up within that. */
+const SERVED_TIMEOUT = 90_000
+/** Journal row of a "newer build" migration that breaks this build (removed by the cleanup). */
+const FUTURE = {
+    id: '29991231000000',
+    name: 'e2e-compat-future',
+    breaksApiBelow: '29991230000000',
+}
 
 /**
  * Extra tenants created (real provisioning) before the probes, so a rollout has several waves
@@ -174,6 +196,9 @@ const JA = {
     completed: '完了',
     paused: '一時停止',
     upToDateHint: '最新のマイグレーションまで適用済みです',
+    apiIncompatible: 'API非互換',
+    required: (id: string) => `API必須マイグレーション ${id}`,
+    incompatibleCount: /^APIと非互換で利用停止中のテナント \d+件$/,
 } as const
 
 // ---------------------------------------------------------------------------
@@ -196,9 +221,15 @@ function probeFolders(): string[] {
     )
 }
 
-function migrationClass(id: string, name: string, className: string, attributes: string): string {
+function migrationClass(
+    id: string,
+    name: string,
+    className: string,
+    attributes: string,
+    assemblyAttribute = '',
+): string {
     return `using Ochacom.Migrations.Framework;
-
+${assemblyAttribute}
 namespace Ochacom.Migrations.Tenant._${id}_${name.replace(/-/g, '_')};
 
 // E2E probe written by TestLocal tenant-migration-buttons.spec.ts; removed when the spec ends.
@@ -254,6 +285,8 @@ DROP TABLE ${PROBE_TABLE};
             PROBE_HIGH_NAME,
             'E2eProbeScale',
             `Impact = MigrationImpact.High, BackupTables = ["${PROBE_TABLE}"], RequiresMaintenance = true`,
+            // The build's code "needs" probe High: tenants without it are not served.
+            `\n[assembly: ApiRequiresTenantMigration("${PROBE_HIGH}")]\n`,
         ),
         'up.sql': `UPDATE ${PROBE_TABLE} SET val = val * 10, updated_at = now();
 `,
@@ -274,17 +307,17 @@ async function removeProbesFromDb(): Promise<void> {
         const ids: string[] = []
         for (const { nspname } of schemas.rows) {
             const journal = await c.query<{ id: string }>(
-                `SELECT id FROM "${nspname}".schema_migrations WHERE name IN ($1, $2)`,
-                [PROBE_LOW_NAME, PROBE_HIGH_NAME],
+                `SELECT id FROM "${nspname}".schema_migrations WHERE name IN ($1, $2, $3)`,
+                [PROBE_LOW_NAME, PROBE_HIGH_NAME, FUTURE.name],
             )
             ids.push(...journal.rows.map((r) => r.id))
             await c.query('BEGIN')
             await c.query(`DROP TABLE IF EXISTS "${nspname}".${PROBE_TABLE}_deleted`)
             await c.query(`DROP TABLE IF EXISTS "${nspname}".${PROBE_TABLE}`)
-            await c.query(`DELETE FROM "${nspname}".schema_migrations WHERE name IN ($1, $2)`, [
-                PROBE_LOW_NAME,
-                PROBE_HIGH_NAME,
-            ])
+            await c.query(
+                `DELETE FROM "${nspname}".schema_migrations WHERE name IN ($1, $2, $3)`,
+                [PROBE_LOW_NAME, PROBE_HIGH_NAME, FUTURE.name],
+            )
             await c.query('COMMIT')
         }
         const probeIds = [...new Set([...ids, PROBE_LOW, PROBE_HIGH])]
@@ -455,6 +488,7 @@ async function newAdminPage(browser: Browser): Promise<{ context: BrowserContext
 
 test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 残りをすべて実行 (chạy thật)', () => {
     let api: APIRequestContext | undefined
+    let tenantApi: APIRequestContext | undefined
     let context: BrowserContext | undefined
     let page: Page
     let skipReason = ''
@@ -498,6 +532,22 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
     const rolloutStatus = (): Locator =>
         section().locator('dt', { hasText: '状態' }).locator('xpath=following-sibling::dd[1]')
 
+    /** Whether the tenant API serves TENANT (401 anonymous) or refuses it (503 TENANT_MIGRATING). */
+    async function expectServed(served: boolean, message: string): Promise<void> {
+        await expect
+            .poll(
+                async () => {
+                    const res = await tenantApi!.get('api/tenant/auth/me')
+                    if (res.status() !== 503) return String(res.status())
+                    return (await res.text()).includes('TENANT_MIGRATING') ? '503 TENANT_MIGRATING' : '503'
+                },
+                { timeout: SERVED_TIMEOUT, intervals: [3_000], message },
+            )
+            .toBe(served ? '401' : '503 TENANT_MIGRATING')
+    }
+
+    const apiBadge = (slug: string): Locator => row(slug).getByTestId('migration-api-incompatible')
+
     /** 更新 tới `target` (chọn trong dropdown); mô tả phải ghi "… から <target> まで". */
     async function update(
         slug: string,
@@ -516,6 +566,11 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         await expect(picker, 'mặc định chọn bản mới nhất chưa áp').toHaveValue(PROBE_HIGH)
         await picker.selectOption(target)
         await expect(dialog, 'mô tả ghi "từ X tới bản chọn"').toContainText(`から ${target} まで`)
+        // The build needs probe High: stopping before it keeps the tenant refused, said up front.
+        await expect(
+            dialog.getByTestId('update-leaves-incompatible'),
+            'dừng trước probe High (bản build cần) ⇒ cảnh báo vẫn bị chặn',
+        ).toHaveCount(target === PROBE_HIGH ? 0 : 1)
         await dialog.getByRole('button', { name: JA.updateConfirm }).click()
         await expectQueued()
         await expect(dialog).toBeHidden()
@@ -629,6 +684,10 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
             baseURL: ADMIN_BASE_URL,
             ignoreHTTPSErrors: true,
         })
+        tenantApi = await request.newContext({
+            baseURL: TENANT_API_BASE,
+            ignoreHTTPSErrors: true,
+        })
         // A crashed earlier run may have left probes behind: clear them before adding new ones.
         await removeProbesFromDb()
         await removeExtraTenants()
@@ -652,6 +711,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
             await restartDemo1(api)
         }
         await api?.dispose()
+        await tenantApi?.dispose()
     })
 
     test('TC-0 — build đã nạp 2 migration probe, probe High là migration mới nhất', async () => {
@@ -665,6 +725,17 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         ).toBeVisible()
         await expect(updateButton(TENANT.slug)).toBeEnabled()
         expect(await probeVals(TENANT.schema), 'chưa có bảng probe').toBeNull()
+
+        // The build needs probe High, which no tenant has yet: every tenant is refused.
+        await expect(page.getByText(/^API必須マイグレーション /)).toHaveText(JA.required(PROBE_HIGH))
+        await expect(page.getByText(JA.incompatibleCount)).toBeVisible()
+        await expect(apiBadge(TENANT.slug)).toHaveText(JA.apiIncompatible)
+        await expect(apiBadge(TENANT.slug)).toHaveAttribute(
+            'title',
+            new RegExp(`Missing .*${PROBE_HIGH}`),
+        )
+        await expectServed(false, 'thiếu probe High mà build cần ⇒ tenant API trả 503')
+        await captureFixedUi(page, 'admin-tenants-api-incompatible')
     })
 
     test('TC-1 — 更新 chỉ tới probe Low (chọn trong dropdown): High chưa áp', async () => {
@@ -680,6 +751,8 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         )
         await expect(badge(TENANT.slug, JA.outdated), 'còn probe High ⇒ 更新あり').toBeVisible()
         expect(await probeVals(TENANT.schema), 'chỉ Low: chưa nhân 10').toEqual(VALS_LOW_ONLY)
+        await expect(apiBadge(TENANT.slug), 'vẫn thiếu probe High ⇒ vẫn API非互換').toBeVisible()
+        await expectServed(false, 'chỉ tới Low ⇒ tenant vẫn bị chặn')
         await captureFixedUi(page, 'admin-tenants-update-to-low')
     })
 
@@ -700,6 +773,8 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         await expect(updateButton(TENANT.slug)).toBeDisabled()
         await expect(updateButton(TENANT.slug)).toHaveAttribute('title', JA.upToDateHint)
         expect(await probeVals(TENANT.schema), 'Low tạo bảng + High nhân 10').toEqual(VALS_APPLIED)
+        await expect(apiBadge(TENANT.slug), 'đủ bản build cần ⇒ hết API非互換').toHaveCount(0)
+        await expectServed(true, 'đã có probe High ⇒ tenant API phục vụ lại (401 khi chưa login)')
     })
 
     /** Backup objects of probe High for the tenant: run manifests and table data. */
@@ -787,6 +862,10 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         const dialog = await openRestore(TENANT.slug, PROBE_LOW, 'fkey')
         const submit = dialog.getByRole('button', { name: JA.restoreConfirm })
         await expect(submit, 'chưa gõ slug thì chưa được 復元').toBeDisabled()
+        await expect(
+            dialog.getByTestId('restore-api-incompatible-after'),
+            '復元 về trước probe High (bản build cần) ⇒ báo trước tenant sẽ bị chặn',
+        ).toBeVisible()
         await captureFixedUi(page, 'admin-tenant-restore-slug-input')
         await dialog.getByLabel(JA.restoreTypeSlug).fill(TENANT.slug)
         await submit.click()
@@ -809,6 +888,8 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         expect(await probeVals(TENANT.schema), 'bảng probe chép lại từ backup').toEqual(
             VALS_LOW_ONLY,
         )
+        await expect(apiBadge(TENANT.slug), '復元 xong thiếu probe High ⇒ API非互換').toBeVisible()
+        await expectServed(false, 'vừa 復元 về trước bản build cần ⇒ tenant API trả 503')
         await captureFixedUi(page, 'admin-tenants-after-restore')
     })
 
@@ -819,6 +900,38 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
             timeout: JOB_TIMEOUT,
         })
         expect(await probeVals(TENANT.schema)).toEqual(VALS_APPLIED)
+        await expect(apiBadge(TENANT.slug)).toHaveCount(0)
+        await expectServed(true, '更新 lại probe High ⇒ tenant API phục vụ lại')
+    })
+
+    test('TC-7b — DB cao hơn API: journal có migration của build mới hơn phá build này ⇒ chặn; gỡ ⇒ mở lại', async () => {
+        skipWithReason(skipReason !== '', skipReason)
+        // As if a newer build ran a migration that drops what this build reads, then this
+        // (older) build was deployed back: the runner of that build recorded breaks_api_below.
+        await withDb((c) =>
+            c.query(
+                `INSERT INTO "${TENANT.schema}".schema_migrations
+                     (id, name, checksum, duration_ms, app_version, breaks_api_below)
+                 VALUES ($1, $2, 'e2e', 0, 'e2e-newer-build', $3)`,
+                [FUTURE.id, FUTURE.name, FUTURE.breaksApiBelow],
+            ),
+        )
+        await expect(apiBadge(TENANT.slug), 'migration lạ phá build này ⇒ API非互換').toBeVisible({
+            timeout: 15_000,
+        })
+        await expect(apiBadge(TENANT.slug)).toHaveAttribute(
+            'title',
+            new RegExp(`${FUTURE.id} \\(needs an API build requiring ${FUTURE.breaksApiBelow}`),
+        )
+        await expectServed(false, 'DB có migration phá build này ⇒ tenant API trả 503')
+
+        await withDb((c) =>
+            c.query(`DELETE FROM "${TENANT.schema}".schema_migrations WHERE id = $1`, [FUTURE.id]),
+        )
+        await expect(apiBadge(TENANT.slug), 'gỡ migration lạ ⇒ hết API非互換').toHaveCount(0, {
+            timeout: 15_000,
+        })
+        await expectServed(true, 'gỡ migration lạ ⇒ tenant API phục vụ lại')
     })
 
     /** Provisioned tenants as a rollout lists them, split into waves like RolloutPlanner.Plan. */
@@ -924,6 +1037,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         await expectQueued()
         await expect(row(TENANT.slug)).toContainText(PROBE_LOW, { timeout: JOB_TIMEOUT })
         await expect(badge(TENANT.slug, JA.restored)).toBeVisible()
+        await expect(apiBadge(TENANT.slug), 'vừa 復元 ⇒ API非互換').toBeVisible()
         expect(await needsWork(TENANT.slug), 'tenant1 vừa 復元 ⇒ held, rollout bỏ qua').toBe(false)
     })
 
@@ -957,6 +1071,8 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         await update(TENANT.slug, PROBE_HIGH)
         await expect(badge(TENANT.slug, JA.upToDate)).toBeVisible({ timeout: JOB_TIMEOUT })
         expect(await probeVals(TENANT.schema)).toEqual(VALS_APPLIED)
+        await expect(apiBadge(TENANT.slug)).toHaveCount(0)
+        await expectServed(true, 'tenant1 đủ bản build cần ⇒ phục vụ lại')
     })
 
     test('TC-13 — 残りをすべて実行 khi mọi tenant đã 最新: chỉ bỏ qua, 完了', async () => {
@@ -964,6 +1080,9 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         const e = await runRollout(JA.all, false)
         expect(e.ok).toBe(0)
         await expect(page.getByRole('row').getByText(JA.outdated, { exact: true })).toHaveCount(0)
+        // Every tenant has probe High now: none is refused any more.
+        await expect(page.getByTestId('migration-api-incompatible')).toHaveCount(0)
+        await expect(page.getByText(JA.incompatibleCount)).toHaveCount(0)
         for (const slug of [TENANT.slug, ...EXTRA_TENANTS])
             expect(await probeVals(schemaOf(slug)), `${slug} đã áp probe High`).toEqual(
                 VALS_APPLIED,
