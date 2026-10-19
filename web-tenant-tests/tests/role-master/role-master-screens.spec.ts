@@ -42,6 +42,30 @@ test.describe('ロールマスタ — header trên 一覧 / 新規 / 更新', ()
         await captureFixedUi(page, 'role-master-new')
     })
 
+    test('TC-2b — chọn/bỏ nhanh cả cột 閲覧 / 編集', async () => {
+        // Đang ở màn 新規 (TC-2). 17 màn × 2 cột = 34 ô + 2 ô chọn tất cả.
+        const boxes = page.getByRole('checkbox')
+        const allView = page.getByRole('checkbox', { name: '閲覧をすべて選択' })
+        const allEdit = page.getByRole('checkbox', { name: '編集をすべて選択' })
+
+        await allEdit.click()
+        await expect(allEdit).toHaveAttribute('data-state', 'checked')
+        // 編集 kéo theo 閲覧.
+        await expect(allView).toHaveAttribute('data-state', 'checked')
+        await expect(page.locator('[role="checkbox"][data-state="checked"]')).toHaveCount(await boxes.count())
+        await captureFixedUi(page, 'role-master-select-all')
+
+        // Bỏ hết 閲覧 ⇒ bỏ luôn hết 編集.
+        await allView.click()
+        await expect(page.locator('[role="checkbox"][data-state="checked"]')).toHaveCount(0)
+
+        // Tick 1 ô ⇒ ô chọn tất cả ở trạng thái một phần.
+        await page.getByRole('checkbox', { name: '診療入力 閲覧' }).click()
+        await expect(allView).toHaveAttribute('data-state', 'indeterminate')
+        await expect(allEdit).toHaveAttribute('data-state', 'unchecked')
+        await captureFixedUi(page.locator('thead'), 'role-master-select-all-partial')
+    })
+
     test('TC-3 — mở role hệ thống (更新) vẫn giữ header, không sửa được', async () => {
         await page.keyboard.press('F10')
         await expect(page).toHaveURL(/\/settings\/role-master$/, { timeout: 30_000 })
