@@ -1,3 +1,4 @@
+import { captureFixedUi } from '../_shared/capture'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { dbEnabled, withDb, DB_SCHEMA } from '../_shared/db'
@@ -902,6 +903,8 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         // Đây là nơi duy nhất cấp quyền, nên nó phải sửa được kể cả khi người đó
         // đã xác thực — không còn màn nào khác làm việc này.
         await expect(adminBox).toBeEnabled()
+        // 区分 và ロール cùng độ rộng.
+        await captureFixedUi(page.locator('#user-master-form'), 'user-master-kbn-role-same-width')
         await step()
     })
 
