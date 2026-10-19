@@ -42,6 +42,7 @@ describeListChrome(
         master('装着料マスタ /masters/set', '/masters/set'),
         master('処置マスタ /masters/trt', '/masters/trt'),
         master('ユーザマスタ /settings/user-master', '/settings/user-master'),
+        master('ロールマスタ /settings/role-master', '/settings/role-master'),
         {
             ...master('郵便番号 /masters/postal', '/masters/postal'),
             prompt: 'auto-selected',
