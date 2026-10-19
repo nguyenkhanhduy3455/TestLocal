@@ -62,9 +62,10 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  *      · メールアドレス là MỘT Ô CỦA FORM, nằm ngay trên 区分. Không còn nút
  *        ログイン有効化 hay hộp thoại riêng.
  *      · Điền email rồi F9 登録 ⇒ hiện confirm はい/いいえ; はい mới gửi mail.
- *      · 管理者権限 là checkbox nằm dưới 区分. Đây là nơi DUY NHẤT cấp quyền —
- *        màn /settings/users đã bị xoá hẳn. Chưa xác thực thì giá trị này áp dụng
- *        lúc phát thư mời; đã xác thực thì F9 登録 đổi role thật (admin ⇄ staff).
+ *      · ロール là dropdown nằm dưới 区分 (thay checkbox 管理者権限 cũ). Đây là nơi
+ *        DUY NHẤT cấp role — danh sách role lấy từ ロールマスタ của tenant. Chưa xác
+ *        thực thì giá trị này áp dụng lúc phát thư mời; đã xác thực thì F9 登録 đổi
+ *        role thật.
  *      · Đã đăng ký xong (loginStatus verified) ⇒ ô email bị disable.
  *        Người mới được mời (pending) vẫn sửa được để chữa địa chỉ gõ nhầm, và
  *        F9 lần nữa chính là gửi lại mail (BE thu hồi token cũ).
@@ -174,7 +175,7 @@ const UM = {
     labelEmail: 'メールアドレス',
     emailLocked: '登録完了後はメールアドレスを変更できません',
     activateConfirmTitle: 'アカウントを有効化しますか？',
-    labelIsAdmin: '管理者権限',
+    labelRole: 'ロール',
     loginUnverified: '未認証',
     loginVerified: '認証済',
     deleteTitle: 'ユーザを削除しますか？',
@@ -889,12 +890,12 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         await step()
     })
 
-    test('TC-ROLE-1 — có checkbox 管理者権限 trên màn 登録', async () => {
+    test('TC-ROLE-1 — có dropdown ロール trên màn 登録', async () => {
         // TC-ACT-3 kết thúc ở 一覧, nên phải mở lại màn 登録 trước.
         await openDetail()
 
-        const adminBox = page.getByRole('checkbox', { name: UM.labelIsAdmin })
-        await expect(adminBox, 'thiếu checkbox 管理者権限 trên màn 登録').toBeVisible({
+        const adminBox = page.getByRole('combobox', { name: UM.labelRole })
+        await expect(adminBox, 'thiếu dropdown ロール trên màn 登録').toBeVisible({
             timeout: 30000,
         })
 
@@ -913,8 +914,15 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
             'mục ユーザ管理 vẫn còn trong sidebar',
         ).toHaveCount(0)
 
-        // ユーザマスタ thì phải còn, nếu không là xoá nhầm cả hai.
-        await expect(page.getByRole('link', { name: 'ユーザマスタ' })).toHaveCount(1)
+        // ユーザマスタ không nằm ở sidebar mà ở マスタ登録メニュー (như WinForm
+        // frm501001) — kèm nút ロールマスタ mới ngay sau nó.
+        await page.goto(LIST_URL.replace('/settings/user-master', '/masters'), {
+            waitUntil: 'domcontentloaded',
+        })
+        await expect(page.getByRole('button', { name: 'ユーザマスタ', exact: true })).toHaveCount(1, {
+            timeout: 30000,
+        })
+        await expect(page.getByRole('button', { name: 'ロールマスタ', exact: true })).toHaveCount(1)
         await step()
     })
 
