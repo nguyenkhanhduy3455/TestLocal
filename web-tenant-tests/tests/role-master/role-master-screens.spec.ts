@@ -66,6 +66,24 @@ test.describe('ロールマスタ — header trên 一覧 / 新規 / 更新', ()
         await captureFixedUi(page.locator('thead'), 'role-master-select-all-partial')
     })
 
+    test('TC-2c — コード / ロール名 trùng thì BE từ chối, không lưu', async () => {
+        // Đang ở màn 新規 (TC-2b không lưu gì).
+        const code = page.getByLabel('コード', { exact: true })
+        const name = page.getByLabel('ロール名', { exact: true })
+
+        await code.fill('admin')
+        await name.fill('E2E重複テスト')
+        await page.keyboard.press('F9')
+        await expect(page.getByText('このコードは既に使用されています。')).toBeVisible({ timeout: 15_000 })
+
+        await code.fill('e2e-dup-check')
+        await name.fill('管理者')
+        await page.keyboard.press('F9')
+        await expect(page.getByText('このロール名は既に使用されています。')).toBeVisible({ timeout: 15_000 })
+        await expect(page).toHaveURL(/\/settings\/role-master\/new$/)
+        await captureFixedUi(page, 'role-master-name-taken')
+    })
+
     test('TC-3 — mở role hệ thống (更新) vẫn giữ header, không sửa được', async () => {
         await page.keyboard.press('F10')
         await expect(page).toHaveURL(/\/settings\/role-master$/, { timeout: 30_000 })
