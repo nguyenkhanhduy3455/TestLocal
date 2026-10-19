@@ -21,8 +21,10 @@ import { allowSave, TODAY_ISO, trtDt } from '../_shared/env'
  *  Hộp 「処置データ確認」 bật VÔ ĐIỀU KIỆN, chỉ có キャンセル / はい, và はい chỉ in (không lưu).
  *
  * ─── Đo thế nào ──────────────────────────────────────────────────────────────
- *  "In" = request POST …/rezept-datasource (bước đầu của handlePrintRezept) — không phụ
- *  thuộc agent in. "Lưu" = request POST bulk-save của 診療入力. Làm bẩn lưới bằng
+ *  "In" = request POST /v1/print-jobs có path …/rezept-datasource (bước đầu của
+ *  handlePrintRezept; agent tự gọi BE nên trình duyệt không thấy rezept-datasource).
+ *  Bỏ qua job `prerender: true` — màn hình tự render sẵn レセプト khi lưới sạch, đó
+ *  không phải bấm nút. "Lưu" = request POST bulk-save của 診療入力. Làm bẩn lưới bằng
  *  Insert (行追加) trên dòng 再診.
  *  Bệnh nhân seed riêng (SEED_PAT_NO_BASE + 83); TC はい ghi DB của chính bệnh nhân này
  *  (cần TEST_ALLOW_SAVE=1); afterAll xoá hẳn.
@@ -50,7 +52,7 @@ test.describe.configure({ mode: 'serial', timeout: 180_000 })
 test.describe('診療入力 レセプト — chỉ hỏi lưu khi có sửa đổi (btnReceipt_Click → ExitWithoutSaving)', () => {
     let page: Page
     let disposeOverlays: (() => Promise<void>) | undefined
-    const posts: string[] = []
+    const posts: { url: string; body: { path?: string; prerender?: boolean } | null }[] = []
 
     const receiptButton = () => page.getByRole('button', { name: 'レセプト', exact: true })
     const ryoCells = () => page.locator('[data-grid-cell$="|2"]')
@@ -58,8 +60,11 @@ test.describe('診療入力 レセプト — chỉ hỏi lưu khi có sửa đ�
     /** Nút của hộp 保存しますか — MessageBox YesNoCancel của WinForm: はい / いいえ / キャンセル. */
     const promptButton = (name: 'はい' | 'いいえ' | 'キャンセル') =>
         page.getByRole('dialog').filter({ hasText: SAVE_PROMPT }).getByRole('button', { name, exact: true })
-    const printed = () => posts.some((u) => u.includes('rezept-datasource'))
-    const saved = () => posts.some((u) => u.includes('/tenant/treatment/bulk-save'))
+    const isPrint = (p: (typeof posts)[number]) =>
+        /\/v1\/print-jobs$/.test(p.url) && !!p.body?.path?.includes('rezept-datasource') && p.body.prerender !== true
+    const isSave = (p: (typeof posts)[number]) => p.url.includes('/tenant/treatment/bulk-save')
+    const printed = () => posts.some(isPrint)
+    const saved = () => posts.some(isSave)
 
     async function openGrid(dt: string) {
         await page.goto(`/treatments/${PAT_NO}?trtDt=${dt}`, { waitUntil: 'domcontentloaded' })
@@ -76,7 +81,7 @@ test.describe('診療入力 レセプト — chỉ hỏi lưu khi có sửa đ�
             .getByRole('dialog')
             .or(page.getByRole('alertdialog'))
             .getByRole('button', { name: /^(キャンセル|閉じる|OK)$/ })
-        // Bản xem / hộp agent offline bật SAU request rezept-datasource — chờ nó ra đã.
+        // Bản xem / hộp agent offline bật SAU request print-jobs — chờ nó ra đã.
         await btn.first().waitFor({ timeout: 5_000 }).catch(() => {})
         for (let i = 0; i < 5; i++) {
             if (!(await btn.count())) return
@@ -102,7 +107,14 @@ test.describe('診療入力 レセプト — chỉ hỏi lưu khi có sửa đ�
         page = authedPage
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
         page.on('request', (req) => {
-            if (req.method() === 'POST') posts.push(req.url())
+            if (req.method() !== 'POST') return
+            let body: (typeof posts)[number]['body'] = null
+            try {
+                body = req.postDataJSON() as typeof body
+            } catch {
+                // không phải JSON — chỉ cần URL
+            }
+            posts.push({ url: req.url(), body })
         })
         await openGrid(TRT_DT)
     })
@@ -116,7 +128,7 @@ test.describe('診療入力 レセプト — chỉ hỏi lưu khi có sửa đ�
     test('TC-1 — lưới sạch: KHÔNG hỏi, in thẳng', async () => {
         posts.length = 0
         await receiptButton().click()
-        await expect.poll(printed, { message: 'phải gọi rezept-datasource', timeout: 15_000 }).toBe(true)
+        await expect.poll(printed, { message: 'phải gửi print-job rezept-datasource', timeout: 15_000 }).toBe(true)
         await expect(prompt(), 'không sửa gì thì WinForm không hỏi 保存しますか').toHaveCount(0)
         await closeOpenDialogs()
     })
@@ -153,9 +165,9 @@ test.describe('診療入力 レセプト — chỉ hỏi lưu khi có sửa đ�
         await expect(prompt()).toBeVisible({ timeout: 10_000 })
         await promptButton('はい').click()
         await expect.poll(printed, { timeout: 20_000 }).toBe(true)
-        const iSave = posts.findIndex((u) => u.includes('/tenant/treatment/bulk-save'))
-        const iPrint = posts.findIndex((u) => u.includes('rezept-datasource'))
-        expect(iSave, `はい phải lưu (POST đã gửi: ${posts.join(', ')})`).toBeGreaterThanOrEqual(0)
+        const iSave = posts.findIndex(isSave)
+        const iPrint = posts.findIndex(isPrint)
+        expect(iSave, `はい phải lưu (POST đã gửi: ${posts.map((p) => p.url).join(', ')})`).toBeGreaterThanOrEqual(0)
         expect(iSave, 'lưu phải xảy ra TRƯỚC khi dựng レセプト').toBeLessThan(iPrint)
         await closeOpenDialogs()
     })
