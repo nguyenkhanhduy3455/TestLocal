@@ -42,21 +42,34 @@ test.describe('ロールマスタ — header trên 一覧 / 新規 / 更新', ()
         await captureFixedUi(page, 'role-master-new')
     })
 
-    test('TC-2b — chọn/bỏ nhanh cả cột 閲覧 / 編集', async () => {
-        // Đang ở màn 新規 (TC-2). 17 màn × 2 cột = 34 ô + 2 ô chọn tất cả.
-        const boxes = page.getByRole('checkbox')
+    test('TC-2b — chọn/bỏ nhanh cả cột 閲覧 / 編集, mỗi nút chỉ đụng cột của nó', async () => {
+        // Đang ở màn 新規 (TC-2): chưa tick ô nào.
         const allView = page.getByRole('checkbox', { name: '閲覧をすべて選択' })
         const allEdit = page.getByRole('checkbox', { name: '編集をすべて選択' })
+        const checkedIn = (col: '閲覧' | '編集') =>
+            page.locator(`[role="checkbox"][aria-label$=" ${col}"][data-state="checked"]`)
+        const viewCount = await page.locator('[role="checkbox"][aria-label$=" 閲覧"]').count()
+        const editCount = await page.locator('[role="checkbox"][aria-label$=" 編集"]').count()
 
+        // 編集 chỉ chọn cột 編集, 閲覧 giữ nguyên.
         await allEdit.click()
         await expect(allEdit).toHaveAttribute('data-state', 'checked')
-        // 編集 kéo theo 閲覧.
-        await expect(allView).toHaveAttribute('data-state', 'checked')
-        await expect(page.locator('[role="checkbox"][data-state="checked"]')).toHaveCount(await boxes.count())
+        await expect(allView).toHaveAttribute('data-state', 'unchecked')
+        await expect(checkedIn('編集')).toHaveCount(editCount)
+        await expect(checkedIn('閲覧')).toHaveCount(0)
+
+        // 閲覧 chỉ chọn cột 閲覧.
+        await allView.click()
+        await expect(checkedIn('閲覧')).toHaveCount(viewCount)
         await captureFixedUi(page, 'role-master-select-all')
 
-        // Bỏ hết 閲覧 ⇒ bỏ luôn hết 編集.
+        // Bỏ 閲覧 ⇒ cột 編集 vẫn còn nguyên.
         await allView.click()
+        await expect(checkedIn('閲覧')).toHaveCount(0)
+        await expect(checkedIn('編集')).toHaveCount(editCount)
+
+        // Bỏ 編集 ⇒ trống hết.
+        await allEdit.click()
         await expect(page.locator('[role="checkbox"][data-state="checked"]')).toHaveCount(0)
 
         // Tick 1 ô ⇒ ô chọn tất cả ở trạng thái một phần.
