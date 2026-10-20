@@ -891,20 +891,20 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         await step()
     })
 
-    test('TC-ROLE-1 — có dropdown ロール trên màn 登録', async () => {
+    test('TC-ROLE-1 — có checkbox ロール (chọn nhiều) trên màn 登録', async () => {
         // TC-ACT-3 kết thúc ở 一覧, nên phải mở lại màn 登録 trước.
         await openDetail()
 
-        const adminBox = page.getByRole('combobox', { name: UM.labelRole })
-        await expect(adminBox, 'thiếu dropdown ロール trên màn 登録').toBeVisible({
+        const roles = page.getByRole('group', { name: UM.labelRole })
+        const boxes = roles.getByRole('checkbox')
+        await expect(boxes.first(), 'thiếu checkbox ロール trên màn 登録').toBeVisible({
             timeout: 30000,
         })
 
         // Đây là nơi duy nhất cấp quyền, nên nó phải sửa được kể cả khi người đó
         // đã xác thực — không còn màn nào khác làm việc này.
-        await expect(adminBox).toBeEnabled()
-        // 区分 và ロール cùng độ rộng.
-        await captureFixedUi(page.locator('#user-master-form'), 'user-master-kbn-role-same-width')
+        for (const box of await boxes.all()) await expect(box).toBeEnabled()
+        await captureFixedUi(page.locator('#user-master-form'), 'user-master-role-checkboxes')
         await step()
     })
 
