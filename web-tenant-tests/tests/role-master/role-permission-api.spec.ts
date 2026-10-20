@@ -19,7 +19,7 @@ import {
 import { ADMIN, WRITE_ENDPOINTS, type WriteRule } from './permission-contract'
 
 /**
- * Quét quyền của MỌI endpoint ghi của API tenant (204 endpoint, bảng ở permission-contract.ts).
+ * Quét quyền của MỌI endpoint ghi của API tenant (209 endpoint, bảng ở permission-contract.ts).
  *
  * Một user test giữ role tuỳ chỉnh 「E2E権限API」; giữa các vòng admin đổi quyền của role
  * qua API — BE áp dụng ngay, không cần login lại (1 login cho cả file).
