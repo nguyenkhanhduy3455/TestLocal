@@ -13,6 +13,7 @@ import {
     bearer,
     createRole,
     deleteRole,
+    loginApi,
     newApi,
     purge,
     type RoleInfo,
@@ -32,22 +33,21 @@ import {
  *
  *   TC-1 admin gỡ 編集 khỏi role của M khi M đang mở 物品マスタ:
  *        BE chặn NGAY với token đang dùng; FE khoá phím ghi sau khi nạp lại.
- *   TC-2 admin đổi role của M sang 「ユーザ」 ⇒ refresh xong M mất quyền ghi.
- *   TC-3 admin xoá role M đang giữ ⇒ token cũ mất quyền ngay; refresh xong M là 「ユーザ」.
- *   TC-4 owner hạ A từ 管理者 xuống 「ユーザ」 ⇒ refresh xong A mất quyền admin.
+ *   TC-2 admin đổi role của M sang 「ユーザ」 ⇒ phiên của M kết thúc ngay (token cũ 401,
+ *        refresh 401, app đá về /login).
+ *   TC-3 admin xoá role M đang giữ ⇒ token cũ mất quyền ghi ngay; refresh xong M là 「ユーザ」
+ *        (xoá role không kết thúc phiên: role đã xoá không còn quyền nào).
+ *   TC-4 owner hạ A từ 管理者 xuống 「ユーザ」 ⇒ phiên của A kết thúc ngay.
  *   TC-5 owner tự hạ quyền mình: ô ロール bị khoá, API trả OWNER_PROTECTED.
- *   TC-6 A tự hạ mình xuống 「ユーザ」 ở ユーザマスタ ⇒ nạp lại thì BE từ chối ロールマスタ
- *        và menu admin bị khoá.
+ *   TC-6 A tự hạ mình xuống 「ユーザ」 ở ユーザマスタ ⇒ lưu xong bị đá về /login; đăng nhập
+ *        lại thì ロールマスタ bị từ chối và nút trên メニュー bị khoá.
  *
- *   TC-7 tổng hợp: mọi lần đổi role ở TC-2 / TC-4 / TC-6 phải có hiệu lực NGAY.
+ * Đổi role tăng token_version và thu hồi mọi refresh token của người đó (giống đổi mật
+ * khẩu) — role nằm trong access token nên không làm vậy thì người bị hạ giữ quyền cũ
+ * tới khi token hết hạn.
  *
- * Bước "NGAY" của TC-2 / TC-4 / TC-6 không assert tại chỗ mà ghi vào `stale`, rồi TC-7
- * assert danh sách rỗng: role nằm trong access token và việc đổi role chưa thu hồi token,
- * nên hiện tại người bị hạ vẫn giữ quyền cũ tới lần refresh (≤ 15 phút). Assert tại chỗ
- * thì serial mode bỏ luôn các TC sau — gom lại để TC-1..6 vẫn kiểm phần còn lại.
- *
- * LOGIN: 2 lần UI (M, A). Token lấy từ response login của chính trang đó, refresh bằng
- * cookie của trang (giới hạn refresh 30 / phút / IP).
+ * LOGIN: M 1 lần UI + 1 lần API, A 3 lần UI (mỗi lần bị hạ là mất phiên). Token lấy từ
+ * response login của chính trang đó (refresh giới hạn 30 / phút / IP).
  *
  * Chạy: npx playwright test tests/role-master/role-permission-live.spec.ts --workers=1
  */
@@ -73,33 +73,42 @@ test.describe('Quyền đổi trong lúc đang đăng nhập', () => {
     let role: RoleInfo
     let m: Person
     let a: Person
-    /** Lần đổi role mà token đang dùng vẫn giữ quyền cũ — TC-7 đòi rỗng. */
-    const stale: string[] = []
-    function expectImmediate(what: string, status: number, expected: number) {
-        if (status !== expected) stale.push(`${what}: token đang dùng trả ${status}, phải ${expected}`)
-    }
 
-    /** Login UI, giữ lại access token từ response login (token đang chạy trong app). */
-    async function signIn(email: string): Promise<Person> {
-        const page = await newTestPage(owner.context().browser()!)
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
+    const loginButton = (page: Page) => page.getByRole('button', { name: JA.submit })
+
+    /** Login UI trên `page`, trả access token lấy từ response login (token app đang dùng). */
+    async function logIn(page: Page, email: string): Promise<string> {
+        if (!(await loginButton(page).isVisible())) await page.goto('/login', { waitUntil: 'domcontentloaded' })
         await page.getByLabel(JA.emailLabel).fill(email)
         await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
         const login = page.waitForResponse((r) => r.url().endsWith('/tenant/auth/login'))
-        await page.getByRole('button', { name: JA.submit }).click()
-        const body = await (await login).json()
-        await expect(page, `${email} không đăng nhập được (rate-limit?)`).toHaveURL(/\/$/, { timeout: 30_000 })
-        return { page, token: (body.data ?? body).accessToken }
+        await loginButton(page).click()
+        const res = await login
+        const body = await res.json()
+        // Bị đá ra giữa chừng thì app quay lại đúng trang cũ, không phải "/".
+        await expect(page, `${email} không đăng nhập được (rate-limit?)`).not.toHaveURL(/\/login/, {
+            timeout: 30_000,
+        })
+        expect(res.status(), `${email} login`).toBe(200)
+        return (body.data ?? body).accessToken
     }
 
-    /** Refresh bằng cookie của trang — như app tự làm khi access token hết hạn. */
-    async function refresh(p: Person): Promise<string[]> {
+    async function signIn(email: string): Promise<Person> {
+        const page = await newTestPage(owner.context().browser()!)
+        return { page, token: await logIn(page, email) }
+    }
+
+    /** Refresh bằng cookie của trang — như app tự làm khi access token hết hạn. Trả status. */
+    async function refresh(p: Person): Promise<number> {
         const res = await p.page.context().request.post(`${BASE_URL}${API}/tenant/auth/refresh`)
-        expect(res.status()).toBe(200)
-        const body = await res.json()
-        const d = body.data ?? body
-        p.token = d.accessToken
-        return d.user?.permissions ?? []
+        if (res.status() === 200) p.token = ((await res.json()).data ?? {}).accessToken
+        return res.status()
+    }
+
+    /** Phiên đã kết thúc: nạp lại trang thì app đá về /login. */
+    async function expectSignedOut(page: Page, path: string): Promise<void> {
+        await page.goto(path, { waitUntil: 'domcontentloaded' })
+        await expect(loginButton(page)).toBeVisible({ timeout: 30_000 })
     }
 
     /** Ghi 物品マスタ với body hỏng: 400 = qua được bước quyền (không ghi gì), 403 = bị chặn. */
@@ -114,25 +123,6 @@ test.describe('Quyền đổi trong lúc đang đăng nhập', () => {
     /** Đọc ロールマスタ — chỉ admin. */
     async function adminRead(token: string): Promise<number> {
         return (await api.get(`${API}/tenant/roles`, { headers: bearer(token) })).status()
-    }
-
-    /**
-     * goto (nạp lại trang). Trên Vite dev, nạp lại ngay sau một lần nạp khác đôi khi làm
-     * refresh trả 401 và app đá về /login (đã gặp ở user-master.spec.ts) — khi đó đăng
-     * nhập lại (thêm 1 login) rồi đi tiếp. Không ảnh hưởng điều đang kiểm: quyền đọc từ DB.
-     */
-    async function reloadAt(p: Person, email: string, path: string): Promise<void> {
-        await p.page.goto(path, { waitUntil: 'domcontentloaded' })
-        const loginButton = p.page.getByRole('button', { name: JA.submit })
-        const signedIn = p.page.locator('[data-fkey]').first()
-        await expect(loginButton.or(signedIn).first()).toBeVisible({ timeout: 30_000 })
-        if (!(await loginButton.isVisible())) return
-        console.log(`reloadAt: ${email} bị đá về /login khi nạp lại — đăng nhập lại`)
-        await p.page.getByLabel(JA.emailLabel).fill(email)
-        await p.page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
-        await loginButton.click()
-        await expect(p.page).toHaveURL(/\/$/, { timeout: 30_000 })
-        await p.page.goto(path, { waitUntil: 'domcontentloaded' })
     }
 
     /** Điều hướng trong SPA (TanStack Router nghe popstate) — không nạp lại trang. */
@@ -184,47 +174,46 @@ test.describe('Quyền đổi trong lúc đang đăng nhập', () => {
         await expect(await openGoodsRegister(m.page)).toBeEnabled()
     })
 
-    test('TC-2 — đổi role của M sang 「ユーザ」: refresh xong mất quyền ghi', async () => {
+    test('TC-2 — đổi role của M sang 「ユーザ」: phiên của M kết thúc ngay', async () => {
         const res = await assignRole(api, adminTok, M.userNo, await roleIdOf('user'))
         expect(res.status()).toBeLessThan(300)
         expect(await roleCodesOf(M.userNo)).toEqual(['user'])
 
-        expectImmediate('TC-2 đổi role M → ユーザ, ghi 物品マスタ', await goodsWrite(m.token), 403)
-
-        await refresh(m)
-        expect(await goodsWrite(m.token), 'sau refresh: chỉ còn 閲覧').toBe(403)
+        expect(await goodsWrite(m.token), 'token đang dùng bị từ chối ngay').toBe(401)
+        expect(await refresh(m), 'refresh token cũ bị thu hồi').toBe(401)
+        await expectSignedOut(m.page, '/masters/goods')
     })
 
     test('TC-3 — xoá role M đang giữ: token cũ mất quyền ngay, refresh xong là 「ユーザ」', async () => {
-        await assignRole(api, adminTok, M.userNo, role.id)
-        await refresh(m)
-        expect(await goodsWrite(m.token), 'đã giữ lại role tuỳ chỉnh').toBe(400)
+        expect((await assignRole(api, adminTok, M.userNo, role.id)).status()).toBeLessThan(300)
+        const session = await loginApi(M.email)
+        try {
+            expect(await goodsWrite(session.token), 'đăng nhập lại với role tuỳ chỉnh').toBe(400)
 
-        await deleteRole(api, adminTok, role)
-        expect(await goodsWrite(m.token), 'role đã xoá không còn quyền nào').toBe(403)
-        expect(await roleCodesOf(M.userNo)).toEqual(['user'])
+            await deleteRole(api, adminTok, role)
+            expect(await goodsWrite(session.token), 'role đã xoá không còn quyền nào').toBe(403)
+            expect(await roleCodesOf(M.userNo)).toEqual(['user'])
 
-        const permissions = await refresh(m)
-        expect(permissions.length, 'sau refresh có đủ quyền 閲覧 của 「ユーザ」').toBeGreaterThan(0)
-        expect(permissions.every((p) => p.endsWith('.view'))).toBe(true)
-        expect(await goodsWrite(m.token)).toBe(403)
+            await session.refresh()
+            expect(session.permissions.length, 'sau refresh có đủ quyền 閲覧 của 「ユーザ」').toBeGreaterThan(0)
+            expect(session.permissions.every((p) => p.endsWith('.view'))).toBe(true)
+            expect(await goodsWrite(session.token)).toBe(403)
+        } finally {
+            await session.dispose()
+        }
     })
 
-    test('TC-4 — hạ admin A xuống 「ユーザ」: refresh xong mất quyền admin', async () => {
+    test('TC-4 — hạ admin A xuống 「ユーザ」: phiên của A kết thúc ngay', async () => {
         a = await signIn(A.email)
         expect(await adminRead(a.token), 'A đang là admin').toBe(200)
 
-        const userRole = await roleIdOf('user')
-        expect((await assignRole(api, adminTok, A.userNo, userRole)).status()).toBeLessThan(300)
-        expectImmediate('TC-4 owner hạ A → ユーザ, đọc ロールマスタ', await adminRead(a.token), 403)
+        expect((await assignRole(api, adminTok, A.userNo, await roleIdOf('user'))).status()).toBeLessThan(300)
+        expect(await adminRead(a.token), 'token đang dùng bị từ chối ngay').toBe(401)
+        expect(await refresh(a), 'refresh token cũ bị thu hồi').toBe(401)
+        await expectSignedOut(a.page, '/settings/role-master')
 
-        await refresh(a)
-        expect(await adminRead(a.token), 'sau refresh: không còn là admin').toBe(403)
-
-        // Trả A về admin cho TC-6.
+        // Trả A về admin cho TC-6 (A không còn phiên nào để thu hồi).
         expect((await assignRole(api, adminTok, A.userNo, await roleIdOf('admin'))).status()).toBeLessThan(300)
-        await refresh(a)
-        expect(await adminRead(a.token)).toBe(200)
     })
 
     test('TC-5 — owner không tự hạ quyền được', async () => {
@@ -252,37 +241,32 @@ test.describe('Quyền đổi trong lúc đang đăng nhập', () => {
         expect(await roleCodesOf(ownerNo)).toEqual(['admin'])
     })
 
-    test('TC-6 — admin A tự hạ mình xuống 「ユーザ」: nạp lại thì mất quyền admin', async () => {
+    test('TC-6 — admin A tự hạ mình xuống 「ユーザ」: lưu xong bị đá về /login', async () => {
         const page = a.page
+        a.token = await logIn(page, A.email)
+        expect(await adminRead(a.token)).toBe(200)
+
         const roleBox = page.getByRole('combobox', { name: 'ロール' })
-        await page.goto(`/settings/user-master/${A.userNo}`, { waitUntil: 'domcontentloaded' })
+        await spaNavigate(page, `/settings/user-master/${A.userNo}`)
         await expect(roleBox).toHaveText('管理者', { timeout: 30_000 })
         await roleBox.click()
         await page.getByRole('option', { name: 'ユーザ', exact: true }).click()
         await page.locator('[data-fkey="F9"]').click()
-        await expect(page).toHaveURL(/\/settings\/user-master$/, { timeout: 30_000 })
+
+        // Lưu được (request đi bằng token trước khi bị thu hồi), rồi request kế tiếp 401 →
+        // refresh 401 → app về /login.
+        await expect(loginButton(page), 'tự hạ quyền phải kết thúc phiên').toBeVisible({ timeout: 30_000 })
         expect(await roleCodesOf(A.userNo)).toEqual(['user'])
+        expect(await adminRead(a.token)).toBe(401)
 
-        // Cùng tab, không nạp lại: sang ロールマスタ (điều hướng trong SPA).
-        await spaNavigate(page, '/settings/role-master')
-        await expect(page).toHaveURL(/\/settings\/role-master$/)
-        const refused = page.locator('p[role="alert"]')
-        const list = page.getByText('管理者', { exact: true })
-        await expect(refused.or(list).first()).toBeVisible({ timeout: 30_000 })
-        if (!(await refused.isVisible())) stale.push('TC-6 A tự hạ → ユーザ: cùng tab vẫn mở được ロールマスタ')
-
-        // Nạp lại ⇒ app refresh token: BE từ chối, menu admin bị khoá.
-        await reloadAt(a, A.email, '/settings/role-master')
-        await expect(refused).toBeVisible({ timeout: 30_000 })
-        // Sang メニュー trong SPA: nạp lại lần nữa ngay sau đó dễ mất phiên trên Vite dev
-        // (refresh bị 401 — xem ghi chú ở user-master.spec.ts), không liên quan tới quyền.
+        // Đăng nhập lại: không còn là admin.
+        a.token = await logIn(page, A.email)
+        expect(await adminRead(a.token)).toBe(403)
         await spaNavigate(page, '/masters')
         await expect(page.getByRole('button', { name: 'ロールマスタ', exact: true })).toBeDisabled({
             timeout: 30_000,
         })
-    })
-
-    test('TC-7 — đổi role phải có hiệu lực ngay với phiên đang đăng nhập', () => {
-        expect(stale, 'đổi role không thu hồi access token đang dùng').toEqual([])
+        await spaNavigate(page, '/settings/role-master')
+        await expect(page.locator('p[role="alert"]'), 'BE từ chối ロールマスタ').toBeVisible({ timeout: 30_000 })
     })
 })
