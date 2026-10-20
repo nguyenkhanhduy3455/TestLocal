@@ -156,6 +156,14 @@ test.describe('ロールマスタ — tạo/sửa/xoá role và chặn quyền t
         })
     }
 
+    /** Điều hướng trong SPA (TanStack Router nghe popstate) — không nạp lại, cache query còn nguyên. */
+    async function spaNavigate(path: string): Promise<void> {
+        await admin.evaluate((to) => {
+            window.history.pushState({}, '', to)
+            window.dispatchEvent(new PopStateEvent('popstate', { state: {} }))
+        }, path)
+    }
+
     async function openRole(name: string): Promise<void> {
         await gotoListScreen(admin, ROLE_LIST_URL)
         await admin.getByText(name, { exact: true }).dblclick()
@@ -284,8 +292,19 @@ test.describe('ロールマスタ — tạo/sửa/xoá role và chặn quyền t
         }
     })
 
-    test('TC-8 — admin xoá role → user test về 「ユーザ」', async () => {
-        await openRole(ROLE_NAME)
+    test('TC-8 — admin xoá role → user test về 「ユーザ」, kể cả trên màn ユーザマスタ đang cache', async () => {
+        // Như người dùng thật: mở 登録 của user test (chi tiết vào cache, staleTime 60s),
+        // rồi sang ロールマスタ bằng điều hướng trong SPA — không nạp lại nên cache còn.
+        const roleBox = admin.getByRole('combobox', { name: 'ロール' })
+        await gotoReady(admin, `/settings/user-master/${USER_NO}`, roleBox)
+        await expect(roleBox).toHaveText(ROLE_NAME)
+        await spaNavigate(ROLE_LIST_URL)
+        await expect(admin.getByText('合　計')).toBeVisible({ timeout: 30_000 })
+        await expect(roleBox).toHaveCount(0)
+        await admin.getByText(ROLE_NAME, { exact: true }).dblclick()
+        await expect(admin.getByLabel('ロール名', { exact: true })).toHaveValue(ROLE_NAME, {
+            timeout: 30_000,
+        })
         await fkey(admin, 'F8').click()
         const confirm = admin.getByRole('alertdialog')
         await expect(confirm).toContainText(ROLE_NAME)
@@ -296,5 +315,11 @@ test.describe('ロールマスタ — tạo/sửa/xoá role và chặn quyền t
         await expect(admin.getByText(ROLE_NAME, { exact: true })).toHaveCount(0)
         expect(await rolePermissions()).toBeNull()
         expect(await memberRoleCodes()).toEqual(['user'])
+
+        // Quay lại 登録 trong SPA (không nạp lại ⇒ cache còn): ロール phải là ユーザ, không trống.
+        await spaNavigate(`/settings/user-master/${USER_NO}`)
+        await expect(roleBox, 'ô ロール còn giữ role đã xoá (cache chưa làm mới)').toHaveText('ユーザ', {
+            timeout: 10_000,
+        })
     })
 })
