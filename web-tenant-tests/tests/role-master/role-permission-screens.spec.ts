@@ -5,7 +5,7 @@ import {
 } from "@playwright/test";
 
 import { captureFixedUi } from "../_shared/capture";
-import { dbEnabled } from "../_shared/db";
+import { DB_SCHEMA, dbEnabled, withDb } from "../_shared/db";
 import { newTestPage } from "../_shared/entry";
 import { expect, releaseSharedPage, test } from "../_shared/session";
 import { ADMIN_USER, JA } from "../_shared/test-data";
@@ -265,13 +265,37 @@ test.describe("Quyền 利用 ở FE — mọi chức năng của danh mục", (
     expect(wrong).toEqual([]);
   });
 
-  test("TC-3 — mọi 利用: mọi route mở được, mọi nút bấm được", async () => {
+  test("TC-3 — mọi 利用: mọi route mở được, mọi nút bấm được, chỉ mở màn thì không có 403", async () => {
     await grant(SCREENS.map((s) => `${s}.use`));
+    // Mở màn không được tự gọi API cần quyền nghiệp vụ (vd prewarm mẫu in): role chỉ có
+    // 利用 sẽ nhận 403 và toast 「この操作を行う権限がありません」 dù chưa làm gì.
+    const denied: string[] = [];
+    const on403 = (r: import("@playwright/test").Response) => {
+      if (r.status() === 403)
+        denied.push(
+          `${r.request().method()} ${r.url().replace(/^.*\/api/, "")}`,
+        );
+    };
+    member.on("response", on403);
+    // Màn chi tiết 診療入力 của một bệnh nhân có dữ liệu — nơi từng tự gọi prewarm レセプト.
+    const patNo = await withDb(async (c) => {
+      const { rows } = await c.query<{ pat_no: number }>(
+        `SELECT pat_no FROM ${DB_SCHEMA}.trn_trn ORDER BY trt_dt DESC LIMIT 1`,
+      );
+      return rows[0]?.pat_no;
+    });
     const wrong: string[] = [];
-    for (const path of ALL_ROUTES) {
+    for (const path of [
+      ...ALL_ROUTES,
+      ...(patNo ? [`/treatments/${patNo}`] : []),
+    ]) {
       const w = await expectRoute(path, true);
       if (w) wrong.push(w);
     }
+    // Chờ các request lúc mở màn cuối (prewarm chạy nền) về hết.
+    await member.waitForTimeout(5_000);
+    member.off("response", on403);
+    wrong.push(...denied.map((d) => `403 khi chỉ mở màn: ${d}`));
     const menu = await menuState();
     wrong.push(
       ...Object.entries(menu)
