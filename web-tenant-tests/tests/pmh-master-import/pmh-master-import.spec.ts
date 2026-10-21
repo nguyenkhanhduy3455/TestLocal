@@ -25,7 +25,7 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *        削除されます。\nよろしいですか？'  (Q00100 của WinForm)
  *      · imported / importedWithSkipped = 'n件のデータをインポートしました。
  *        （廃止データm件は除外）'  (I00100)
- *      · currentRows = '現在 n 件', expectedColumns = '列数 n'
+ *      · KHÔNG hiện số dòng / số cột của master (WinForm không có — types.ts)
  *  - components/pmh-master-import-screen.tsx
  *      · Select id='pmh-master' (role combobox), Input id='pmh-file' readOnly,
  *        nút 参照, và input[type=file] ẨN (class 'hidden') → setInputFiles bám
@@ -44,8 +44,9 @@ import { makeStep, skipWithReason } from '../_shared/step'
  * dữ liệu thật để test nạp (24.458 dòng). File CSV lấy từ thư mục
  * TEST_PMH_CSV_DIR (mặc định ~/Documents/docs/csv_master):
  *      m_regional_publicly_funded_all_20260914.csv  94 cột → nạp OK 24.458/925
- *      R06_chitankouhi_240401.csv                   99 cột → lỗi lệch cột
- *      R06_kokkouhi_240401.csv                      56 cột → lỗi thiếu cột
+ *      R06_chitankouhi_240401.csv                   Shift_JIS → bị từ chối vì không phải UTF-8
+ *      R06_kokkouhi_240401.csv                      56 cột, Shift_JIS → spec chép sang UTF-8
+ *                                                   (thư mục tạm) để kiểm lỗi thiếu cột
  * Không có file thì các TC tương ứng tự skip chứ không đỏ.
  *
  * GHI DB (Rule 18.1): 登録 XOÁ SẠCH bảng master rồi nạp lại. Nhóm TC-IMPORT-*
@@ -127,11 +128,19 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
+    /** Vite dev thỉnh thoảng nạp hụt module và trang đứng trắng ⇒ nạp lại tối đa 3 lượt. */
     async function gotoScreen(): Promise<void> {
-        await page.goto(SCREEN_URL, { waitUntil: 'domcontentloaded' })
-        await expect(page.getByText(PM.heading), 'không vào được màn PMHマスタ').toBeVisible({
-            timeout: 60_000,
-        })
+        for (let attempt = 1; ; attempt++) {
+            await page.goto(SCREEN_URL, { waitUntil: 'domcontentloaded' })
+            try {
+                await expect(page.getByText(PM.heading), 'không vào được màn PMHマスタ').toBeVisible({
+                    timeout: 30_000,
+                })
+                return
+            } catch (error) {
+                if (attempt === 3) throw error
+            }
+        }
     }
 
     /** Mở dropdown rồi chọn master theo nhãn tiếng Nhật. */
@@ -142,8 +151,8 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
     }
 
     /** Gắn file vào input ẩn. Không qua filechooser: input có class 'hidden'. */
-    async function attachCsv(fileName: string): Promise<void> {
-        await fileInput().setInputFiles(path.join(CSV_DIR, fileName))
+    async function attachCsv(fileName: string, dir = CSV_DIR): Promise<void> {
+        await fileInput().setInputFiles(path.join(dir, fileName))
         await expect(pathInput(), 'ô path không hiện tên file vừa chọn').toHaveValue(fileName)
     }
 
@@ -154,6 +163,21 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
         } catch {
             return false
         }
+    }
+
+    /**
+     * Bản UTF-8 của một CSV Shift_JIS, ghi vào thư mục tạm (cùng tên file). BE từ chối file
+     * không phải UTF-8 trước mọi kiểm tra khác, nên muốn chạm tới bước kiểm số cột thì phải
+     * chuyển mã trước. Trả về thư mục chứa bản chép.
+     */
+    function utf8Copy(fileName: string): string {
+        const fs = require('node:fs') as typeof import('node:fs')
+        const os = require('node:os') as typeof import('node:os')
+        const dir = path.join(os.tmpdir(), 'pmh-e2e-utf8')
+        fs.mkdirSync(dir, { recursive: true })
+        const text = new TextDecoder('shift_jis').decode(fs.readFileSync(path.join(CSV_DIR, fileName)))
+        fs.writeFileSync(path.join(dir, fileName), text, 'utf8')
+        return dir
     }
 
     /** Số dòng thật của một bảng master trong schema tenant. */
@@ -221,10 +245,18 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
     // ── Điều hướng & bố cục ──────────────────────────────────────────────────
 
     test('TC-NAV-1 — マスタ登録メニュー có nút PMHマスタ và dẫn tới /masters/pmh-import', async () => {
-        await page.goto('/masters', { waitUntil: 'domcontentloaded' })
-
         const item = page.getByRole('button', { name: PM.menuButton, exact: true })
-        await expect(item, 'メニュー thiếu nút PMHマスタ').toBeEnabled({ timeout: 60_000 })
+        // Vite dev thỉnh thoảng nạp hụt module và trang đứng trắng ⇒ nạp lại tối đa 3 lượt.
+        for (let attempt = 1; ; attempt++) {
+            await page.goto('/masters', { waitUntil: 'domcontentloaded' })
+            try {
+                await expect(item).toBeVisible({ timeout: 30_000 })
+                break
+            } catch (error) {
+                if (attempt === 3) throw error
+            }
+        }
+        await expect(item, 'nút PMHマスタ bị khoá').toBeEnabled()
 
         await item.click()
         await expect(page).toHaveURL(/\/masters\/pmh-import$/)
@@ -273,21 +305,16 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
         await step()
     })
 
-    test('TC-LIST-2 — chọn master thì hiện số dòng hiện có và số cột kỳ vọng', async () => {
-        skipWithReason(!dbEnabled, 'cần TEST_DB=1 để biết số dòng thật')
+    test('TC-LIST-2 — chọn master: ô hiện đúng tên, không hiện số dòng / số cột (WinForm không có)', async () => {
+        skipWithReason(!dbEnabled, 'cần TEST_DB=1 để đọc catalog')
 
         const local = catalog.find((c) => c.seq === LOCAL_SEQ)
         skipWithReason(local === undefined, `catalog không có seq=${LOCAL_SEQ}`)
 
-        const rows = await countMasterRows(local!.tableName)
-
         await pickMaster(local!.nameJp)
 
-        // Số dòng hiển thị có dấu phẩy nhóm nghìn (toLocaleString).
-        await expect(page.getByText(`現在 ${rows.toLocaleString()} 件`)).toBeVisible({
-            timeout: 30_000,
-        })
-        await expect(page.getByText(`列数 ${local!.columnCount}`)).toBeVisible()
+        await expect(page.getByText(/現在 [\d,]+ 件/)).toHaveCount(0)
+        await expect(page.getByText(/列数 \d+/)).toHaveCount(0)
         await step()
     })
 
@@ -335,10 +362,11 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
         await fkey(9).click()
 
         // Q00100: nêu đích danh master và cảnh báo xoá dữ liệu cũ.
-        await expect(page.getByText(new RegExp(local.nameJp))).toBeVisible({ timeout: 30_000 })
-        await expect(page.getByText(PM.confirmWarn)).toBeVisible()
+        const confirm = page.getByRole('alertdialog')
+        await expect(confirm).toContainText(`マスタ「${local.nameJp}」`, { timeout: 30_000 })
+        await expect(confirm).toContainText(PM.confirmWarn)
 
-        await page.getByRole('button', { name: 'いいえ' }).click()
+        await confirm.getByRole('button', { name: 'いいえ' }).click()
 
         // Huỷ ở hộp thoại thì không được xin slot — tức là chưa có gì lên storage.
         expect(slotCalled, 'bấm いいえ mà vẫn gọi upload-slot').toBeFalsy()
@@ -399,7 +427,7 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
         await step()
     })
 
-    test('TC-IMPORT-2 — file lệch số cột bị từ chối và master cũ NGUYÊN VẸN', async () => {
+    test('TC-IMPORT-2 — file không phải UTF-8 (Shift_JIS) bị từ chối và master cũ NGUYÊN VẸN', async () => {
         skipWithReason(!ALLOW_SAVE, 'cần TEST_ALLOW_SAVE=1')
         skipWithReason(!dbEnabled, 'cần TEST_DB=1 để đối chiếu số dòng')
         skipWithReason(!csvExists(CSV_LOCAL_R06), `không thấy ${CSV_LOCAL_R06} trong ${CSV_DIR}`)
@@ -412,25 +440,20 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
         await attachCsv(CSV_LOCAL_R06)
 
         await fkey(9).click()
-        await page.getByRole('button', { name: 'はい' }).click()
+        await page.getByRole('alertdialog').getByRole('button', { name: 'はい' }).click()
 
-        // Bản R06 có 99 trường / catalog chờ 94. WinForm chỉ chặn khi THIẾU cột
-        // nên file này lọt qua rồi ghi lệch một cột từ giữa mà không báo gì;
-        // bản web kiểm khớp CHÍNH XÁC nên dừng ngay dòng 1.
-        await expect(page.getByText(/列数が一致しません/), 'không bắt được lệch số cột').toBeVisible({
+        await expect(page.getByText(/UTF-8ではありません/), 'không bắt được file sai mã ký tự').toBeVisible({
             timeout: IMPORT_TIMEOUT,
         })
-        await expect(page.getByText(new RegExp(`期待：${local.columnCount}`))).toBeVisible()
         await expect(page.getByText(PM.previousKept)).toBeVisible()
 
-        // Điểm mấu chốt: TRUNCATE + COPY nằm trong MỘT transaction, lỗi ở dòng 1
-        // nghĩa là chưa xoá gì. WinForm ở đây đã mất sạch master.
+        // TRUNCATE + COPY nằm trong MỘT transaction: lỗi ngay khi đọc file nghĩa là chưa xoá gì.
         const after = await countMasterRows(local.tableName)
         expect(after, 'master bị xoá dù 取込 thất bại — transaction không rollback?').toBe(before)
 
         const job = await latestJob(local.seq)
         expect(job.status).toBe('failed')
-        expect(job.error_message).toContain('列数が一致しません')
+        expect(job.error_message).toContain('UTF-8')
         await step()
     })
 
@@ -439,17 +462,18 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
         skipWithReason(!dbEnabled, 'cần TEST_DB=1 để biết số cột kỳ vọng')
         skipWithReason(!csvExists(CSV_NATIONAL_R06), `không thấy ${CSV_NATIONAL_R06} trong ${CSV_DIR}`)
 
-        const national = catalog.find((c) => c.tableName === 'PMH_MST_NATIONAL_PUBEXP')
+        const national = catalog.find((c) => c.tableName === 'MST_PMH_NATIONAL_PUBEXP')
         skipWithReason(national === undefined, 'catalog không có 国公費マスタ')
 
         const before = await countMasterRows(national!.tableName)
 
         await gotoScreen()
         await pickMaster(national!.nameJp)
-        await attachCsv(CSV_NATIONAL_R06)
+        // Bản gốc là Shift_JIS (bị chặn ở bước mã ký tự) — chép sang UTF-8 để chạm bước số cột.
+        await attachCsv(CSV_NATIONAL_R06, utf8Copy(CSV_NATIONAL_R06))
 
         await fkey(9).click()
-        await page.getByRole('button', { name: 'はい' }).click()
+        await page.getByRole('alertdialog').getByRole('button', { name: 'はい' }).click()
 
         await expect(page.getByText(/列数が一致しません/)).toBeVisible({ timeout: IMPORT_TIMEOUT })
         await expect(page.getByText(new RegExp(`期待：${national!.columnCount}`))).toBeVisible()
@@ -461,27 +485,52 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
 
     // ── Trạng thái sống ngoài trình duyệt ────────────────────────────────────
 
-    test('TC-STATE-1 — kết quả lần nạp gần nhất vẫn hiện sau khi F5', async () => {
+    test('TC-STATE-1 — mở lại màn: lần nạp đã xong KHÔNG hiện lại (WinForm không giữ lịch sử)', async () => {
         skipWithReason(!dbEnabled, 'cần TEST_DB=1 để biết đã từng nạp hay chưa')
 
         const local = catalog.find((c) => c.seq === LOCAL_SEQ)!
         const job = await latestJob(local.seq)
         skipWithReason(job === null, 'chưa có lần 取込 nào — chạy TC-IMPORT-1 trước')
+        skipWithReason(job.status === 'queued' || job.status === 'running', 'đang có lần nạp chạy dở')
 
-        // Trạng thái nằm ở DB chứ không ở browser: tải lại trang rồi chọn lại
-        // master là phải thấy ngay kết quả lần trước, không cần nhớ jobId.
         await gotoScreen()
         await pickMaster(local.nameJp)
 
-        const expected =
-            job.status === 'succeeded'
-                ? /件のデータをインポートしました。/
-                : /取込に失敗しました/
+        await expect(page.getByText(/件のデータをインポートしました。|取込に失敗しました/)).toHaveCount(0)
+        await step()
+    })
 
-        await expect(
-            page.getByText(expected),
-            'sau F5 không thấy kết quả lần trước — trạng thái có nằm ở DB không?',
-        ).toBeVisible({ timeout: 30_000 })
+    test('TC-STATE-2 — F5 giữa lúc đang nạp: chọn lại master thì theo tiếp đúng lần nạp đó tới khi xong', async () => {
+        skipWithReason(!ALLOW_SAVE, '取込 xoá sạch bảng master — cần TEST_ALLOW_SAVE=1')
+        skipWithReason(!dbEnabled, 'cần TEST_DB=1 để đối chiếu job')
+        skipWithReason(!csvExists(CSV_LOCAL_OK), `không thấy ${CSV_LOCAL_OK} trong ${CSV_DIR}`)
+
+        const local = catalog.find((c) => c.seq === LOCAL_SEQ)!
+        await gotoScreen()
+        await pickMaster(local.nameJp)
+        await attachCsv(CSV_LOCAL_OK)
+        await fkey(9).click()
+        await page.getByRole('alertdialog').getByRole('button', { name: 'はい' }).click()
+
+        // Chờ job đã có trong DB (upload xong) rồi mới F5 — trước đó tab chưa giao gì cho server.
+        await expect
+            .poll(async () => (await latestJob(local.seq))?.status, { timeout: IMPORT_TIMEOUT })
+            .toMatch(/queued|running|succeeded/)
+        const started = await latestJob(local.seq)
+
+        // Trạng thái nằm ở DB chứ không ở tab: tải lại, chọn lại master là phải thấy lần nạp đó.
+        await gotoScreen()
+        await pickMaster(local.nameJp)
+        if (started.status !== 'succeeded') {
+            await expect(
+                page.getByText(/件のデータをインポートしました。/),
+                'sau F5 không theo tiếp lần nạp đang chạy',
+            ).toBeVisible({ timeout: IMPORT_TIMEOUT })
+            const done = await latestJob(local.seq)
+            expect(done.status, `job không thành công: ${done.error_message ?? ''}`).toBe('succeeded')
+        } else {
+            console.log('lần nạp đã xong trước khi F5 kịp — không kiểm được nhánh đang chạy')
+        }
         await step()
     })
 })
