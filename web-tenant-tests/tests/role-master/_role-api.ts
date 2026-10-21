@@ -248,18 +248,19 @@ export async function roleCodesOf(userNo: number): Promise<string[]> {
   });
 }
 
-/** Mọi mã quyền của catalog (GET /tenant/roles/permissions — admin). */
+export interface CatalogFunction {
+  code: string;
+  name: string;
+  group: string;
+  /** `use` trước, sau đó các quyền nghiệp vụ. */
+  permissions: { code: string; action: string; name: string }[];
+}
+
+/** Danh mục quyền (GET /tenant/roles/permissions — đọc từ DB). */
 export async function permissionCatalog(
   api: APIRequestContext,
   token: string,
-): Promise<
-  {
-    code: string;
-    name: string;
-    viewPermission: string;
-    editPermission: string | null;
-  }[]
-> {
+): Promise<CatalogFunction[]> {
   return data(
     await api.get(`${API}/tenant/roles/permissions`, {
       headers: bearer(token),

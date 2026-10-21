@@ -23,16 +23,23 @@ import {
   seedUser,
   setRolePermissions,
 } from "./_role-api";
+import {
+  roleAddButton,
+  roleRemoveButtons,
+  roleSelects,
+  roleValues,
+  setRoles,
+} from "./_role-ui";
 
 /**
  * Quyền THAY ĐỔI trong lúc người dùng đang đăng nhập, và tự đổi quyền của chính mình.
  *
  * Người tham gia (seed DB, mật khẩu = mật khẩu owner):
- *   · M (9905) — giữ role tuỳ chỉnh 「E2E途中変更」 (物品マスタ 閲覧 + 編集).
+ *   · M (9905) — giữ role tuỳ chỉnh 「E2E途中変更」 (物品マスタ 利用 + 登録・削除).
  *   · A (9906) — admin thứ hai (không phải owner).
  *   · owner — tài khoản admin của authedPage.
  *
- *   TC-1 admin gỡ 編集 khỏi role của M khi M đang mở 物品マスタ: BE chặn NGAY; màn hình
+ *   TC-1 admin gỡ 登録・削除 khỏi role của M khi M đang mở 物品マスタ: BE chặn NGAY; màn hình
  *        còn quyền cũ nên F9 vẫn bấm được — bấm thì báo 「この操作を行う権限がありません」
  *        (không kèm lỗi chung chung) và F9 tự khoá vì quyền được nạp lại.
  *   TC-2 admin đổi role của M sang 「ユーザ」 ⇒ phiên của M kết thúc ngay (token cũ 401,
@@ -41,7 +48,7 @@ import {
  *   TC-4 owner hạ A từ 管理者 xuống 「ユーザ」 ⇒ phiên của A kết thúc ngay.
  *   TC-5 owner tự hạ quyền mình: ô ロール bị khoá, API trả OWNER_PROTECTED.
  *   TC-6 A tự hạ mình xuống 「ユーザ」 ở ユーザマスタ ⇒ lưu xong bị đá về /login; đăng nhập
- *        lại thì ロールマスタ bị từ chối và nút trên メニュー bị khoá.
+ *        lại thì chỉ xem được ロールマスタ (利用): API ghi 403, F1 新規 bị khoá.
  *
  * Đổi role tăng token_version và thu hồi mọi refresh token của người đó (giống đổi mật
  * khẩu) — role nằm trong access token nên không làm vậy thì người bị hạ giữ quyền cũ
@@ -66,7 +73,7 @@ const A = {
 };
 const ROLE_CODE = "e2e-perm-live";
 const ROLE_NAME = "E2E途中変更ロール";
-const GOODS = ["master-goods.view", "master-goods.edit"];
+const GOODS = ["master-goods.use", "master-goods.register"];
 const EDIT_DENIED = "この操作を行う権限がありません。";
 
 interface Person {
@@ -133,8 +140,16 @@ test.describe("Quyền đổi trong lúc đang đăng nhập", () => {
    * tự chuyển về /login cùng lúc và hai lần điều hướng giẫm lên nhau.
    */
   async function expectSignedOut(page: Page, path: string): Promise<void> {
-    if (!(await loginButton(page).isVisible())) await spaNavigate(page, path);
-    await expect(loginButton(page)).toBeVisible({ timeout: 30_000 });
+    if (await loginButton(page).isVisible()) return;
+    await spaNavigate(page, path);
+    try {
+      await expect(loginButton(page)).toBeVisible({ timeout: 10_000 });
+    } catch {
+      // A screen the role may not open shows 403 without asking the API, so nothing has
+      // touched the revoked session yet: reload — the app's own refresh on boot is refused.
+      await page.reload({ waitUntil: "commit" }).catch(() => {});
+      await expect(loginButton(page)).toBeVisible({ timeout: 30_000 });
+    }
   }
 
   /** Ghi 物品マスタ với body hỏng: 400 = qua được bước quyền (không ghi gì), 403 = bị chặn. */
@@ -146,10 +161,20 @@ test.describe("Quyền đổi trong lúc đang đăng nhập", () => {
     return res.status();
   }
 
-  /** Đọc ロールマスタ — chỉ admin. */
+  /** Đọc ロールマスタ — roles.use (role ユーザ cũng có). */
   async function adminRead(token: string): Promise<number> {
     return (
       await api.get(`${API}/tenant/roles`, { headers: bearer(token) })
+    ).status();
+  }
+
+  /** Ghi ロールマスタ với body hỏng: 400 = có roles.manage, 403 = bị chặn. */
+  async function roleWrite(token: string): Promise<number> {
+    return (
+      await api.post(`${API}/tenant/roles`, {
+        headers: { ...bearer(token), "Content-Type": "application/json" },
+        data: "{",
+      })
     ).status();
   }
 
@@ -211,13 +236,13 @@ test.describe("Quyền đổi trong lúc đang đăng nhập", () => {
     if (dbEnabled) await purge([M, A], [ROLE_CODE]);
   });
 
-  test("TC-1 — gỡ 編集 khi M đang mở 物品マスタ: BE chặn ngay, F9 báo không có quyền và tự khoá", async () => {
+  test("TC-1 — gỡ 登録・削除 khi M đang mở 物品マスタ: BE chặn ngay, F9 báo không có quyền và tự khoá", async () => {
     m = await signIn(M.email);
     const f9 = await openGoodsRegister(m.page);
     await expect(f9).toBeEnabled();
     expect(await goodsWrite(m.token), "trước khi gỡ: được ghi").toBe(400);
 
-    await setRolePermissions(api, adminTok, role, ["master-goods.view"]);
+    await setRolePermissions(api, adminTok, role, ["master-goods.use"]);
     expect(await goodsWrite(m.token), "token đang dùng phải bị chặn ngay").toBe(
       403,
     );
@@ -242,7 +267,9 @@ test.describe("Quyền đổi trong lúc đang đăng nhập", () => {
     await captureFixedUi(m.page, "role-permission-live-denied-notice");
 
     await setRolePermissions(api, adminTok, role, GOODS);
-    expect(await goodsWrite(m.token), "trả lại 編集: ghi được ngay").toBe(400);
+    expect(await goodsWrite(m.token), "trả lại 登録・削除: ghi được ngay").toBe(
+      400,
+    );
     await expect(await openGoodsRegister(m.page)).toBeEnabled();
   });
 
@@ -287,9 +314,9 @@ test.describe("Quyền đổi trong lúc đang đăng nhập", () => {
     try {
       expect(
         again.permissions.length,
-        "đăng nhập lại có đủ quyền 閲覧 của 「ユーザ」",
+        "đăng nhập lại có đủ quyền 利用 của 「ユーザ」",
       ).toBeGreaterThan(0);
-      expect(again.permissions.every((p) => p.endsWith(".view"))).toBe(true);
+      expect(again.permissions.every((p) => p.endsWith(".use"))).toBe(true);
       expect(await goodsWrite(again.token)).toBe(403);
     } finally {
       await again.dispose();
@@ -326,25 +353,26 @@ test.describe("Quyền đổi trong lúc đang đăng nhập", () => {
       );
       return rows[0]!.user_no;
     });
-    const roles = owner.getByRole("group", { name: "ロール" });
-    const adminBox = roles.getByRole("checkbox", {
-      name: "管理者",
-      exact: true,
-    });
     for (let attempt = 1; ; attempt++) {
       await owner.goto(`/settings/user-master/${ownerNo}`, {
         waitUntil: "domcontentloaded",
       });
       try {
-        await expect(adminBox).toBeVisible({ timeout: 30_000 });
+        await expect(roleSelects(owner).first()).toBeVisible({
+          timeout: 30_000,
+        });
         break;
       } catch (error) {
         if (attempt === 3) throw error;
       }
     }
-    await expect(adminBox).toHaveAttribute("data-state", "checked");
-    for (const box of await roles.getByRole("checkbox").all())
-      await expect(box, "ô ロール của owner phải bị khoá").toBeDisabled();
+    expect(await roleValues(owner)).toEqual(["管理者"]);
+    for (const el of [
+      ...(await roleSelects(owner).all()),
+      ...(await roleRemoveButtons(owner).all()),
+      roleAddButton(owner),
+    ])
+      await expect(el, "ô ロール của owner phải bị khoá").toBeDisabled();
 
     const res = await assignRole(api, adminTok, ownerNo, [
       await roleIdOf("user"),
@@ -359,17 +387,12 @@ test.describe("Quyền đổi trong lúc đang đăng nhập", () => {
     a.token = await logIn(page, A.email);
     expect(await adminRead(a.token)).toBe(200);
 
-    const roles = page.getByRole("group", { name: "ロール" });
-    const adminBox = roles.getByRole("checkbox", {
-      name: "管理者",
-      exact: true,
-    });
     await spaNavigate(page, `/settings/user-master/${A.userNo}`);
-    await expect(adminBox).toHaveAttribute("data-state", "checked", {
+    await expect(roleSelects(page).first()).toHaveText("管理者", {
       timeout: 30_000,
     });
-    await adminBox.click();
-    await roles.getByRole("checkbox", { name: "ユーザ", exact: true }).click();
+    // Đổi dòng 1 sang ユーザ (chọn trong dropdown, không qua nút 削除 nên không hỏi lại).
+    await setRoles(page, ["ユーザ"]);
     await page.locator('[data-fkey="F9"]').click();
 
     // Lưu được (request đi bằng token trước khi bị thu hồi), rồi request kế tiếp 401 →
@@ -381,19 +404,19 @@ test.describe("Quyền đổi trong lúc đang đăng nhập", () => {
     expect(await roleCodesOf(A.userNo)).toEqual(["user"]);
     expect(await adminRead(a.token)).toBe(401);
 
-    // Đăng nhập lại: không còn là admin.
+    // Đăng nhập lại: chỉ còn quyền của 「ユーザ」 — xem được ロールマスタ (利用) nhưng
+    // không tạo / sửa / xoá được.
     a.token = await logIn(page, A.email);
-    expect(await adminRead(a.token)).toBe(403);
-    await spaNavigate(page, "/masters");
+    expect(await adminRead(a.token), "ユーザ có 利用 của ロールマスタ").toBe(
+      200,
+    );
+    expect(await roleWrite(a.token), "ユーザ không có roles.manage").toBe(403);
+    await spaNavigate(page, "/settings/role-master");
     await expect(
-      page.getByRole("button", { name: "ロールマスタ", exact: true }),
+      page.locator('[data-fkey="F1"]'),
+      "F1 新規 phải khoá",
     ).toBeDisabled({
       timeout: 30_000,
     });
-    await spaNavigate(page, "/settings/role-master");
-    await expect(
-      page.locator('p[role="alert"]'),
-      "BE từ chối ロールマスタ",
-    ).toBeVisible({ timeout: 30_000 });
   });
 });

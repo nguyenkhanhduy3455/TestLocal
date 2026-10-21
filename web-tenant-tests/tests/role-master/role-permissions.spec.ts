@@ -14,6 +14,7 @@ import { gotoListScreen } from "../_shared/list-screen-chrome";
 import { expect, releaseSharedPage, test } from "../_shared/session";
 import { ADMIN_USER, JA } from "../_shared/test-data";
 import { adminToken, createRole, loginApi, newApi } from "./_role-api";
+import { roleSelects, roleValues, setRoles } from "./_role-ui";
 
 /**
  * ロールマスタ + permission — luồng đầy đủ, từ lúc admin tạo role tới lúc người
@@ -21,15 +22,15 @@ import { adminToken, createRole, loginApi, newApi } from "./_role-api";
  *
  * role-master-screens.spec.ts chỉ kiểm khung màn hình (header, chọn nhanh, trùng
  * mã/tên) và KHÔNG lưu gì. File này lưu thật:
- *   TC-1 admin tạo role 「E2E物品閲覧」 chỉ có 物品マスタ 閲覧 → DB đúng 1 quyền.
- *   TC-2 admin sửa role, thêm 病名マスタ 閲覧 → DB đúng 2 quyền.
- *   TC-3 admin gán role cho user test ở ユーザマスタ (checkbox ロール, bỏ ユーザ) → app_user_role.
+ *   TC-1 admin tạo role 「E2E物品閲覧」 chỉ có 物品マスタ 利用 → DB đúng 1 quyền.
+ *   TC-2 admin sửa role, thêm 病名マスタ 利用 → DB đúng 2 quyền.
+ *   TC-3 admin gán role cho user test ở ユーザマスタ (dropdown ロール thay ユーザ) → app_user_role.
  *   TC-4..6 user test đăng nhập:
  *     · マスタ登録メニュー: ユーザマスタ / ロールマスタ / 処置マスタ bị khoá, 物品マスタ mở được.
- *     · /masters/trt (không có 閲覧) → màn 403.
+ *     · /masters/trt (không có 利用) → màn 403.
  *     · 物品マスタ 新規: F8/F9 bị khoá, End chỉ báo thiếu quyền.
  *   TC-7 BE: login API trả đúng 2 quyền; POST 物品マスタ và GET /tenant/roles → 403.
- *   TC-7b admin tick thêm role thứ 2 (物品マスタ 編集) → user test giữ 2 role, quyền cộng
+ *   TC-7b admin 追加 role thứ 2 (物品マスタ 登録・削除) → user test giữ 2 role, quyền cộng
  *        dồn: login API trả hợp 2 role, POST 物品マスタ qua được tầng quyền.
  *   TC-8 admin xoá role đầu → user test giữ role còn lại (KHÔNG bị thêm 「ユーザ」),
  *        role và quyền biến mất khỏi DB, ô ロール trên màn đang cache cũng đúng.
@@ -55,9 +56,9 @@ const USER_NO = 9901;
 const USER_NAME = "E2Eロール確認";
 const USER_EMAIL = "e2e-role-perm@example.test";
 
-const VIEW_GOODS = "master-goods.view";
-const VIEW_DIS = "master-dis.view";
-const EDIT_GOODS = "master-goods.edit";
+const VIEW_GOODS = "master-goods.use";
+const VIEW_DIS = "master-dis.use";
+const EDIT_GOODS = "master-goods.register";
 
 const ROLE_LIST_URL = "/settings/role-master";
 const EDIT_DENIED = "この操作を行う権限がありません。";
@@ -70,11 +71,6 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
   let member: Page | undefined;
 
   const fkey = (p: Page, key: string) => p.locator(`[data-fkey="${key}"]`);
-  /** Một ô trong nhóm checkbox ロール của màn ユーザマスタ 登録. */
-  const roleBox = (name: string) =>
-    admin
-      .getByRole("group", { name: "ロール" })
-      .getByRole("checkbox", { name, exact: true });
 
   async function purge(): Promise<void> {
     await withDb(async (c) => {
@@ -214,7 +210,7 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
     if (dbEnabled) await purge();
   });
 
-  test("TC-1 — admin tạo role chỉ có 物品マスタ 閲覧", async () => {
+  test("TC-1 — admin tạo role chỉ có 物品マスタ 利用", async () => {
     await gotoReady(
       admin,
       `${ROLE_LIST_URL}/new`,
@@ -222,7 +218,7 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
     );
     await admin.getByLabel("コード", { exact: true }).fill(ROLE_CODE);
     await admin.getByLabel("ロール名", { exact: true }).fill(ROLE_NAME);
-    await admin.getByRole("checkbox", { name: "物品マスタ 閲覧" }).click();
+    await admin.getByRole("checkbox", { name: "物品マスタ 利用" }).click();
     await fkey(admin, "F9").click();
 
     await expect(admin.getByText(`${ROLE_NAME} を登録しました`)).toBeVisible({
@@ -233,13 +229,13 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
     expect(await rolePermissions()).toEqual([VIEW_GOODS]);
   });
 
-  test("TC-2 — admin sửa role: thêm 病名マスタ 閲覧, quyền cũ giữ nguyên", async () => {
+  test("TC-2 — admin sửa role: thêm 病名マスタ 利用, quyền cũ giữ nguyên", async () => {
     await openRole(ROLE_NAME);
     await expect(admin.getByLabel("コード", { exact: true })).toBeDisabled();
     await expect(
-      admin.getByRole("checkbox", { name: "物品マスタ 閲覧" }),
+      admin.getByRole("checkbox", { name: "物品マスタ 利用" }),
     ).toHaveAttribute("data-state", "checked");
-    await admin.getByRole("checkbox", { name: "病名マスタ 閲覧" }).click();
+    await admin.getByRole("checkbox", { name: "病名マスタ 利用" }).click();
     await fkey(admin, "F9").click();
 
     await expect(admin.getByText(`${ROLE_NAME} を更新しました`)).toBeVisible({
@@ -252,12 +248,10 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
     await gotoReady(
       admin,
       `/settings/user-master/${USER_NO}`,
-      roleBox(ROLE_NAME),
+      roleSelects(admin).first(),
     );
-    await expect(roleBox("ユーザ")).toHaveAttribute("data-state", "checked");
-    await expect(roleBox(ROLE_NAME)).toHaveAttribute("data-state", "unchecked");
-    await roleBox(ROLE_NAME).click();
-    await roleBox("ユーザ").click();
+    expect(await roleValues(admin)).toEqual(["ユーザ"]);
+    await setRoles(admin, [ROLE_NAME]);
     await fkey(admin, "F9").click();
 
     await expect(admin).toHaveURL(/\/settings\/user-master$/, {
@@ -266,7 +260,7 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
     expect(await memberRoleCodes()).toEqual([ROLE_CODE]);
   });
 
-  test("TC-4 — user test: マスタ登録メニュー chỉ mở được màn có 閲覧", async ({
+  test("TC-4 — user test: マスタ登録メニュー chỉ mở được màn có 利用", async ({
     browser,
   }) => {
     member = await newTestPage(browser as Browser);
@@ -287,7 +281,7 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
     await captureFixedUi(member, "role-permissions-master-menu");
   });
 
-  test("TC-5 — user test: vào thẳng màn không có 閲覧 → màn 403", async () => {
+  test("TC-5 — user test: vào thẳng màn không có 利用 → màn 403", async () => {
     await gotoReady(
       member!,
       "/masters/trt",
@@ -335,14 +329,16 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
 
       const headers = { Authorization: `Bearer ${data.accessToken}` };
       const read = await api.get("api/tenant/goods/master", { headers });
-      expect(read.status(), "có 閲覧 thì đọc được").toBe(200);
+      expect(read.status(), "có 利用 thì đọc được").toBe(200);
       const write = await api.post("api/tenant/goods/master", {
         headers,
         data: {},
       });
-      expect(write.status(), "thiếu 編集 thì BE phải chặn").toBe(403);
+      expect(write.status(), "thiếu 登録・削除 thì BE phải chặn").toBe(403);
       const roles = await api.get("api/tenant/roles", { headers });
-      expect(roles.status(), "ロールマスタ chỉ cho admin").toBe(403);
+      expect(roles.status(), "thiếu roles.use thì ロールマスタ bị chặn").toBe(
+        403,
+      );
     } finally {
       await api.dispose();
     }
@@ -362,10 +358,10 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
     await gotoReady(
       admin,
       `/settings/user-master/${USER_NO}`,
-      roleBox(ROLE2_NAME),
+      roleSelects(admin).first(),
     );
-    await expect(roleBox(ROLE_NAME)).toHaveAttribute("data-state", "checked");
-    await roleBox(ROLE2_NAME).click();
+    expect(await roleValues(admin)).toEqual([ROLE_NAME]);
+    await setRoles(admin, [ROLE_NAME, ROLE2_NAME]);
     await captureFixedUi(
       admin.locator("#user-master-form"),
       "role-permissions-two-roles",
@@ -388,9 +384,10 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
         data: {},
       });
       // Body rỗng ⇒ 400 ở bước validate: đã qua tầng quyền.
-      expect(write.status(), "role thứ 2 có 編集 thì BE phải cho qua").not.toBe(
-        403,
-      );
+      expect(
+        write.status(),
+        "role thứ 2 có 登録・削除 thì BE phải cho qua",
+      ).not.toBe(403);
     } finally {
       await m.dispose();
     }
@@ -402,12 +399,12 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
     await gotoReady(
       admin,
       `/settings/user-master/${USER_NO}`,
-      roleBox(ROLE_NAME),
+      roleSelects(admin).first(),
     );
-    await expect(roleBox(ROLE_NAME)).toHaveAttribute("data-state", "checked");
+    expect(await roleValues(admin)).toEqual([ROLE_NAME, ROLE2_NAME]);
     await spaNavigate(ROLE_LIST_URL);
     await expect(admin.getByText("合　計")).toBeVisible({ timeout: 30_000 });
-    await expect(roleBox(ROLE_NAME)).toHaveCount(0);
+    await expect(roleSelects(admin)).toHaveCount(0);
     await admin.getByText(ROLE_NAME, { exact: true }).dblclick();
     await expect(admin.getByLabel("ロール名", { exact: true })).toHaveValue(
       ROLE_NAME,
@@ -431,11 +428,11 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
 
     // Quay lại 登録 trong SPA (không nạp lại ⇒ cache còn): ô ロール phải theo DB mới.
     await spaNavigate(`/settings/user-master/${USER_NO}`);
-    await expect(
-      roleBox(ROLE2_NAME),
-      "ô ロール còn giữ trạng thái cũ (cache chưa làm mới)",
-    ).toHaveAttribute("data-state", "checked", { timeout: 10_000 });
-    await expect(roleBox(ROLE_NAME)).toHaveCount(0);
-    await expect(roleBox("ユーザ")).toHaveAttribute("data-state", "unchecked");
+    await expect
+      .poll(() => roleValues(admin), {
+        message: "ô ロール còn giữ trạng thái cũ (cache chưa làm mới)",
+        timeout: 10_000,
+      })
+      .toEqual([ROLE2_NAME]);
   });
 });

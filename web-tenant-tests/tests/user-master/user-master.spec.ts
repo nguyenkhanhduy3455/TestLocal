@@ -891,20 +891,46 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         await step()
     })
 
-    test('TC-ROLE-1 — có checkbox ロール (chọn nhiều) trên màn 登録', async () => {
+    test('TC-ROLE-1 — ロール: dropdown từng dòng, 追加 / 削除, không chọn trùng, xoá thì cảnh báo', async () => {
         // TC-ACT-3 kết thúc ở 一覧, nên phải mở lại màn 登録 trước.
         await openDetail()
 
-        const roles = page.getByRole('group', { name: UM.labelRole })
-        const boxes = roles.getByRole('checkbox')
-        await expect(boxes.first(), 'thiếu checkbox ロール trên màn 登録').toBeVisible({
+        const selects = page.getByRole('combobox', { name: /^ロール \d+$/ })
+        const removes = page.getByRole('button', { name: /^ロール \d+ 削除$/ })
+        const add = page.getByRole('button', { name: '追加', exact: true })
+        await expect(selects.first(), 'thiếu dropdown ロール trên màn 登録').toBeVisible({
             timeout: 30000,
         })
-
         // Đây là nơi duy nhất cấp quyền, nên nó phải sửa được kể cả khi người đó
         // đã xác thực — không còn màn nào khác làm việc này.
-        for (const box of await boxes.all()) await expect(box).toBeEnabled()
-        await captureFixedUi(page.locator('#user-master-form'), 'user-master-role-checkboxes')
+        await expect(selects.first()).toBeEnabled()
+        const held = (await selects.first().innerText()).trim()
+        const rows = await selects.count()
+
+        // 追加 ⇒ thêm 1 dòng trống; role đã chọn ở dòng khác bị khoá trong dropdown mới.
+        await add.click()
+        await expect(selects).toHaveCount(rows + 1)
+        await selects.last().click()
+        await expect(page.getByRole('option', { name: held, exact: true })).toBeDisabled()
+        const other = page.getByRole('option').and(page.locator(':not([data-disabled])')).first()
+        const otherName = (await other.innerText()).trim()
+        await other.click()
+        await expect(selects.last()).toHaveText(otherName)
+        await captureFixedUi(page.locator('#user-master-form'), 'user-master-role-rows')
+
+        // 削除 dòng đã chọn role ⇒ hộp xác nhận có icon cảnh báo; いいえ giữ nguyên.
+        await removes.last().click()
+        const confirm = page.getByRole('alertdialog')
+        await expect(confirm).toContainText(otherName)
+        await expect(confirm.locator('svg.lucide-triangle-alert'), 'thiếu icon cảnh báo').toBeVisible()
+        await captureFixedUi(confirm, 'user-master-role-remove-warning')
+        await confirm.getByRole('button', { name: 'いいえ' }).click()
+        await expect(selects).toHaveCount(rows + 1)
+
+        // はい ⇒ dòng biến mất, form trở lại như cũ (không lưu gì).
+        await removes.last().click()
+        await page.getByRole('alertdialog').getByRole('button', { name: 'はい' }).click()
+        await expect(selects).toHaveCount(rows)
         await step()
     })
 

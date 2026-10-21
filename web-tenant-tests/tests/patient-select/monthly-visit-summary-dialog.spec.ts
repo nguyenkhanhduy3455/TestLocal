@@ -35,14 +35,9 @@ import { emptyState, rows, scroller, skeletons } from '../_shared/virtual-grid'
  *      · Ô bị chặn in đúng một dấu '-' (SUPPRESSED_CELL).
  *  - api/monthly-visit-summary-api.ts:
  *      · POST /tenant/treatment/monthly-visit-summary, THAM SỐ NẰM TRONG THÂN
- *        `{ trtDt, drNo?, password? }`. Là POST dù chỉ để đọc: màn này có cổng
- *        mật khẩu 医院, mà mật khẩu trên query string sẽ lọt vào access log.
+ *        `{ trtDt, drNo? }`. Cần quyền treatments.monthly-visits — thay cho mật khẩu
+ *        医院 (frm902014) của WinForm; F3 bị khoá khi thiếu quyền.
  *      · drNo CHỈ được gắn khi > 0 (WinForm bỏ hẳn predicate DR_NO khi cboDr trắng).
- *  - components/clinic-password-dialog.tsx (port frm902014):
- *      · Chỉ THU THẬP mật khẩu; so sánh nằm ở BE (ClinicPasswordGate). FE chỉ
- *        nhận cờ `MstIin1Response.passFlg`, KHÔNG bao giờ nhận mật khẩu đã lưu.
- *      · Sai thì hiện E00002「パスワードが正しくありません。」và GIỮ hộp mở để
- *        nhập lại (frm902014.chkPass); F9 確定 / Enter gửi, F10 戻る huỷ.
  *
  * BE (apps/api, GetMonthlyVisitSummaryHandler):
  *  - Trả ĐÚNG 18 dòng, đã sắp thứ tự + kèm `label` (§3.30: bảng tra ở BE).
@@ -103,23 +98,10 @@ const OVERRIDE_DATE = TRT_DT !== isoOf(new Date())
 const SUMMARY_URL = /\/tenant\/treatment\/monthly-visit-summary(\?|$)/
 const MST_IIN1_URL = /\/tenant\/mst-iin1(\?|$)/
 
-/**
- * Mật khẩu 医院 khi tenant BẬT cổng (`mst_iin_1.pass_flg = 1`).
- *
- * Cổng do dữ liệu tenant quyết định, không phải do spec: có phòng khám bật, có
- * phòng khám không. Khi bật mà không đưa mật khẩu thì server chặn MỌI request
- * số liệu, nên cả file mất nghĩa — lúc đó spec tự skip kèm log thay vì đỏ hàng
- * loạt (GUIDELINE Rule 18).
- *
- *   TEST_CLINIC_PASSWORD=xxxxx npx playwright test tests/patient-select/monthly-visit-summary-dialog.spec.ts
- */
-const CLINIC_PASSWORD = process.env.TEST_CLINIC_PASSWORD ?? ''
-
 /** Thân request 来患集計 (POST body) — chỉ các field spec này soi tới. */
 interface SummaryBody {
     trtDt?: string
     drNo?: number
-    password?: string
 }
 
 /** Thứ tự 18 dòng do BE quyết (DisplayRows trong GetMonthlyVisitSummaryHandler). */
@@ -344,9 +326,6 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
     /** Bệnh nhân được mượn để dựng dòng 介護 ở TC-KAIGO-2; dọn ở afterAll. */
     let seededPatNos: number[] = []
 
-    /** Tenant có bật cổng mật khẩu 医院 không — đọc từ 医院マスタ ở beforeAll. */
-    let clinicGateArmed = false
-
     // ── Thao tác dùng lại ────────────────────────────────────────────────────
 
     /** Combo Ｄｒ． trong dialog (Radix SelectTrigger → role="combobox"). */
@@ -360,10 +339,7 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
      * Query gate `enabled: open` nên phải đăng ký chờ TRƯỚC khi nhấn phím.
      * FKeyScopeProvider preventDefault F1–F12 nên F3 không kích search của Chrome.
      *
-     * Endpoint là POST chứ không phải GET, và tham số nằm trong THÂN chứ không
-     * phải query string: màn này có cổng mật khẩu 医院 (xem nhóm TC-PASS-*), mà
-     * mật khẩu trên query string sẽ bị ghi vào access log. Đây là lý do helper
-     * trả `SummaryBody` thay vì `URL`.
+     * Endpoint là POST, tham số nằm trong THÂN — helper trả `SummaryBody`.
      */
     async function openDialog(): Promise<SummaryBody> {
         const res = page.waitForResponse(
@@ -371,9 +347,6 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
             { timeout: 60000 },
         )
         await page.keyboard.press('F3')
-        // Tenant có bật cổng thì F3 hỏi mật khẩu trước; qua cổng rồi 来患集計 mới
-        // mở. Xử lý ở đây để mọi testcase khác không phải biết tới cổng.
-        if (clinicGateArmed) await clearPasswordPrompt(CLINIC_PASSWORD)
         await expect(dialog).toBeVisible({ timeout: 30000 })
         const response = await res
         expect(
@@ -381,18 +354,6 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
             `POST 来患集計 trả ${response.status()} — BE chưa chạy bản có endpoint này?`,
         ).toBeLessThan(300)
         return (response.request().postDataJSON() ?? {}) as SummaryBody
-    }
-
-    /** Hộp mật khẩu 医院 (ClinicPasswordDialog) — Radix Dialog, role="dialog". */
-    const passwordDialog = () => page.getByRole('dialog').filter({ hasText: 'パスワード入力' })
-
-    /** Gõ mật khẩu vào hộp đang mở rồi 確定. */
-    async function clearPasswordPrompt(password: string) {
-        await expect(passwordDialog(), 'cổng đang bật mà F3 không hỏi mật khẩu').toBeVisible({
-            timeout: 30000,
-        })
-        await passwordDialog().getByRole('textbox').fill(password)
-        await passwordDialog().getByRole('button', { name: 'F9 確定' }).click()
     }
 
     /** Đóng bằng F10 (nút 戻る của dialog); Escape KHÔNG được dùng — xem Rule 10.4. */
@@ -512,21 +473,9 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
         page = authedPage
         step = makeStep(page)
 
-        // Đọc cờ cổng mật khẩu THẬT của tenant ngay khi vào màn: nó quyết định
-        // F3 có hỏi mật khẩu hay không, và do đó quyết định cả file chạy được hay
-        // phải skip. Bắt response thay vì query DB để spec không cần TEST_DB.
-        const iinRes = page.waitForResponse((r) => MST_IIN1_URL.test(r.url()), { timeout: 60000 })
         await page.goto('/treatments', { waitUntil: 'domcontentloaded' })
         // Footer F-key strip dựng xong = màn danh sách sẵn sàng nhận F3.
         await expect(page.locator('[data-fkey="F3"]')).toBeVisible({ timeout: 60000 })
-
-        const iinBody = (await (await iinRes).json()) as { data?: { passFlg?: unknown } }
-        clinicGateArmed = Number(iinBody.data?.passFlg) === 1
-        console.log(
-            clinicGateArmed
-                ? `医院パスワードゲート: BẬT${CLINIC_PASSWORD === '' ? ' — thiếu TEST_CLINIC_PASSWORD' : ''}`
-                : '医院パスワードゲート: tắt',
-        )
 
         dialog = page.getByRole('dialog').filter({ hasText: '来 患 集 計' })
 
@@ -546,17 +495,6 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
         }
         seededPatNos = []
         await releaseSharedPage(page)
-    })
-
-    // Cổng bật mà không có mật khẩu thì server chặn MỌI request số liệu — mọi
-    // assert về con số sẽ đỏ vì thiếu cấu hình, không phải vì app sai. Skip kèm
-    // log rõ ràng (Rule 18) thay vì để suite đỏ hàng loạt.
-    test.beforeEach(() => {
-        skipWithReason(
-            clinicGateArmed && CLINIC_PASSWORD === '',
-            '医院マスタ đang bật cổng mật khẩu (pass_flg = 1). Chạy lại kèm ' +
-                'TEST_CLINIC_PASSWORD=<mật khẩu> để spec qua được cổng.',
-        )
     })
 
     // ── Mở màn ───────────────────────────────────────────────────────────────
@@ -1105,212 +1043,24 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
         await step()
     })
 
-    // ── 医院パスワードゲート (frm203001.cs:357-384 → frm902014) ────────────────
+    // ── Quyền thay cho mật khẩu 医院 ─────────────────────────────────────────
     //
-    // WinForm: nếu 医院マスタ.pass_flg = 1 thì F3 phải qua hộp mật khẩu frm902014
-    // rồi mới mở 来患集計. Bản web KHÔNG so mật khẩu ở client — mật khẩu đã lưu
-    // không bao giờ rời server; FE chỉ nhận CỜ bật/tắt và gửi chuỗi người dùng gõ
-    // theo request lấy số liệu để server phán.
-    //
-    // Tenant demo đang `pass_flg = 0` nên nhánh "có cổng" phải giả lập bằng cách
-    // chặn `GET /tenant/mst-iin1`. Việc giả lập chỉ đổi thứ FE TIN, không đổi
-    // hành vi server — đó cũng chính là điều TC-PASS-3 kiểm: cờ bị sửa cũng
-    // không mở được cửa. Nhánh server từ chối thì chặn luôn cả endpoint số liệu,
-    // vì cổng thật ở BE đã có 11 unit test riêng (ClinicPasswordGateTests);
-    // ở đây kiểm phần FE và dây nối.
+    // WinForm chặn F3 bằng mật khẩu 医院 (frm902014). Bản web dùng quyền
+    // treatments.monthly-visits: thiếu quyền thì F3 khoá và API trả 403 (kiểm ở
+    // role-master/role-permission-api.spec.ts). Ở đây chỉ kiểm không còn dấu vết
+    // mật khẩu nào đi qua dây.
 
-    /**
-     * Bắt `GET /tenant/mst-iin1` và ép `passFlg` thành giá trị mong muốn.
-     *
-     * Dựng lại body tường minh chứ KHÔNG dùng `fulfill({ response, json })`:
-     * cách đó giữ nguyên header của response gốc, trong đó có `Content-Length`
-     * của body CŨ, nên body mới dài hơn sẽ bị cắt và FE nhận JSON hỏng — biểu
-     * hiện là mock im lặng không có tác dụng (đã dính thật).
-     */
-    async function mockPassFlg(passFlg: number) {
-        await page.route(/\/tenant\/mst-iin1(\?|$)/, async (route) => {
-            const res = await route.fetch()
-            const body = (await res.json()) as { data?: Record<string, unknown> }
-            if (body.data) body.data.passFlg = passFlg
-            await route.fulfill({
-                status: res.status(),
-                contentType: 'application/json',
-                body: JSON.stringify(body),
-            })
-        })
-    }
-
-    /**
-     * Nạp lại màn danh sách rồi CHỜ 医院マスタ về, khẳng định `passFlg` đúng như
-     * mong đợi trước khi trả quyền điều khiển.
-     *
-     * Bắt buộc phải chờ: `requiresClinicPassword(undefined)` là false, nên bấm F3
-     * trong lúc query còn bay sẽ mở thẳng 来患集計 và testcase đỏ oan. (Đây cũng
-     * là một khoảng hở thật của app — xem ghi chú ở TC-PASS-3.)
-     */
-    async function reloadWithPassFlg(expected: number) {
-        const res = page.waitForResponse((r) => /\/tenant\/mst-iin1(\?|$)/.test(r.url()), {
-            timeout: 60000,
-        })
-        await backToListAndReload()
-        const body = (await (await res).json()) as { data?: { passFlg?: unknown } }
-        expect(
-            Number(body.data?.passFlg),
-            `passFlg tới FE không phải ${expected} — kiểm lại page.route`,
-        ).toBe(expected)
-    }
-
-    test('TC-PASS-1 — /tenant/mst-iin1 KHÔNG BAO GIỜ trả mật khẩu đã lưu', async () => {
-        // Bất biến quan trọng nhất của cả tính năng: FE chỉ được biết CỜ.
-        // Chạy trên BE thật, không giả lập gì.
-        const res = page.waitForResponse(
-            (r) => /\/tenant\/mst-iin1(\?|$)/.test(r.url()),
-            { timeout: 60000 },
-        )
+    test('TC-PERM-1 — không còn mật khẩu 医院: 医院マスタ không lộ cờ / mật khẩu, request không mang password', async () => {
+        const res = page.waitForResponse((r) => MST_IIN1_URL.test(r.url()), { timeout: 60000 })
         await backToListAndReload()
         const body = (await (await res).json()) as { data?: Record<string, unknown> }
-
         expect(body.data, 'không đọc được 医院マスタ').toBeTruthy()
-        expect(
-            Object.keys(body.data!),
-            'response 医院マスタ có trường chứa mật khẩu — secret phải ở lại server',
-        ).not.toContain('pass')
-        expect(
-            'passFlg' in body.data!,
-            'thiếu passFlg — FE không biết có phải hỏi mật khẩu hay không',
-        ).toBe(true)
-        await step()
-    })
+        expect(Object.keys(body.data!)).not.toContain('pass')
+        expect(Object.keys(body.data!)).not.toContain('passFlg')
 
-    test('TC-PASS-2 — F3 hỏi hay không, và có gửi password hay không, đúng theo cờ thật', async () => {
-        // Một testcase phủ cả hai trạng thái tenant: cờ tắt thì mở thẳng và KHÔNG
-        // được gửi password; cờ bật thì phải hỏi và password phải đi kèm.
-        const body = await openDialog()
-
-        if (clinicGateArmed) {
-            expect(
-                body.password,
-                'cổng đang bật mà request không mang password — server sẽ chặn',
-            ).toBe(CLINIC_PASSWORD)
-        } else {
-            await expect(
-                passwordDialog(),
-                'tenant không bật cổng mà vẫn hỏi mật khẩu',
-            ).toHaveCount(0)
-            expect(
-                body.password ?? null,
-                'không có cổng mà vẫn gửi password — chỉ nên gửi khi thực sự có nhập',
-            ).toBeNull()
-        }
-        await step()
+        const sent = await openDialog()
+        expect('password' in sent, 'request 来患集計 vẫn mang password').toBe(false)
         await closeDialog()
-    })
-
-    test('TC-PASS-3 — pass_flg = 1: F3 hỏi mật khẩu và CHƯA gọi API số liệu', async () => {
-        // Điểm cốt lõi: số liệu không được rời server trước khi qua cổng.
-        await mockPassFlg(1)
-        // Chờ cờ về hẳn rồi mới bấm F3: `requiresClinicPassword(undefined)` là
-        // false, nên nếu 医院マスタ chưa kịp về thì F3 mở thẳng 来患集計 mà KHÔNG
-        // hỏi. Server vẫn chặn nên không thủng bảo mật, nhưng đúng ra FE nên coi
-        // "chưa biết cờ" là "phải hỏi" — đã báo lại cho dev.
-        await reloadWithPassFlg(1)
-
-        let summaryCalled = false
-        const watch = (r: { url: () => string }) => {
-            if (SUMMARY_URL.test(r.url())) summaryCalled = true
-        }
-        page.on('request', watch)
-
-        await page.keyboard.press('F3')
-        await expect(passwordDialog(), 'pass_flg = 1 mà F3 không hỏi mật khẩu').toBeVisible({
-            timeout: 30000,
-        })
-        await expect(dialog, '来患集計 mở ra trước khi qua cổng').toHaveCount(0)
-        page.off('request', watch)
-
-        expect(summaryCalled, 'đã gọi API 来患集計 trước khi nhập mật khẩu').toBe(false)
-        await step()
-    })
-
-    test('TC-PASS-4 — server từ chối: hộp vẫn mở, báo lỗi, 来患集計 KHÔNG mở', async () => {
-        // Giả lập server bác bỏ. FE không được tự quyết định gì — nó chỉ gửi đi
-        // rồi phản ứng theo kết quả.
-        let sentPassword: string | undefined
-        const reject = async (route: import('@playwright/test').Route) => {
-            sentPassword = (route.request().postDataJSON() as SummaryBody | null)?.password
-            await route.fulfill({
-                status: 403,
-                contentType: 'application/json',
-                body: JSON.stringify({
-                    success: false,
-                    data: null,
-                    error: {
-                        code: 'TENANT.CLINIC_PASSWORD.INVALID',
-                        message: 'パスワードが正しくありません。',
-                    },
-                    meta: null,
-                }),
-            })
-        }
-        await page.route(SUMMARY_URL, reject)
-        try {
-            await passwordDialog().getByRole('textbox').fill('0000')
-            await passwordDialog().getByRole('button', { name: 'F9 確定' }).click()
-
-            await expect(
-                passwordDialog(),
-                'sai mật khẩu mà hộp đã đóng — WinForm chkPass giữ hộp mở để nhập lại',
-            ).toBeVisible({ timeout: 30000 })
-            await expect(passwordDialog().getByRole('alert')).toContainText('パスワード')
-            await expect(dialog, 'server từ chối mà 来患集計 vẫn mở').toHaveCount(0)
-
-            expect(sentPassword, 'FE không gửi mật khẩu lên server').toBe('0000')
-        } finally {
-            await page.unroute(SUMMARY_URL, reject)
-        }
-        await step()
-    })
-
-    test('TC-PASS-5 — server chấp nhận: hộp đóng, 来患集計 mở, body có password', async () => {
-        // Không giả lập endpoint số liệu — để server thật phán. Cờ FE đang bị ép
-        // bằng 1, còn mật khẩu phải là thứ server chấp nhận: tenant bật cổng thì
-        // dùng TEST_CLINIC_PASSWORD, tenant tắt cổng thì chuỗi nào cũng được.
-        const accepted = clinicGateArmed ? CLINIC_PASSWORD : '8931'
-        const res = page.waitForResponse(
-            (r) => SUMMARY_URL.test(r.url()) && r.request().method() === 'POST',
-            { timeout: 60000 },
-        )
-        await passwordDialog().getByRole('textbox').fill(accepted)
-        await passwordDialog().getByRole('button', { name: 'F9 確定' }).click()
-
-        const body = ((await res).request().postDataJSON() ?? {}) as SummaryBody
-        expect(body.password, 'mật khẩu không được đính vào request 来患集計').toBe(accepted)
-
-        await expect(passwordDialog(), 'qua cổng rồi mà hộp mật khẩu chưa đóng').toHaveCount(0)
-        await expect(dialog, 'qua cổng rồi mà 来患集計 không mở').toBeVisible({ timeout: 30000 })
-        await step()
-        await closeDialog()
-    })
-
-    test('TC-PASS-6 — huỷ hộp mật khẩu: không mở 来患集計, không gọi API', async () => {
-        await reloadWithPassFlg(1)
-
-        await page.keyboard.press('F3')
-        await expect(passwordDialog()).toBeVisible({ timeout: 30000 })
-
-        let summaryCalled = false
-        const watch = (r: { url: () => string }) => {
-            if (SUMMARY_URL.test(r.url())) summaryCalled = true
-        }
-        page.on('request', watch)
-
-        // F10 戻る — nhánh huỷ của frm902014.
-        await page.keyboard.press('F10')
-        await expect(passwordDialog(), 'F10 không đóng hộp mật khẩu').toHaveCount(0)
-        await expect(dialog, 'huỷ nhập mật khẩu mà 来患集計 vẫn mở').toHaveCount(0)
-        page.off('request', watch)
-
-        expect(summaryCalled, 'huỷ rồi mà vẫn gọi API 来患集計').toBe(false)
         await step()
     })
 })
