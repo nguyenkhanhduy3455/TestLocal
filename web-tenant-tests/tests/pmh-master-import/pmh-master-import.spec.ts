@@ -32,8 +32,8 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *        thẳng vào input ẩn, KHÔNG qua filechooser.
  *      · FKeyBar chỉ có F9 登録 / F10 戻る. WinForm cũng đúng bộ đó.
  *  - routes/_authenticated/masters_.pmh-import.tsx → URL /masters/pmh-import
- *  - shared/components/sidebar.tsx → mục 'PMHマスタ' nhóm その他業務, requireAdmin
- *  - Endpoint (TenantAdmin):
+ *  - マスタ登録メニュー (/masters) → nút 'PMHマスタ' (sidebar không còn mục này từ 2026-09-28)
+ *  - Endpoint: đọc cần master-pmh.use, upload/import cần master-pmh.import:
  *      GET  /tenant/pmh-master
  *      POST /tenant/pmh-master/{seq}/upload-slot
  *      POST /tenant/pmh-master/{seq}/import
@@ -101,7 +101,7 @@ const PM = {
     previousKept: '既存データはそのまま残っています。',
     fnRegister: '登録',
     fnBack: '戻る',
-    sidebarItem: 'PMHマスタ',
+    menuButton: 'PMHマスタ',
 } as const
 
 interface CatalogRow {
@@ -220,13 +220,11 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
 
     // ── Điều hướng & bố cục ──────────────────────────────────────────────────
 
-    test('TC-NAV-1 — sidebar その他業務 có mục PMHマスタ và dẫn tới /masters/pmh-import', async () => {
-        await page.goto('/', { waitUntil: 'domcontentloaded' })
+    test('TC-NAV-1 — マスタ登録メニュー có nút PMHマスタ và dẫn tới /masters/pmh-import', async () => {
+        await page.goto('/masters', { waitUntil: 'domcontentloaded' })
 
-        const item = page.getByRole('link', { name: PM.sidebarItem })
-        await expect(item, 'sidebar thiếu mục PMHマスタ — requireAdmin có chặn nhầm?').toBeVisible({
-            timeout: 60_000,
-        })
+        const item = page.getByRole('button', { name: PM.menuButton, exact: true })
+        await expect(item, 'メニュー thiếu nút PMHマスタ').toBeEnabled({ timeout: 60_000 })
 
         await item.click()
         await expect(page).toHaveURL(/\/masters\/pmh-import$/)
@@ -235,7 +233,8 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
     })
 
     test('TC-UI-1 — đủ 2 ô nhập và F-key đúng bộ của frm501030: F9 登録 / F10 戻る', async () => {
-        await expect(page.getByText(PM.masterLabel, { exact: true })).toBeVisible()
+        // Ô chọn còn trống hiện đúng chữ của nhãn làm placeholder ⇒ bám vào chính thẻ label.
+        await expect(page.locator('label[for="pmh-master"]')).toHaveText(PM.masterLabel)
         await expect(page.getByText(PM.pathLabel, { exact: true })).toBeVisible()
         await expect(page.getByRole('button', { name: PM.browse })).toBeVisible()
 
