@@ -39,3 +39,18 @@ export async function setRoles(page: Page, names: string[]): Promise<void> {
   }
   expect(await roleValues(page)).toEqual(names);
 }
+
+/**
+ * F9 trên màn 更新 mà tập role đã đổi ⇒ hộp xác nhận 「ロールが変更されています…」
+ * (mặc định いいえ, người đó phải đăng nhập lại) — bấm 「はい」 để lưu thật.
+ */
+export async function confirmRoleChange(page: Page): Promise<void> {
+  const confirm = page
+    .getByRole("alertdialog")
+    .filter({ hasText: "ロールが変更されています" });
+  await expect(confirm, "đổi role phải hỏi xác nhận").toBeVisible({
+    timeout: 15_000,
+  });
+  await confirm.getByRole("button", { name: "はい" }).click();
+  await expect(confirm).toHaveCount(0);
+}

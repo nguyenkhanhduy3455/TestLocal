@@ -23,7 +23,8 @@ import { ADMIN, WRITE_ENDPOINTS, type WriteRule } from "./permission-contract";
  * Quét quyền của MỌI endpoint ghi của API tenant (208 endpoint, bảng ở permission-contract.ts).
  *
  * Một user test giữ role tuỳ chỉnh 「E2E権限API」; giữa các vòng admin đổi quyền của role
- * qua API — BE áp dụng ngay, không cần login lại (1 login cho cả file).
+ * qua API. Đổi quyền kết thúc phiên của người giữ role ⇒ user test login lại sau mỗi lần
+ * đổi (1 login / vòng; loginApi tự chờ khi bị 429, nên TC-3 chạy vài phút).
  *
  *   TC-1 bảng phủ đúng /openapi/tenant.json: không thiếu, không thừa endpoint ghi nào.
  *   TC-2 role rỗng và role 「mọi 利用 (.use)」: mọi endpoint có quyền / ADMIN → 403.
@@ -100,6 +101,9 @@ test.describe("Quyền của mọi endpoint ghi (API tenant)", () => {
 
   async function grant(permissions: string[]): Promise<void> {
     await asAdmin((t) => setRolePermissions(api, t, role, permissions));
+    // The change ended the member's session: sign in again under the new grants.
+    await member.dispose();
+    member = await loginApi(USER.email);
   }
 
   async function call(e: Endpoint): Promise<number> {
@@ -237,6 +241,8 @@ test.describe("Quyền của mọi endpoint ghi (API tenant)", () => {
   });
 
   test("TC-3 — mỗi quyền nghiệp vụ mở đúng endpoint của nó, không hơn", async () => {
+    // 1 login / quyền, login giới hạn 10 / phút / IP.
+    test.setTimeout(900_000);
     const catalog = await asAdmin((t) => permissionCatalog(api, t));
     const codes = actionCodes(catalog);
     // Mọi mã trong bảng hợp đồng phải là quyền nghiệp vụ có thật trong danh mục DB.

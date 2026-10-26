@@ -24,6 +24,7 @@ import {
   setRolePermissions,
 } from "./_role-api";
 import {
+  confirmRoleChange,
   roleAddButton,
   roleRemoveButtons,
   roleSelects,
@@ -39,9 +40,9 @@ import {
  *   · A (9906) — admin thứ hai (không phải owner).
  *   · owner — tài khoản admin của authedPage.
  *
- *   TC-1 admin gỡ 登録・削除 khỏi role của M khi M đang mở 物品マスタ: BE chặn NGAY; màn hình
- *        còn quyền cũ nên F9 vẫn bấm được — bấm thì báo 「この操作を行う権限がありません」
- *        (không kèm lỗi chung chung) và F9 tự khoá vì quyền được nạp lại.
+ *   TC-1 admin gỡ 登録・削除 khỏi role của M khi M đang mở 物品マスタ ⇒ phiên của M kết thúc
+ *        ngay (token cũ 401, refresh 401, app đá về /login) — màn đang mở mang quyền cũ nên
+ *        không được dùng tiếp; đăng nhập lại thì F9 bị khoá theo quyền mới.
  *   TC-2 admin đổi role của M sang 「ユーザ」 ⇒ phiên của M kết thúc ngay (token cũ 401,
  *        refresh 401, app đá về /login).
  *   TC-3 admin xoá role M đang giữ ⇒ phiên của M kết thúc ngay; đăng nhập lại là 「ユーザ」.
@@ -50,11 +51,11 @@ import {
  *   TC-6 A tự hạ mình xuống 「ユーザ」 ở ユーザマスタ ⇒ lưu xong bị đá về /login; đăng nhập
  *        lại thì chỉ xem được ロールマスタ (利用): API ghi 403, F1 新規 bị khoá.
  *
- * Đổi role tăng token_version và thu hồi mọi refresh token của người đó (giống đổi mật
- * khẩu) — role nằm trong access token nên không làm vậy thì người bị hạ giữ quyền cũ
- * tới khi token hết hạn.
+ * Đổi role / đổi quyền của role tăng token_version và thu hồi mọi refresh token của người
+ * đó (giống đổi mật khẩu) — không làm vậy thì người bị đổi giữ quyền cũ tới khi token hết
+ * hạn, hoặc dùng màn hình dựng theo quyền cũ.
  *
- * LOGIN: M 1 lần UI + 2 lần API, A 3 lần UI (mỗi lần bị hạ là mất phiên). Token lấy từ
+ * LOGIN: M 2 lần UI + 2 lần API, A 3 lần UI (mỗi lần bị hạ là mất phiên). Token lấy từ
  * response login của chính trang đó (refresh giới hạn 30 / phút / IP).
  *
  * Chạy: npx playwright test tests/role-master/role-permission-live.spec.ts --workers=1
@@ -74,7 +75,6 @@ const A = {
 const ROLE_CODE = "e2e-perm-live";
 const ROLE_NAME = "E2E途中変更ロール";
 const GOODS = ["master-goods.use", "master-goods.register"];
-const EDIT_DENIED = "この操作を行う権限がありません。";
 
 interface Person {
   page: Page;
@@ -164,14 +164,14 @@ test.describe("Quyền đổi trong lúc đang đăng nhập", () => {
   /** Đọc ロールマスタ — roles.use (role ユーザ cũng có). */
   async function adminRead(token: string): Promise<number> {
     return (
-      await api.get(`${API}/tenant/roles`, { headers: bearer(token) })
+      await api.get(`${API}/tenant/role-master`, { headers: bearer(token) })
     ).status();
   }
 
   /** Ghi ロールマスタ với body hỏng: 400 = có roles.manage, 403 = bị chặn. */
   async function roleWrite(token: string): Promise<number> {
     return (
-      await api.post(`${API}/tenant/roles`, {
+      await api.post(`${API}/tenant/role-master`, {
         headers: { ...bearer(token), "Content-Type": "application/json" },
         data: "{",
       })
@@ -196,28 +196,6 @@ test.describe("Quyền đổi trong lúc đang đăng nhập", () => {
     return dialog.locator('[data-fkey="F9"]');
   }
 
-  /** Một 物品 hợp lệ (mã chắc chắn không có) — để F9 thực sự gửi request ghi. */
-  async function fillGoods(page: Page): Promise<void> {
-    const dialog = page
-      .getByRole("dialog")
-      .filter({ hasText: "物品マスタ登録" });
-    await page.locator("#goods-goodsCd").fill("999");
-    await dialog.getByLabel("物品サブコード", { exact: true }).fill("255");
-    const appSt = dialog
-      .locator("div.flex.items-center.gap-4")
-      .filter({ hasText: "適用開始日" });
-    await appSt.getByRole("combobox").click();
-    await page.getByRole("option", { name: "令和", exact: true }).click();
-    const boxes = appSt.getByRole("textbox");
-    await boxes.nth(0).fill("6");
-    await boxes.nth(1).fill("4");
-    await boxes.nth(2).fill("1");
-    await page.locator("#goods-goodsNm").fill("E2E権限確認");
-    await page.locator("#goods-supplierNm").fill("E2E");
-    await page.locator("#goods-purchasePrice").fill("100");
-    await page.locator("#goods-salesPrice").fill("200");
-  }
-
   test.beforeAll(async ({ authedPage }) => {
     owner = authedPage;
     api = await newApi();
@@ -236,41 +214,25 @@ test.describe("Quyền đổi trong lúc đang đăng nhập", () => {
     if (dbEnabled) await purge([M, A], [ROLE_CODE]);
   });
 
-  test("TC-1 — gỡ 登録・削除 khi M đang mở 物品マスタ: BE chặn ngay, F9 báo không có quyền và tự khoá", async () => {
+  test("TC-1 — gỡ 登録・削除 khi M đang mở 物品マスタ: phiên của M kết thúc ngay, đăng nhập lại thì F9 khoá", async () => {
     m = await signIn(M.email);
-    const f9 = await openGoodsRegister(m.page);
-    await expect(f9).toBeEnabled();
+    await expect(await openGoodsRegister(m.page)).toBeEnabled();
     expect(await goodsWrite(m.token), "trước khi gỡ: được ghi").toBe(400);
 
     await setRolePermissions(api, adminTok, role, ["master-goods.use"]);
-    expect(await goodsWrite(m.token), "token đang dùng phải bị chặn ngay").toBe(
-      403,
+    expect(await goodsWrite(m.token), "token đang dùng bị từ chối ngay").toBe(
+      401,
     );
+    expect(await refresh(m), "refresh token cũ bị thu hồi").toBe(401);
+    await expectSignedOut(m.page, "/masters/goods");
+    await captureFixedUi(m.page, "role-permission-live-signed-out");
 
-    // Màn hình vẫn mang quyền cũ (F9 còn sáng). Bấm F9: phải nói rõ là không có quyền,
-    // không kèm thông báo lỗi chung chung (E99999 / 保存に失敗), rồi F9 tự khoá.
-    await fillGoods(m.page);
-    await f9.click();
-    await expect(m.page.getByText(EDIT_DENIED)).toBeVisible({
-      timeout: 15_000,
-    });
+    m.token = await logIn(m.page, M.email);
+    expect(await goodsWrite(m.token), "đăng nhập lại: chỉ còn 利用").toBe(403);
     await expect(
-      m.page.getByRole("alertdialog"),
-      "không được hiện hộp lỗi chung chung",
-    ).toHaveCount(0);
-    await expect(
-      f9,
-      "quyền được nạp lại ⇒ F9 khoá mà không cần nạp lại trang",
-    ).toBeDisabled({
-      timeout: 15_000,
-    });
-    await captureFixedUi(m.page, "role-permission-live-denied-notice");
-
-    await setRolePermissions(api, adminTok, role, GOODS);
-    expect(await goodsWrite(m.token), "trả lại 登録・削除: ghi được ngay").toBe(
-      400,
-    );
-    await expect(await openGoodsRegister(m.page)).toBeEnabled();
+      await openGoodsRegister(m.page),
+      "F9 登録 phải khoá theo quyền mới",
+    ).toBeDisabled();
   });
 
   test("TC-2 — đổi role của M sang 「ユーザ」: phiên của M kết thúc ngay", async () => {
@@ -288,6 +250,8 @@ test.describe("Quyền đổi trong lúc đang đăng nhập", () => {
   });
 
   test("TC-3 — xoá role M đang giữ: phiên của M kết thúc ngay, đăng nhập lại là 「ユーザ」", async () => {
+    // TC-1 left the role with 利用 only; M holds no session now, so nobody is signed out.
+    await setRolePermissions(api, adminTok, role, GOODS);
     expect(
       (await assignRole(api, adminTok, M.userNo, [role.id])).status(),
     ).toBeLessThan(300);
@@ -394,13 +358,21 @@ test.describe("Quyền đổi trong lúc đang đăng nhập", () => {
     // Đổi dòng 1 sang ユーザ (chọn trong dropdown, không qua nút 削除 nên không hỏi lại).
     await setRoles(page, ["ユーザ"]);
     await page.locator('[data-fkey="F9"]').click();
+    await confirmRoleChange(page);
 
     // Lưu được (request đi bằng token trước khi bị thu hồi), rồi request kế tiếp 401 →
     // refresh 401 → app về /login.
-    await expect(
-      loginButton(page),
-      "tự hạ quyền phải kết thúc phiên",
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(page, "tự hạ quyền phải kết thúc phiên").toHaveURL(/\/login/, {
+      timeout: 30_000,
+    });
+    // /login là lần nạp trang đầy đủ: Vite dev server có thể nhả hụt một module
+    // (xem _shared/entry.ts) để lại trang trắng — nạp lại đúng /login.
+    try {
+      await expect(loginButton(page)).toBeVisible({ timeout: 10_000 });
+    } catch {
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expect(loginButton(page)).toBeVisible({ timeout: 30_000 });
+    }
     expect(await roleCodesOf(A.userNo)).toEqual(["user"]);
     expect(await adminRead(a.token)).toBe(401);
 

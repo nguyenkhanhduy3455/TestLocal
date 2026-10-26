@@ -23,12 +23,12 @@ import {
  * Quyền 利用 (.use) ở FE cho MỌI chức năng của danh mục: route nào mở được, nút nào ở
  * マスタ登録メニュー bấm được.
  *
- * Một user test (1 login UI) giữ role 「E2E画面権限」; admin đổi quyền role qua API rồi
- * spec nạp lại trang MỘT lần — lúc khởi động app refresh token và nhận quyền mới — sau
- * đó đi qua các route bằng điều hướng trong SPA (không refresh thêm).
+ * Một user test giữ role 「E2E画面権限」; admin đổi quyền role qua API — việc này kết thúc
+ * phiên của người giữ role — nên spec login UI lại một lần mỗi vòng để nhận quyền mới, sau
+ * đó đi qua các route bằng điều hướng trong SPA (không refresh thêm). 7 vòng = 8 login.
  *
- * NGÂN SÁCH REFRESH: /tenant/auth/refresh giới hạn 30 lượt / cửa sổ theo IP, nên KHÔNG
- * chạy mỗi chức năng 1 vòng. Thay vào đó mỗi chức năng được đánh số 1..22 và chạy 5 vòng
+ * NGÂN SÁCH LOGIN: /tenant/auth/login giới hạn 10 lượt / phút theo IP, nên KHÔNG
+ * chạy mỗi chức năng 1 vòng. Thay vào đó mỗi chức năng được đánh số 1..20 và chạy 5 vòng
  * theo bit: vòng k cấp `.use` cho các chức năng có bit k = 1. Mẫu mở/chặn của một route qua
  * 5 vòng phải đúng bằng số của chức năng sở hữu nó ⇒ route gán nhầm (hoặc không gán) đều lộ.
  *
@@ -61,11 +61,6 @@ const SCREEN_ROUTES: Record<string, string[]> = {
   "counter-payments": ["/counter-payments"],
   "medical-records": ["/medical-records"],
   "clinic-settings": ["/settings/clinic", "/settings/local-pubexp"],
-  "agent-settings": [
-    "/settings/agent",
-    "/settings/printers",
-    "/settings/linkage",
-  ],
   users: ["/settings/user-master"],
   roles: ["/settings/role-master"],
   "master-dis": ["/masters/dis"],
@@ -114,9 +109,28 @@ test.describe("Quyền 利用 ở FE — mọi chức năng của danh mục", (
   let role: RoleInfo;
   let token: string;
 
-  /** Đổi quyền rồi nạp lại trang 1 lần để FE nhận quyền mới (1 lượt refresh). */
+  /** Login UI trên một trang mới — trang cũ còn giữ trạng thái của phiên đã kết thúc. */
+  async function logIn(): Promise<void> {
+    await member?.close();
+    member = await newTestPage(admin.context().browser()!);
+    await member.goto("/login", { waitUntil: "domcontentloaded" });
+    await member.getByLabel(JA.emailLabel).fill(USER.email);
+    await member
+      .getByLabel(JA.passwordLabel, { exact: true })
+      .fill(ADMIN_USER.password);
+    await member.getByRole("button", { name: JA.submit }).click();
+    await expect(
+      member,
+      "user test không đăng nhập được (rate-limit?)",
+    ).toHaveURL(/\/$/, {
+      timeout: 30_000,
+    });
+  }
+
+  /** Đổi quyền (phiên của user test kết thúc) rồi login lại để FE nhận quyền mới. */
   async function grant(permissions: string[]): Promise<void> {
     await setRolePermissions(api, token, role, permissions);
+    await logIn();
     await open("/");
   }
 
@@ -192,27 +206,13 @@ test.describe("Quyền 利用 ở FE — mọi chức năng của danh mục", (
     return state;
   }
 
-  test.beforeAll(async ({ authedPage, browser }) => {
+  test.beforeAll(async ({ authedPage }) => {
     admin = authedPage;
     api = await newApi();
     await purge([USER], [ROLE_CODE]);
     token = await adminToken(admin); // 1 lượt refresh cho cả file (token sống 15 phút)
     role = await createRole(api, token, ROLE_CODE, "E2E画面権限", []);
     await seedUser(USER, ROLE_CODE);
-
-    member = await newTestPage(browser);
-    await member.goto("/login", { waitUntil: "domcontentloaded" });
-    await member.getByLabel(JA.emailLabel).fill(USER.email);
-    await member
-      .getByLabel(JA.passwordLabel, { exact: true })
-      .fill(ADMIN_USER.password);
-    await member.getByRole("button", { name: JA.submit }).click();
-    await expect(
-      member,
-      "user test không đăng nhập được (rate-limit?)",
-    ).toHaveURL(/\/$/, {
-      timeout: 30_000,
-    });
   });
 
   test.afterAll(async () => {
@@ -240,7 +240,7 @@ test.describe("Quyền 利用 ở FE — mọi chức năng của danh mục", (
   });
 
   test("TC-2 — 5 vòng theo bit: route / nút メニュー mở đúng khi chức năng của nó được cấp", async () => {
-    // Chức năng thứ i (0-based) mang số i+1: 1..22 vừa 5 bit, không chức năng nào là 0.
+    // Chức năng thứ i (0-based) mang số i+1: 1..20 vừa 5 bit, không chức năng nào là 0.
     const numberOf = (screen: string) => SCREENS.indexOf(screen) + 1;
     const BITS = 5;
     const wrong: string[] = [];

@@ -14,7 +14,12 @@ import { gotoListScreen } from "../_shared/list-screen-chrome";
 import { expect, releaseSharedPage, test } from "../_shared/session";
 import { ADMIN_USER, JA } from "../_shared/test-data";
 import { adminToken, createRole, loginApi, newApi } from "./_role-api";
-import { roleSelects, roleValues, setRoles } from "./_role-ui";
+import {
+  confirmRoleChange,
+  roleSelects,
+  roleValues,
+  setRoles,
+} from "./_role-ui";
 
 /**
  * ロールマスタ + permission — luồng đầy đủ, từ lúc admin tạo role tới lúc người
@@ -23,13 +28,13 @@ import { roleSelects, roleValues, setRoles } from "./_role-ui";
  * role-master-screens.spec.ts chỉ kiểm khung màn hình (header, chọn nhanh, trùng
  * mã/tên) và KHÔNG lưu gì. File này lưu thật:
  *   TC-1 admin tạo role 「E2E物品閲覧」 chỉ có 物品マスタ 利用 → DB đúng 1 quyền.
- *   TC-2 admin sửa role, thêm 病名マスタ 利用 → DB đúng 2 quyền.
+ *   TC-2 admin sửa role, thêm 病名マスタ 利用 → DB đúng 2 quyền. (F9 hỏi xác nhận vì mọi người giữ role sẽ bị đăng xuất)
  *   TC-3 admin gán role cho user test ở ユーザマスタ (dropdown ロール thay ユーザ) → app_user_role.
  *   TC-4..6 user test đăng nhập:
  *     · マスタ登録メニュー: ユーザマスタ / ロールマスタ / 処置マスタ bị khoá, 物品マスタ mở được.
  *     · /masters/trt (không có 利用) → màn 403.
  *     · 物品マスタ 新規: F8/F9 bị khoá, End chỉ báo thiếu quyền.
- *   TC-7 BE: login API trả đúng 2 quyền; POST 物品マスタ và GET /tenant/roles → 403.
+ *   TC-7 BE: login API trả đúng 2 quyền; POST 物品マスタ và GET /tenant/role-master → 403.
  *   TC-7b admin 追加 role thứ 2 (物品マスタ 登録・削除) → user test giữ 2 role, quyền cộng
  *        dồn: login API trả hợp 2 role, POST 物品マスタ qua được tầng quyền.
  *   TC-8 admin xoá role đầu → user test giữ role còn lại (KHÔNG bị thêm 「ユーザ」),
@@ -238,6 +243,19 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
     await admin.getByRole("checkbox", { name: "病名マスタ 利用" }).click();
     await fkey(admin, "F9").click();
 
+    // Đổi quyền ⇒ hỏi trước: mọi người giữ role sẽ bị đăng xuất.
+    const confirm = admin
+      .getByRole("alertdialog")
+      .filter({ hasText: "権限を変更しますか？" });
+    await expect(confirm, "đổi quyền phải hỏi xác nhận").toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(confirm).toContainText(
+      "このロールを持つユーザは全員ログアウトされ",
+    );
+    await captureFixedUi(admin, "role-permissions-change-confirm");
+    await confirm.getByRole("button", { name: "変更する" }).click();
+
     await expect(admin.getByText(`${ROLE_NAME} を更新しました`)).toBeVisible({
       timeout: 15_000,
     });
@@ -253,6 +271,7 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
     expect(await roleValues(admin)).toEqual(["ユーザ"]);
     await setRoles(admin, [ROLE_NAME]);
     await fkey(admin, "F9").click();
+    await confirmRoleChange(admin);
 
     await expect(admin).toHaveURL(/\/settings\/user-master$/, {
       timeout: 30_000,
@@ -335,7 +354,7 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
         data: {},
       });
       expect(write.status(), "thiếu 登録・削除 thì BE phải chặn").toBe(403);
-      const roles = await api.get("api/tenant/roles", { headers });
+      const roles = await api.get("api/tenant/role-master", { headers });
       expect(roles.status(), "thiếu roles.use thì ロールマスタ bị chặn").toBe(
         403,
       );
@@ -367,6 +386,7 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
       "role-permissions-two-roles",
     );
     await fkey(admin, "F9").click();
+    await confirmRoleChange(admin);
     await expect(admin).toHaveURL(/\/settings\/user-master$/, {
       timeout: 30_000,
     });
