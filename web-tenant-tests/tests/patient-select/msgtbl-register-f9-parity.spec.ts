@@ -380,7 +380,18 @@ test.describe('MSGTBL parity — F9 登録 màn 患者登録 (7 mã còn lại c
             MSG.Q00013(ZENKI_KOUREI),
             '72 tuổi + old_flg=0 ⇒ phải hỏi Q00013, KHÔNG phải Q00012',
         )
-        await dismiss('confirm', 'Q00013')
+        await expectSeverity(page, 'confirm', 'Q00013: legacy dùng ShowYesNoMsg (？ hỏi)')
+
+        // Q00013 chạy NGƯỢC mọi confirm khác (frm201001.cs:2462-2483, app sửa ở
+        // 0d2781784): 「はい」 đóng dấu 前期高齢者 rồi DỪNG, 「いいえ」 không đổi gì và
+        // lưu TIẾP. Seed để 負担割合 = 0 nên bước kế là Q00200 「前期高齢者ですが、
+        // 負担割合に ０ …」 (:2519); từ chối Q00200 mới dừng F9 mà không ghi DB.
+        await topDialog(page).getByRole('button', { name: 'いいえ' }).click()
+        await expect(
+            topDialog(page),
+            'từ chối Q00013 thì F9 đi tiếp tới Q00200 前期高齢者 負担割合',
+        ).toContainText('前期高齢者ですが、負担割合に', { timeout: DIALOG_TIMEOUT })
+        await dismiss('confirm', 'Q00200')
     })
 
     // ── E00022 — 記号 quá dài ───────────────────────────────────────────────

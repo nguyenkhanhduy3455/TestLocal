@@ -413,6 +413,45 @@ test.describe('診療入力（患者選択）F8 閲覧 — 変更/閲覧モー�
         await backToList()
     })
 
+    test('TC-F8-3 — F8 rồi gõ ngày mới ở ô 日 của 日計: AutoSantei VẪN chạy', async () => {
+        // Gate 更新区分 chỉ chặn lượt AutoSantei lúc MỞ màn (frm203002.cs:3262-3270).
+        // Thêm ngày qua ô 日 của 日計 đi đường frm203002.cs:5300-5367, không đọc
+        // 更新区分 — nên ở 変更/閲覧 vẫn phải tự算定 cho ngày vừa gõ.
+        // KHÔNG GHI DB: không bấm F9 登録, rời màn là các dòng mất.
+        skipWithReason(emptyDay === null, 'không có ngày trống (xem TC-F9-1).')
+
+        await typePatNo(PAT_NO)
+        await setTrtDay(emptyDay!)
+        await page.keyboard.press('F8')
+        await expect(page).toHaveURL(/inpKbn=/, { timeout: 30000 })
+        await waitDetailLoaded()
+        expect(
+            await settledVisibleDays(),
+            `mở bằng F8 mà ngày ${emptyDay} đã có dòng — tiền đề của TC sai`,
+        ).not.toContain(emptyDay!)
+
+        const day = String(emptyDay).padStart(2, '0')
+        const autoSanteiReq = page.waitForRequest(
+            (r) =>
+                /\/tenant\/treatment\/autosantei\?/.test(r.url()) &&
+                (new URL(r.url()).searchParams.get('trtDt') ?? '').endsWith(`-${day}`),
+            { timeout: 30000 },
+        )
+        await page.locator('[data-footer-cell$=":footer-day"]').last().fill(String(emptyDay))
+        await page.keyboard.press('Enter')
+        await autoSanteiReq
+
+        // Hộp 初診算定 (nếu bung) do handler `santei` ở beforeAll trả lời — assert
+        // auto-wait bên dưới kích hoạt nó, giống TC-F9-1.
+        await expect(
+            dayCell(emptyDay!).first(),
+            `F8 + gõ ngày ${emptyDay} ở 日計 mà lưới không có dòng nào cho ngày đó — ` +
+                'AutoSantei bị chặn nhầm bởi gate 更新区分',
+        ).toBeVisible({ timeout: 60000 })
+        await step()
+        await backToList()
+    })
+
     // ── 3. Luật ép Insert khi chọn từ 受付患者一覧 ───────────────────────────
 
     test('TC-WAIT-1 — F8 trên dòng 受付患者一覧 vẫn ra chế độ insert + 診療日 = hôm nay', async () => {

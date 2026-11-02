@@ -409,7 +409,8 @@ test.describe('client sort — dialog grid + list màn hình', () => {
   const installSanteiNo = async () => {
     if (santeiHandlerOn) return
     santeiHandlerOn = true
-    disposeOverlays = await installOverlayHandlers(page, { santei: true })
+    // kartePicker: AutoSantei 歯管 bật カルテ記載選択 đè lên ガイド処置選択 — spec này không đo nó.
+    disposeOverlays = await installOverlayHandlers(page, { santei: true, kartePicker: true })
   }
 
   /**

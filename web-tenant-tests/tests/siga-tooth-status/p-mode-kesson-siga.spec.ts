@@ -1,4 +1,4 @@
-import { type Page, type Request } from '@playwright/test'
+import { type Page } from '@playwright/test'
 
 import { patNo } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
@@ -349,16 +349,20 @@ test.describe('診療入力 — Ｐ変更 → 欠損自動マーキング (Chk_P
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
 
-        // BẪY 1 — kỳ vọng suy ra từ chính request, nên phải bắt body của nó.
-        page.on('request', (req: Request) => {
-            if (!req.url().includes(P_MODE_PATH) || req.method() !== 'POST') return
-            pModeCalls++
-            try {
-                const body = req.postDataJSON() as { bui?: (number | string)[] }
-                sentBui = (body.bui ?? []).map(Number)
-            } catch {
-                sentBui = null
+        // BẪY 1 — kỳ vọng suy ra từ chính request, nên phải bắt body của nó. Đọc ở
+        // `page.route` chứ không ở sự kiện 'request': Chromium có lúc trả `postData()` null ở đó.
+        await page.route(`**${P_MODE_PATH}**`, async (route) => {
+            const req = route.request()
+            if (req.method() === 'POST') {
+                pModeCalls++
+                try {
+                    const body = req.postDataJSON() as { bui?: (number | string)[] }
+                    sentBui = (body.bui ?? []).map(Number)
+                } catch {
+                    sentBui = null
+                }
             }
+            await route.fallback()
         })
 
         await openTreatmentScreen()

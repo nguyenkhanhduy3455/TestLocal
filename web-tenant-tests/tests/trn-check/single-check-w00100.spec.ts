@@ -1,4 +1,4 @@
-import { type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page, type Request } from '@playwright/test'
 
 import { patNo } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
@@ -415,11 +415,19 @@ test.describe('診療入力 — 行単位 診療チェック W00100 (SingleChk)'
         // Bắt MỌI lượt /check-single: request body cho các assert về định vị dòng,
         // response body cho các assert về nội dung message. Bọc try/catch vì
         // response có thể bị huỷ giữa chừng khi test kết thúc sớm.
+        // Body đọc ở `page.route`: Chromium có lúc trả `postData()` null cho request
+        // lấy từ sự kiện response.
+        const bodies = new WeakMap<Request, Record<string, unknown>>()
+        await page.route(`**${CHECK_SINGLE_PATH}**`, async (route) => {
+            const req = route.request()
+            bodies.set(req, (req.postDataJSON() ?? {}) as Record<string, unknown>)
+            await route.fallback()
+        })
         page.on('response', (res) => {
             if (!res.url().includes(CHECK_SINGLE_PATH)) return
             void (async () => {
                 try {
-                    const body = (res.request().postDataJSON() ?? {}) as Record<string, unknown>
+                    const body = bodies.get(res.request()) ?? {}
                     const json = (await res.json()) as {
                         data?: { errors?: { info?: string }[] }
                     }

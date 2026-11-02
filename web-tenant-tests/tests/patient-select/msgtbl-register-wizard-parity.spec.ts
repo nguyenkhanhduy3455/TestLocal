@@ -325,12 +325,18 @@ test.describe('MSGTBL parity — wizard 受診者情報 (E00052 / E00018 / E0001
         // cũng không phải 7, nên cả E00018 lẫn E00019 đều không chặn — E00013 mới
         // là lỗi đầu tiên.
         //
-        // Nhãn trên UI là 「診療関始日」 (bản port gõ 関 thay vì 開) — bám đúng chuỗi
-        // đang render, đừng "sửa" thành 診療開始日 nếu chưa sửa trong app.
-        await setEraDate(dlg, '診療関始日', '2020-05-01')
+        // patient-registration-person-dialog.tsx:526 — app đã sửa lỗi gõ 「診療関始日」.
+        await setEraDate(dlg, '診療開始日', '2020-05-01')
         await setEraDate(dlg, '初回来院日', '2020-05-10')
 
-        const text = await pressNext(dlg, 'E00013')
+        // 患者情報有効日 để trống ⇒ cascade Q00010 chạy TRƯỚC E00013 (cùng thứ tự với
+        // frm201001.cs:2335 → :2395). はい ⇒ 有効日 = 診療開始日 rồi mới so ngày.
+        const q = await pressNext(dlg, 'Q00010 患者情報有効日')
+        expectMsg(q, 'Q00010', MSG.Q00010('患者情報有効日'), '患者情報有効日 trống thì hỏi Q00010 trước')
+        await clickDialog(page, 'accept')
+        await step()
+
+        const text = await nextDialogText(page, 'E00013', DIALOG_TIMEOUT)
         expectMsg(
             text,
             'E00013',

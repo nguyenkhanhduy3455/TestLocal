@@ -82,7 +82,9 @@ test.describe('診療入力（患者選択）— combo nhập tay / Tab 検索�
             const active = document.activeElement as HTMLElement | null
             if (!active) return '(none)'
             if (active.tagName === 'BUTTON' && active.textContent?.trim() === '検索') return '検索'
-            let el: Element | null = active
+            // WarekiDateField: gốc của nó cũng là div.items-center ⇒ leo từ gốc control
+            // (mang data-wareki-status) chứ không từ nút 元号 / ô 年月日 bên trong.
+            let el: Element | null = active.closest('[data-wareki-status]') ?? active
             while (el && el.parentElement && !el.parentElement.classList.contains('items-center')) {
                 el = el.parentElement
             }

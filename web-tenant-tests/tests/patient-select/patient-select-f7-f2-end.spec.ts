@@ -379,6 +379,12 @@ test.describe('診療入力（患者選択）— F7 会計作成 / F2 患者情�
         const savedYear = await yearBox.inputValue()
         await yearBox.fill('')
         await page.keyboard.press('Tab')
+        // Trạng thái 診療日 tới trang qua effect (onStatusChange) ⇒ chờ ô báo
+        // `incomplete` rồi mới bấm phím, kẻo phím đọc 診療日 hợp lệ cũ.
+        await expect(trtDtRow().locator('[data-wareki-status]').first()).toHaveAttribute(
+            'data-wareki-status',
+            'incomplete',
+        )
         await step()
 
         await page.keyboard.press('End')
@@ -414,6 +420,12 @@ test.describe('診療入力（患者選択）— F7 会計作成 / F2 患者情�
         const savedYear = await yearBox.inputValue()
         await yearBox.fill('')
         await page.keyboard.press('Tab')
+        // Trạng thái 診療日 tới trang qua effect (onStatusChange) ⇒ chờ ô báo
+        // `incomplete` rồi mới bấm phím, kẻo phím đọc 診療日 hợp lệ cũ.
+        await expect(trtDtRow().locator('[data-wareki-status]').first()).toHaveAttribute(
+            'data-wareki-status',
+            'incomplete',
+        )
 
         let called = false
         // Giữ THAM CHIẾU của handler: `page.off` so sánh bằng identity, truyền
@@ -510,7 +522,10 @@ test.describe('診療入力（患者選択）— F7 会計作成 / F2 患者情�
         const data = await dataRes
         expect(data.status(), `GET accounting/data trả ${data.status()}`).toBeLessThan(300)
 
-        const q = new URL(data.url()).searchParams
+        // Tên param theo OpenAPI sinh ra (giờ là PascalCase `TrtDt`/`AccMake`…) ⇒ đọc
+        // không phân biệt hoa thường; param vắng mặt vẫn trả null.
+        const params = new Map([...new URL(data.url()).searchParams].map(([k, v]) => [k.toLowerCase(), v]))
+        const q = { get: (name: string) => params.get(name.toLowerCase()) ?? null }
         expect(q.get('trtDt'), 'trtDt gửi lên khác 診療日 đang chọn').toMatch(/^\d{4}-\d{2}-\d{2}$/)
         expect(q.get('accMake'), 'accMake gửi lên khác inp_config.acc_make').toBe(
             String(inpConfig!.accMake),

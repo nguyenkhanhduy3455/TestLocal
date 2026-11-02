@@ -2,6 +2,16 @@ import { expect, test, type Locator, type Page, type Route } from '@playwright/t
 
 import { countChiryoKanriR2, dbEnabled, deleteChiryoKanriR2, latestChiryoKanriR2 } from '../_shared/db'
 import { BASE_URL, patNo, trtDt } from '../_shared/env'
+import {
+    AGENT_AVAILABLE,
+    AGENT_BASE_URL,
+    AGENT_SKIP_REASON,
+    type AgentPrintStub,
+    type DatasourceEnvelope,
+    fetchDatasource,
+    type PrintJobCall,
+    routeAgentPrint,
+} from '../_shared/agent-print'
 import { foldForCompare, readPdf } from '../_shared/pdf-content'
 import { makeStep } from '../_shared/step'
 import { captureFixedUi } from '../_shared/capture'
@@ -27,7 +37,9 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  *        lẫn 歯式.
  *      · F8 登録 → 日付チェック (E00002) → confirm Q00001 → upsert theo
  *        (pat_no, print_dt).
- *      · F9 印刷 → dựng datasource RPT203001 rồi đẩy sang print agent. 文書書式
+ *      · F9 印刷 → mở print job ở agent: POST {agent}/v1/print-jobs
+ *        { path: /tenant/report/{patNo}/chiryo-kanri-datasource, body: form };
+ *        agent tự gọi BE dựng datasource RPT203001 rồi preview / in. 文書書式
  *        chọn hẳn file .rpt (初回用 → rpt_no 1, 継続用 → 2). KHÔNG check ngày và
  *        KHÔNG confirm — khác hẳn F8.
  *      · F10 戻る → đóng luôn, WinForm btnF10 không hỏi lưu.
@@ -85,8 +97,8 @@ const ALLOW_SAVE = process.env.TEST_ALLOW_SAVE === '1'
 const INITIAL_URL = /\/tenant\/chiryo-kanri-r2\/initial(\?|$)/
 /** entryProc — POST đúng gốc feature (KHÔNG khớp /initial vì phải hết chuỗi). */
 const SAVE_URL = /\/tenant\/chiryo-kanri-r2\/?(\?|$)/
-/** printProc — F9 印刷 dựng datasource RPT203001 (文書書式 chọn rpt_no 1/2). */
-const PRINT_URL = /\/tenant\/report\/\d+\/chiryo-kanri-datasource(\?|$)/
+/** Path BE mà agent gọi để dựng datasource RPT203001 (文書書式 chọn rpt_no 1/2). */
+const DATASOURCE_PATH = /^\/tenant\/report\/\d+\/chiryo-kanri-datasource$/
 
 // ── Luồng in: agent + PDF ────────────────────────────────────────────────────
 /**
@@ -99,39 +111,11 @@ const PRINT_URL = /\/tenant\/report\/\d+\/chiryo-kanri-datasource(\?|$)/
  * Chúng thuộc test của agent, không phải của màn này.
  */
 /**
- * Có print agent để chạy nhóm TC-IN-* hay không.
- *
- * Agent là net48 + Crystal Reports → CHỈ chạy được trên Windows. Trên macOS/Linux
- * mọi lệnh gọi agent hỏng, FE bung dialog 「印刷エージェントが起動していません」 và
- * nó đè lên dialog 歯管 làm hỏng luôn các testcase phía sau. Nên mặc định suy từ
- * nền tảng thay vì bắt người chạy nhớ đặt cờ.
- *
- * Ép tay khi cần (vd agent chạy ở máy khác, trỏ qua TEST_AGENT_BASE_URL):
- *   TEST_AGENT=1   # buộc CHẠY nhóm TC-IN-*
- *   TEST_AGENT=0   # buộc BỎ QUA, kể cả trên Windows
- */
-const AGENT_AVAILABLE =
-    process.env.TEST_AGENT === '1'
-        ? true
-        : process.env.TEST_AGENT === '0'
-          ? false
-          : process.platform === 'win32'
-
-/** Lý do skip, dùng chung cho cả nhóm TC-IN-*. */
-const AGENT_SKIP_REASON =
-    `cần print agent (net48/Crystal, chỉ Windows) — đang chạy trên ${process.platform}. ` +
-    'Đặt TEST_AGENT=1 nếu agent chạy ở máy khác.'
-
-/** Phải khớp VITE_AGENT_BASE_URL của web-tenant (lib/env.ts mặc định cổng này). */
-const AGENT_BASE_URL = process.env.TEST_AGENT_BASE_URL ?? 'https://127.0.0.1:58247'
-/**
  * Độ gắt khi so text bóc từ PDF thật. loose → chữ Hán thiếu chỉ cảnh báo.
  * Xem chú thích trong pdf-content.ts.
  */
 const PDF_TEXT_STRICT = (process.env.TEST_PDF_TEXT ?? 'strict') !== 'loose'
 
-const AGENT_RENDER_URL = /\/v1\/render(\?|$)/
-const AGENT_PRINT_URL = /\/v1\/print(\?|$)/
 
 /**
  * 帳票ID sau ReportNameNormalizer. KHÁC các màn khác: 文書書式 chọn hẳn file .rpt,
@@ -149,7 +133,7 @@ const PNG_BASE64_PREFIX = 'iVBORw0KGgo'
 /** WinForm in "✓" cho ô tick, rỗng cho ô không tick. */
 const CHECK = '✓'
 
-/** Body POST /v1/render — cũng đúng shape FE dùng lại cho /v1/print. */
+/** renderRequest BE dựng cho job (thứ agent đưa vào Crystal). */
 interface RenderRequestBody {
     reportId: string
     printCategory: number
@@ -193,12 +177,6 @@ interface KanriRow {
     clinic_dentist?: unknown
     start_time?: unknown
     plan_text?: unknown
-}
-
-/** Envelope chung của mọi /tenant/report/*-datasource. */
-interface DatasourceEnvelope {
-    success: boolean
-    data: { shouldPrint: boolean; renderRequest: RenderRequestBody | null }
 }
 
 /** PERM_COUNT / DECI_COUNT của dialog — cũng là số cột se_n / sn_n của BE. */
@@ -385,9 +363,9 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
     let carryForwardPq: number | null = null
 
     // ── Trạng thái luồng in, chia sẻ giữa các testcase TC-IN-* ────────────────
-    /** Body /v1/render FE gửi đi, chụp TRƯỚC khi test chèn forcePreview. */
-    let sentRenderReq: RenderRequestBody | null = null
-    /** Dòng RptInpDocTbl bóc từ body /v1/render của TC-IN-1. */
+    /** Route agent (tests/_shared/agent-print.ts): 'real' = agent thật + forcePreview. */
+    let agent: AgentPrintStub
+    /** Dòng RptInpDocTbl BE dựng cho job của TC-IN-1. */
     let sentRow: KanriRow | null = null
 
     /** Preview dialog của agent — tiêu đề do ja.printPreviewTitle dựng. */
@@ -445,47 +423,13 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
             .getByRole('dialog')
             .filter({ hasText: '歯科疾患管理に係わる管理計画書プレビュー' })
 
-        // ─── Ép preview cho MỌI /v1/render ────────────────────────────────────
-        // RPT203001 là 帳票 mới nên chưa có dòng print_mapping nào; agent tính
-        //     preview = req.ForcePreview || (mapping?.Preview ?? false)
-        // → mapping == null ⇒ preview=false ⇒ FE in thẳng, không có PDF để soi.
-        // Cấu hình "luôn bật preview" là THEO TỪNG 帳票, nên phụ thuộc vào nó thì
-        // test xanh/đỏ theo máy. `forcePreview` là cờ override có sẵn của agent
-        // (レセプト dùng nó để luôn xem trước) — bật ở đây để suite tự lo.
-        //
-        // KHÔNG làm giả dữ liệu: agent vẫn render PDF thật từ .rpt thật với
-        // datasource thật, chỉ đổi "hiện lên màn hình" thay vì "đẩy xuống spooler".
-        // Body GỐC được chụp lại trước khi ghi đè, nên assert FE pass-through ở
-        // TC-IN-1 vẫn soi đúng cái FE gửi.
-        await page.route(AGENT_RENDER_URL, async (route: Route) => {
-            const original = route.request().postDataJSON() as RenderRequestBody
-            sentRenderReq = original
-            await route.continue({
-                postData: JSON.stringify({ ...original, forcePreview: true }),
-            })
-        })
-
-        // ─── Lưới an toàn: không bao giờ để job xuống spooler ─────────────────
-        // Suite này chỉ soi PREVIEW nên không bấm F1 印刷 ở đâu cả — /v1/print lẽ
-        // ra không được gọi. Chặn nó là bảo hiểm cho trường hợp print_mapping bị
-        // tắt preview: khi đó FE in thẳng, job xuống spooler Windows, và nếu máy
-        // in mặc định là "Microsoft Print to PDF" thì driver bung hộp thoại
-        // "Save Print Output As" của Windows shell. Playwright KHÔNG điều khiển
-        // được hộp thoại ngoài trình duyệt → nó treo và chặn cả suite.
-        //
-        // Đây là endpoint DUY NHẤT bị chặn; /v1/render, SSE và PDF tạm vẫn đi qua
-        // agent thật, nên phần Crystal dựng tờ giấy vẫn được kiểm nguyên vẹn.
-        await page.route(AGENT_PRINT_URL, async (route: Route) => {
-            await route.fulfill({
-                status: 202,
-                headers: {
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Headers': '*',
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ jobId: '00000000-0000-4000-8000-000000000000' }),
-            })
-        })
+        // ─── Agent THẬT, nhưng luôn preview và KHÔNG BAO GIỜ in ────────────────
+        // RPT203001 chưa có print_mapping ⇒ agent mặc định in thẳng, không có PDF
+        // để soi. Mode 'real' chèn `forcePreview: true` vào job (agent vẫn render PDF
+        // thật từ .rpt thật) và chặn mọi lệnh in (pages/{n} print:true) cùng
+        // /v1/save-pdf — job không bao giờ xuống spooler Windows, nơi hộp thoại
+        // "Save Print Output As" sẽ treo cả suite.
+        agent = await routeAgentPrint(page, AGENT_AVAILABLE ? 'real' : 'preview')
     })
 
     test.afterAll(async () => {
@@ -918,35 +862,27 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
     // ═══ F9 印刷 — datasource → agent thật → PDF ════════════════════════════
     // WinForm frm203021.btnF9_Click gọi THẲNG printProc: KHÔNG check ngày và
     // KHÔNG confirm — khác F8 (Q00001) và khác cả F9 của 実地指導文書.
-    // Agent chạy thật, nên chuỗi này đi hết: BE dựng datasource → /v1/render →
-    // preview → tải PDF về soi nội dung.
+    // Agent chạy thật, nên chuỗi này đi hết: FE mở job → agent gọi BE dựng
+    // datasource → Crystal → preview → tải PDF về soi nội dung.
 
-    test('TC-IN-1 — F9 印刷: BE dựng datasource, FE đẩy nguyên xi sang agent', async () => {
+    test('TC-IN-1 — F9 印刷: FE mở job ở agent bằng path datasource, BE dựng đúng RPT203001', async () => {
         test.skip(!AGENT_AVAILABLE, AGENT_SKIP_REASON)
         await fillSaveForm()
 
         const f9 = dialog.getByRole('button', { name: 'F9 印刷' })
         await expect(f9).toBeEnabled()
 
-        // Prewarm (reportOnly=true) cũng gọi đúng URL này lúc mở dialog và mỗi
-        // lần đổi 文書書式 → lọc theo body để không bắt nhầm.
-        const datasourceResp = page.waitForResponse(
-            (r) => {
-                if (!PRINT_URL.test(r.url()) || r.request().method() !== 'POST') return false
-                const body = r.request().postDataJSON() as Record<string, unknown>
-                return body.reportOnly !== true
-            },
-            { timeout: 60000 },
-        )
-        const renderResp = page.waitForResponse(AGENT_RENDER_URL, { timeout: 60000 })
+        agent.reset()
         await f9.click()
-
-        const resp = await datasourceResp
+        const job = await agent.waitForStart()
         // patNo đi ở ROUTE ([FromRoute]), không nằm trong body.
-        expect(resp.url(), 'patNo phải là bệnh nhân đang mở').toContain(
+        expect(job.request.path, 'job phải trỏ vào chiryo-kanri-datasource').toMatch(DATASOURCE_PATH)
+        expect(job.request.path, 'patNo phải là bệnh nhân đang mở').toContain(
             `/tenant/report/${PAT_NO_NUM}/chiryo-kanri-datasource`,
         )
-        const envelope = (await resp.json()) as DatasourceEnvelope
+
+        // Agent không trả datasource về trình duyệt → gọi lại BE đúng như agent gọi.
+        const envelope = await fetchDatasource<DatasourceEnvelope<RenderRequestBody>>(page, job)
         expect(envelope.success, 'BE trả lỗi khi dựng datasource').toBe(true)
         expect(envelope.data.shouldPrint, 'màn này luôn shouldPrint=true').toBe(true)
         expect(envelope.data.renderRequest, 'thiếu renderRequest').not.toBeNull()
@@ -960,20 +896,7 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
         expect(Object.keys(built.dataJson), 'datasource chỉ có 1 bảng').toEqual([DS_TABLE])
         expect(built.dataJson[DS_TABLE], 'printProc emit đúng 1 dòng').toHaveLength(1)
 
-        // FE là pass-through thuần: body gửi agent PHẢI y hệt cái BE trả về.
-        // Dùng bản GỐC route chụp được, không phải bản đã chèn forcePreview.
-        await expect
-            .poll(() => sentRenderReq, { timeout: 60000, message: 'FE không gọi /v1/render' })
-            .not.toBeNull()
-        const sent = sentRenderReq!
-        expect(sent, 'FE sửa datasource trước khi gửi agent').toEqual(built)
-
-        sentRow = sent.dataJson[DS_TABLE]![0] as KanriRow
-
-        // forcePreview ở beforeAll đảm bảo agent luôn trả preview=true. Nếu không
-        // thì agent đã bỏ qua cờ override — hỏng ở tầng agent, không phải màn này.
-        const rendered = (await (await renderResp).json()) as { preview?: boolean }
-        expect(rendered.preview, 'agent bỏ qua forcePreview → không có PDF để soi').toBe(true)
+        sentRow = built.dataJson[DS_TABLE]![0] as KanriRow
         await step()
     })
 
@@ -1191,12 +1114,11 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
         // Đổi radio rồi in lại thì reportId phải nhảy sang bản 継続用.
         await dialog.getByRole('radio', { name: '継続用' }).click()
 
-        sentRenderReq = null
+        agent.reset()
         await dialog.getByRole('button', { name: 'F9 印刷' }).click()
-        await expect
-            .poll(() => sentRenderReq, { timeout: 60000, message: 'FE không gọi /v1/render' })
-            .not.toBeNull()
-        const sent = sentRenderReq!
+        const job: PrintJobCall = await agent.waitForStart()
+        const sent = (await fetchDatasource<DatasourceEnvelope<RenderRequestBody>>(page, job)).data
+            .renderRequest!
 
         expect(sent.reportId, '継続用 phải dùng rpt_no 2').toBe(REPORT_ID_BY_DOC_TYPE[1])
         expect(sent.reportId, '継続用 không được trùng .rpt của 初回用').not.toBe(

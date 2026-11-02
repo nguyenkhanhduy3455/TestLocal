@@ -1,5 +1,18 @@
-import { type Locator, type Page, type Route } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
 
+import {
+    AGENT_AVAILABLE,
+    AGENT_BASE_URL,
+    AGENT_SKIP_REASON,
+    type AgentPrintStub,
+    type DatasourceEnvelope,
+    fetchDatasource,
+    type PrintJobCall,
+    routeAgentPrint,
+    STUB_AGENT_ERROR,
+    STUB_JOB_ID,
+    STUB_PDF_ID,
+} from '../_shared/agent-print'
 import { patNo, trtDt } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
@@ -24,12 +37,12 @@ import { makeStep } from '../_shared/step'
  *      · 指導時刻: giờ 24 mục, phút bước MINUTE_STEP=5 → 12 mục.
  *      · F8 登録 → confirmDialog Q00002; ngày sai → alert E00002.
  *      · F9 印刷 → ngày sai chặn trước bằng E00002 (KHÔNG confirm, đúng WinForm
- *        btnF9). Ngày hợp lệ → POST /tenant/report/{patNo}/inp-doc-datasource
- *        dựng datasource RPT203002 (kèm teeth_image chụp từ chart) rồi đẩy
- *        NGUYÊN XI envelope.renderRequest sang print agent:
- *          POST {agent}/v1/render → preview=false: in thẳng qua /v1/print
- *                                 → preview=true : SSE `complete` → PdfPreviewDialog
- *        Xem khối TC-IN-* bên dưới + cờ TEST_AGENT.
+ *        btnF9). Ngày hợp lệ → mở print job ở agent:
+ *          POST {agent}/v1/print-jobs { path: /tenant/report/{patNo}/inp-doc-datasource,
+ *                                       body: form (kèm teeth_image chụp từ chart) }
+ *        Agent tự gọi BE dựng datasource RPT203002 rồi preview (SSE `preview-ready`
+ *        → PdfPreviewDialog) hoặc in thẳng (`printed`) theo print_mapping.
+ *        Xem khối TC-IN-* bên dưới, cờ TEST_AGENT và tests/_shared/agent-print.ts.
  *      · F10 戻る → đóng luôn, WinForm btnF10 không hỏi lưu.
  *  - components/oral-hygiene-tooth-chart.tsx (chart tách riêng):
  *      · READ-ONLY y như WinForm — mọi tooth model dựng với SelectMode=false nên
@@ -62,19 +75,18 @@ import { makeStep } from '../_shared/step'
  *
  * IN THẬT HAY KHÔNG — suy từ NỀN TẢNG, không phải cờ opt-in (đồng bộ với
  * `dialogs-management/dental-disease-management-dialog.spec.ts`):
- *   Có agent (Windows, hoặc TEST_AGENT=1)  ← MẶC ĐỊNH trên máy tester
- *     F9 đi THẲNG tới agent thật. Route chỉ làm 2 việc: (a) chụp body /v1/render
- *     rồi chèn `forcePreview: true` để agent luôn trả PDF xem trước bất kể
- *     print_mapping của 帳票 đó bật/tắt preview, (b) CHẶN /v1/print để không bao
- *     giờ có job xuống spooler. Nhờ vậy chặng datasource → Crystal → tờ giấy
+ *   Có agent (Windows, Mac qua tunnel với TEST_AGENT=1)
+ *     F9 đi THẲNG tới agent thật. Route chỉ làm 2 việc: (a) chèn
+ *     `forcePreview: true` vào job để agent luôn trả PDF xem trước bất kể
+ *     print_mapping của 帳票 đó bật/tắt preview, (b) CHẶN lệnh in (pages/{n}
+ *     print:true) và /v1/save-pdf để không bao giờ có job xuống spooler hay hộp
+ *     thoại "Save As" của Windows. Nhờ vậy chặng datasource → Crystal → tờ giấy
  *     được kiểm THẬT: tải chính file PDF agent render, soi số trang, ảnh 歯式 và
  *     từng giá trị của datasource có lên giấy hay không (TC-IN-4/5).
- *     KHÔNG bấm PDF出力 (F2): agent bung hộp thoại "Save As" của Windows mà
- *     Playwright không đóng được → treo cả suite.
- *   Không có agent (macOS/Linux, hoặc TEST_AGENT=0)
- *     Toàn bộ endpoint agent bị stub. Vẫn soi được DATASOURCE (envelope BE trả
- *     về, body /v1/render, từng cột RptInpDocTbl, teeth_image) nhưng KHÔNG chứng
- *     minh được PDF xuất ra — nên TC-IN-5 tự skip kèm lý do rõ ràng.
+ *   Không có agent (TEST_AGENT=0, hoặc macOS/Linux không đặt cờ)
+ *     Toàn bộ endpoint agent bị stub. Vẫn soi được DATASOURCE (spec gọi lại BE
+ *     đúng path + body của job, như agent làm) nhưng KHÔNG chứng minh được PDF
+ *     xuất ra — nên TC-IN-5 tự skip kèm lý do rõ ràng.
  *
  * Các nhánh LỖI của agent (preview OFF / 500 / offline — TC-IN-6..9) LUÔN chạy
  * bằng stub, kể cả khi có agent thật: không có cách nào ép agent thật hỏng theo
@@ -96,29 +108,6 @@ const TRT_DT = trtDt('2025-12-24')
 const ALLOW_SAVE = process.env.TEST_ALLOW_SAVE === '1'
 
 /**
- * Có print agent để in THẬT hay không — xem đầu file.
- *
- * Agent là net48 + Crystal Reports → CHỈ chạy được trên Windows. Trên macOS/Linux
- * mọi lệnh gọi agent hỏng nên phải stub. Suy từ nền tảng thay vì bắt người chạy
- * nhớ đặt cờ; ép tay khi agent nằm ở máy khác:
- *   TEST_AGENT=1   # buộc in THẬT
- *   TEST_AGENT=0   # buộc stub, kể cả trên Windows
- */
-const AGENT_AVAILABLE =
-    process.env.TEST_AGENT === '1'
-        ? true
-        : process.env.TEST_AGENT === '0'
-          ? false
-          : process.platform === 'win32'
-
-/** Lý do skip cho các testcase chỉ có nghĩa khi PDF do agent thật render. */
-const AGENT_SKIP_REASON =
-    `cần print agent (net48/Crystal, chỉ Windows) — đang chạy trên ${process.platform}. ` +
-    'Đặt TEST_AGENT=1 nếu agent chạy ở máy khác.'
-
-/** Phải khớp VITE_AGENT_BASE_URL của web-tenant (lib/env.ts mặc định cổng này). */
-const AGENT_BASE_URL = process.env.TEST_AGENT_BASE_URL ?? 'https://127.0.0.1:58247'
-/**
  * Độ gắt khi so text bóc từ PDF thật (chỉ có tác dụng khi có agent):
  *   strict (mặc định) — thiếu giá trị nào trên giấy là FAIL, kể cả chữ Hán.
  *   loose             — chỉ giá trị KHÔNG chứa chữ Hán mới fail; chữ Hán thiếu
@@ -128,16 +117,8 @@ const AGENT_BASE_URL = process.env.TEST_AGENT_BASE_URL ?? 'https://127.0.0.1:582
  */
 const PDF_TEXT_STRICT = (process.env.TEST_PDF_TEXT ?? 'strict') !== 'loose'
 
-// ── URL của luồng in ─────────────────────────────────────────────────────────
-/** BE dựng datasource: POST /tenant/report/{patNo}/inp-doc-datasource. */
-const DATASOURCE_URL = /\/tenant\/report\/\d+\/inp-doc-datasource(\?|$)/
-/** Agent: render → SSE tiến độ → PDF tạm → in / lưu PDF. */
-const AGENT_RENDER_URL = /\/v1\/render(\?|$)/
-const AGENT_PRINT_URL = /\/v1\/print(\?|$)/
-const AGENT_SAVE_PDF_URL = /\/v1\/save-pdf(\?|$)/
-/** Gộp mọi endpoint agent mà stub cần nắm (kể cả /healthz cho nhánh offline). */
-const AGENT_ANY_URL =
-    /\/(v1\/(render|print|prewarm|save-pdf)|healthz|v1\/jobs\/[^/]+\/events|tmp\/[0-9a-fA-F-]+\.pdf)(\?|$)/
+/** Path BE mà agent gọi để dựng datasource. */
+const DATASOURCE_PATH = /^\/tenant\/report\/\d+\/inp-doc-datasource$/
 
 /** 帳票ID sau ReportNameNormalizer: rpt_nm_1 "RPT20300201.rpt" → "rpt20300201". */
 const REPORT_ID = 'rpt20300201'
@@ -165,49 +146,11 @@ const PRINT_FIXTURE = {
     flags: [true, false, true, false],
 } as const
 
-// ── Stub agent ───────────────────────────────────────────────────────────────
-/**
- * Kịch bản agent trả về, đổi giữa các testcase (mô hình một-route-nhiều-mode
- * như spec 深夜(&S)):
- *   real    — KHÔNG giả lập: đẩy tiếp tới agent thật, chỉ chèn forcePreview và
- *             chặn /v1/print (xem đầu file)
- *   preview — 202 { preview: true } → SSE `complete` → PdfPreviewDialog
- *   direct  — 202 { preview: false } → FE gọi thẳng /v1/print
- *   error   — 500 kèm message → nhánh AgentResponseError
- *   offline — abort mọi request (kể cả /healthz) → nhánh AgentUnreachableError
- */
-type AgentMode = 'real' | 'preview' | 'direct' | 'error' | 'offline'
-
-/** GUID cố định cho job/PDF tạm — extractPdfId của PdfPreviewDialog cần đúng 36 ký tự. */
-const STUB_JOB_ID = '11111111-1111-4111-8111-111111111111'
-const STUB_PDF_ID = '22222222-2222-4222-8222-222222222222'
-const STUB_PDF_TICKET = 'pdf-ticket-stub'
-const STUB_SSE_TICKET = 'sse-ticket-stub'
-const STUB_AGENT_ERROR = '印刷エージェント側のテスト用エラーです'
-/** PDF tối thiểu để iframe có cái mà tải; nội dung không được assert. */
-const STUB_PDF_BODY =
-    '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n' +
-    '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n' +
-    '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj\n' +
-    'trailer<</Root 1 0 R>>\n%%EOF\n'
-
-/**
- * Agent nằm ở origin khác (loopback), nên response stub phải mang CORS header
- * thì fetch của agentClient / EventSource mới đọc được. Preflight OPTIONS thì
- * KHÔNG cần lo: Playwright tự trả 204 cho nó khi page đang bật interception.
- */
-const CORS_HEADERS: Record<string, string> = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': '*',
-    'Access-Control-Allow-Methods': 'GET,POST,PUT,OPTIONS',
-}
-
-/** Body POST /v1/render — cũng đúng shape FE dùng lại cho /v1/print. */
+/** renderRequest của inp-doc-datasource — 1 bảng RptInpDocTbl. */
 interface RenderRequestBody {
     reportId: string
     printCategory: number
     dataJson: Record<string, unknown[]>
-    useDesignPaper?: boolean
 }
 
 /** Một dòng RptInpDocTbl — chỉ các cột makeRepInpDocTblData thực sự gán. */
@@ -231,25 +174,6 @@ interface InpDocRow {
     teeth_cnt: number
     teeth_image?: string
 }
-
-/** Body POST /v1/save-pdf — agent bung hộp thoại "Save As" của Windows. */
-interface SavePdfBody {
-    pdfId?: string
-    defaultName?: string
-}
-
-/** Envelope chung của mọi /tenant/report/*-datasource. */
-interface DatasourceEnvelope {
-    success: boolean
-    data: { shouldPrint: boolean; renderRequest: RenderRequestBody | null }
-}
-
-const jsonFulfill = (route: Route, status: number, body: unknown) =>
-    route.fulfill({
-        status,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    })
 
 /** TOOTH_COUNT — số răng vĩnh viễn của chart (utils/tooth-chart.ts). */
 const TOOTH_COUNT = 32
@@ -355,27 +279,13 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
     /** SVG chart = svg DUY NHẤT chứa foreignObject (ô 本); svg đầu tiên là icon X. */
     let chartSvg: Locator
 
-    // ── Trạng thái stub agent, chia sẻ giữa các testcase in ───────────────────
-    let agentMode: AgentMode = 'preview'
-    /** Body /v1/render gần nhất do stub bắt được (bị resetAgentCapture xoá). */
-    let sentRenderReq: RenderRequestBody | null = null
-    /** Bản chụp datasource của TC-IN-1, giữ nguyên cho các TC sau đối chiếu. */
-    let baselineRenderReq: RenderRequestBody | null = null
-    /** Dòng RptInpDocTbl bóc từ sentRenderReq. */
+    // ── Luồng in, chia sẻ giữa các testcase in ───────────────────────────────
+    /** Route agent (tests/_shared/agent-print.ts) — đổi `agent.mode` theo testcase. */
+    let agent: AgentPrintStub
+    /** Print job của TC-IN-1, giữ nguyên cho các TC sau đối chiếu. */
+    let baselineJob: PrintJobCall | null = null
+    /** Dòng RptInpDocTbl BE dựng cho job đó. */
     let sentRow: InpDocRow | null = null
-    /** Body /v1/print và /v1/save-pdf gần nhất (chỉ có ở chế độ stub). */
-    let sentPrintReq: RenderRequestBody | null = null
-    let sentSavePdfReq: SavePdfBody | null = null
-    /**
-     * Xoá qua HÀM chứ không gán thẳng `= null` tại chỗ: gán thẳng làm TypeScript
-     * thu hẹp biến về đúng `null` cho cả phần còn lại của testcase, nên mọi lần
-     * đọc lại sau đó (dù stub đã ghi giá trị mới) đều thành `never`.
-     */
-    const resetAgentCapture = () => {
-        sentRenderReq = null
-        sentPrintReq = null
-        sentSavePdfReq = null
-    }
 
     /** Preview dialog của agent — tiêu đề do ja.printPreviewTitle dựng. */
     let previewDialog: Locator
@@ -416,117 +326,17 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         previewDialog = page.getByRole('dialog').filter({ hasText: '実地指導文書プレビュー' })
 
         // ─── Một route duy nhất cho MỌI endpoint agent ────────────────────────
-        // `agentMode` quyết định hành vi: 'real' đẩy tiếp tới agent thật, các mode
+        // `agent.mode` quyết định hành vi: 'real' đẩy tiếp tới agent thật, các mode
         // còn lại trả stub. Nhờ vậy cùng một suite chạy được trên máy có agent
         // (in thật, soi PDF) lẫn máy không có (vẫn soi trọn datasource).
         if (AGENT_AVAILABLE) {
             console.log(`có print agent → in THẬT qua ${AGENT_BASE_URL} (preview, không xuống spooler)`)
         }
-        await page.route(AGENT_ANY_URL, async (route: Route) => {
-            const req = route.request()
-            const url = req.url()
-
-            // ── Chế độ THẬT: không giả lập gì, chỉ can thiệp 2 chỗ ────────────
-            if (agentMode === 'real') {
-                // /v1/render — chụp body GỐC (để TC-IN-1 soi FE pass-through) rồi
-                // chèn forcePreview: RPT203002 có thể chưa có dòng print_mapping
-                // bật preview, khi đó agent in thẳng và test không còn PDF nào để
-                // soi. forcePreview là cờ override có sẵn của agent; PDF vẫn do
-                // Crystal render thật từ .rpt thật với datasource thật.
-                if (AGENT_RENDER_URL.test(url)) {
-                    const original = req.postDataJSON() as RenderRequestBody
-                    sentRenderReq = original
-                    return route.continue({
-                        postData: JSON.stringify({ ...original, forcePreview: true }),
-                    })
-                }
-                // /v1/print — CHẶN. Job xuống spooler Windows là mất kiểm soát:
-                // nếu máy in mặc định là "Microsoft Print to PDF" thì driver bung
-                // hộp thoại "Save Print Output As" của Windows shell, Playwright
-                // không điều khiển được → treo cả suite.
-                if (AGENT_PRINT_URL.test(url)) {
-                    sentPrintReq = req.postDataJSON() as RenderRequestBody
-                    return jsonFulfill(route, 202, { jobId: STUB_JOB_ID })
-                }
-                // SSE, PDF tạm, prewarm, healthz… đi thẳng tới agent thật.
-                return route.continue()
-            }
-
-            // Offline: rơi cả /healthz, nếu không AgentOfflineDialog tự đóng
-            // khi query health báo online.
-            if (agentMode === 'offline') return route.abort('failed')
-
-            if (/\/healthz/.test(url)) return jsonFulfill(route, 200, { ok: true })
-
-            // Prewarm là tối ưu thuần tuý, FE nuốt mọi lỗi — trả 200 rỗng.
-            if (/\/v1\/prewarm/.test(url)) return jsonFulfill(route, 200, {})
-
-            if (AGENT_RENDER_URL.test(url)) {
-                sentRenderReq = req.postDataJSON() as RenderRequestBody
-                if (agentMode === 'error') {
-                    return jsonFulfill(route, 500, { message: STUB_AGENT_ERROR })
-                }
-                if (agentMode === 'direct') return jsonFulfill(route, 202, { preview: false })
-                return jsonFulfill(route, 202, {
-                    preview: true,
-                    jobId: STUB_JOB_ID,
-                    sseTicket: STUB_SSE_TICKET,
-                    eventsUrl: `/v1/jobs/${STUB_JOB_ID}/events?ticket=${STUB_SSE_TICKET}`,
-                })
-            }
-
-            // SSE tiến độ. Agent phát event CÓ TÊN nên phải ghi `event: <tên>`;
-            // `data:` mặc định (không tên) sẽ bị agent-print bỏ qua. Trả cả
-            // stream trong một response — EventSource vẫn parse đủ frame.
-            if (/\/v1\/jobs\/[^/]+\/events/.test(url)) {
-                const complete = JSON.stringify({
-                    type: 'complete',
-                    pdfUrl: `/tmp/${STUB_PDF_ID}.pdf`,
-                    pdfTicket: STUB_PDF_TICKET,
-                })
-                return route.fulfill({
-                    status: 200,
-                    headers: {
-                        ...CORS_HEADERS,
-                        'Content-Type': 'text/event-stream',
-                        'Cache-Control': 'no-cache',
-                    },
-                    body:
-                        `event: progress\ndata: ${JSON.stringify({ type: 'progress', progressPercent: 50 })}\n\n` +
-                        `event: complete\ndata: ${complete}\n\n`,
-                })
-            }
-
-            // PDF tạm mà iframe preview trỏ tới.
-            if (/\/tmp\/[0-9a-fA-F-]+\.pdf/.test(url)) {
-                return route.fulfill({
-                    status: 200,
-                    headers: { ...CORS_HEADERS, 'Content-Type': 'application/pdf' },
-                    body: STUB_PDF_BODY,
-                })
-            }
-
-            if (AGENT_PRINT_URL.test(url)) {
-                sentPrintReq = req.postDataJSON() as RenderRequestBody
-                return jsonFulfill(route, 202, {
-                    jobId: STUB_JOB_ID,
-                    eventsUrl: `/v1/jobs/${STUB_JOB_ID}/events?ticket=${STUB_SSE_TICKET}`,
-                })
-            }
-
-            if (AGENT_SAVE_PDF_URL.test(url)) {
-                sentSavePdfReq = req.postDataJSON() as SavePdfBody
-                return jsonFulfill(route, 200, {
-                    saved: true,
-                    path: `C:\\temp\\${STUB_PDF_ID}.pdf`,
-                })
-            }
-
-            return jsonFulfill(route, 200, {})
-        })
+        agent = await routeAgentPrint(page, 'preview')
     })
 
     test.afterAll(async () => {
+        await agent?.dispose()
         await disposeOverlays?.()
         await releaseSharedPage(page)
     })
@@ -856,6 +666,8 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         const yearBox = noRow.getByRole('textbox').nth(1)
         const keepYear = await yearBox.inputValue()
         await yearBox.fill('')
+        // Trạng thái 和暦 lên DOM qua effect — bấm phím trước đó thì handler còn thấy ngày cũ hợp lệ.
+        await expect(noRow.locator('[data-wareki-status]').first()).toHaveAttribute('data-wareki-status', 'incomplete')
 
         await dialog.getByRole('button', { name: 'F9 印刷' }).click()
         const alert = page.getByRole('alertdialog')
@@ -873,6 +685,8 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         const yearBox = noRow.getByRole('textbox').nth(1)
         const keepYear = await yearBox.inputValue()
         await yearBox.fill('')
+        // Trạng thái 和暦 lên DOM qua effect — bấm phím trước đó thì handler còn thấy ngày cũ hợp lệ.
+        await expect(noRow.locator('[data-wareki-status]').first()).toHaveAttribute('data-wareki-status', 'incomplete')
 
         await page.keyboard.press('F9')
         const alert = page.getByRole('alertdialog')
@@ -919,31 +733,20 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         }
     }
 
-    /**
-     * Đợi ĐÚNG response dựng datasource của lần bấm F9 — bỏ qua lời gọi prewarm
-     * (`reportOnly: true`) mà dialog bắn ra mỗi lần mở.
-     */
-    function waitForDatasource() {
-        return page.waitForResponse((res) => {
-            if (!DATASOURCE_URL.test(res.url()) || res.request().method() !== 'POST') return false
-            const body = res.request().postDataJSON() as { reportOnly?: boolean } | null
-            return body?.reportOnly !== true
-        }, { timeout: 60000 })
-    }
-
-    test('TC-IN-1 — F9 印刷 ngày hợp lệ: BE dựng datasource, FE đẩy nguyên xi sang agent', async () => {
+    test('TC-IN-1 — F9 印刷 ngày hợp lệ: FE mở job ở agent bằng path datasource, BE dựng đúng RPT203002', async () => {
         await fillPrintForm()
-        // Có agent → in THẬT (route chỉ chèn forcePreview + chặn /v1/print);
+        // Có agent → in THẬT (route chỉ chèn forcePreview + chặn lệnh in);
         // không có → stub preview. Datasource được soi y hệt nhau ở cả hai.
-        agentMode = AGENT_AVAILABLE ? 'real' : 'preview'
-        resetAgentCapture()
+        agent.mode = AGENT_AVAILABLE ? 'real' : 'preview'
+        agent.reset()
 
-        const datasourceResp = waitForDatasource()
-        const renderReq = page.waitForRequest(AGENT_RENDER_URL, { timeout: 60000 })
         await dialog.getByRole('button', { name: 'F9 印刷' }).click()
+        const job = await agent.waitForStart()
+        expect(job.request.path, 'job phải trỏ vào inp-doc-datasource của bệnh nhân').toMatch(DATASOURCE_PATH)
+        expect(job.request.path).toContain(`/${PAT_NO}/`)
 
-        // Trong lúc chờ, overlay chặn thao tác hiện lên (role="status").
-        const envelope = (await (await datasourceResp).json()) as DatasourceEnvelope
+        // Agent không trả datasource về trình duyệt → gọi lại BE đúng như agent gọi.
+        const envelope = await fetchDatasource<DatasourceEnvelope<RenderRequestBody>>(page, job)
         expect(envelope.success, 'BE trả lỗi khi dựng datasource').toBe(true)
         expect(envelope.data.shouldPrint, 'màn này luôn shouldPrint=true').toBe(true)
         expect(envelope.data.renderRequest, 'thiếu renderRequest').not.toBeNull()
@@ -954,13 +757,9 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         expect(Object.keys(built.dataJson), 'datasource chỉ có 1 bảng').toEqual([DS_TABLE])
         expect(built.dataJson[DS_TABLE], 'printProc emit đúng 1 dòng').toHaveLength(1)
 
-        // FE là pass-through thuần: body gửi agent PHẢI y hệt cái BE trả về.
-        const sent = (await renderReq).postDataJSON() as RenderRequestBody
-        expect(sent, 'FE sửa datasource trước khi gửi agent').toEqual(built)
-
-        // Giữ lại làm mốc cho các TC sau (resetAgentCapture KHÔNG đụng tới).
-        baselineRenderReq = sent
-        sentRow = sent.dataJson[DS_TABLE]![0] as InpDocRow
+        // Giữ lại làm mốc cho các TC sau (agent.reset() KHÔNG đụng tới).
+        baselineJob = job
+        sentRow = built.dataJson[DS_TABLE]![0] as InpDocRow
         await step()
     })
 
@@ -1074,10 +873,10 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         }
 
         // Chế độ stub: F2 PDF出力 → POST /v1/save-pdf kèm GUID bóc từ src.
-        resetAgentCapture()
+        agent.reset()
         await previewDialog.getByRole('button', { name: 'F2 PDF出力' }).click()
         await expect(page.getByText(/保存しました：/)).toBeVisible({ timeout: 15000 })
-        const savePdf: SavePdfBody | null = sentSavePdfReq
+        const savePdf = agent.savePdfCalls[0]
         expect(savePdf?.pdfId, 'save-pdf gửi sai pdfId').toBe(STUB_PDF_ID)
         expect(savePdf?.defaultName, 'tên file gợi ý = tên 帳票').toBe('実地指導文書')
         await step()
@@ -1161,7 +960,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
             await previewDialog.getByRole('button', { name: 'F10 戻る' }).click()
             await expect(previewDialog).toBeHidden({ timeout: 10000 })
         }
-        agentMode = 'preview'
+        agent.mode = 'preview'
         await dialog.locator('input[aria-label^="指導内容"]').first().focus()
         await page.keyboard.press('F9')
         await expect(previewDialog, 'phím F9 không mở preview').toBeVisible({ timeout: 60000 })
@@ -1175,24 +974,28 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await step()
     })
 
-    test('TC-IN-6 — preview → F1 印刷: /v1/print nhận đúng datasource, preview VẪN mở', async () => {
+    test('TC-IN-6 — preview → F1 印刷: in trang 1 từ cache của job, preview VẪN mở', async () => {
         // LUÔN chạy bằng STUB, kể cả khi có agent thật: đây là hợp đồng FE↔agent
-        // (in lại đúng datasource đã render), không phải chặng Crystal. Với agent
-        // thật thì /v1/print đã bị chặn ở route nên cũng không có gì để soi.
+        // (in lại đúng job đã render), không phải chặng Crystal. Với agent thật
+        // thì lệnh in đã bị chặn ở route nên cũng không có gì để soi.
         if (await previewDialog.isVisible()) {
             await previewDialog.getByRole('button', { name: 'F10 戻る' }).click()
             await expect(previewDialog).toBeHidden({ timeout: 10000 })
         }
-        agentMode = 'preview'
-        resetAgentCapture()
+        agent.mode = 'preview'
+        agent.reset()
         await dialog.getByRole('button', { name: 'F9 印刷' }).click()
         await expect(previewDialog, 'stub preview không mở được dialog xem trước').toBeVisible({
             timeout: 60000,
         })
 
-        // baselineRenderReq của TC-IN-1 là mốc so sánh; lần render vừa rồi phải
-        // mang y hệt datasource đó (form không đổi giữa hai lần bấm).
-        resetAgentCapture()
+        // Job của TC-IN-1 là mốc so sánh; form không đổi giữa hai lần bấm nên
+        // lần mở job này phải mang y hệt path + body đó.
+        const job = await agent.waitForStart()
+        expect(job.request.path).toBe(baselineJob!.request.path)
+        expect(job.request.body, 'lần F9 thứ hai gửi body khác TC-IN-1').toEqual(baselineJob!.request.body)
+
+        agent.reset()
         await previewDialog.getByRole('button', { name: 'F1 印刷' }).click()
 
         // Mốc "in xong" là TOAST, không phải dialog đóng.
@@ -1210,15 +1013,11 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
             'F1 印刷 KHÔNG được tự đóng preview — WinForm frm902002 chỉ in, không thoát',
         ).toBeVisible()
 
-        // printReport gửi lại ĐÚNG datasource đã render — agent in lại theo khổ
-        // giấy cấu hình, nên không kèm pdfUrl.
-        const printed: RenderRequestBody | null = sentPrintReq
-        expect(printed, '/v1/print không được gọi').not.toBeNull()
-        expect(printed!.reportId).toBe(baselineRenderReq!.reportId)
-        expect(printed!.printCategory).toBe(baselineRenderReq!.printCategory)
-        expect(printed!.dataJson, '/v1/print nhận datasource khác lúc render').toEqual(
-            baselineRenderReq!.dataJson,
-        )
+        // printPreviewPage in lại từ cache của CHÍNH job đang xem — không mở job mới.
+        expect(agent.pageCalls, 'F1 phải in trang 1 của job đang preview').toEqual([
+            { jobId: STUB_JOB_ID, page: 1, print: true },
+        ])
+        expect(agent.starts, 'F1 không được dựng lại datasource').toHaveLength(0)
 
         // Đóng như operator vẫn làm (F10 戻る) — TC-IN-7 assert preview KHÔNG mở, mà
         // preview còn sót lại từ đây thì nó fail oan.
@@ -1227,28 +1026,27 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await step()
     })
 
-    test('TC-IN-7 — preview OFF: in thẳng, /v1/render rồi /v1/print không qua dialog', async () => {
+    test('TC-IN-7 — preview OFF: agent in thẳng (SSE `printed`), không qua dialog', async () => {
         // Nhánh này CHỈ dựng được bằng stub (không ép agent thật trả preview=false).
 
         // Toast của TC-IN-6 phải tan hẳn, nếu không assert bên dưới trúng nó.
         await expect(page.getByText('実地指導文書を印刷しました')).toBeHidden({ timeout: 30000 })
 
-        agentMode = 'direct'
-        resetAgentCapture()
-        const printReq = page.waitForRequest(AGENT_PRINT_URL, { timeout: 60000 })
+        agent.mode = 'direct'
+        agent.reset()
         await dialog.getByRole('button', { name: 'F9 印刷' }).click()
-        await printReq
+        const job = await agent.waitForStart()
+        expect(job.request.path).toMatch(DATASOURCE_PATH)
 
         await expect(page.getByText('実地指導文書を印刷しました')).toBeVisible({ timeout: 30000 })
         await expect(previewDialog, 'preview=false thì KHÔNG được mở dialog xem trước').toBeHidden()
-        expect(sentPrintReq!.dataJson[DS_TABLE], 'in thẳng cũng phải đủ 1 dòng').toHaveLength(1)
         await step()
     })
 
     test('TC-IN-8 — agent trả lỗi: hiện đúng message của agent, không báo in xong', async () => {
         // Chỉ stub mới ép được agent trả 500 — agent thật không có cách nào hỏng
         // theo ý muốn, mà nhánh này lại là thứ cần kiểm ở phía FE.
-        agentMode = 'error'
+        agent.mode = 'error'
         await dialog.getByRole('button', { name: 'F9 印刷' }).click()
 
         // AgentResponseError → ưu tiên message trong body agent, không phải câu chung.
@@ -1263,7 +1061,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
 
     test('TC-IN-9 — agent không chạy: hiện hướng dẫn khởi động, không nuốt lỗi', async () => {
         // Cũng chỉ dựng được bằng stub (abort mọi request, kể cả /healthz).
-        agentMode = 'offline'
+        agent.mode = 'offline'
         await dialog.getByRole('button', { name: 'F9 印刷' }).click()
 
         // AgentUnreachableError → AgentOfflineDialog thay vì toast lỗi chung chung.
@@ -1275,7 +1073,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await offline.getByRole('button', { name: 'キャンセル' }).click()
         await expect(offline).toBeHidden({ timeout: 10000 })
 
-        agentMode = 'preview' // trả stub về mặc định cho các testcase sau
+        agent.mode = 'preview' // trả stub về mặc định cho các testcase sau
         await step()
     })
 
@@ -1283,6 +1081,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         const yearBox = noRow.getByRole('textbox').nth(1)
         const keepYear = await yearBox.inputValue()
         await yearBox.fill('') // japaneseEraToDate trả null → chặn TRƯỚC confirm
+        await expect(noRow.locator('[data-wareki-status]').first()).toHaveAttribute('data-wareki-status', 'incomplete')
 
         await dialog.getByRole('button', { name: 'F8 登録' }).click()
         const alert = page.getByRole('alertdialog')

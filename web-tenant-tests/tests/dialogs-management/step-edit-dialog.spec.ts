@@ -717,7 +717,8 @@ test.describe('診療入力 — Ｓｔｅｐ編集 (frm203050)', () => {
 
         const res = await gridRes
         expect(
-            new URL(res.url()).searchParams.get('patNo'),
+            // FE gửi `PatNo` (PascalCase, trt-state-queries.ts) — đọc không phân biệt hoa thường.
+            [...new URL(res.url()).searchParams].find(([k]) => k.toLowerCase() === 'patno')?.[1],
             'phải hỏi đúng bệnh nhân đang mở',
         ).toBe(PAT_NO)
 

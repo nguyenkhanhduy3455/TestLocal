@@ -152,14 +152,16 @@ export async function expectWinFormOrder(
   winFormOrder: readonly string[],
 ) {
   const norm = (s: string) => s.normalize('NFKC').trim()
-  const actual = (await cells(root, colId).allTextContents()).map(norm)
-  const n = Math.min(actual.length, winFormOrder.length)
+  const read = async () => (await cells(root, colId).allTextContents()).map(norm)
+  const n = Math.min((await read()).length, winFormOrder.length)
 
   expect(n, `${name}: không có dòng nào để đối chiếu WinForm`).toBeGreaterThan(0)
-  expect(
-    actual.slice(0, n),
-    `${name}: thứ tự KHÁC WinForm (frm902007). Đây là parity bắt buộc, không phải collation.`,
-  ).toEqual(winFormOrder.slice(0, n).map(norm))
+  // Poll: list ảo hoá vẽ lại SAU khi sort/cuộn — đọc một lần dễ trúng khung nhìn cũ.
+  await expect
+    .poll(async () => (await read()).slice(0, n), {
+      message: `${name}: thứ tự KHÁC WinForm (frm902007). Đây là parity bắt buộc, không phải collation.`,
+    })
+    .toEqual(winFormOrder.slice(0, n).map(norm))
 
   console.log(`${name}: khớp WinForm ${n}/${winFormOrder.length} dòng đầu`)
 }

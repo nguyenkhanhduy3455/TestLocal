@@ -220,9 +220,10 @@ test.describe('MSGTBL parity — 患者登録 (Q00009 / Q00010 / E00002 保険�
     // ── TC-1 ────────────────────────────────────────────────────────────────
 
     test('TC-1 — 2 ngày trống: F9 hỏi Q00009「診療開始日」 rồi Q00009「患者情報有効日」', async () => {
-        // Cả 診療開始日 lẫn 患者情報有効日 trống ⇒ validateRegisterMain đẩy ra ĐÚNG 2
-        // confirm, và cái thứ hai rơi vào nhánh Q00009 (vì không có 診療開始日 để mà
-        // 採用) chứ KHÔNG phải Q00010.
+        // Cả 診療開始日 lẫn 患者情報有効日 trống. はい ở Q00009 đầu ghi 診療開始日 = hôm nay
+        // (frm201001.cs:2322 `ins.med_st_dt = nowDate`), nên tới 患者情報有効日 thì
+        // 診療開始日 ĐÃ có ⇒ hỏi Q00010 trước; chỉ khi いいえ ở Q00010 mới rơi xuống
+        // Q00009「患者情報有効日」 (frm201001.cs:2335-2351).
         await setDates(null, null)
         await openDetail()
         await makeFormDirty()
@@ -243,16 +244,31 @@ test.describe('MSGTBL parity — 患者登録 (Q00009 / Q00010 / E00002 保険�
         await clickDialog(page, 'accept')
         await step()
 
-        const second = await nextDialogText(page, 'confirm #2 — Q00009 患者情報有効日', DIALOG_TIMEOUT)
+        const second = await nextDialogText(page, 'confirm #2 — Q00010 患者情報有効日', DIALOG_TIMEOUT)
         expectMsg(
             second,
+            'Q00010',
+            MSG.Q00010('患者情報有効日'),
+            'Q00009 đầu đã điền 診療開始日 ⇒ confirm thứ hai là Q00010',
+        )
+        await clickDialog(page, 'decline')
+        await step()
+
+        const third = await nextDialogText(page, 'confirm #3 — Q00009 患者情報有効日', DIALOG_TIMEOUT)
+        expectMsg(
+            third,
             'Q00009',
             MSG.Q00009('患者情報有効日'),
-            'không có 診療開始日 thì confirm thứ hai phải là Q00009, KHÔNG phải Q00010',
+            'いいえ ở Q00010 thì phải hỏi tiếp Q00009 (lấy ngày hôm nay)',
         )
         await expectSeverity(page, 'confirm', 'Q00009: legacy dùng ShowOKCancelMsg')
 
-        await decline('Q00009 #2')
+        await clickDialog(page, 'decline')
+        await step()
+        // いいえ cả hai ⇒ E00001「患者情報有効日」 (frm201001.cs:2356) rồi F9 dừng.
+        const err = await nextDialogText(page, 'alert — E00001 患者情報有効日', DIALOG_TIMEOUT)
+        expectMsg(err, 'E00001', MSG.E00001('患者情報有効日'), 'từ chối cả Q00010 lẫn Q00009')
+        await closeDialog(page, 'E00001')
     })
 
     // ── TC-2 ────────────────────────────────────────────────────────────────
@@ -274,7 +290,16 @@ test.describe('MSGTBL parity — 患者登録 (Q00009 / Q00010 / E00002 保険�
         // frm201001.cs:2339 `ShowOKCancelMsg`.
         await expectSeverity(page, 'confirm', 'Q00010: legacy dùng ShowOKCancelMsg')
 
-        await decline('Q00010')
+        // いいえ ở Q00010 ⇒ WinForm hỏi tiếp Q00009 (frm201001.cs:2345), chưa dừng.
+        await clickDialog(page, 'decline')
+        await step()
+        const next = await nextDialogText(page, 'confirm — Q00009 患者情報有効日', DIALOG_TIMEOUT)
+        expectMsg(next, 'Q00009', MSG.Q00009('患者情報有効日'), 'いいえ ở Q00010 thì hỏi tiếp Q00009')
+        await clickDialog(page, 'decline')
+        await step()
+        const err = await nextDialogText(page, 'alert — E00001 患者情報有効日', DIALOG_TIMEOUT)
+        expectMsg(err, 'E00001', MSG.E00001('患者情報有効日'), 'từ chối cả Q00010 lẫn Q00009')
+        await closeDialog(page, 'E00001')
     })
 
     // ── TC-3 ────────────────────────────────────────────────────────────────

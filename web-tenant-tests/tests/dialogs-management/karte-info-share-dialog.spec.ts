@@ -120,15 +120,18 @@ const PERIOD_MONTHS_BACK = 60
 const GRID_COL_COUNT = 5
 
 // ── Dữ liệu seed (nhóm TC-B) ────────────────────────────────────────────────
-// Ngày giờ CỐ ĐỊNH để chuỗi 和暦 kỳ vọng viết thẳng ra được. Dùng giờ LOCAL vì
-// UI format theo giờ máy; seed cũng đi qua `Date` local nên hai bên cùng hệ quy
-// chiếu (test và browser chạy chung máy).
-const DRUG_ACTIVE_AT = new Date(2026, 6, 3, 9, 30, 45) // 令和08年07月03日 09:30
-const DRUG_DELETED_AT = new Date(2026, 5, 2, 8, 0, 0) // 令和08年06月02日 08:00
-const DRUG_DELETED_ON = new Date(2026, 6, 20, 11, 0, 0) // 削除日時 2026/07/20 11:00
-const CHECKUP_AT = new Date(2026, 4, 1, 7, 15, 0) // 令和08年05月01日 07:15
-const CLINICAL_AT = new Date(2026, 3, 10, 16, 45, 0) // 令和08年04月10日 16:45
-const UNKNOWN_AT = new Date(2026, 2, 9, 12, 0, 0) // if_id 22 → không thuộc tab nào
+// Ngày giờ CỐ ĐỊNH để chuỗi 和暦 kỳ vọng viết thẳng ra được. UI format theo giờ
+// NGHIỆP VỤ JST (`businessClock.toBusiness`, lib/karte-info-share.ts) chứ không theo
+// giờ máy ⇒ dựng mốc seed bằng giờ JST, máy test ở múi nào cũng ra cùng nhãn.
+/** Mốc giờ JST (UTC+9) — tháng 0-based như `new Date`. */
+const jst = (y: number, mo: number, d: number, h: number, mi: number, sec = 0) =>
+    new Date(Date.UTC(y, mo, d, h - 9, mi, sec))
+const DRUG_ACTIVE_AT = jst(2026, 6, 3, 9, 30, 45) // 令和08年07月03日 09:30
+const DRUG_DELETED_AT = jst(2026, 5, 2, 8, 0, 0) // 令和08年06月02日 08:00
+const DRUG_DELETED_ON = jst(2026, 6, 20, 11, 0, 0) // 削除日時 2026/07/20 11:00
+const CHECKUP_AT = jst(2026, 4, 1, 7, 15, 0) // 令和08年05月01日 07:15
+const CLINICAL_AT = jst(2026, 3, 10, 16, 45, 0) // 令和08年04月10日 16:45
+const UNKNOWN_AT = jst(2026, 2, 9, 12, 0, 0) // if_id 22 → không thuộc tab nào
 
 /** if_id 22 = YZKsiquc01res (KẾT QUẢ, không phải YÊU CẦU) — WinForm bỏ qua. */
 const IF_ID_UNKNOWN = '22'
@@ -604,15 +607,12 @@ test.describe('Shift+F7 カルテ情報共有 — 電子カルテ情報共有サ
         const after = await listRxSharingViewHistory(PAT_NO)
         const target = after.find((r) => r.req_dt.getTime() === DRUG_ACTIVE_AT.getTime())
         expect(target, 'không tìm thấy dòng vừa xoá').toBeTruthy()
-        expect(
-            target!.delete_date.getUTCFullYear(),
-            'delete_date phải là hiện tại, không còn sentinel 1900',
-        ).toBeGreaterThan(1900)
+        expect(target!.delete_date, 'delete_date phải được ghi (NULL = chưa xoá, f6303c7fe)').not.toBeNull()
         expect(target!.pdf_len, 'WinForm set PDF = NULL khi xoá').toBe(0)
 
         // Dòng của tab khác KHÔNG được đụng tới.
         const checkup = after.find((r) => r.req_dt.getTime() === CHECKUP_AT.getTime())
-        expect(checkup!.delete_date.getUTCFullYear(), '特定健診 bị xoá lây').toBe(1900)
+        expect(checkup!.delete_date, '特定健診 bị xoá lây').toBeNull()
 
         // UI phản ánh ngay: 削除日時 có giá trị, PDF名称 rỗng.
         const row = rowByLabel(DRUG_ACTIVE_LABEL)

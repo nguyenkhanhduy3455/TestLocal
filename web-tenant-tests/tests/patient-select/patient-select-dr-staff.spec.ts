@@ -1454,6 +1454,12 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         const savedYear = await yearBox.inputValue()
         await yearBox.fill('')
         await page.keyboard.press('Tab')
+        // Trạng thái 診療日 tới trang qua effect (onStatusChange) ⇒ chờ ô báo
+        // `incomplete` rồi mới bấm phím, kẻo phím đọc 診療日 hợp lệ cũ.
+        await expect(trtDtRow().locator('[data-wareki-status]').first()).toHaveAttribute(
+            'data-wareki-status',
+            'incomplete',
+        )
         await step()
 
         await page.keyboard.press('End')

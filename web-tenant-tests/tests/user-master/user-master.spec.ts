@@ -891,7 +891,7 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         await step()
     })
 
-    test('TC-ROLE-1 — ロール: dropdown từng dòng, 追加 / 削除, không chọn trùng, xoá thì cảnh báo', async () => {
+    test('TC-ROLE-1 — ロール: dropdown từng dòng, 追加 / 削除, không chọn trùng, xoá dòng không hỏi', async () => {
         // TC-ACT-3 kết thúc ở 一覧, nên phải mở lại màn 登録 trước.
         await openDetail()
 
@@ -918,19 +918,12 @@ test.describe('ユーザマスタ (frm501002 / frm501003) + ログイン有効�
         await expect(selects.last()).toHaveText(otherName)
         await captureFixedUi(page.locator('#user-master-form'), 'user-master-role-rows')
 
-        // 削除 dòng đã chọn role ⇒ hộp xác nhận có icon cảnh báo; いいえ giữ nguyên.
+        // 削除 ⇒ dòng biến mất ngay, không hỏi: việc xác nhận đổi role dời sang lúc
+        // F9 (「ロールが変更されています…」), form trở lại như cũ (không lưu gì).
         await removes.last().click()
-        const confirm = page.getByRole('alertdialog')
-        await expect(confirm).toContainText(otherName)
-        await expect(confirm.locator('svg.lucide-triangle-alert'), 'thiếu icon cảnh báo').toBeVisible()
-        await captureFixedUi(confirm, 'user-master-role-remove-warning')
-        await confirm.getByRole('button', { name: 'いいえ' }).click()
-        await expect(selects).toHaveCount(rows + 1)
-
-        // はい ⇒ dòng biến mất, form trở lại như cũ (không lưu gì).
-        await removes.last().click()
-        await page.getByRole('alertdialog').getByRole('button', { name: 'はい' }).click()
+        await expect(page.getByRole('alertdialog')).toHaveCount(0)
         await expect(selects).toHaveCount(rows)
+        await expect(selects.first()).toHaveText(held)
         await step()
     })
 

@@ -362,8 +362,10 @@ test.describe('診療入力 — 画像 / レントゲン ボタン（PicLink ス
         lastLaunch = null
         launchOutcome = 'ok'
 
-        const req = page.waitForRequest(
-            (r) => XRAY_LAUNCH_URL.test(r.url()) && r.method() === 'POST',
+        // Chờ RESPONSE chứ không chờ request: sự kiện 'request' có thể tới trước khi
+        // handler page.route kịp chạy `launchCalls++` ⇒ đếm hụt 0 dù đã gọi.
+        const req = page.waitForResponse(
+            (r) => XRAY_LAUNCH_URL.test(r.url()) && r.request().method() === 'POST',
             { timeout: 30000 },
         )
         await roentgenBtn().click()
@@ -398,8 +400,8 @@ test.describe('診療入力 — 画像 / レントゲン ボタン（PicLink ス
         launchCalls = 0
         launchOutcome = 'ok'
 
-        const req = page.waitForRequest(
-            (r) => XRAY_LAUNCH_URL.test(r.url()) && r.method() === 'POST',
+        const req = page.waitForResponse(
+            (r) => XRAY_LAUNCH_URL.test(r.url()) && r.request().method() === 'POST',
             { timeout: 30000 },
         )
         await roentgenBtn().click()
@@ -441,8 +443,8 @@ test.describe('診療入力 — 画像 / レントゲン ボタン（PicLink ス
         launchCalls = 0
         launchOutcome = 'ok'
 
-        const req = page.waitForRequest(
-            (r) => XRAY_LAUNCH_URL.test(r.url()) && r.method() === 'POST',
+        const req = page.waitForResponse(
+            (r) => XRAY_LAUNCH_URL.test(r.url()) && r.request().method() === 'POST',
             { timeout: 30000 },
         )
         await roentgenBtn().click()
@@ -465,8 +467,8 @@ test.describe('診療入力 — 画像 / レントゲン ボタン（PicLink ス
         launchCalls = 0
         launchOutcome = 'ok'
 
-        const req = page.waitForRequest(
-            (r) => XRAY_LAUNCH_URL.test(r.url()) && r.method() === 'POST',
+        const req = page.waitForResponse(
+            (r) => XRAY_LAUNCH_URL.test(r.url()) && r.request().method() === 'POST',
             { timeout: 30000 },
         )
         await roentgenBtn().click()
@@ -490,8 +492,8 @@ test.describe('診療入力 — 画像 / レントゲン ボタン（PicLink ス
         launchOutcome = 'ok'
         launchReused = false
 
-        const req = page.waitForRequest(
-            (r) => XRAY_LAUNCH_URL.test(r.url()) && r.method() === 'POST',
+        const req = page.waitForResponse(
+            (r) => XRAY_LAUNCH_URL.test(r.url()) && r.request().method() === 'POST',
             { timeout: 30000 },
         )
         await roentgenBtn().click()
@@ -515,8 +517,8 @@ test.describe('診療入力 — 画像 / レントゲン ボタン（PicLink ス
         launchReused = true
         launchCalls = 0
 
-        const req = page.waitForRequest(
-            (r) => XRAY_LAUNCH_URL.test(r.url()) && r.method() === 'POST',
+        const req = page.waitForResponse(
+            (r) => XRAY_LAUNCH_URL.test(r.url()) && r.request().method() === 'POST',
             { timeout: 30000 },
         )
         await roentgenBtn().click()

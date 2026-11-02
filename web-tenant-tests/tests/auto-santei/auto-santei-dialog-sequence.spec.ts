@@ -91,8 +91,9 @@ test.describe('自動算定 — 摘要選択 rồi mới カルテ記載選択 (
   let cmtHttpError: number | null = null
 
   const keyOf = (u: string) => {
-    const q = new URL(u).searchParams
-    return `${q.get('trtCd')}-${q.get('trtSb')}`
+    // FE gửi `TrtCd`/`TrtSb` (PascalCase) — đọc không phân biệt hoa thường.
+    const q = new Map([...new URL(u).searchParams].map(([k, v]) => [k.toLowerCase(), v]))
+    return `${q.get('trtcd')}-${q.get('trtsb')}`
   }
 
   /** Mở màn 診療入力 (retry vì Vite dev hay nhả hụt module). */

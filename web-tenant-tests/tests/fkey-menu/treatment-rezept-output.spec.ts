@@ -1,8 +1,18 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { type Page, type Route } from '@playwright/test'
+import { type Page } from '@playwright/test'
 
+import {
+    AGENT_AVAILABLE,
+    AGENT_SKIP_REASON,
+    type AgentPrintStub,
+    type DatasourceEnvelope,
+    fetchDatasource,
+    type PrintJobCall,
+    routeAgentPrint,
+    STUB_JOB_ID,
+} from '../_shared/agent-print'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { foldForCompare, readPdf } from '../_shared/pdf-content'
 import { expect, releaseSharedPage, test } from '../_shared/session'
@@ -27,13 +37,18 @@ import { expect, releaseSharedPage, test } from '../_shared/session'
  *  giữ để bắt hồi quy.
  *
  * ─── In thật hay stub — suy từ NỀN TẢNG (giống oral-hygiene-instruction-dialog) ─
- *  Có agent (Windows, hoặc TEST_AGENT=1): /v1/render đi tới agent thật (chèn
- *  forcePreview), /v1/print bị CHẶN, PDF xem trước được tải về và soi số trang +
- *  các giá trị chốt. Agent phải được build từ code có rpt30400180/200/220/240.
- *  Không có agent: mọi endpoint agent bị stub — vẫn soi trọn datasource BE trả về
- *  và luồng xem trước của FE, phần soi PDF tự skip.
- *  /v1/print LUÔN bị chặn và trả job giả (cả khi có agent): F1 印刷 chỉ được kiểm
- *  tới chỗ FE gửi đúng 様式, không bao giờ có job xuống spooler.
+ *  FE mở MỘT print job ở agent: POST {agent}/v1/print-jobs { path:
+ *  /tenant/report/{patNo}/rezept-datasource, body: { sinryoYm }, forcePreview: true };
+ *  agent tự gọi BE dựng datasource, mỗi 様式 là một trang của job (pageCount), 戻る
+ *  ở bản xem trước mở trang kế bằng pages/{n+1} (rezept-preview-host.tsx).
+ *  Có agent (Windows, hoặc TEST_AGENT=1): job đi tới agent thật, PDF xem trước được
+ *  tải về và soi số trang + các giá trị chốt. Agent phải được build từ code có
+ *  rpt30400180/200/220/240.
+ *  Không có agent: mọi endpoint agent bị stub (tests/_shared/agent-print.ts) — vẫn
+ *  soi trọn datasource (spec gọi lại BE đúng path + body của job, như agent làm) và
+ *  luồng xem trước của FE, phần soi PDF tự skip.
+ *  Lệnh in (pages/{n} print:true) LUÔN bị chặn (cả khi có agent): F1 印刷 chỉ được
+ *  kiểm tới chỗ FE in đúng trang đang xem, không bao giờ có job xuống spooler.
  *
  * Chỉ ĐỌC dữ liệu: mở tháng đã có, lưới không sửa ⇒ không có hộp 保存しますか
  * (nếu có thì chọn いいえ = RestoreData, không ghi DB).
@@ -42,32 +57,11 @@ import { expect, releaseSharedPage, test } from '../_shared/session'
  *   TEST_AGENT=1 npx playwright test tests/fkey-menu/treatment-rezept-output.spec.ts   # máy có agent
  */
 
-const AGENT_AVAILABLE =
-    process.env.TEST_AGENT === '1' ? true : process.env.TEST_AGENT === '0' ? false : process.platform === 'win32'
-const AGENT_SKIP_REASON =
-    `cần print agent (net48/Crystal, chỉ Windows) — đang chạy trên ${process.platform}. ` +
-    'Đặt TEST_AGENT=1 nếu agent chạy ở máy khác.'
 /** strict: thiếu chữ Hán trên PDF là FAIL; loose: chỉ cảnh báo (xem pdf-content.ts). */
 const PDF_TEXT_STRICT = (process.env.TEST_PDF_TEXT ?? 'strict') !== 'loose'
 
-const DATASOURCE_URL = /\/tenant\/report\/\d+\/rezept-datasource(\?|$)/
-const AGENT_RENDER_URL = /\/v1\/render(\?|$)/
-const AGENT_PRINT_URL = /\/v1\/print(\?|$)/
-const AGENT_ANY_URL =
-    /\/(v1\/(render|print|prewarm|save-pdf)|healthz|v1\/jobs\/[^/]+\/events|tmp\/[0-9a-fA-F-]+\.pdf)(\?|$)/
-
-const STUB_JOB_ID = '00000000-0000-4000-8000-0000000000aa'
-const STUB_PDF_ID = '00000000-0000-4000-8000-0000000000bb'
-const STUB_TICKET = 'stub-ticket'
-const CORS_HEADERS: Record<string, string> = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': '*',
-    'Access-Control-Allow-Methods': 'GET,POST,PUT,OPTIONS',
-}
-/** PDF tối thiểu hợp lệ cho iframe ở chế độ stub. */
-const STUB_PDF =
-    '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj ' +
-    '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 10 10]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF'
+/** Path BE mà agent gọi để dựng datasource レセプト. */
+const DATASOURCE_PATH = /^\/tenant\/report\/\d+\/rezept-datasource$/
 
 const PREVIEW_TITLE = '診療報酬明細書プレビュー'
 /**
@@ -88,14 +82,7 @@ interface RenderRequestBody {
     dataJson: { rcp: Row[]; rcpT: Row[] }
     forcePreview?: boolean
 }
-interface DatasourceEnvelope {
-    success: boolean
-    data: {
-        shouldPrint: boolean
-        renderRequest: RenderRequestBody | null
-        additionalRenderRequests?: RenderRequestBody[] | null
-    }
-}
+type RezeptEnvelope = DatasourceEnvelope<RenderRequestBody>
 
 /**
  * Một tờ — tên cột theo ds304xxxxx.xsd:
@@ -217,20 +204,13 @@ const CASES: Case[] = [
     },
 ]
 
-const jsonFulfill = (route: Route, status: number, body: unknown) =>
-    route.fulfill({ status, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-
 test.describe.configure({ mode: 'serial', timeout: 180_000 })
 
 test.describe('診療入力 レセプト — nội dung tờ レセプト trên bệnh nhân thật', () => {
     let page: Page
     let disposeOverlays: (() => Promise<void>) | undefined
-    /** Số lần FE gọi /v1/render từ lúc reset gần nhất. */
-    let renderCalls = 0
-    /** Body /v1/print gần nhất (luôn bị chặn, xem route). */
-    let printBody: RenderRequestBody | null = null
-    /** Ghi đè response rezept-datasource (TC đa 様式); null = để BE trả nguyên. */
-    let rewriteDatasource: ((env: DatasourceEnvelope) => DatasourceEnvelope) | null = null
+    /** Route agent (tests/_shared/agent-print.ts): 'real' khi có agent, stub khi không. */
+    let agent: AgentPrintStub
 
     const preview = () => page.getByRole('dialog').filter({ hasText: PREVIEW_TITLE })
     const savePrompt = () => page.getByText(/処置データは変更されています。保存しますか？/)
@@ -238,72 +218,12 @@ test.describe('診療入力 レセプト — nội dung tờ レセプト trên 
     test.beforeAll(async ({ authedPage }) => {
         page = authedPage
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
-        if (AGENT_AVAILABLE) console.log('có print agent → render THẬT (preview, /v1/print bị chặn)')
-
-        await page.route(AGENT_ANY_URL, async (route: Route) => {
-            const req = route.request()
-            const url = req.url()
-            if (AGENT_RENDER_URL.test(url)) renderCalls++
-            // 印刷 — chặn ở MỌI chế độ: job thật xuống spooler Windows sẽ bung hộp
-            // thoại Save As (Microsoft Print to PDF) và treo cả suite.
-            if (AGENT_PRINT_URL.test(url)) {
-                printBody = req.postDataJSON() as RenderRequestBody
-                return jsonFulfill(route, 202, {
-                    jobId: STUB_JOB_ID,
-                    eventsUrl: `/v1/jobs/${STUB_JOB_ID}/events?ticket=${STUB_TICKET}`,
-                })
-            }
-            if (url.includes(`/v1/jobs/${STUB_JOB_ID}/events`)) {
-                const complete = JSON.stringify({ type: 'complete', pdfUrl: `/tmp/${STUB_PDF_ID}.pdf`, pdfTicket: STUB_TICKET })
-                return route.fulfill({
-                    status: 200,
-                    headers: { ...CORS_HEADERS, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
-                    body: `event: complete\ndata: ${complete}\n\n`,
-                })
-            }
-            if (AGENT_AVAILABLE) {
-                if (AGENT_RENDER_URL.test(url)) {
-                    const original = req.postDataJSON() as RenderRequestBody
-                    return route.continue({ postData: JSON.stringify({ ...original, forcePreview: true }) })
-                }
-                return route.continue()
-            }
-            if (/\/healthz/.test(url)) return jsonFulfill(route, 200, { ok: true })
-            if (/\/v1\/prewarm/.test(url)) return jsonFulfill(route, 200, {})
-            if (AGENT_RENDER_URL.test(url)) {
-                return jsonFulfill(route, 202, {
-                    preview: true,
-                    jobId: STUB_JOB_ID,
-                    sseTicket: STUB_TICKET,
-                    eventsUrl: `/v1/jobs/${STUB_JOB_ID}/events?ticket=${STUB_TICKET}`,
-                })
-            }
-            if (/\/v1\/jobs\/[^/]+\/events/.test(url)) {
-                const complete = JSON.stringify({ type: 'complete', pdfUrl: `/tmp/${STUB_PDF_ID}.pdf`, pdfTicket: STUB_TICKET })
-                return route.fulfill({
-                    status: 200,
-                    headers: { ...CORS_HEADERS, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
-                    body: `event: complete\ndata: ${complete}\n\n`,
-                })
-            }
-            if (/\/tmp\/[0-9a-fA-F-]+\.pdf/.test(url)) {
-                return route.fulfill({ status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/pdf' }, body: STUB_PDF })
-            }
-            return jsonFulfill(route, 200, {})
-        })
-
-        await page.route(DATASOURCE_URL, async (route: Route) => {
-            const body = route.request().postDataJSON() as { reportOnly?: boolean } | null
-            if (!rewriteDatasource || body?.reportOnly) return route.continue()
-            const res = await route.fetch()
-            const env = (await res.json()) as DatasourceEnvelope
-            return route.fulfill({ response: res, json: rewriteDatasource(env) })
-        })
+        if (AGENT_AVAILABLE) console.log('có print agent → render THẬT (preview, lệnh in bị chặn)')
+        agent = await routeAgentPrint(page, AGENT_AVAILABLE ? 'real' : 'preview')
     })
 
     test.afterAll(async () => {
-        await page.unroute(AGENT_ANY_URL).catch(() => {})
-        await page.unroute(DATASOURCE_URL).catch(() => {})
+        await agent?.dispose()
         await disposeOverlays?.()
         await releaseSharedPage(page)
     })
@@ -329,25 +249,20 @@ test.describe('診療入力 レセプト — nội dung tờ レセプト trên 
         }
     }
 
-    /** Mở tháng, bấm レセプト, trả envelope BE (bỏ qua request reportOnly của prewarm). */
-    async function issueRezept(c: Case): Promise<DatasourceEnvelope> {
+    /** Mở tháng, bấm レセプト, trả job agent nhận được + envelope BE dựng cho job đó. */
+    async function issueRezept(c: Case): Promise<{ job: PrintJobCall; env: RezeptEnvelope }> {
         await openMonth(c)
-        renderCalls = 0
-        const response = page.waitForResponse(
-            (res) =>
-                DATASOURCE_URL.test(res.url()) &&
-                res.request().method() === 'POST' &&
-                (res.request().postDataJSON() as { reportOnly?: boolean } | null)?.reportOnly !== true,
-            { timeout: 60_000 },
-        )
+        agent.reset()
         await page.getByRole('button', { name: 'レセプト', exact: true }).click()
         // AutoSantei lúc mở có thể làm bẩn lưới — いいえ = RestoreData, không ghi DB.
         if (await savePrompt().isVisible({ timeout: 2_000 }).catch(() => false)) {
             await page.getByRole('dialog').filter({ has: savePrompt() }).getByRole('button', { name: 'いいえ', exact: true }).click()
         }
-        const res = await response
-        expect(res.status(), `rezept-datasource ${c.patNo}/${c.trtDt}`).toBe(200)
-        return (await res.json()) as DatasourceEnvelope
+        const job = await agent.waitForStart()
+        expect(job.request.path, `job phải trỏ vào rezept-datasource của ${c.patNo}`).toMatch(DATASOURCE_PATH)
+        expect(job.request.path).toContain(`/${c.patNo}/`)
+        // Agent không trả datasource về trình duyệt → gọi lại BE đúng như agent gọi.
+        return { job, env: await fetchDatasource<RezeptEnvelope>(page, job) }
     }
 
     /** Tải PDF bản xem trước đang mở (chỉ khi agent thật). */
@@ -371,11 +286,11 @@ test.describe('診療入力 レセプト — nội dung tờ レセプト trên 
 
     for (const c of CASES) {
         test(`${c.patNo} — ${c.title}`, async () => {
-            const env = await issueRezept(c)
+            const { job, env } = await issueRezept(c)
             const rr = env.data.renderRequest
             expect(env.data.shouldPrint).toBe(true)
             expect(rr?.reportId, '様式 theo 請求年月').toBe(c.reportId)
-            expect(rr!.forcePreview, 'レセプト chỉ xem, không xuống máy in').toBe(true)
+            expect(job.request.forcePreview, 'レセプト chỉ xem, không xuống máy in').toBe(true)
             expect(env.data.additionalRenderRequests ?? [], 'cả tháng chỉ 1 様式').toHaveLength(0)
 
             const { rcp, rcpT } = rr!.dataJson
@@ -404,7 +319,7 @@ test.describe('診療入力 レセプト — nội dung tờ レセプト trên 
             })
 
             await expect(preview(), 'phải mở bản xem trước').toBeVisible({ timeout: 90_000 })
-            expect(renderCalls, 'một 様式 = một lần render').toBe(1)
+            expect(agent.starts, 'một tháng = một print job').toHaveLength(1)
 
             if (!AGENT_AVAILABLE) {
                 test.info().annotations.push({ type: 'pdf', description: `không soi PDF: ${AGENT_SKIP_REASON}` })
@@ -428,18 +343,18 @@ test.describe('診療入力 レセプト — nội dung tờ レセプト trên 
 
     test('F1 印刷 — in đúng 様式 đang xem; không có F2 PDF出力 (WinForm frm902009)', async () => {
         const c = CASES[0]!
-        const env = await issueRezept(c)
+        await issueRezept(c)
         await expect(preview()).toBeVisible({ timeout: 90_000 })
         // frm902009: F-key chỉ có 戻る, Crystal viewer giữ nút in nhưng ẩn nút export.
         await expect(preview().getByRole('button', { name: 'F2 PDF出力' })).toHaveCount(0)
 
-        printBody = null
+        const jobId = AGENT_AVAILABLE ? agent.lastRealJobId : STUB_JOB_ID
+        agent.reset()
         await preview().getByRole('button', { name: 'F1 印刷' }).click()
         await expect(page.getByText('診療報酬明細書を印刷しました')).toBeVisible({ timeout: 30_000 })
-        expect(printBody, 'phải gửi /v1/print').not.toBeNull()
-        expect(printBody!.reportId, 'in đúng 様式 đang xem').toBe(c.reportId)
-        expect(printBody!.dataJson.rcp, 'in đúng các tờ đang xem').toEqual(env.data.renderRequest!.dataJson.rcp)
-        expect(printBody!.forcePreview, '/v1/print không mang cờ preview').toBeUndefined()
+        // In lại từ cache của CHÍNH job đang xem, đúng trang (= 様式) đang hiện.
+        expect(agent.pageCalls, 'in đúng 様式 đang xem').toEqual([{ jobId, page: 1, print: true }])
+        expect(agent.starts, 'F1 không được dựng lại datasource').toHaveLength(0)
 
         await expect(preview(), 'in xong vẫn ở bản xem trước, như WinForm').toBeVisible()
         await closePreview()
@@ -448,27 +363,25 @@ test.describe('診療入力 レセプト — nội dung tờ レセプト trên 
 
     test('2 様式 trong một tháng — mở lần lượt, đóng bản này thì mở bản kế', async () => {
         // Dữ liệu dev không có tháng nào cần 2 様式 (chỉ khi 請求年月 khác đời mẫu với
-        // 診療年月), nên dựng bằng cách nhân đôi renderRequest của một ca thật thành
-        // additionalRenderRequests — đúng shape BE trả khi có 2 様式.
-        rewriteDatasource = (env) => ({
-            ...env,
-            data: { ...env.data, additionalRenderRequests: [env.data.renderRequest!] },
-        })
+        // 診療年月), nên dựng bằng STUB: job báo pageCount=2 — đúng shape agent trả khi
+        // BE có 2 様式. Chỉ kiểm phần FE: xem trang 1, 戻る thì mở trang 2 từ cache.
+        agent.mode = 'preview'
+        agent.pageCount = 2
         try {
-            const env = await issueRezept(CASES[1]!)
-            expect(env.data.additionalRenderRequests).toHaveLength(1)
-
+            await issueRezept(CASES[1]!)
             await expect(preview()).toBeVisible({ timeout: 90_000 })
-            await expect.poll(() => renderCalls, { message: 'render cả 2 様式 trước khi xem' }).toBe(2)
-            if (AGENT_AVAILABLE) await downloadPreviewPdf(`${CASES[1]!.patNo}-2yoshiki-1.pdf`)
 
             await closePreview()
             await expect(preview(), 'đóng bản 1 thì bản 2 mở').toBeVisible({ timeout: 10_000 })
-            if (AGENT_AVAILABLE) await downloadPreviewPdf(`${CASES[1]!.patNo}-2yoshiki-2.pdf`)
+            expect(agent.pageCalls, 'bản 2 mở từ cache của CÙNG job, không in').toEqual([
+                { jobId: STUB_JOB_ID, page: 2 },
+            ])
+            expect(agent.starts, '2 様式 vẫn là MỘT job').toHaveLength(1)
             await closePreview()
             await expect(preview(), 'đóng bản 2 thì hết').toBeHidden({ timeout: 10_000 })
         } finally {
-            rewriteDatasource = null
+            agent.pageCount = 1
+            agent.mode = AGENT_AVAILABLE ? 'real' : 'preview'
         }
     })
 })

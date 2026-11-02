@@ -475,7 +475,8 @@ test.describe('PMHマスタファイル登録 (frm501030)', () => {
         await fkey(9).click()
         await page.getByRole('alertdialog').getByRole('button', { name: 'はい' }).click()
 
-        await expect(page.getByText(/列数が一致しません/)).toBeVisible({ timeout: IMPORT_TIMEOUT })
+        // CSVImporter.cs:70-74 → frm501030 E00100 「N行目：列数が不足しています。（期待：X、実際：Y）」.
+        await expect(page.getByText(/列数が不足しています/)).toBeVisible({ timeout: IMPORT_TIMEOUT })
         await expect(page.getByText(new RegExp(`期待：${national!.columnCount}`))).toBeVisible()
 
         const after = await countMasterRows(national!.tableName)

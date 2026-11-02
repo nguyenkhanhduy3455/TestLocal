@@ -288,13 +288,19 @@ test.describe('枝番 (pat_br) — tháng bắc qua 2 枝番', () => {
         await step()
 
         // Soi luôn payload để khi đỏ biết ngay là lưới rỗng hay 枝番 sai.
+        // Bắt qua `page.route`, KHÔNG qua sự kiện 'request': body bulk-save lớn (kèm
+        // toothStatus) nên Chromium không đưa vào sự kiện request ⇒ postData() = null
+        // và spec tưởng nhầm là lưới rỗng.
         let savedRows: { day: number; patBr?: number }[] = []
-        const capture = (req: import('@playwright/test').Request) => {
-            if (!BULK_SAVE_URL.test(req.url()) || req.method() !== 'POST') return
-            const b = req.postDataJSON() as { rows?: { day: number; patBr?: number }[] } | null
-            savedRows = b?.rows ?? []
+        const capture = async (route: import('@playwright/test').Route) => {
+            const req = route.request()
+            if (req.method() === 'POST') {
+                const b = req.postDataJSON() as { rows?: { day: number; patBr?: number }[] } | null
+                savedRows = b?.rows ?? []
+            }
+            await route.fallback()
         }
-        page.on('request', capture)
+        await page.route(BULK_SAVE_URL, capture)
 
         const saved = page
             .waitForResponse(
@@ -316,7 +322,7 @@ test.describe('枝番 (pat_br) — tháng bắc qua 2 枝番', () => {
             break
         }
         const res = await saved
-        page.off('request', capture)
+        await page.unroute(BULK_SAVE_URL, capture)
         expect(res, 'F9 không gửi bulk-save (lưới không dirty / bị cổng chặn)').not.toBeNull()
         if (res === null) return
         console.log(`bulk-save gửi ${savedRows.length} dòng: ${JSON.stringify(savedRows.map((r) => ({ day: r.day, patBr: r.patBr })))}`)

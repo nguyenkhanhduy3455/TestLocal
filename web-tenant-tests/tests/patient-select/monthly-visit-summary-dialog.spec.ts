@@ -1,4 +1,4 @@
-import { type Locator, type Page } from '@playwright/test'
+import { type Locator, type Page, type Route } from '@playwright/test'
 
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
@@ -342,10 +342,7 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
      * Endpoint là POST, tham số nằm trong THÂN — helper trả `SummaryBody`.
      */
     async function openDialog(): Promise<SummaryBody> {
-        const res = page.waitForResponse(
-            (r) => SUMMARY_URL.test(r.url()) && r.request().method() === 'POST',
-            { timeout: 60000 },
-        )
+        const { res, body } = await captureSummary()
         await page.keyboard.press('F3')
         await expect(dialog).toBeVisible({ timeout: 30000 })
         const response = await res
@@ -353,7 +350,29 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
             response.status(),
             `POST 来患集計 trả ${response.status()} — BE chưa chạy bản có endpoint này?`,
         ).toBeLessThan(300)
-        return (response.request().postDataJSON() ?? {}) as SummaryBody
+        return body()
+    }
+
+    /**
+     * Chờ POST 来患集計 và giữ lại BODY của nó. Chromium có lúc trả `postData()` null
+     * cho request lấy từ sự kiện response ⇒ đọc body ở `page.route` rồi `fallback()`.
+     * Phải gọi TRƯỚC thao tác bắn request.
+     */
+    async function captureSummary() {
+        let captured: SummaryBody = {}
+        const handler = async (route: Route) => {
+            if (route.request().method() === 'POST') {
+                captured = (route.request().postDataJSON() ?? {}) as SummaryBody
+            }
+            await route.fallback()
+        }
+        await page.route(SUMMARY_URL, handler)
+        const res = page
+            .waitForResponse((r) => SUMMARY_URL.test(r.url()) && r.request().method() === 'POST', {
+                timeout: 60000,
+            })
+            .finally(() => page.unroute(SUMMARY_URL, handler))
+        return { res, body: () => captured }
     }
 
     /** Đóng bằng F10 (nút 戻る của dialog); Escape KHÔNG được dùng — xem Rule 10.4. */
@@ -784,12 +803,10 @@ test.describe('F3 当月来患 — 来患集計 dialog (frm203046)', () => {
     test('TC-DR-3 — bấm 検索 mới gửi drNo, và số liệu không vượt bản すべて', async () => {
         skipWithReason(firstDoctor === null, 'không có Ｄｒ nào để chọn (xem TC-DR-1)')
 
-        const res = page.waitForResponse(
-            (r) => SUMMARY_URL.test(r.url()) && r.request().method() === 'POST',
-            { timeout: 60000 },
-        )
+        const { res, body: summaryBody } = await captureSummary()
         await dialog.getByRole('button', { name: '検索' }).click()
-        const body = ((await res).request().postDataJSON() ?? {}) as SummaryBody
+        await res
+        const body = summaryBody()
 
         expect(body.trtDt, '検索 làm đổi cả tháng').toBe(TRT_DT)
         const drNo = Number(body.drNo)

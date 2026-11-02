@@ -1,10 +1,19 @@
-import { type Locator, type Page, type Route } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
 
 import { patNo, trtDt } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
 import { countGisiKanri, dbEnabled, deleteGisiKanri } from '../_shared/db'
+import {
+    AGENT_AVAILABLE,
+    AGENT_BASE_URL,
+    AGENT_SKIP_REASON,
+    type AgentPrintStub,
+    type DatasourceEnvelope,
+    fetchDatasource,
+    routeAgentPrint,
+} from '../_shared/agent-print'
 import { foldForCompare, readPdf } from '../_shared/pdf-content'
 import { makeStep } from '../_shared/step'
 import { captureFixedUi } from '../_shared/capture'
@@ -32,8 +41,9 @@ import { captureFixedUi } from '../_shared/capture'
  *      · F8 登録 → date sai chặn TRƯỚC bằng E00002; hợp lệ → confirmDialog Q00001
  *        「登録してよろしいですか？」.
  *      · F9 印刷 → date sai → E00002 (KHÔNG confirm, đúng WinForm btnF9). Date hợp
- *        lệ → POST /tenant/report/{patNo}/hokan-datasource rồi đẩy NGUYÊN XI
- *        renderRequest sang print agent → nhóm TC-IN-* bên dưới.
+ *        lệ → mở print job ở agent: POST {agent}/v1/print-jobs { path:
+ *        /tenant/report/{patNo}/hokan-datasource, body: form }; agent tự gọi BE
+ *        dựng datasource rồi preview / in → nhóm TC-IN-* bên dưới.
  *      · F10 戻る → đóng luôn, WinForm btnF10 không hỏi lưu.
  *  - components/bui-info-chart.tsx (port WinForm BuiInfo, InputType.GisiKanri):
  *      · 4 象限 × 8 ô = 32 cell `button.h-8.w-8`; giá trị KHÔNG phải boolean mà
@@ -105,29 +115,11 @@ const OTHER_INFO_MARKER = 'E2Eテスト・その他情報マーカー'
  *   TEST_AGENT=1  # buộc in THẬT (agent ở máy khác)
  *   TEST_AGENT=0  # buộc stub, kể cả trên Windows
  */
-const AGENT_AVAILABLE =
-    process.env.TEST_AGENT === '1'
-        ? true
-        : process.env.TEST_AGENT === '0'
-          ? false
-          : process.platform === 'win32'
-
-const AGENT_SKIP_REASON =
-    `cần print agent (net48/Crystal, chỉ Windows) — đang chạy trên ${process.platform}. ` +
-    'Đặt TEST_AGENT=1 nếu agent chạy ở máy khác.'
-
-/** Phải khớp VITE_AGENT_BASE_URL của web-tenant (lib/env.ts mặc định cổng này). */
-const AGENT_BASE_URL = process.env.TEST_AGENT_BASE_URL ?? 'https://127.0.0.1:58247'
 /** strict → thiếu giá trị nào trên giấy là FAIL; loose → chữ Hán thiếu chỉ cảnh báo. */
 const PDF_TEXT_STRICT = (process.env.TEST_PDF_TEXT ?? 'strict') !== 'loose'
 
-/** BE dựng datasource: POST /tenant/report/{patNo}/hokan-datasource. */
-const DATASOURCE_URL = /\/tenant\/report\/\d+\/hokan-datasource(\?|$)/
-const AGENT_RENDER_URL = /\/v1\/render(\?|$)/
-const AGENT_PRINT_URL = /\/v1\/print(\?|$)/
-/** Mọi endpoint agent mà route cần nắm. */
-const AGENT_ANY_URL =
-    /\/(v1\/(render|print|prewarm|save-pdf)|healthz|v1\/jobs\/[^/]+\/events|tmp\/[0-9a-fA-F-]+\.pdf)(\?|$)/
+/** Path BE mà agent gọi để dựng datasource: /tenant/report/{patNo}/hokan-datasource. */
+const DATASOURCE_PATH = /^\/tenant\/report\/\d+\/hokan-datasource$/
 
 /** 帳票ID sau ReportNameNormalizer (seed rpt_info: RPT203003 → RPT20300301.rpt). */
 const REPORT_ID = 'rpt20300301'
@@ -140,44 +132,12 @@ const DS_TABLES = ['HOKAN', 'SHISHU'] as const
 /** Tiêu đề PdfPreviewDialog = ja.printPreviewTitle(ja.reportHokan()). */
 const PREVIEW_TITLE = 'クラウン・ブリッジ維持管理・義歯管理プレビュー'
 
-/** GUID cố định cho job/PDF tạm của stub — extractPdfId cần đúng 36 ký tự. */
-const STUB_JOB_ID = '33333333-3333-4333-8333-333333333333'
-const STUB_PDF_ID = '44444444-4444-4444-8444-444444444444'
-const STUB_PDF_TICKET = 'pdf-ticket-stub'
-const STUB_SSE_TICKET = 'sse-ticket-stub'
-/** PDF tối thiểu để iframe có cái mà tải; nội dung KHÔNG được assert. */
-const STUB_PDF_BODY =
-    '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n' +
-    '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n' +
-    '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj\n' +
-    'trailer<</Root 1 0 R>>\n%%EOF\n'
-
-/** Agent ở origin khác (loopback) → response stub phải mang CORS header. */
-const CORS_HEADERS: Record<string, string> = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': '*',
-    'Access-Control-Allow-Methods': 'GET,POST,PUT,OPTIONS',
-}
-
-const jsonFulfill = (route: Route, status: number, body: unknown) =>
-    route.fulfill({
-        status,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    })
-
-/** Body POST /v1/render — FE dùng lại đúng shape này cho /v1/print. */
+/** renderRequest BE dựng cho job (thứ agent đưa vào Crystal). */
 interface RenderRequestBody {
     reportId: string
     printCategory: number
     dataJson: Record<string, unknown[]>
     useDesignPaper?: boolean
-}
-
-/** Envelope chung của mọi /tenant/report/*-datasource. */
-interface DatasourceEnvelope {
-    success: boolean
-    data: { shouldPrint: boolean; renderRequest: RenderRequestBody | null }
 }
 
 /** Một dòng SHISHU — chỉ các cột frm203023.setPrintData thực gán. */
@@ -286,8 +246,8 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
     let previewDialog: Locator
 
     // ── Trạng thái luồng in, chia sẻ giữa các TC-IN-* ─────────────────────────
-    /** Body /v1/render FE gửi đi — chụp TRƯỚC khi chèn forcePreview. */
-    let sentRenderReq: RenderRequestBody | null = null
+    /** Route agent (tests/_shared/agent-print.ts): 'real' khi có agent, stub preview khi không. */
+    let agent: AgentPrintStub
     /** Dòng SHISHU bóc từ datasource của TC-IN-1. */
     let sentRow: ShishuRow | null = null
     /** File PDF agent render thật (chỉ có khi AGENT_AVAILABLE) — TC-IN-4 soi. */
@@ -314,78 +274,17 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         labels = chart.locator('button.h-4.w-8')
         previewDialog = page.getByRole('dialog').filter({ hasText: PREVIEW_TITLE })
 
-        // ─── Print agent: đi thật (Windows) hoặc stub (máy khác) ──────────────
-        // Máy CÓ agent: chỉ can thiệp 2 chỗ —
-        //   · /v1/render: chụp body GỐC rồi chèn `forcePreview: true`. RPT203003
-        //     có thể chưa có dòng print_mapping bật preview; khi đó agent in
-        //     THẲNG và test không còn PDF nào để soi. forcePreview là cờ override
-        //     có sẵn của agent, PDF vẫn do Crystal render thật từ .rpt thật.
-        //   · /v1/print: CHẶN. Job xuống spooler Windows là mất kiểm soát — máy in
-        //     mặc định "Microsoft Print to PDF" bung hộp thoại "Save Print Output
-        //     As" của Windows shell mà Playwright không đóng được → treo suite.
-        // Máy KHÔNG có agent: stub trọn bộ để nhóm datasource vẫn chạy được.
-        await page.route(AGENT_ANY_URL, async (route: Route) => {
-            const req = route.request()
-            const url = req.url()
-
-            if (AGENT_AVAILABLE) {
-                if (AGENT_RENDER_URL.test(url)) {
-                    const original = req.postDataJSON() as RenderRequestBody
-                    sentRenderReq = original
-                    return route.continue({
-                        postData: JSON.stringify({ ...original, forcePreview: true }),
-                    })
-                }
-                if (AGENT_PRINT_URL.test(url)) {
-                    return jsonFulfill(route, 202, { jobId: STUB_JOB_ID })
-                }
-                return route.continue()
-            }
-
-            if (/\/healthz/.test(url)) return jsonFulfill(route, 200, { ok: true })
-            if (/\/v1\/prewarm/.test(url)) return jsonFulfill(route, 200, {})
-
-            if (AGENT_RENDER_URL.test(url)) {
-                sentRenderReq = req.postDataJSON() as RenderRequestBody
-                return jsonFulfill(route, 202, {
-                    preview: true,
-                    jobId: STUB_JOB_ID,
-                    sseTicket: STUB_SSE_TICKET,
-                    eventsUrl: `/v1/jobs/${STUB_JOB_ID}/events?ticket=${STUB_SSE_TICKET}`,
-                })
-            }
-
-            // SSE: agent phát event CÓ TÊN nên phải ghi `event: <tên>`.
-            if (/\/v1\/jobs\/[^/]+\/events/.test(url)) {
-                const complete = JSON.stringify({
-                    type: 'complete',
-                    pdfUrl: `/tmp/${STUB_PDF_ID}.pdf`,
-                    pdfTicket: STUB_PDF_TICKET,
-                })
-                return route.fulfill({
-                    status: 200,
-                    headers: {
-                        ...CORS_HEADERS,
-                        'Content-Type': 'text/event-stream',
-                        'Cache-Control': 'no-cache',
-                    },
-                    body: `event: complete\ndata: ${complete}\n\n`,
-                })
-            }
-
-            if (/\/tmp\/[0-9a-fA-F-]+\.pdf/.test(url)) {
-                return route.fulfill({
-                    status: 200,
-                    headers: { ...CORS_HEADERS, 'Content-Type': 'application/pdf' },
-                    body: STUB_PDF_BODY,
-                })
-            }
-
-            return jsonFulfill(route, 200, {})
-        })
+        // ─── Print agent: đi thật (có agent) hoặc stub (không có) ─────────────
+        // 'real': job đi tới agent THẬT nhưng route chèn `forcePreview: true`
+        // (RPT203003 có thể chưa bật preview trong print_mapping → agent in thẳng,
+        // không còn PDF để soi) và CHẶN mọi lệnh in / save-pdf — job không bao giờ
+        // xuống spooler Windows (hộp thoại "Save Print Output As" treo suite).
+        // 'preview': stub trọn bộ để nhóm datasource vẫn chạy được.
+        agent = await routeAgentPrint(page, AGENT_AVAILABLE ? 'real' : 'preview')
     })
 
     test.afterAll(async () => {
+        await agent?.dispose()
         await disposeOverlays?.()
         await releaseSharedPage(page)
     })
@@ -690,25 +589,19 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         }
     }
 
-    test('TC-IN-1 — F9 印刷: BE dựng datasource RPT203003, FE đẩy nguyên xi sang agent', async () => {
+    test('TC-IN-1 — F9 印刷: FE mở job ở agent bằng path hokan-datasource, BE dựng đúng RPT203003', async () => {
         await fillPrintForm()
-        sentRenderReq = null
-
-        // Prewarm (reportOnly=true) cũng gọi đúng URL này → lọc theo body.
-        const datasourceResp = page.waitForResponse((r) => {
-            if (!DATASOURCE_URL.test(r.url()) || r.request().method() !== 'POST') return false
-            const body = r.request().postDataJSON() as { reportOnly?: boolean } | null
-            return body?.reportOnly !== true
-        }, { timeout: 60000 })
-
+        agent.reset()
         await dialog.getByRole('button', { name: 'F9 印刷' }).click()
-
-        const resp = await datasourceResp
+        const job = await agent.waitForStart()
         // patNo đi ở ROUTE ([FromRoute]), không nằm trong body.
-        expect(resp.url(), 'patNo phải là bệnh nhân đang mở').toContain(
+        expect(job.request.path, 'job phải trỏ vào hokan-datasource').toMatch(DATASOURCE_PATH)
+        expect(job.request.path, 'patNo phải là bệnh nhân đang mở').toContain(
             `/tenant/report/${PAT_NO_NUM}/hokan-datasource`,
         )
-        const envelope = (await resp.json()) as DatasourceEnvelope
+
+        // Agent không trả datasource về trình duyệt → gọi lại BE đúng như agent gọi.
+        const envelope = await fetchDatasource<DatasourceEnvelope<RenderRequestBody>>(page, job)
         expect(envelope.success, 'BE trả lỗi khi dựng datasource').toBe(true)
         expect(envelope.data.shouldPrint, 'màn này luôn shouldPrint=true').toBe(true)
         expect(envelope.data.renderRequest, 'thiếu renderRequest').not.toBeNull()
@@ -722,12 +615,6 @@ test.describe('補管・義歯 — クラウン・ブリッジ維持管理・義
         ])
         expect(built.dataJson.HOKAN, 'HOKAN phải RỖNG (printProc không insert dòng nào)').toEqual([])
         expect(built.dataJson.SHISHU, 'printProc emit đúng 1 dòng SHISHU').toHaveLength(1)
-
-        // FE là pass-through thuần: body gửi agent PHẢI y hệt cái BE trả về.
-        await expect
-            .poll(() => sentRenderReq, { timeout: 60000, message: 'FE không gọi /v1/render' })
-            .not.toBeNull()
-        expect(sentRenderReq!, 'FE sửa datasource trước khi gửi agent').toEqual(built)
 
         sentRow = built.dataJson.SHISHU![0] as ShishuRow
         await step()

@@ -217,7 +217,7 @@ test.describe('監査ログ — set-based / raw-SQL write phải để lại act
 
     // ── AuditSnapshot: giá trị phải là của CỘT, không phải của property C# ──
 
-    test('TC-1 — pat_msg: update_dt vào vết dưới dạng timestamp, không phải ngày trần', async () => {
+    test('TC-1 — pat_msg: update_dt vào vết đúng literal của KIỂU CỘT (date ⇒ ngày trần, timestamptz ⇒ có T)', async () => {
         await resetMark()
 
         const res = await page.request.put(`${apiOrigin}/tenant/settlement/${PAT_NO}/msg`, {
@@ -233,17 +233,26 @@ test.describe('監査ログ — set-based / raw-SQL write phải để lại act
             `không có action nào trên pat_msg. actions=${shapeOf(row)}`,
         ).toBeGreaterThan(0)
 
-        // pat_msg.update_dt là timestamptz trong DDL nhưng DateOnly trên entity
-        // (PatMsgConfiguration có HasConversion). Vết được người khôi phục dùng để VIẾT SQL,
-        // nên phải là literal của cột — '2026-09-14T00:00:00Z', không phải '2026-09-14'.
+        // Vết được người khôi phục dùng để VIẾT SQL, nên phải là literal của CỘT, không phải
+        // của model (AuditSnapshot.ProviderValue). Kiểu cột đọc từ DB chứ không hardcode:
+        // update_dt từng là timestamptz ('2026-09-14T00:00:00Z'), schema hiện tại là date.
+        const colType = await withDb(async (c) =>
+            String(
+                (
+                    await c.query<{ data_type: string }>(
+                        `SELECT data_type FROM information_schema.columns
+                          WHERE table_schema = current_schema() AND table_name = 'pat_msg' AND column_name = 'update_dt'`,
+                    )
+                ).rows[0]?.data_type,
+            ),
+        )
         const updateDt = String(
             patMsg[0]!.new?.['update_dt'] ?? patMsg[0]!.old?.['update_dt'] ?? '',
         )
         expect(
             updateDt,
-            'update_dt đang được ghi ở kiểu model (DateOnly) chứ không phải kiểu cột ' +
-                `(timestamptz) — xem AuditSnapshot.ProviderValue. Giá trị: ${updateDt}`,
-        ).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+            `update_dt không khớp literal của cột kiểu ${colType} — xem AuditSnapshot.ProviderValue. Giá trị: ${updateDt}`,
+        ).toMatch(colType === 'date' ? /^\d{4}-\d{2}-\d{2}$/ : /^\d{4}-\d{2}-\d{2}T/)
         await step()
     })
 
@@ -617,10 +626,14 @@ test.describe('監査ログ — set-based / raw-SQL write phải để lại act
         // rỗng phụ thuộc vào việc mở màn 診療入力 có tạo siga/kon hay không, tức test sẽ
         // đỏ vì lý do không liên quan. Bất biến đó do unit test
         // DeletePatientHandlerTests ghim, ở đó trạng thái ban đầu là do test dựng hết.
+        // = các WipeAsync của DeletePatientHandler.cs — 30 bảng WinForm từ c481699cf (2026-10-14).
         const purgeTables = [
             'insurance', 'med_ins_inf', 'pub_exp_inf', 'kon', 'siga', 'bnow', 'person_exp',
             'pat_msg', 'wait', 'yoyaku', 'unpaid', 'acc_dat_bill', 'acc_dat', 'trn_trn',
             'pub_exp_ticket', 'person', 'user_patient_history',
+            'ccta', 'cct_line', 'chiryo_kanri_r2', 'gisi_kanri', 'misou', 'ncult', 'p_condition',
+            'pat_info', 'personal_info', 'pic_list', 'sidou', 'sum_tsk', 'trn_henrei_csv',
+            'trn_henrei_riyu', 'trn_status', 'trt_state',
         ]
         for (const a of actions) {
             expect(purgeTables, `vết khai bảng '${a.table}' mà purge không đụng tới`).toContain(

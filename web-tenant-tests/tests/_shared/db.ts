@@ -440,7 +440,14 @@ function assertSeedPatNo(patNo: number, fn: string): void {
  * thái trung tính nhất để `ToothConditionChecker.ChkSiga` không loại dòng nào và
  * `CalcCntService` đếm đúng số răng của 部位.
  *
- * Thời hạn bảo hiểm để rộng (1900→9999) để spec chọn 診療日 nào cũng hợp lệ.
+ * Thời hạn bảo hiểm để rộng (từ 1900, không có ngày kết thúc) để spec chọn
+ * 診療日 nào cũng hợp lệ — `pickActivePatientRecord` coi `med_ed_dt` NULL là +∞.
+ *
+ * ⚠️ `med_ed_dt` (最終診療日) phải NULL, KHÔNG được 9999-12-31: ô 和暦 trên màn
+ * 患者登録 đổi nó ra 令和7981年, quá 2 chữ số ⇒ ô báo invalid và F9 dừng ở
+ * 「日付が間違っています。」 dù không ai sửa ô đó (từ 8b7ebf39c, 2026-10-22).
+ * Dữ liệu thật cũng không bao giờ có 9999: legacy chỉ ghi max(trt_dt) vào cột này,
+ * bệnh nhân chưa khám thì để NULL.
  */
 export async function seedTestPatient(input: SeedPatientInput): Promise<void> {
     const { patNo } = input
@@ -467,7 +474,7 @@ export async function seedTestPatient(input: SeedPatientInput): Promise<void> {
                  old_flg, dis_flg, ins_kbn, combi_kbn, acc_rate
              )
              VALUES ($1, 1, 0, 0, $2, $3, $4::date, $5,
-                     $4::date, DATE '1900-01-01', DATE '9999-12-31', $6,
+                     $4::date, DATE '1900-01-01', NULL, $6,
                      0, 0, 1, 1, $7)`,
             [patNo, patNm, patKn, birthDt, sex, recCd, accRate],
         )
@@ -1092,16 +1099,14 @@ export async function dayScoreByJihiFlg(
 // ─── rx_sharing_view_history (電子カルテ情報共有サービス frm201045) ──────────────
 //
 // Bảng legacy (SIM2025), KHÔNG có audit/soft-delete kiểu ITenantAudited: xoá mềm
-// chính là cột `delete_date`, và cột này NẰM TRONG KHOÁ CHÍNH
-// (pat_no, if_id, req_dt, delete_date). Sentinel "chưa xoá" = 1900-01-01.
+// chính là cột `delete_date`. Khoá chính là `id` (uuidv7). "Chưa xoá" = `delete_date`
+// NULL (f6303c7fe, 2026-10-21 — trước đó web dùng sentinel 1900-01-01 của WinForm;
+// ETL legacy-import đổi 1900 → NULL).
 //
 // Bảng thường RỖNG ở môi trường dev (chỉ có dữ liệu khi đã gọi OQS thật), nên
 // mọi testcase soi lưới/削除/PDF đều phải TỰ seed rồi tự dọn.
 //
 // `pat_no` là VARCHAR(20) (không phải int như hầu hết bảng khác) — truyền chuỗi.
-
-/** Sentinel WinForm dùng cho "chưa xoá" (ComConst.DATETIME_MINVALUE_DB). */
-export const RX_SHARING_DELETE_SENTINEL = '1900-01-01T00:00:00.000Z'
 
 export interface RxSharingSeedRow {
     /** OQS_IF_ID: '21' 薬剤情報 / '23' 特定健診 / '31' 臨床情報 (khác = không thuộc tab nào). */
@@ -1121,7 +1126,7 @@ export interface RxSharingRow {
     req_dt: Date
     start_date: Date
     end_date: Date
-    delete_date: Date
+    delete_date: Date | null
     pdf_len: number
 }
 
@@ -1157,7 +1162,7 @@ export async function seedRxSharingViewHistory(
                     patNo,
                     r.ifId,
                     r.reqDt,
-                    r.deleteDate ?? RX_SHARING_DELETE_SENTINEL,
+                    r.deleteDate ?? null,
                     r.startDate,
                     r.endDate,
                     r.pdf ?? MINIMAL_PDF,

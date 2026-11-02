@@ -16,7 +16,7 @@
  * nhiều nhánh — chạy cả nhóm bằng `npx playwright test tests/auto-santei/`.
  */
 
-import { type Page, type Route } from '@playwright/test'
+import { type Page, type Request, type Route } from '@playwright/test'
 import {
   branchInForceOn,
   dbEnabled,
@@ -41,10 +41,19 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
 function cascadeUrlOf(req: { url(): string; postDataJSON(): unknown }): string {
   const u = new URL(req.url());
   const body = (req.postDataJSON() ?? {}) as Record<string, unknown>;
+  // Khoá body có thể là camelCase hoặc PascalCase — chép theo tên viết thường.
+  const lower = new Map(Object.entries(body).map(([k, v]) => [k.toLowerCase(), v]));
   for (const k of ["trtCd", "trtSb", "trtDt", "patNo", "disCd"]) {
-    if (body[k] !== undefined && body[k] !== null) u.searchParams.set(k, String(body[k]));
+    const v = lower.get(k.toLowerCase());
+    if (v !== undefined && v !== null) u.searchParams.set(k, String(v));
   }
   return u.toString();
+}
+
+/** Mã `trtCd-trtSb` từ query — FE gửi `TrtCd`/`TrtSb` (PascalCase) nên đọc không phân biệt hoa thường. */
+function codeOf(q: URLSearchParams): string {
+  const m = new Map([...q].map(([k, v]) => [k.toLowerCase(), v]));
+  return `${m.get("trtcd")}-${m.get("trtsb")}`;
 }
 
 // ═══ nguyên văn từ auto-santei.spec.ts (đã gộp vào file này) ═══════════════════════════════════════════
@@ -299,6 +308,14 @@ test.describe("自動算定 — 初診/再診 (modSave.AutoSantei)", () => {
     step = makeStep(page);
     page.on("pageerror", (e) => console.log(`pageerror: ${e.message}`));
 
+    // Body POST /cascade lớn (bui[32]) nên request lấy từ sự kiện 'response' KHÔNG có
+    // postData ⇒ đọc body ở route (luôn đủ) rồi tra lại theo chính request đó.
+    const cascadeUrlByReq = new WeakMap<Request, string>();
+    await page.route("**/tenant/cmt-autos/cascade**", async (route) => {
+      cascadeUrlByReq.set(route.request(), cascadeUrlOf(route.request()));
+      await route.fallback();
+    });
+
     // Nghe MỘT lần cho cả file; `openFresh()` mới là chỗ xoá bộ đệm.
     page.on("response", async (r) => {
       const url = r.url();
@@ -318,12 +335,12 @@ test.describe("自動算定 — 初診/再診 (modSave.AutoSantei)", () => {
       }
       if (url.includes("/tenant/cmt-autos/cascade")) {
         try {
-          const q = new URL(cascadeUrlOf(r.request())).searchParams;
+          const q = new URL(cascadeUrlByReq.get(r.request()) ?? cascadeUrlOf(r.request())).searchParams;
           const body = (await r.json()) as {
             data?: (typeof cascadeSeen)[number]["packs"];
           };
           cascadeSeen.push({
-            code: `${q.get("trtCd")}-${q.get("trtSb")}`,
+            code: codeOf(q),
             packs: body.data ?? [],
           });
         } catch {
@@ -336,7 +353,7 @@ test.describe("自動算定 — 初診/再診 (modSave.AutoSantei)", () => {
         const q = new URL(url).searchParams;
         const body = (await r.json()) as { data?: { noChk: number }[] };
         cmtAutoSeen.push({
-          code: `${q.get("trtCd")}-${q.get("trtSb")}`,
+          code: codeOf(q),
           rows: body.data ?? [],
         });
       } catch {
@@ -534,9 +551,26 @@ test.describe("自動算定 — 初診/再診 (modSave.AutoSantei)", () => {
     // Ngày khác ngày đang mở, vẫn trong tháng. 1 nếu hôm nay không phải mùng 1.
     const otherDay = today === 1 ? 2 : 1;
     const dayCellsBefore = await countDayCells(page, otherDay);
+    // Nghe TRƯỚC khi Enter: phản hồi của lượt thêm ngày quyết định bộ nào được áp.
+    // `autosantei?` loại `/autosantei2`.
+    const otherDayIso = `${TRT_DT.slice(0, 8)}${String(otherDay).padStart(2, "0")}`;
+    const otherDayRes = page.waitForResponse(
+      (r) =>
+        r.url().includes("/tenant/treatment/autosantei?") &&
+        r.url().includes(otherDayIso),
+      { timeout: 15000 },
+    );
     await footerDay(page).last().fill(String(otherDay));
     await page.keyboard.press("Enter");
-    await waitAutoSantei(page);
+    const res = (
+      (await (await otherDayRes).json()) as {
+        data: {
+          isInitialVisitEligible: boolean;
+          picks: { trtNm: string }[];
+          reExamPicks: { trtNm: string }[];
+        };
+      }
+    ).data;
     await step();
 
     // THÁNG đã có 処置 ⇒ bolMedTreat=false ⇒ 再診 thẳng, KHÔNG hỏi lại
@@ -561,6 +595,33 @@ test.describe("自動算定 — 初診/再診 (modSave.AutoSantei)", () => {
       await countDayCells(page, otherDay),
       `cột 日 phải có thêm ô của ngày ${otherDay} (trước: ${dayCellsBefore})`,
     ).toBeGreaterThan(dayCellsBefore);
+
+    // Ngày đầu chưa 登録 nên BE (chỉ thấy DB) vẫn coi là 初診 — chính FE phải đổi
+    // sang bộ 再診 vì lưới tháng đã có 処置. Thiếu điều kiện này thì TC không còn
+    // kiểm được nhánh đổi bộ.
+    expect(
+      res.isInitialVisitEligible,
+      "BE phải trả isInitialVisitEligible = true cho ngày thêm (ngày đầu chưa lưu)",
+    ).toBe(true);
+    expect(res.reExamPicks.length, "bộ 再診 của BE rỗng").toBeGreaterThan(0);
+
+    // Dòng mới phải là bộ 再診: mỗi tên của reExamPicks tăng ĐÚNG số lần nó xuất
+    // hiện trong bộ, tên chỉ có ở bộ 初診 (vd 歯科初診料) không được tăng thêm.
+    const after = await filledRyoTexts(page);
+    const reExamNames = res.reExamPicks.map((p) => p.trtNm);
+    for (const name of new Set(reExamNames)) {
+      expect(
+        countOf(after, name) - countOf(before, name),
+        `ngày ${otherDay} phải có dòng 再診 「${name}」`,
+      ).toBeGreaterThanOrEqual(countOf(reExamNames, name));
+    }
+    for (const name of new Set(res.picks.map((p) => p.trtNm))) {
+      if (reExamNames.some((n) => n.includes(name) || name.includes(n))) continue;
+      expect(
+        countOf(after, name) - countOf(before, name),
+        `ngày ${otherDay} KHÔNG được có dòng chỉ thuộc bộ 初診 「${name}」`,
+      ).toBe(0);
+    }
   });
 
   // ── カルテ記載選択 sau 自動算定 (modMain.cs:787 → frm203012 gType.Auto) ──────
@@ -1102,7 +1163,7 @@ test.describe("自動算定 — bảng nhánh (data giả)", () => {
     // ra nuốt phím; TC nào cần thì nạp `cmtUser` / `cmtPrg` theo (trtCd, trtSb).
     const keyOf = (u: string) => {
       const q = new URL(u).searchParams;
-      return `${q.get("trtCd")}-${q.get("trtSb")}`;
+      return codeOf(q);
     };
     await page.route("**/tenant/cmt-autos?**", async (route: Route) => {
       if (cmtHttpError !== null) {
@@ -1958,7 +2019,7 @@ test.describe("自動算定 — bảng nhánh (data giả)", () => {
 
     const probed = cascadeUrls.map((u) => {
       const q = new URL(u).searchParams;
-      return `${q.get("trtCd")}-${q.get("trtSb")}`;
+      return codeOf(q);
     });
     for (const p of [
       ...INITIAL_SET,

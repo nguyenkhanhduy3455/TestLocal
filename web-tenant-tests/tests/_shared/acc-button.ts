@@ -41,10 +41,15 @@ export async function routeAccButton(page: Page, initial: number): Promise<AccBu
     let value = initial
     const handler = async (route: Route) => {
         if (route.request().method() !== 'GET') return route.fallback()
-        const res = await route.fetch()
-        const json = (await res.json()) as { data?: { device?: Record<string, unknown> } }
-        if (json.data?.device) json.data.device.accButton = value
-        await route.fulfill({ response: res, json })
+        try {
+            const res = await route.fetch()
+            const json = (await res.json()) as { data?: { device?: Record<string, unknown> } }
+            if (json.data?.device) json.data.device.accButton = value
+            await route.fulfill({ response: res, json })
+        } catch (e) {
+            // Trang chuyển màn khi request còn bay (Shift+F7 / F10) ⇒ Playwright đã huỷ route; FE không còn chờ.
+            if (!/already handled|Target page, context or browser has been closed/.test(String(e))) throw e
+        }
     }
     await page.route(SETTINGS_INP_URL, handler)
     return {

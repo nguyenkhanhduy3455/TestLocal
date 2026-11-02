@@ -42,6 +42,14 @@ describeListChrome(
         master('装着料マスタ /masters/set', '/masters/set'),
         master('処置マスタ /masters/trt', '/masters/trt'),
         master('ユーザマスタ /settings/user-master', '/settings/user-master'),
+        {
+            ...master('コード設定 /masters/code', '/masters/code'),
+            // FACT (mst-code-settings-screen.tsx): opens on the first group, locked by default ⇒ no
+            // ダブルクリックで選択 hint; the footer reads 「選択中: <cdType>-<cdVal> <名称1>」, so the row
+            // (which prints only cdVal) never carries the status code verbatim.
+            hint: false,
+            statusPattern: /^選択中: \d+-\d+/,
+        },
         master('ロールマスタ /settings/role-master', '/settings/role-master'),
         {
             ...master('郵便番号 /masters/postal', '/masters/postal'),

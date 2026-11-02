@@ -1,4 +1,13 @@
-import { type Locator, type Page, type Request, type Route } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
+
+import {
+    AGENT_AVAILABLE,
+    AGENT_SKIP_REASON,
+    type AgentPrintStub,
+    type DatasourceEnvelope,
+    fetchDatasource,
+    routeAgentPrint,
+} from '../_shared/agent-print'
 
 import { patNo, trtDt } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
@@ -25,10 +34,11 @@ import { makeStep } from '../_shared/step'
  *        【その他情報】 (WinForm txtAttach1/2 + cboOtherInfo1..6 MaxLength=60).
  *      · `MAX_BYTES_OTHER_INFO = 50` — `prt_shishu.txt4‥txt9` là `varchar(50)`,
  *        tức 25 chữ 全角. CHẶT HƠN cap 60 ký tự → đây mới là cap người dùng chạm.
- *      · `firstOverByteCapOtherInfo` chạy TRƯỚC khi POST datasource; vượt cap →
+ *      · `firstOverByteCapOtherInfo` chạy TRƯỚC khi mở print job; vượt cap →
  *        `alertDialog(ja.E00022('その他情報{n}'))` rồi `return`. Nên khi vượt cap
- *        KHÔNG có request nào tới `/tenant/report/{patNo}/hokan-datasource` —
- *        đó là điểm phân biệt "chặn tại FE" với "BE trả 422".
+ *        KHÔNG có job nào mở ở agent (POST /v1/print-jobs với path
+ *        `/tenant/report/{patNo}/hokan-datasource`) — đó là điểm phân biệt "chặn tại
+ *        FE" với "BE trả 422" (agent tự gọi BE, xem tests/_shared/agent-print.ts).
  *      · 着脱方法 KHÔNG có byte-cap: cột `memo8/memo9` là `varchar(200)` = 100
  *        全角, 60 ký tự không bao giờ chạm tới.
  *  - components/oral-hygiene-instruction-dialog.tsx (指導文書, frm203022)
@@ -43,9 +53,8 @@ import { makeStep } from '../_shared/step'
  * login nên login + mở màn 診療入力 chỉ làm một lần ở beforeAll. Thứ tự testcase
  * có ý nghĩa (mở dialog ở case đầu) — chạy lẻ case giữa sẽ hỏng.
  *
- * KHÔNG ghi DB và KHÔNG đụng máy in: mọi nhánh đều dừng trước khi in, riêng
- * case biên thì stub `hokan-datasource` trả `shouldPrint:false` để FE return
- * sớm — không cần print agent chạy.
+ * KHÔNG ghi DB và KHÔNG đụng máy in: endpoint agent bị stub (routeAgentPrint), chỉ
+ * TC-PDF-1 cho đi tới agent THẬT (preview, lệnh in luôn bị chặn).
  *
  * ⚠️ HAI TẦNG KIỂM, ĐỪNG NHẦM:
  *   · Các case `maxlength` / byte-cap dưới đây chỉ chứng minh FE CHẶN ĐÚNG CHỖ.
@@ -84,61 +93,14 @@ const OVER_CAP_LINE_IDX = 2
 const OVER_CAP_LINE_LABEL = `その他情報${OVER_CAP_LINE_IDX + 1}`
 
 // ── In THẬT để soi số trang (TC-PDF-1) ───────────────────────────────────────
-/**
- * Print agent là net48 + Crystal → chỉ Windows. Máy khác thì TC-PDF-1 tự skip:
- * không có agent thì KHÔNG có tờ giấy nào để đếm trang, và stub một PDF giả rồi
- * assert số trang là tự lừa mình.
- *   TEST_AGENT=1 / TEST_AGENT=0 để ép.
- */
-const AGENT_AVAILABLE =
-    process.env.TEST_AGENT === '1'
-        ? true
-        : process.env.TEST_AGENT === '0'
-          ? false
-          : process.platform === 'win32'
-
-const AGENT_SKIP_REASON =
-    `cần print agent (net48/Crystal, chỉ Windows) — đang chạy trên ${process.platform}. ` +
-    'Đặt TEST_AGENT=1 nếu agent chạy ở máy khác.'
-
-const AGENT_RENDER_URL = /\/v1\/render(\?|$)/
-const AGENT_PRINT_URL = /\/v1\/print(\?|$)/
 /** Tiêu đề PdfPreviewDialog = ja.printPreviewTitle(ja.reportHokan()). */
 const PREVIEW_TITLE = 'クラウン・ブリッジ維持管理・義歯管理プレビュー'
 
-/** Body POST /v1/render. */
-interface RenderRequestBody {
-    reportId: string
-    printCategory: number
-    dataJson: Record<string, Record<string, string>[]>
-    useDesignPaper?: boolean
-}
+/** Dòng SHISHU của datasource hokan (memo4 = 保険医療機関名). */
+type HokanDataJson = Record<string, Record<string, string>[]>
 
 /** Đóng SanteiConfirmDialog 「…を算定しますか？」 do AutoSantei bung ra (đè lên dialog). */
 async function installSanteiAutoClose(page: Page) {
-}
-
-/**
- * Đếm request FE gửi tới một endpoint trong lúc chạy `fn`. Dùng để phân biệt
- * "FE chặn trước" (0 request) với "BE trả lỗi" (>= 1 request) — hai cái này ra
- * cùng một hộp thoại nên nhìn UI không phân biệt được.
- */
-async function countRequests(
-    page: Page,
-    urlPart: string,
-    fn: () => Promise<void>,
-): Promise<number> {
-    let n = 0
-    const onRequest = (req: Request) => {
-        if (req.url().includes(urlPart)) n += 1
-    }
-    page.on('request', onRequest)
-    try {
-        await fn()
-    } finally {
-        page.off('request', onRequest)
-    }
-    return n
 }
 
 /** Đọc thuộc tính maxlength thật trên DOM của từng phần tử trong locator. */
@@ -158,8 +120,10 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
     let sidouDialog: Locator
     /** Khối chứa một nhãn = CHA của phần tử mang đúng text đó. */
     let boxOf: (dialog: Locator, text: string) => Locator
-    /** PdfPreviewDialog của agent (chỉ dùng ở TC-PDF-1). */
+    /** PdfPreviewDialog của agent. */
     let previewDialog: Locator
+    /** Stub agent (tests/_shared/agent-print.ts) — 'real' chỉ ở TC-PDF-1. */
+    let agent: AgentPrintStub
 
     /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
      *  theo worker nên handler không gỡ sẽ rò sang spec chạy sau. */
@@ -180,35 +144,11 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
             dialog.getByText(text, { exact: true }).locator('..')
         previewDialog = page.getByRole('dialog').filter({ hasText: PREVIEW_TITLE })
 
-        // Chỉ cài route khi CÓ agent: các case còn lại không chạm agent, và trên
-        // máy không có agent thì TC-PDF-1 skip nên cũng không cần stub.
-        //   · /v1/render → chụp body GỐC rồi chèn forcePreview để agent luôn trả
-        //     PDF xem trước (print_mapping của RPT203003 có thể đang tắt preview).
-        //   · /v1/print  → CHẶN: job xuống spooler Windows sẽ bung hộp thoại
-        //     "Save Print Output As" mà Playwright không đóng được → treo suite.
-        if (AGENT_AVAILABLE) {
-            await page.route(/\/v1\/(render|print)(\?|$)/, async (route: Route) => {
-                const req = route.request()
-                if (AGENT_PRINT_URL.test(req.url())) {
-                    return route.fulfill({
-                        status: 202,
-                        headers: {
-                            'Access-Control-Allow-Origin': '*',
-                            'Access-Control-Allow-Headers': '*',
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ jobId: '00000000-0000-4000-8000-000000000000' }),
-                    })
-                }
-                const original = req.postDataJSON() as RenderRequestBody
-                return route.continue({
-                    postData: JSON.stringify({ ...original, forcePreview: true }),
-                })
-            })
-        }
+        agent = await routeAgentPrint(page, 'preview')
     })
 
     test.afterAll(async () => {
+        await agent?.dispose()
         await disposeOverlays?.()
         await releaseSharedPage(page)
     })
@@ -263,20 +203,19 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
         await others.nth(OVER_CAP_LINE_IDX).fill(OTHER_INFO_OVER_CAP)
         await expect(others.nth(OVER_CAP_LINE_IDX)).toHaveValue(OTHER_INFO_OVER_CAP)
 
-        const sent = await countRequests(page, 'hokan-datasource', async () => {
-            await hokanDialog.getByRole('button', { name: 'F9 印刷' }).click()
-            const alert = page.getByRole('alertdialog')
-            await expect(alert).toBeVisible({ timeout: 10000 })
-            // Điểm cốt lõi của bản vá: nêu ĐÚNG dòng nào quá dài, không phải
-            // 「印刷に失敗しました。」 chung chung như trước.
-            await expect(alert.getByText(`${OVER_CAP_LINE_LABEL}の文字数が越えています。`)).toBeVisible()
-            await alert.getByRole('button', { name: 'OK' }).click()
-            await expect(alert).toBeHidden({ timeout: 10000 })
-        })
+        agent.reset()
+        await hokanDialog.getByRole('button', { name: 'F9 印刷' }).click()
+        const alert = page.getByRole('alertdialog')
+        await expect(alert).toBeVisible({ timeout: 10000 })
+        // Điểm cốt lõi của bản vá: nêu ĐÚNG dòng nào quá dài, không phải
+        // 「印刷に失敗しました。」 chung chung như trước.
+        await expect(alert.getByText(`${OVER_CAP_LINE_LABEL}の文字数が越えています。`)).toBeVisible()
+        await alert.getByRole('button', { name: 'OK' }).click()
+        await expect(alert).toBeHidden({ timeout: 10000 })
 
-        // Chặn ở FE nghĩa là KHÔNG tốn round-trip nào. Nếu số này > 0 tức là
-        // pre-flight đã bị bỏ và ta chỉ đang thấy 422 của BE.
-        expect(sent, 'F9 vẫn gọi hokan-datasource dù đã vượt cap → mất pre-flight').toBe(0)
+        // Chặn ở FE nghĩa là KHÔNG mở job nào ở agent. Nếu > 0 tức là pre-flight
+        // đã bị bỏ và ta chỉ đang thấy 422 của BE.
+        expect(agent.starts, 'F9 vẫn mở print job dù đã vượt cap → mất pre-flight').toHaveLength(0)
         await step()
     })
 
@@ -284,32 +223,20 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
         const others = hokanDialog.locator('input[aria-label^="その他情報"]')
         await others.nth(OVER_CAP_LINE_IDX).fill(OTHER_INFO_AT_CAP)
 
-        // Stub datasource trả shouldPrint=false → handlePrint return sớm, không
-        // chạm print agent. Nhờ vậy case biên chạy được mà không cần agent.
-        await page.route('**/hokan-datasource', (route) =>
-            route.fulfill({
-                status: 200,
-                contentType: 'application/json',
-                body: JSON.stringify({
-                    success: true,
-                    data: { shouldPrint: false, renderRequest: null },
-                }),
-            }),
-        )
-
-        try {
-            const sent = await countRequests(page, 'hokan-datasource', async () => {
-                await hokanDialog.getByRole('button', { name: 'F9 印刷' }).click()
-                // Giá trị BIÊN phải lọt: không có alert 桁数 nào bung ra.
-                await expect(
-                    page.getByText('の文字数が越えています。'),
-                    '25 全角 (= đúng 50 byte) bị chặn nhầm — cap đang lệch 1 ký tự',
-                ).toBeHidden({ timeout: 5000 })
-            })
-            expect(sent, 'giá trị hợp lệ mà không gọi hokan-datasource').toBeGreaterThan(0)
-        } finally {
-            await page.unroute('**/hokan-datasource')
-        }
+        agent.mode = 'preview'
+        agent.reset()
+        await hokanDialog.getByRole('button', { name: 'F9 印刷' }).click()
+        // Giá trị BIÊN phải lọt: không có alert 桁数 nào bung ra, và job được mở.
+        const job = await agent.waitForStart()
+        expect(job.request.path, 'giá trị hợp lệ mà không in hokan-datasource').toMatch(/\/hokan-datasource$/)
+        await expect(
+            page.getByText('の文字数が越えています。'),
+            '25 全角 (= đúng 50 byte) bị chặn nhầm — cap đang lệch 1 ký tự',
+        ).toBeHidden()
+        // Stub mở preview — đóng lại cho case sau.
+        await expect(previewDialog).toBeVisible({ timeout: 60000 })
+        await previewDialog.getByRole('button', { name: 'F10 戻る' }).click()
+        await expect(previewDialog).toBeHidden({ timeout: 10000 })
 
         await others.nth(OVER_CAP_LINE_IDX).fill('')
         await step()
@@ -332,10 +259,11 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
         const others = hokanDialog.locator('input[aria-label^="その他情報"]')
         for (let i = 0; i < OTHER_INFO_COUNT; i++) await others.nth(i).fill(OTHER_INFO_AT_CAP)
 
-        // Bắt body /v1/render ngay tại đây (bản GỐC, trước khi route chèn
-        // forcePreview) — khỏi phải giữ state chung giữa các testcase.
-        const renderReq = page.waitForRequest(AGENT_RENDER_URL, { timeout: 60000 })
+        // 'real': job đi tới agent THẬT (route chèn forcePreview, chặn lệnh in).
+        agent.mode = 'real'
+        agent.reset()
         await hokanDialog.getByRole('button', { name: 'F9 印刷' }).click()
+        const job = await agent.waitForStart()
 
         // Không có alert 桁数 nào được bung ra — toàn bộ giá trị đều ĐÚNG cap.
         await expect(
@@ -368,8 +296,9 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
 
         // 保険医療機関名 (memo4) là dòng bị đẩy sang trang 2 trong bug gốc — nó phải
         // còn nằm trên tờ giấy DUY NHẤT này.
-        const sent = (await renderReq).postDataJSON() as RenderRequestBody
-        const shishu = sent.dataJson?.SHISHU?.[0]
+        // Agent không trả datasource về trình duyệt → gọi lại BE đúng như agent gọi.
+        const envelope = await fetchDatasource<DatasourceEnvelope<{ reportId: string; printCategory: number; dataJson: HokanDataJson }>>(page, job)
+        const shishu = envelope.data.renderRequest?.dataJson?.SHISHU?.[0]
         const clinic = shishu?.memo4 ?? ''
         if (clinic.trim() === '') {
             console.log('医院マスタ chưa có 医院名 → BỎ QUA phần kiểm 保険医療機関名 trên giấy')
@@ -383,6 +312,7 @@ test.describe('帳票の文字数ガード — 長文入力が2ページ目に�
 
         await previewDialog.getByRole('button', { name: 'F10 戻る' }).click()
         await expect(previewDialog).toBeHidden({ timeout: 10000 })
+        agent.mode = 'preview'
 
         // Trả form về trạng thái sạch cho các case sau.
         await attach.nth(0).fill('')

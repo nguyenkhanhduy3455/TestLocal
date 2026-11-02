@@ -13,7 +13,7 @@
  * Hai khối giữ NGUYÊN VĂN nội dung hai file cũ.
  */
 
-import { type Page } from '@playwright/test'
+import { type Page, type Request, type Route } from '@playwright/test'
 import {
     countRealTreatmentRowsInMonth,
     dbEnabled,
@@ -710,6 +710,18 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
     let page: Page
     let step: () => Promise<void>
 
+    /**
+     * Body của từng POST bulk-save, đọc ở `page.route`: Chromium bỏ `postData()` của
+     * request lớn khi lấy từ sự kiện response (trả null).
+     */
+    const saveBodies = new WeakMap<Request, Record<string, unknown>>()
+    const saveBodyOf = (req: Request) => saveBodies.get(req) ?? {}
+    const captureSaveBody = async (route: Route) => {
+        const req = route.request()
+        if (req.method() === 'POST') saveBodies.set(req, (req.postDataJSON() ?? {}) as Record<string, unknown>)
+        await route.fallback()
+    }
+
     /** Nguyên trạng `insurance.med_ed_dt` — trả lại ở afterAll (TC-7 ghi vào đây). */
     let insBefore: InsRow[] = []
     /** true khi dòng `wait` do CHÍNH spec tạo ⇒ afterAll xoá hẳn. */
@@ -838,7 +850,7 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
             console.log(`bulk-save ${resp.status()} body: ${await resp.text().catch(() => '(unreadable)')}`)
         }
         expect(resp.status(), 'POST bulk-save không trả 2xx').toBeLessThan(300)
-        const body = resp.request().postDataJSON() as { rows?: Array<Record<string, unknown>> }
+        const body = saveBodyOf(resp.request()) as { rows?: Array<Record<string, unknown>> }
         return { rows: body.rows ?? [] }
     }
 
@@ -867,7 +879,7 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
 
         const resp = await pending
         return {
-            payload: resp.request().postDataJSON() as Record<string, unknown>,
+            payload: saveBodyOf(resp.request()),
             status: resp.status(),
         }
     }
@@ -913,6 +925,7 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
         )
 
         page = authedPage
+        await page.route('**/tenant/treatment/bulk-save', captureSaveBody)
         moduleWatch = watchModuleDeath(page)
         disposeOverlays = await installSanteiCancel(page)
         step = makeStep(page)
@@ -1426,7 +1439,7 @@ test.describe('診療入力 F9 登録 — side-effect nhóm P0 chưa port', () =
         await step()
 
         const resp = await retry
-        const retryPayload = resp.request().postDataJSON() as Record<string, unknown>
+        const retryPayload = saveBodyOf(resp.request())
         if (resp.status() >= 300) {
             console.log(`bulk-save (force) ${resp.status()} body: ${await resp.text().catch(() => '(unreadable)')}`)
         }

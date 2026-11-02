@@ -167,6 +167,84 @@ public sealed class PatientGuidanceProbeTests : GuidanceProbeBase
         }
     }
 
+    /// <summary>
+    /// Đối chiếu web TC-PDF-1 (report-text-length-guard.spec.ts): nhồi ĐÚNG cap mọi ô của 補管・義歯
+    /// — 着脱方法 60 ký tự ×2 (Designer MaxLength = 60), その他情報 25 全角 ×6 — rồi F9 in
+    /// (printProc frm203023.cs:367 → printControl.printReport RPT203003; Ocha.xml Preview=1 ⇒
+    /// viewer frm902002). Đo: giá trị thật trong ô sau khi gõ, và SỐ TRANG viewer báo.
+    /// Không ghi DB (F9 chỉ dựng bảng tạm in rồi đóng).
+    /// </summary>
+    [Test, Order(10)]
+    public void Tc5_HokanPrintPages()
+    {
+        using var trace = TestTrace.Begin("Tc5_HokanPrintPages");
+        const string tag = "補管印刷";
+        try
+        {
+            var win = Open("btnHokan", "frm203023", trace);
+            if (win is null) { Log($"=== KQ-P1 [{tag}] === KHÔNG MỞ ĐƯỢC frm203023"); return; }
+            var inputs = new (string Id, string Text)[]
+            {
+                ("txtAttach1", new string('あ', 60)), ("txtAttach2", new string('い', 60)),
+                ("cboOtherInfo1", new string('あ', 25)), ("cboOtherInfo2", new string('あ', 25)), ("cboOtherInfo3", new string('あ', 25)),
+                ("cboOtherInfo4", new string('あ', 25)), ("cboOtherInfo5", new string('あ', 25)), ("cboOtherInfo6", new string('あ', 25)),
+            };
+            foreach (var (id, text) in inputs)
+            {
+                var el = Find(win, id);
+                if (el is null) { Log($"=== KQ-P1 [{tag}] === không thấy {id}"); continue; }
+                Uia.SetText(el, text);
+                Thread.Sleep(150);
+                var v = Uia.ValueOf(el);
+                Log($"=== KQ-P1 [{tag}] === {id}: gõ {text.Length} → trong ô {v.Length} ký tự");
+            }
+            trace.Shot("da-go");
+
+            var before = Win32Windows.OfProcess(App.ProcessId).Where(w => w.Visible).Select(w => w.Hwnd).ToHashSet();
+            var f9 = Find(win, "btnF9");
+            if (f9 is null) { Log($"=== KQ-P2 [{tag}] === không thấy btnF9"); return; }
+            var (x, y) = Uia.Center(f9);
+            Uia.LeftClickPhysical(x, y);
+            var preview = Waits.TryFor(() => Win32Windows.OfProcess(App.ProcessId).FirstOrDefault(w => w.Visible && !before.Contains(w.Hwnd) && w.Title.Length > 0), TimeSpan.FromSeconds(30));
+            Log($"=== KQ-P2 [{tag}] === sau F9: cửa sổ mới=「{preview?.Title ?? "(không có)"}」 hộp thoại: {MsgBoxWin32.TextOfAll(App.ProcessId)}");
+            if (preview is null) return;
+            Thread.Sleep(4000);   // Crystal dựng trang
+            var pv = App.Automation.FromHandle(preview.Hwnd).AsWindow();
+            trace.Shot("preview-trang1");
+            InpP1MenuFlow.WriteArtifact("hokan-preview.uia.txt", Uia.DumpTree(pv, maxDepth: 10, maxChildrenPerNode: 120));
+            foreach (var d in Uia.Descendants(pv, 10))
+            {
+                var n = Txt.N(Uia.NameOf(d));
+                if (n.Length > 0 && (n.Contains('/') || n.Contains("ページ") || n.Contains("Page") || n.Contains("最後") || n.Contains("Last")))
+                    Log($"=== KQ-P3 [{tag}] === viewer: id=「{Uia.AutomationIdOf(d)}」 [{Uia.ControlTypeOf(d)}] name=「{n}」");
+            }
+            var last = Uia.Descendants(pv, 10).FirstOrDefault(d => Txt.N(Uia.NameOf(d)) is var n && (n.Contains("最後") || n.Contains("Last")));
+            if (last is not null)
+            {
+                var (lx, ly) = Uia.Center(last);
+                Uia.LeftClickPhysical(lx, ly);
+                Thread.Sleep(3000);
+                trace.Shot("preview-trang-cuoi");
+                foreach (var d in Uia.Descendants(pv, 10))
+                {
+                    var n = Txt.N(Uia.NameOf(d));
+                    if (n.Contains('/') || n.Contains("ページ") || n.Contains("Page"))
+                        Log($"=== KQ-P4 [{tag}] === sau 最後のページ: id=「{Uia.AutomationIdOf(d)}」 [{Uia.ControlTypeOf(d)}] name=「{n}」");
+                }
+            }
+            Uia.ForceForeground(preview.Hwnd);
+            Uia.SendKey(Vk.F10);
+            Thread.Sleep(1500);
+            if (Win32Windows.OfProcess(App.ProcessId).Any(w => w.Hwnd == preview.Hwnd && w.Visible)) { Uia.SendKey(Vk.Escape); Thread.Sleep(1500); }
+        }
+        catch (Exception e) { Log($"=== KQ-P1 [{tag}] === NGOẠI LỆ: {e.GetType().Name}: {e.Message}"); }
+        finally
+        {
+            foreach (var m in MsgBoxWin32.All(App.ProcessId)) { Log($"=== KQ-P1 [{tag}] === hộp thoại còn sót: {m}"); MsgBoxWin32.ClickButton(m.Hwnd, "OK", "Cancel", "キャンセル"); }
+            if (App.Window("frm203023") is { } still) { InpP1MenuFlow.Focus(still); Uia.SendKey(Vk.F10); Thread.Sleep(1500); }
+        }
+    }
+
     private Window? Open(string buttonId, string formId, TestTrace trace)
     {
         if (App.Window(formId) is { } already) return already;
