@@ -323,12 +323,11 @@ test.describe("ロールマスタ — tạo/sửa/xoá role và chặn quyền t
     await expect(key("F8")).toBeDisabled();
     await expect(key("F10")).toBeEnabled();
 
-    // End (= 登録 của BaseDialog) vẫn được bắt, chỉ báo thiếu quyền.
+    // End (= 登録 của BaseDialog) bị khoá trước như F9 (app f365d3269, 2026-10-23,
+    // `requires` trong FKeyBar): không gọi API nên không có toast 権限 nào, dialog vẫn mở.
     await member!.keyboard.press("End");
-    await expect(member!.getByText(EDIT_DENIED)).toBeVisible({
-      timeout: 15_000,
-    });
     await expect(dialog).toBeVisible();
+    await expect(member!.getByText(EDIT_DENIED)).toHaveCount(0);
     await captureFixedUi(member!, "role-permissions-goods-view-only");
   });
 
