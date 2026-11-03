@@ -3,9 +3,9 @@ import path from 'node:path'
 
 import { type Page } from '@playwright/test'
 
+import { openTreatmentEntry } from '../_shared/entry'
 import { patNo, trtDt } from '../_shared/env'
 import { expect } from '../_shared/session'
-import { closeDialogs } from '../_shared/virtual-grid'
 
 /**
  * Parity 診療入力 — vế web: mở màn + ghi snapshot JSON, schema dùng chung với vế WinForm
@@ -23,16 +23,17 @@ export const PAT_NO = patNo('3948')
 export const TRT_DT = trtDt('2026-06-28')
 const OUT_DIR = process.env.PARITY_SNAPSHOT_DIR ?? path.resolve(__dirname, '../../../capture-results/parity-snapshot')
 
-const GRID_LOAD_TIMEOUT = 60_000
 /** TABLE_GRID_COLS (treatment-entry-shared.ts) — mọi dòng của lưới đều mang class này. */
 const ROW_CLASS = 'grid-cols-[30px_290px'
 const COLS = 5
 
-/** Mở 診療入力 của bệnh nhân/ngày parity và chờ lưới nạp. */
+/**
+ * Mở 診療入力 của bệnh nhân/ngày parity và chờ lưới nạp. Đi qua `openTreatmentEntry` để có
+ * vòng nạp lại khi Vite dev server nhả hụt module (trang trắng) — `goto` một lần rồi chờ
+ * 60s làm cả loạt case đỏ giả và file chạy hơn 10 phút.
+ */
 export async function openInp(page: Page): Promise<void> {
-    await page.goto(`/treatments/${PAT_NO}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('[data-grid-cell$="|2"]').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
-    await closeDialogs(page)
+    await openTreatmentEntry(page, PAT_NO, TRT_DT)
 }
 
 /** Ghi snapshot của màn hiện tại; `extra` = dữ liệu riêng của kịch bản, so theo khoá. */
