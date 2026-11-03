@@ -96,7 +96,10 @@ test.describe('来患一覧 — F4 CSV出力', () => {
         await captureFixedUi(alert, 'visit-list-csv-i00005')
         await alert.getByRole('button', { name: /^(OK|はい|Yes)$/ }).click()
 
-        const bytes = fs.readFileSync(await download.path())
+        // download.path() không dùng được khi Playwright nối tới trình duyệt từ xa; saveAs() chạy được cả hai.
+        const saved = test.info().outputPath(FILE_NAME)
+        await download.saveAs(saved)
+        const bytes = fs.readFileSync(saved)
         const lines = new TextDecoder('shift_jis').decode(bytes).split(/\r?\n/).filter((l) => l !== '')
         expect(lines[0], 'header = editCsvHeader của frm204008').toBe(HEADER)
         expect(lines.length, 'có dòng dữ liệu ngoài header').toBeGreaterThan(1)
