@@ -28,6 +28,7 @@ import {
     type KonSnapshot,
     type SigaSnapshot,
 } from '../_shared/db'
+import { readSessionSiga } from '../_shared/siga-draft'
 import { makeStep } from '../_shared/step'
 import { closeDialogs } from '../_shared/virtual-grid'
 
@@ -58,6 +59,15 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *   · `Chk_PModeKesson` KHÔNG bật cờ    ⇒ 「いいえ」 KHÔNG lùi      → siga-tooth-status/p-mode-kesson-siga.spec.ts
  * Bất biến cũ ("discard xong DB phải y nguyên") vì thế đã SAI, không phải chỉ lạc
  * hậu. Xem `userapp/inp-p0-open-issues.md` ISSUE-15.
+ *
+ * ── CẬP NHẬT 2026-11-03: 歯式 là BẢN NHÁP tới F9 — TC-5/5b VIẾT LẠI LẦN NỮA ──
+ * Từ app 2b505dffa (2026-09-23) ba đường kia chỉ TÍNH bản nháp `toothStatus`, KHÔNG
+ * ghi `siga` trước F9, và `POST /tenant/siga/restore` đã bị gỡ: 「いいえ」 chỉ vứt bản
+ * nháp. Doc `ToothStatusOverlay.cs` ghi rõ đây là lệch WinForm CÓ CHỦ Ý — kể cả nửa
+ * `DelExtRec`/`Chk_PModeKesson` mà WinForm giữ lại sau 「いいえ」 — vì ghi một chỉnh
+ * sửa chưa lưu vào bảng mà mọi người dùng khác cùng đọc là sai trong app đa người dùng.
+ * ⇒ TC-5/5b đọc 歯式 CỦA PHIÊN qua `_shared/siga-draft.ts`, và sau 「いいえ」 thì
+ * `siga` phải Y NGUYÊN như trước phiên — ở CẢ HAI vế.
  *
  * ── LỊCH SỬ CHẠY THẬT (tenant1 local, PAT_NO 12138) ─────────────────────────
  * 2026-08-03 — TRƯỚC khi sửa: 3 passed / 3 failed. Cả bốn gap đều được tái hiện:
@@ -214,8 +224,9 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *     không có gì bị xoá). Nghe như bug — và đúng là bug, nhưng là bug CỦA WINFORM,
  *     port nguyên theo quyết định 2026-08-25. Hồ sơ: ISSUE-15.
  *
- * ⛔ ĐỪNG "sửa" TC-5 thành "sau 「いいえ」 thì siga phải y nguyên". Bất biến đó chỉ
- *    đúng hồi bản port chưa ghi gì trước F9; nay nó mâu thuẫn với chính WinForm.
+ * ⛔ (Lỗi thời từ 2026-09-23) Khối trên mô tả WinForm. App web cố ý KHÔNG giữ vế
+ *    TC-5: không gì xuống DB trước F9 nên 「いいえ」 để `siga` y nguyên ở cả hai vế —
+ *    xem 「CẬP NHẬT 2026-11-03」 ở đầu file.
  * ═════════════════════════════════════════════════════════════════════════════
  * VÌ SAO 185 PHẢI NHẬP QUA UI, KHÔNG SEED DB (bẫy đã vấp — đừng lặp lại)
  * ═════════════════════════════════════════════════════════════════════════════
@@ -373,7 +384,7 @@ const SN_MISSING = 9
 
 const BULK_SAVE_PATH = '/tenant/treatment/bulk-save'
 /** Endpoint `Restore_SK` — 「いいえ」 ở dirty gate (`TenantSigaEndpoints.cs`). */
-const RESTORE_PATH = '/tenant/siga/restore'
+const TOOTH_STATUS_PATH = '/tenant/siga/tooth-status-change'
 /** Endpoint `DelExtRec` — xoá dòng 抜歯 ghi 歯式 NGAY, không đợi F9 (`siga-api.ts:62`). */
 const EXT_REVERT_PATH = '/tenant/siga/extraction-revert'
 
@@ -1075,18 +1086,11 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
     // ═════════════════════════════════════════════════════════════════════════
 
     /**
-     * Bấm F10 戻る rồi trả lời 「いいえ」 ở hộp thoại dirty gate.
-     * Chờ `POST /tenant/siga/restore` nếu nó có bay ra (chỉ khi cờ đã bật).
+     * Bấm F10 戻る rồi trả lời 「いいえ」 ở hộp thoại dirty gate — bản nháp 歯式 bị vứt,
+     * không còn request lùi nào (`/tenant/siga/restore` đã gỡ cùng mô hình bản nháp).
      */
-    async function exitWithoutSaving(): Promise<number | null> {
+    async function exitWithoutSaving(): Promise<void> {
         await closeDialogs(page)
-        const restored = page
-            .waitForResponse(
-                (r) => r.url().includes(RESTORE_PATH) && r.request().method() === 'POST',
-                { timeout: 20_000 },
-            )
-            .catch(() => null)
-
         await page.getByRole('button', { name: /F10\s*戻る/ }).click()
 
         const gate = page.getByText('処置データは変更されています。保存しますか？')
@@ -1107,10 +1111,6 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
         await gateDialog.getByRole('button', { name: /^(No|いいえ)$/ }).click()
         await expect(gate, 'bấm No mà hộp thoại không đóng').toBeHidden({ timeout: 15_000 })
         await step()
-
-        const res = await restored
-        console.log(`「いいえ」 → POST ${RESTORE_PATH}: ${res ? res.status() : 'KHÔNG có request nào'}`)
-        return res ? res.status() : null
     }
 
     /** Chênh lệch từng cột giữa hai snapshot, dạng chuỗi đọc được. */
@@ -1125,7 +1125,7 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
         ].map((d) => `${d.col}: ${d.b}→${d.a}`)
     }
 
-    test('TC-5 — 「いいえ」 KHÔNG lùi cái DelExtRec vừa ghi (pSiga_chg không bật)', async () => {
+    test('TC-5 — xoá 抜歯 rồi 「いいえ」: 歯式 phiên về 健全歯, DB giữ nguyên 欠損 (lệch WinForm có chủ ý)', async () => {
         // Dựng một 歯式 ĐÃ LƯU rồi mới sửa lưới — không có mốc đã lưu thì nhánh
         // discard chẳng chứng minh được gì.
         await writeSigaTeeth(Number(PAT_NO), { se: { [PERM_SE_COL]: SE_VITAL } })
@@ -1152,7 +1152,7 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
         ).toBe(SE_MISSING)
         await step()
 
-        // Xoá dòng 抜歯 — DelExtRec ghi 健全歯 NGAY (không đợi F9, không bật cờ).
+        // Xoá dòng 抜歯 — DelExtRec tính 健全歯 vào bản nháp NGAY (không đợi F9).
         const revertRes = await deleteRowByText(NM.extDiscard)
         expect(
             revertRes,
@@ -1163,37 +1163,28 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
         ).not.toBeNull()
         expect(revertRes!.status(), `POST ${EXT_REVERT_PATH} phải thành công`).toBeLessThan(400)
 
-        const sAfterDelete = await mustReadSiga()
+        const sAfterDelete = await readSessionSiga(page, Number(PAT_NO), revertRes!)
         expect(
             seOf(sAfterDelete, PERM_SE_COL),
             `Xoá dòng 179/${EXT_SB} phải gọi DelExtRec ngay lúc xoá (frm203002.cs:3949 → :6185) ` +
-                `⇒ se_${PERM_SE_COL} về ${SE_VITAL} TRƯỚC khi bấm bất cứ nút lưu nào. ` +
+                `⇒ 歯式 của PHIÊN có se_${PERM_SE_COL} = ${SE_VITAL} TRƯỚC khi bấm bất cứ nút lưu nào. ` +
                 `Đang là ${seOf(sAfterDelete, PERM_SE_COL)}.`,
         ).toBe(SE_VITAL)
         await step()
 
-        const restoreStatus = await exitWithoutSaving()
+        await exitWithoutSaving()
 
-        // ── vế (a) — bất biến parity: 「いいえ」 KHÔNG hoàn tác DelExtRec ──────────
+        // ── vế (a) — 「いいえ」 vứt bản nháp ⇒ DB y như mốc đã lưu ─────────────────
+        // WinForm giữ 健全歯 ở đây (DelExtRec đã lên đĩa, không bật pSiga_chg). Web cố ý
+        // không: DelExtRec chỉ nằm trong bản nháp nên đi cùng phiên — doc ToothStatusOverlay.cs.
         const s = await mustReadSiga()
         expect
             .soft(
-                seOf(s, PERM_SE_COL),
-                `(a) DelExtRec CỐ Ý không bật pSiga_chg (WinForm phát một \`update Siga\` trần, ` +
-                    'frm203002.cs:6185-6190), nên `Restore_SK` bỏ qua nó (modSave.cs:4684) và răng ' +
-                    `PHẢI ở lại ${SE_VITAL} sau 「いいえ」. Ra ${SE_MISSING} nghĩa là DelExtRec đang ` +
-                    'bị arm cờ nhầm — lúc đó một thao tác xoá rồi huỷ sẽ khôi phục cả những 欠損 mà ' +
-                    'người dùng thật sự muốn bỏ. Xem inp-p0-open-issues.md ISSUE-15.',
+                sigaDrift(sAtMoc, s),
+                '(a) 「いいえ」 = không lưu ⇒ `siga` phải Y HỆT mốc đã lưu ngay trước khi xoá. ' +
+                    'Còn chênh lệch nghĩa là bản nháp 歯式 đã lọt xuống DB trước F9.',
             )
-            .toBe(SE_VITAL)
-        expect
-            .soft(
-                restoreStatus,
-                '(a2) Phiên CHỈ xoá ⇒ cả hai cờ đều false ⇒ FE không được gửi request nào tới ' +
-                    `${RESTORE_PATH} (toothStatusRestorePayload trả undefined). Có request nghĩa là ` +
-                    'cờ đang bị bật sai chỗ.',
-            )
-            .toBeNull()
+            .toEqual([])
 
         // ── vế (b) — dòng 処置 chưa hề bị xoá khỏi trn_trn ────────────────────
         // 「いいえ」 = KHÔNG lưu, nên bản ghi vẫn còn. Đây chính là trạng thái tự mâu
@@ -1220,11 +1211,11 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
         await step()
     })
 
-    test('TC-5b — 「いいえ」 PHẢI lùi cái SigaChg vừa ghi (Restore_SK thật sự chạy)', async () => {
-        // Vế đối xứng của TC-5, và là vế duy nhất chứng minh `Restore_SK` có chạy:
-        // 185 + はい gọi SigaChg(179,0) ⇒ ghi 欠損歯 NGAY và BẬT pSiga_chg
-        // (frm203016.cs:1049 + :1282). Không bấm F9. 「いいえ」 phải trả răng về đúng
-        // snapshot lúc mở màn (modSave.cs:455-463 → :4700).
+    test('TC-5b — nhập 185「はい」 rồi 「いいえ」: 歯式 phiên thành 欠損, DB y như lúc mở màn', async () => {
+        // Vế đối xứng của TC-5: 185 + はい gọi SigaChg(179,0) ⇒ 欠損歯 NGAY trong phiên
+        // (frm203016.cs:1049 + :1282). Không bấm F9. 「いいえ」 ⇒ DB phải y như lúc mở màn
+        // — WinForm đạt điều đó bằng Restore_SK (modSave.cs:455-463 → :4700), web vì bản
+        // nháp chưa bao giờ xuống DB.
         //
         // ⚠️ Thứ tự BẮT BUỘC: writeSigaTeeth TRƯỚC seedBuiProviderRow, vì
         // `resetMonthTo` mở lại màn hình và CHÍNH lúc đó FE mới chụp snapshot
@@ -1238,28 +1229,32 @@ test.describe('診療入力 — 4 gap còn lại của 自歯状況変更 / 根�
             `harness: se_${PERM_SE_COL} phải là ${SE_VITAL} lúc mở màn`,
         ).toBe(SE_VITAL)
 
+        // Arm TRƯỚC khi nhập: SigaChg bắn không chờ, response có thể về rất sớm.
+        const sigaChg = page
+            .waitForResponse(
+                (r) => r.url().includes(TOOTH_STATUS_PATH) && r.request().method() === 'POST',
+                { timeout: 30_000 },
+            )
+            .catch(() => null)
         const asked = await enterCystViaUi(true)
         expect(asked, 'hộp thoại 抜歯同時 không bung — xem TC-4').toBe(true)
+        const sigaChgRes = await sigaChg
+        expect(
+            sigaChgRes,
+            `185 + はい phải gọi POST ${TOOTH_STATUS_PATH} (SigaChg) ngay lúc chốt 処置, trước 登録.`,
+        ).not.toBeNull()
 
-        // Chưa F9, nhưng 歯式 phải đã đổi: SigaChg ghi ngay lúc chốt 処置.
-        const sAfterEntry = await mustReadSiga()
+        // Chưa F9, nhưng 歯式 của PHIÊN phải đã đổi.
+        const sAfterEntry = await readSessionSiga(page, Number(PAT_NO), sigaChgRes!)
         console.log(`sau khi nhập 185「はい」 (chưa F9): se_${PERM_SE_COL} = ${seOf(sAfterEntry, PERM_SE_COL)}`)
         expect(
             seOf(sAfterEntry, PERM_SE_COL),
-            `SigaChg ghi 歯式 NGAY lúc chốt 処置, trước 登録 (frm203016.IregCodChk → :1049/:1282). ` +
-                `Vẫn là ${SE_VITAL} nghĩa là đường ghi eager không chạy ⇒ TC này không kiểm được gì, ` +
-                'và cờ pSiga_chg cũng chưa bao giờ bật.',
+            `SigaChg đổi 歯式 NGAY lúc chốt 処置, trước 登録 (frm203016.IregCodChk → :1049/:1282). ` +
+                `歯式 của phiên vẫn là ${SE_VITAL} nghĩa là bản nháp không mang 欠損 ⇒ TC này không kiểm được gì.`,
         ).toBe(SE_MISSING)
         await step()
 
-        const restoreStatus = await exitWithoutSaving()
-        expect
-            .soft(
-                restoreStatus,
-                `SigaChg BẬT pSiga_chg ⇒ 「いいえ」 phải gọi ${RESTORE_PATH} (RestoreData → Restore_SK, ` +
-                    'modSave.cs:455-463). Không có request nào ⇒ nhánh 「いいえ」 vẫn đang bỏ trống.',
-            )
-            .toBeLessThan(400)
+        await exitWithoutSaving()
 
         const sAfterDiscard = await mustReadSiga()
         console.log(`sau 「いいえ」: se_${PERM_SE_COL} = ${seOf(sAfterDiscard, PERM_SE_COL)}`)

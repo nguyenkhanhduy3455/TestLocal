@@ -19,6 +19,7 @@ import {
     writeSigaTeeth,
     type SigaSnapshot,
 } from '../_shared/db'
+import { readSessionSiga } from '../_shared/siga-draft'
 import { makeStep } from '../_shared/step'
 import { closeDialogs } from '../_shared/virtual-grid'
 
@@ -34,7 +35,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * `POST /tenant/siga/extraction-revert` NGAY, không đợi F9.
  * Hai hệ quả cho chính spec này:
  *
- *   1. 歯式 trở về 健全歯 NGAY LÚC XOÁ (TC-3), không còn phải đợi F9 nữa. BẪY 4 cũ
+ *   1. 歯式 (của phiên — xem cập nhật 2026-11-03) trở về 健全歯 NGAY LÚC XOÁ (TC-3), không còn phải đợi F9 nữa. BẪY 4 cũ
  *      ("assert ngay sau Delete là đỏ oan") đã ĐẢO: nay phải chờ response
  *      `POST /tenant/siga/extraction-revert` thay vì `bulk-save`.
  *   2. TC-6 (乳歯 → 5) KHÔNG còn là bug. Bug `sn = 0` mô tả bên dưới đã được sửa từ
@@ -46,6 +47,13 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * bật) rồi `Apply`. `DelExtRec` CỐ Ý không bật cờ đó, nên chuỗi TC-3 → TC-4/5/6
  * dưới đây (phiên CHỈ xoá, không nhập 処置) không bị F9 ghi đè — đúng parity.
  * Xem `userapp/inp-p0-open-issues.md` ISSUE-15 và `inp-c1-c2-c7-plan.md` §KQ.
+ *
+ * ─── CẬP NHẬT 2026-11-03 — 歯式 là BẢN NHÁP tới F9 (app 2b505dffa, 2026-09-23) ──
+ * `extraction-revert` vẫn được gọi NGAY lúc xoá, nhưng chỉ TÍNH: trả bản nháp
+ * `toothStatus` mới, KHÔNG ghi `siga`. Bản nháp đi kèm F9 và được áp vào dòng `siga`
+ * lúc lưu. ⇒ TC-3 đọc 歯式 của PHIÊN (`GET /tenant/siga?toothStatus=…`, xem
+ * `_shared/siga-draft.ts`), còn DB chỉ được soi SAU F9 (TC-3b → TC-6). Đây là lệch
+ * WinForm CÓ CHỦ Ý (doc `ToothStatusOverlay.cs`), không phải bug.
  *
  * ─── Nguồn WinForm ────────────────────────────────────────────────────────────
  *  - INP/Forms/frm203002.cs:3944-3951 — trong `DeleteRow()`: dòng bị xoá có
@@ -119,7 +127,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *     vòng `nextMilkVal` (tooth-bui.ts). Để 1 thì nó thành 永久歯 và bug không lộ.
  *  3. `sn = 0` KHÔNG đổi màu chart (xem mục "Hệ quả" trên) ⇒ đừng cố assert bằng
  *     màu, phải soi DB / `GET /tenant/siga`.
- *  4. ĐÃ ĐẢO TỪ 2026-09-03: xoá dòng 抜歯 nay GHI DB NGAY (`DelExtRec`). Mốc phải
+ *  4. ĐÃ ĐẢO TỪ 2026-09-03: xoá dòng 抜歯 nay gọi `extraction-revert` NGAY (`DelExtRec`, chỉ tính bản nháp). Mốc phải
  *     chờ là response `POST /tenant/siga/extraction-revert`, KHÔNG phải `bulk-save`.
  *     `deleteRowByText` đã bọc sẵn việc chờ đó. (Các thao tác xoá KHÁC — dòng không
  *     phải 179 — vẫn chỉ đổi state như cũ, nên helper chờ có điều kiện.)
@@ -271,6 +279,8 @@ test.describe('診療入力 — 抜歯行削除 → 健全歯復元 (DelExtRec /
     let sigaBefore: SigaSnapshot | null = null
     /** true khi dòng siga do CHÍNH test tạo ⇒ afterAll xoá hẳn thay vì restore. */
     let sigaRowCreated = false
+    /** 歯式 của phiên ngay sau khi xoá (TC-3) — cái F9 phải lưu xuống nguyên vẹn (TC-3b). */
+    let sessionAfterDelete: SigaSnapshot | null = null
 
     /** Đọc một cột `se_n` (n là số cột 1-based). */
     const seOf = (snap: SigaSnapshot, col: number) => snap.se[col - 1]
@@ -333,7 +343,7 @@ test.describe('診療入力 — 抜歯行削除 → 健全歯復元 (DelExtRec /
                 `đang mở tháng khác (TEST_TRT_DT = ${TRT_DT})`,
         ).toBeDefined()
 
-        // BẪY 4 (đã đảo): xoá dòng 抜歯 GHI DB NGAY. Arm mốc chờ TRƯỚC khi bấm Delete,
+        // BẪY 4 (đã đảo): xoá dòng 抜歯 gọi extraction-revert NGAY. Arm mốc chờ TRƯỚC khi bấm Delete,
         // nếu không request có thể xong trước khi kịp lắng nghe.
         const reverted = page
             .waitForResponse(
@@ -578,7 +588,7 @@ test.describe('診療入力 — 抜歯行削除 → 健全歯復元 (DelExtRec /
         await step()
     })
 
-    test('TC-3 — DelExtRec: xoá dòng 抜歯 ghi 健全歯 NGAY, TRƯỚC khi bấm F9', async () => {
+    test('TC-3 — DelExtRec: xoá dòng 抜歯 đưa 歯式 của phiên về 健全歯 NGAY, TRƯỚC khi bấm F9', async () => {
         // Đây là vế cốt lõi của DelExtRec và là thứ phân biệt bản port đúng với bản
         // "re-derive ở F9" cũ: WinForm phát `update Siga set …` ngay trong vòng lặp
         // xoá dòng (frm203002.cs:3944-3951 → :6185), TRƯỚC và ĐỘC LẬP với 登録.
@@ -596,8 +606,9 @@ test.describe('診療入力 — 抜歯行削除 → 健全歯復元 (DelExtRec /
         expect(resMilk, `xoá dòng 179/${EXT_SB_MILK} cũng phải gọi ${EXT_REVERT_PATH}`).not.toBeNull()
         await step()
 
-        // CHƯA hề bấm F9 — nhưng 歯式 phải đã lùi rồi.
-        const s = await mustReadSiga()
+        // CHƯA hề bấm F9 — 歯式 của PHIÊN phải đã lùi rồi (DB thì chưa, xem đầu file).
+        const s = await readSessionSiga(page, Number(PAT_NO), resMilk!)
+        sessionAfterDelete = s
         console.log(
             `sau khi XOÁ (chưa F9): se_${PERM_SE_COL} = ${seOf(s, PERM_SE_COL)}, ` +
                 `sn_${MILK_SN_COL} = ${snOf(s, MILK_SN_COL)}`,
@@ -605,24 +616,25 @@ test.describe('診療入力 — 抜歯行削除 → 健全歯復元 (DelExtRec /
         expect
             .soft(
                 seOf(s, PERM_SE_COL),
-                `永久歯: DelExtRec ghi thẳng "SE${PERM_SE_COL} = 0" (frm203002.cs:6151) ngay lúc xoá.`,
+                `永久歯: DelExtRec đặt "SE${PERM_SE_COL} = 0" (frm203002.cs:6151) ngay lúc xoá — đọc qua bản nháp của phiên.`,
             )
             .toBe(SE_VITAL)
         expect
             .soft(
                 snOf(s, MILK_SN_COL),
-                `乳歯: DelExtRec ghi "SN${MILK_SN_COL} = 5" (frm203002.cs:6164/6175) ngay lúc xoá — ` +
+                `乳歯: DelExtRec đặt "SN${MILK_SN_COL} = 5" (frm203002.cs:6164/6175) ngay lúc xoá — ` +
                     '5 mới là 生活歯 của 乳歯 (CommonChk.cs:549), không phải 0.',
             )
             .toBe(SN_VITAL)
         await step()
     })
 
-    test('TC-3b (mốc) — F9 lần 2: dòng biến mất và 健全歯 KHÔNG bị ghi đè', async () => {
+    test('TC-3b (mốc) — F9 lần 2: dòng biến mất và 歯式 lưu xuống ĐÚNG cái phiên đang thấy', async () => {
         // Phiên này CHỈ xoá, không nhập 処置 nào ⇒ pSiga_chg = false ⇒ F9 KHÔNG chạy
-        // Restore_Siga (modSave.cs:4684), nên cái DelExtRec vừa ghi phải sống sót.
-        // Đây chính là nhánh thứ nhất của bảng so sánh ở inp-c1-c2-c7-plan.md §C1.3.
-        const before = await mustReadSiga()
+        // Restore_Siga (modSave.cs:4684), nên cái DelExtRec của phiên phải sống sót.
+        // Web: DelExtRec nằm ở nửa Durable của bản nháp, F9 áp nó vào dòng siga.
+        expect(sessionAfterDelete, 'TC-3 chưa đọc được 歯式 của phiên').not.toBeNull()
+        const before = sessionAfterDelete!
 
         // saveF9() đã nạp lại màn hình ⇒ lưới dưới đây phản ánh cái ĐÃ LƯU.
         await saveF9()
@@ -647,7 +659,8 @@ test.describe('診療入力 — 抜歯行削除 → 健全歯復元 (DelExtRec /
                     .map((v, i) => ({ col: `sn_${i + 1}`, before: before.sn[i], after: v }))
                     .filter((d) => d.before !== d.after),
             ].map((d) => `${d.col}: ${d.before}→${d.after}`),
-            'Phiên CHỈ xoá dòng (không nhập 処置 nào) ⇒ pSiga_chg = false ⇒ F9 phải BỎ QUA ' +
+            'DB sau F9 phải khớp 歯式 phiên đã thấy ở TC-3. ' +
+                'Phiên CHỈ xoá dòng (không nhập 処置 nào) ⇒ pSiga_chg = false ⇒ F9 phải BỎ QUA ' +
                 'Restore_Siga (modSave.cs:4684) và SigaChg_Save không còn dòng nào để ghi. ' +
                 'Có cột nào đổi nghĩa là F9 vẫn đang tự ý dựng lại 歯式 — quay lại mô hình ' +
                 '`Revert(dòng cũ) + Apply(dòng mới)` đã bị gỡ.',

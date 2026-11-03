@@ -18,6 +18,7 @@ import {
     writeSigaTeeth,
     type SigaSnapshot,
 } from '../_shared/db'
+import { readSessionSiga } from '../_shared/siga-draft'
 import { makeStep } from '../_shared/step'
 import { closeDialogs } from '../_shared/virtual-grid'
 
@@ -85,6 +86,12 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *  · Endpoint này CỐ Ý không bật `pSiga_chg`, nên 「いいえ」 lúc thoát KHÔNG hoàn tác
  *    (TC-6). Cùng cơ chế với `DelExtRec` — xem ISSUE-15.
  *
+ * ── CẬP NHẬT 2026-11-03: 歯式 là BẢN NHÁP tới F9 (app 2b505dffa, 2026-09-23) ──
+ *  `p-mode-missing` chỉ TÍNH: trả bản nháp `toothStatus` (nửa Durable), KHÔNG ghi
+ *  `siga`. ⇒ TC-3/4/5 đọc 歯式 CỦA PHIÊN qua `_shared/siga-draft.ts`. TC-6 đổi chiều:
+ *  「いいえ」 vứt bản nháp nên DB y như lúc mở màn — lệch WinForm CÓ CHỦ Ý (doc
+ *  `ToothStatusOverlay.cs`), không phải bug. Spec vẫn không bấm F9.
+ *
  * ── ẢNH CHỤP pSiga_old — KIỂM Ở SPEC KHÁC, ĐỪNG THÊM VÀO ĐÂY ─────────────────
  *  Vòng lặp dò `updFlg` của WinForm VỪA dò VỪA chụp lại `pSiga_old`, và có `break`
  *  giữa chừng (:7457-7464) ⇒ `pSiga_old` chỉ được làm mới TỚI ĐÚNG chỉ số vừa break,
@@ -110,7 +117,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *      `aggregatePGTeeth` gom được và nút Ｐ変更 có việc để làm.
  *
  * ⚠️ Spec KHÔNG bấm F9 nên KHÔNG ghi `trn_trn`, nhưng vẫn cần TEST_ALLOW_SAVE=1:
- *    `Chk_PModeKesson` tự nó là một lệnh GHI DB THẬT vào bảng `siga` (Rule 18.1).
+ *    `beforeAll` tự ghi bảng `siga` (ép se_* về 生活歯) — Rule 18.1.
  *
  * ═════════════════════════════════════════════════════════════════════════════
  * BẪY CẦN BIẾT
@@ -265,6 +272,8 @@ test.describe('診療入力 — Ｐ変更 → 欠損自動マーキング (Chk_P
 
     /** 部位 32 ô mà FE thực sự gửi lên trong request Chk_PModeKesson. */
     let sentBui: number[] | null = null
+    /** 歯式 của phiên ngay sau Ｐ変更 → はい (TC-3); TC-4/5/6 đọc lại cái này. */
+    let sessionAfterPMode: SigaSnapshot | null = null
     /** Số lần endpoint được gọi — Ｐ変更 chỉ được bắn ĐÚNG một lần cho một lượt はい. */
     let pModeCalls = 0
 
@@ -529,8 +538,9 @@ test.describe('診療入力 — Ｐ変更 → 欠損自動マーキング (Chk_P
         ).not.toBeNull()
         console.log(`bui FE gửi lên: [${sentBui!.join(',')}]`)
 
-        const s = await mustReadSiga()
-        console.log(`siga sau Ｐ変更: se = [${s.se.join(',')}]`)
+        const s = await readSessionSiga(page, Number(PAT_NO), res!)
+        sessionAfterPMode = s
+        console.log(`歯式 của phiên sau Ｐ変更: se = [${s.se.join(',')}]`)
 
         // Kỳ vọng suy TRỰC TIẾP từ luật ở :7472-7476, dùng chính tập Ｐ mới FE đã gửi.
         const wrong: string[] = []
@@ -573,7 +583,8 @@ test.describe('診療入力 — Ｐ変更 → 欠損自動マーキング (Chk_P
 
     test('TC-4 (đối chứng) — 4 răng khôn KHÔNG bao giờ bị đánh dấu', async () => {
         // frm203002.cs:7460 + :7472 — cả vòng dò lẫn vòng ghi đều bỏ qua i ∈ {0,15,16,31}.
-        const s = await mustReadSiga()
+        expect(sessionAfterPMode, 'TC-3 chưa đọc được 歯式 của phiên').not.toBeNull()
+        const s = sessionAfterPMode!
         const touched = WISDOM_SLOTS.filter((slot) => seOf(s, slot + 1) !== SE_VITAL).map(
             (slot) => `se_${slot + 1} = ${seOf(s, slot + 1)}`,
         )
@@ -590,7 +601,8 @@ test.describe('診療入力 — Ｐ変更 → 欠損自動マーキング (Chk_P
         // setSigaData/getSigaData của frm203002 chỉ map 1..32 → se1..se32, không có
         // nhánh sn nào (:7495-7570) ⇒ 乳歯 nằm ngoài phạm vi theo cấu trúc.
         expect(sigaBefore, 'không chụp được nguyên trạng siga ở beforeAll').not.toBeNull()
-        const s = await mustReadSiga()
+        expect(sessionAfterPMode, 'TC-3 chưa đọc được 歯式 của phiên').not.toBeNull()
+        const s = sessionAfterPMode!
         const snDrift = s.sn
             .map((v, i) => ({ col: i + 1, before: sigaBefore!.sn[i], after: v }))
             .filter((d) => d.before !== d.after)
@@ -602,10 +614,15 @@ test.describe('診療入力 — Ｐ変更 → 欠損自動マーキング (Chk_P
         await step()
     })
 
-    test('TC-6 — 「いいえ」 lúc thoát KHÔNG hoàn tác dấu 欠損 vừa ghi', async () => {
-        // Chk_PModeKesson chạy trong transaction RIÊNG và commit ngay, KHÔNG bật
-        // pSiga_chg (frm203002.cs:7480-7491) ⇒ Restore_SK bỏ qua nó (modSave.cs:4684).
-        // Cùng bản chất với DelExtRec — xem ISSUE-15.
+    test('TC-6 — 「いいえ」 lúc thoát: DB y như lúc mở màn, dấu 欠損 của phiên bị vứt (lệch WinForm có chủ ý)', async () => {
+        // WinForm: Chk_PModeKesson commit ngay, KHÔNG bật pSiga_chg (frm203002.cs:7480-7491)
+        // ⇒ Restore_SK bỏ qua nó (modSave.cs:4684) ⇒ dấu 欠損 Ở LẠI sau 「いいえ」.
+        // Web cố ý KHÁC: dấu đó chỉ nằm trong bản nháp của phiên (doc ToothStatusOverlay.cs).
+        expect(sessionAfterPMode, 'TC-3 chưa đọc được 歯式 của phiên').not.toBeNull()
+        expect(
+            sessionAfterPMode!.se.some((v) => v === SE_MISSING),
+            'phiên không mang dấu 欠損 nào ⇒ vế dưới không chứng minh được gì',
+        ).toBe(true)
         const before = await mustReadSiga()
 
         await closeDialogs(page)
@@ -632,10 +649,8 @@ test.describe('診療入力 — Ｐ変更 → 欠損自動マーキング (Chk_P
                 .map((v, i) => ({ col: i + 1, b: before.se[i], a: v }))
                 .filter((d) => d.b !== d.a)
                 .map((d) => `se_${d.col}: ${d.b}→${d.a}`),
-            'Chk_PModeKesson commit ngay trong transaction riêng và KHÔNG bật pSiga_chg, nên ' +
-                '「いいえ」 không có gì để lùi — dấu 欠損 phải ở lại y nguyên. Có cột quay về ' +
-                `${SE_VITAL} nghĩa là endpoint p-mode-missing đang arm cờ nhầm; khi đó một thao tác ` +
-                'Ｐ変更 rồi huỷ sẽ khôi phục cả những 欠損 mà người dùng thật sự muốn giữ.',
+            '「いいえ」 = không lưu ⇒ `siga` phải y như trước khi thoát (= lúc mở màn). ' +
+                'Có cột đổi nghĩa là bản nháp Ｐ変更 đã lọt xuống DB.',
         ).toEqual([])
         await step()
     })

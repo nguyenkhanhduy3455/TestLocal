@@ -1,4 +1,4 @@
-import { type Page, type Request } from '@playwright/test'
+import { type Page, type Response } from '@playwright/test'
 
 import { patNo } from '../_shared/env'
 import { installOverlayHandlers } from '../_shared/overlays'
@@ -21,6 +21,7 @@ import {
     writeSigaTeeth,
     type SigaSnapshot,
 } from '../_shared/db'
+import { readSessionSiga } from '../_shared/siga-draft'
 import { makeStep } from '../_shared/step'
 import { closeDialogs } from '../_shared/virtual-grid'
 
@@ -32,7 +33,21 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * `frm203002.cs:7455-7466`, không copy từ hàm nào của app.
  *
  * ═════════════════════════════════════════════════════════════════════════════
- * HAI THỨ ĐANG KHOÁ Ở ĐÂY
+ * ⛔ CẬP NHẬT 2026-11-03 — CẢ HAI LỆCH (A)/(B) DƯỚI ĐÂY KHÔNG CÒN TỒN TẠI TRÊN WEB
+ * ═════════════════════════════════════════════════════════════════════════════
+ * Từ app 2b505dffa (2026-09-23) `SigaChg` / `Chk_PModeKesson` chỉ TÍNH bản nháp
+ * `toothStatus`, KHÔNG ghi `siga` trước F9, và `POST /tenant/siga/restore` đã gỡ:
+ * 「いいえ」 chỉ vứt bản nháp. Không có ghi nóng ⇒ không có `pSiga_old` lai (A) và không
+ * có cuộc đua ghi-nóng/restore (B). Doc `ToothStatusOverlay.cs` ghi rõ đây là lệch
+ * WinForm CÓ CHỦ Ý. Nên spec giờ khoá điều còn lại có nghĩa:
+ *   · TC-2: 抜歯 qua UI ⇒ 歯式 CỦA PHIÊN thành 欠損 ngay (đọc qua `_shared/siga-draft.ts`);
+ *   · TC-4: 抜歯 → Ｐ変更 → 「いいえ」 ⇒ DB Y HỆT lúc mở màn (WinForm thì ra hàng lai);
+ *   · TC-5: 「いいえ」 khi lệnh tính 歯式 còn bay ⇒ DB vẫn y hệt lúc mở màn, response
+ *     đáp muộn không được lọt xuống DB.
+ * Phần (A)/(B) bên dưới giữ lại để hiểu WinForm, KHÔNG còn là kỳ vọng của spec.
+ *
+ * ═════════════════════════════════════════════════════════════════════════════
+ * HAI THỨ ĐANG KHOÁ Ở ĐÂY (WinForm — xem cập nhật 2026-11-03 bên trên)
  * ═════════════════════════════════════════════════════════════════════════════
  * (A) `Chk_PModeKesson` LÀM MỚI `pSiga_old` — nhưng chỉ MỘT PHẦN ĐẦU.
  *
@@ -101,8 +116,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  *       · ô 10 (左上3) — răng thường, để tập Ｐ không chỉ toàn 智歯.
  *
  * ⚠️ Spec KHÔNG bấm F9 nên KHÔNG ghi `trn_trn`, nhưng VẪN cần TEST_ALLOW_SAVE=1:
- *    `SigaChg` và `Chk_PModeKesson` tự chúng là lệnh GHI DB THẬT vào bảng `siga`
- *    (GUIDELINE Rule 18.1).
+ *    `resetPhase` tự ghi bảng `siga` (ép se_* về 生活歯) — GUIDELINE Rule 18.1.
  *
  * ═════════════════════════════════════════════════════════════════════════════
  * BẪY CẦN BIẾT
@@ -170,9 +184,6 @@ const SEED_NM = 'Ｐ変更復元テスト行'
 const WATCH_SLOTS = [0, 10, 30] as const
 const P_BUI_VAL = 1
 
-/** 4 ô 智歯 WinForm luôn bỏ qua (frm203002.cs:7460/:7472) — 0-based. */
-const WISDOM_SLOTS = [0, 15, 16, 31] as const
-
 // ─── Miền giá trị 自歯状況 (CommonChk.cs:497-580) ─────────────────────────────
 /** 永久歯 生活歯 — cũng là DEFAULT của cột `se_*`. */
 const SE_VITAL = 0
@@ -183,7 +194,6 @@ const P_MODE_PATH = '/tenant/siga/p-mode-missing'
 /** `SigaChg` — ghi nóng lúc chốt 処置 (`TenantSigaEndpoints.cs`). */
 const TOOTH_STATUS_PATH = '/tenant/siga/tooth-status-change'
 /** `Restore_SK` — 「いいえ」 ở dirty gate. */
-const RESTORE_PATH = '/tenant/siga/restore'
 
 const GRID_LOAD_TIMEOUT = 60_000
 const GRID_RELOAD_TIMEOUT = 30_000
@@ -242,22 +252,6 @@ async function gridRows(page: Page): Promise<GridRow[]> {
 const buiAt = (slots: readonly number[], val: number) =>
     Array.from({ length: 32 }, (_, i) => (slots.includes(i) ? val : 0))
 
-/**
- * Bao nhiêu ô ĐẦU của `pSiga_old.se` được `Chk_PModeKesson` lấy lại từ DB.
- *
- * Viết lại TỪ `frm203002.cs:7455-7466`, KHÔNG import từ app — spec phải kiểm được bản
- * port chứ không lặp lại nó. Ba điều kiện `continue` dưới đây chính là ba nhánh khiến
- * WinForm KHÔNG break: ô 部位 khác 0, ô đã là 欠損, và 4 ô 智歯.
- */
-function pSigaOldPrefixLen(bui: readonly number[], se: readonly number[]): number {
-    for (let i = 0; i < 32; i++) {
-        if ((bui[i] ?? 0) !== 0) continue
-        if ((se[i] ?? 0) === SE_MISSING) continue
-        if (!WISDOM_SLOTS.includes(i as (typeof WISDOM_SLOTS)[number])) return i + 1
-    }
-    return 32
-}
-
 // Rule 5.3 — skip cấp file chỉ hiện chữ "skipped" trơ trọi, nhìn y như đã chạy xong.
 if (!dbEnabled || !ALLOW_SAVE) {
     const missing = [
@@ -288,10 +282,6 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
 
     /** 部位 32 ô FE gửi lên trong request `Chk_PModeKesson` (BẪY 1). */
     let sentPModeBui: number[] | null = null
-    /** `snapshot.se` FE gửi lên trong request `Restore_SK` — mốc chính của TC-4. */
-    let sentRestoreSe: number[] | null = null
-    /** Số lần `Restore_SK` được gọi — reset ở đầu mỗi phase. */
-    let restoreCalls = 0
 
     const seOf = (snap: SigaSnapshot, slot: number) => snap.se[slot]
 
@@ -385,8 +375,6 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
         ])
 
         sentPModeBui = null
-        sentRestoreSe = null
-        restoreCalls = 0
         await openTreatmentScreen()
     }
 
@@ -453,8 +441,9 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
         })
         await page.keyboard.press('Enter')
 
+        let res: Response | null = null
         if (eager) {
-            const res = await eager
+            res = await eager
             expect(
                 res,
                 `Chốt 処置 ${EXT_TRT_CD}/${EXT_SB} phải bắn POST ${TOOTH_STATUS_PATH} ` +
@@ -465,6 +454,7 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
             expect(res!.status(), `POST ${TOOTH_STATUS_PATH} phải thành công`).toBeLessThan(400)
         }
         await step()
+        return res
     }
 
     /**
@@ -536,20 +526,10 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
     }
 
     /**
-     * Bấm F10 戻る rồi trả lời 「いいえ」. Chờ `POST /tenant/siga/restore` nếu nó bay ra.
-     * Trả về HTTP status, hoặc null khi KHÔNG có request nào.
+     * Bấm F10 戻る rồi trả lời 「いいえ」 — bản nháp 歯式 bị vứt, không còn request lùi nào.
      */
-    async function exitWithoutSaving(): Promise<number | null> {
+    async function exitWithoutSaving(): Promise<void> {
         await closeDialogs(page)
-        const restored = page
-            .waitForResponse(
-                (r) => r.url().includes(RESTORE_PATH) && r.request().method() === 'POST',
-                // Dài hơn EAGER_WRITE_DELAY_MS: TC-5 CỐ Ý bắt 「いいえ」 phải đợi
-                // request đang bay đáp xong rồi mới đọc cờ.
-                { timeout: EAGER_WRITE_DELAY_MS + 25_000 },
-            )
-            .catch(() => null)
-
         await page.getByRole('button', { name: /F10\s*戻る/ }).click()
 
         const gate = page.getByText('処置データは変更されています。保存しますか？')
@@ -568,10 +548,6 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
             .getByRole('button', { name: /^(No|いいえ)$/ })
             .click()
         await expect(gate, 'bấm No mà hộp thoại không đóng').toBeHidden({ timeout: 15_000 })
-
-        const res = await restored
-        console.log(`「いいえ」 → POST ${RESTORE_PATH}: ${res ? res.status() : 'KHÔNG có request nào'}`)
-        return res ? res.status() : null
     }
 
     /** Gỡ handler popup của RIÊNG file này ở `afterAll` — page dùng chung
@@ -600,27 +576,19 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
 
-        // BẪY 1 — kỳ vọng suy ra từ chính request, nên phải bắt body của chúng.
-        page.on('request', (req: Request) => {
-            if (req.method() !== 'POST') return
-            if (req.url().includes(P_MODE_PATH)) {
+        // BẪY 1 — kỳ vọng suy ra từ chính request, nên phải bắt body của nó. Đọc ở
+        // `page.route`: sự kiện 'request' trên Chromium trả `postData()` null cho request này.
+        await page.route(`**${P_MODE_PATH}`, async (route) => {
+            const req = route.request()
+            if (req.method() === 'POST') {
                 try {
                     const body = req.postDataJSON() as { bui?: (number | string)[] }
                     sentPModeBui = (body.bui ?? []).map(Number)
                 } catch {
                     sentPModeBui = null
                 }
-            } else if (req.url().includes(RESTORE_PATH)) {
-                restoreCalls++
-                try {
-                    const body = req.postDataJSON() as {
-                        snapshot?: { se?: (number | string)[] }
-                    }
-                    sentRestoreSe = (body.snapshot?.se ?? []).map(Number)
-                } catch {
-                    sentRestoreSe = null
-                }
             }
+            await route.fallback()
         })
 
         await resetPhase()
@@ -628,6 +596,7 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
 
     test.afterAll(async () => {
         await page?.unroute(`**${TOOTH_STATUS_PATH}`).catch(() => {})
+        await page?.unroute(`**${P_MODE_PATH}`).catch(() => {})
         await disposeOverlays?.()
         await releaseSharedPage(page)
         const n = await purgeTestRows()
@@ -699,12 +668,11 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
         await step()
     })
 
-    test('TC-2 (mốc) — nhập 抜歯 qua UI: SigaChg ghi 欠損 NGAY, chưa cần F9', async () => {
-        // frm203016.IregCodChk → SigaChg (:1030/:1282): 歯式 lên đĩa trước 登録, và
-        // CHÍNH lệnh này bật pSiga_chg — cái cờ mà cả TC-4 lẫn TC-5 dựa vào.
-        await enterExtractionViaUi()
+    test('TC-2 (mốc) — nhập 抜歯 qua UI: 歯式 của phiên thành 欠損 NGAY, chưa cần F9', async () => {
+        // frm203016.IregCodChk → SigaChg (:1030/:1282). Web: chỉ vào bản nháp của phiên.
+        const res = await enterExtractionViaUi()
 
-        const s = await mustReadSiga()
+        const s = await readSessionSiga(page, Number(PAT_NO), res!)
         seBeforePMode = [...s.se]
         console.log(
             `sau khi nhập 抜歯 (chưa F9): ` +
@@ -713,9 +681,9 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
         const notMarked = WATCH_SLOTS.filter((slot) => seOf(s, slot) !== SE_MISSING)
         expect(
             notMarked.map((slot) => `se_${slot + 1} = ${seOf(s, slot)}`),
-            `SigaChg phải ghi ${SE_MISSING} (欠損歯) cho MỌI răng trong 部位 mà dòng 抜歯 thừa kế ` +
-                `từ 部位病名行 (ô ${WATCH_SLOTS.join('/')}). Còn ô nào là ${SE_VITAL} nghĩa là hoặc ` +
-                'đường ghi nóng không chạy, hoặc dòng mới KHÔNG thừa kế được 部位 (governingBuiOf) — ' +
+            `SigaChg phải đặt ${SE_MISSING} (欠損歯) cho MỌI răng trong 部位 mà dòng 抜歯 thừa kế ` +
+                `từ 部位病名行 (ô ${WATCH_SLOTS.join('/')}). Còn ô nào là ${SE_VITAL} trong 歯式 của phiên ` +
+                'nghĩa là hoặc SigaChg không chạy, hoặc dòng mới KHÔNG thừa kế được 部位 (governingBuiOf) — ' +
                 'cả hai đều làm TC-4/TC-5 mất ý nghĩa, sửa harness trước.',
         ).toEqual([])
         await step()
@@ -742,93 +710,35 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
         await step()
     })
 
-    test('TC-4 — 「いいえ」: ô ĐẦU giữ 欠損 theo pSiga_old vừa làm mới, ô SAU điểm break quay về lúc mở màn', async () => {
-        // ⛔ Đây là testcase LÕI của (A). Kỳ vọng dựng lại từ frm203002.cs:7455-7466 +
-        //    modSave.cs:4700, KHÔNG copy từ code web.
+    test('TC-4 — 抜歯 → Ｐ変更 → 「いいえ」: DB Y HỆT lúc mở màn (lệch WinForm có chủ ý)', async () => {
+        // WinForm: Chk_PModeKesson làm mới pSiga_old TỚI điểm break (frm203002.cs:7455-7466)
+        // nên Restore_Siga ghi ra một hàng LAI và 右上8 ở lại 欠損. Web không ghi gì trước F9
+        // ⇒ 「いいえ」 chỉ vứt bản nháp ⇒ DB phải là đúng ảnh lúc mở màn, ở MỌI ô.
         expect(seAtOpen.length, 'TC-1 chưa chạy được').toBe(32)
         expect(seBeforePMode.length, 'TC-2 chưa chạy được').toBe(32)
-
-        const prefix = pSigaOldPrefixLen(sentPModeBui!, seBeforePMode)
-        const expectedSnapshot = Array.from({ length: 32 }, (_, i) =>
-            i < prefix ? seBeforePMode[i]! : seAtOpen[i]!,
-        )
-        console.log(
-            `điểm break của Chk_PModeKesson: ${prefix} ô đầu được làm mới\n` +
-                `  pSiga_old kỳ vọng = [${expectedSnapshot.join(',')}]`,
-        )
         expect(
-            prefix,
-            'Vòng lặp không thể break ở ô 0 (智歯 bị loại, frm203002.cs:7460) nên phần đầu luôn ' +
-                'gồm ít nhất ô 0 — đây chính là ô mang dấu 抜歯 mà TC này đòi giữ lại.',
-        ).toBeGreaterThanOrEqual(1)
+            seOf({ se: seBeforePMode, sn: [] }, WATCH_SLOTS[0]),
+            'phiên chưa mang dấu 抜歯 ở 右上8 ⇒ vế dưới không chứng minh được gì',
+        ).toBe(SE_MISSING)
 
-        const status = await exitWithoutSaving()
-        expect(
-            status,
-            `SigaChg ở TC-2 đã bật pSiga_chg ⇒ 「いいえ」 PHẢI gọi ${RESTORE_PATH} (RestoreData → ` +
-                'Restore_SK, modSave.cs:455-463). Không có request nào ⇒ hoặc cờ không được bật, ' +
-                'hoặc FE đọc cờ trước khi request ghi nóng kịp đáp (xem TC-5).',
-        ).not.toBeNull()
-        expect(status!, `POST ${RESTORE_PATH} phải thành công`).toBeLessThan(400)
-        expect(restoreCalls, 'một lượt 「いいえ」 chỉ được gửi đúng MỘT request restore').toBe(1)
+        await exitWithoutSaving()
 
-        // ── vế (a) — ảnh chụp FE gửi lên PHẢI là hàng "lai" ──────────────────
-        expect(sentRestoreSe, 'không đọc được `snapshot.se` trong body request restore').not.toBeNull()
-        console.log(`pSiga_old FE gửi lên  = [${sentRestoreSe!.join(',')}]`)
-        expect(
-            sentRestoreSe,
-            'Chk_PModeKesson làm mới `pSiga_old` TỚI ĐÚNG ô vừa break (frm203002.cs:7457), phần ' +
-                'sau giữ nguyên ảnh chụp lúc mở màn.\n' +
-                `  · lệch ở ô < ${prefix} ⇒ phần đầu KHÔNG được làm mới ⇒ dấu 抜歯 sẽ bị 「いいえ」 xoá;\n` +
-                `  · lệch ở ô >= ${prefix} ⇒ đã chụp lại QUÁ nhiều (chụp cả 32 ô) ⇒ 「いいえ」 giữ lại ` +
-                'cả những 欠損 mà WinForm trả về 健全.',
-        ).toEqual(expectedSnapshot)
-
-        // ── vế (b) — DB sau khi restore phải khớp chính ảnh chụp đó ──────────
         const after = await mustReadSiga()
         console.log(`歯式 sau 「いいえ」 = [${after.se.join(',')}]`)
         expect(
             [...after.se],
-            'Restore_Siga ghi trả 32 cột SE từ pSiga_old (modSave.cs:4700-4729) ⇒ DB phải bằng ' +
-                'ĐÚNG ảnh chụp vừa gửi. Lệch nghĩa là BE không ghi hết cột, hoặc còn lệnh ghi nóng ' +
-                'nào đó đáp SAU restore và ghi đè lên.',
-        ).toEqual(expectedSnapshot)
-
-        // ── vế (c) — phát biểu người đọc quan tâm, viết thẳng ra ─────────────
-        expect(
-            seOf(after, WATCH_SLOTS[0]),
-            `右上8 (ô ${WATCH_SLOTS[0]}, se_${WATCH_SLOTS[0] + 1}) là 智歯 nên nằm trong phần đầu ` +
-                'được làm mới ⇒ 抜歯 → Ｐ変更 → 「いいえ」 phải để răng Ở LẠI 欠損, y như WinForm. ' +
-                `Ra ${SE_VITAL} nghĩa là bản port đang giữ nguyên ảnh chụp lúc mở màn và xoá mất ` +
-                'dấu 抜歯 người dùng vừa nhập.',
-        ).toBe(SE_MISSING)
-
-        const tailSlot = WATCH_SLOTS[2]
-        if (tailSlot >= prefix) {
-            expect(
-                seOf(after, tailSlot),
-                `左下7 (ô ${tailSlot}) nằm SAU điểm break (${prefix}) nên KHÔNG được làm mới ⇒ ` +
-                    `「いいえ」 phải trả nó về ${SE_VITAL} như lúc mở màn. Ra ${SE_MISSING} nghĩa là ` +
-                    'bản port đã chụp lại cả 32 ô — "gọn" hơn WinForm nhưng khác kết quả.',
-            ).toBe(SE_VITAL)
-        } else {
-            console.log(
-                `⚠️ ô ${tailSlot} rơi VÀO phần đầu (break = ${prefix}) nên vế đối chứng ` +
-                    '「ô sau điểm break phải quay về」 không được kiểm ở lần chạy này. Tập Ｐ mới do ' +
-                    'F3 chọn ra rộng bất thường — xem log 「bui FE gửi lên」 của TC-3.',
-            )
-        }
+            '「いいえ」 = không lưu ⇒ `siga` phải Y HỆT lúc mở màn. Còn ô nào là ' +
+                `${SE_MISSING} nghĩa là bản nháp 抜歯 / Ｐ変更 đã lọt xuống DB trước F9.`,
+        ).toEqual(seAtOpen)
         await step()
     })
 
     // ═════════════════════════════════════════════════════════════════════════
-    // PHASE 2 — (B) 「いいえ」 phải đợi lệnh ghi nóng đang bay
+    // PHASE 2 — 「いいえ」 khi lệnh tính 歯式 còn đang bay
     // ═════════════════════════════════════════════════════════════════════════
 
-    test('TC-5 — 「いいえ」 bấm khi SigaChg CÒN ĐANG BAY vẫn phải lùi được 歯式', async () => {
-        // WinForm gọi SigaChg đồng bộ: tới lúc End bấm được thì `update Siga` đã xong và
-        // pSiga_chg đã lên. Web bắn `void` nên có một cửa sổ mà cờ chưa lên — bấm 「いいえ」
-        // đúng lúc đó, bản cũ bỏ qua Restore_SK HẲN và răng ở lại 欠損 không đường lùi.
+    test('TC-5 — 「いいえ」 bấm khi SigaChg CÒN ĐANG BAY: DB vẫn y hệt lúc mở màn', async () => {
+        // Web bắn SigaChg không chờ. Request đáp SAU 「いいえ」 không được để lại gì trong DB.
         await resetPhase()
 
         const s0 = await mustReadSiga()
@@ -866,23 +776,16 @@ test.describe('診療入力 — ghi nóng 歯式 vs 「いいえ」 (pSiga_old /
             ).toBe('còn bay')
             await step()
 
-            const status = await exitWithoutSaving()
-            expect(
-                status,
-                `「いいえ」 phải ĐỢI lệnh ghi nóng đang bay đáp xong rồi mới đọc pSiga_chg, nên vẫn ` +
-                    `phải có POST ${RESTORE_PATH}. KHÔNG có request nào nghĩa là FE đọc cờ khi nó còn ` +
-                    'false: răng vừa 抜歯 ở lại 欠損 vĩnh viễn trong khi 処置行 chưa hề được lưu.',
-            ).not.toBeNull()
-            expect(status!, `POST ${RESTORE_PATH} phải thành công`).toBeLessThan(400)
+            await exitWithoutSaving()
+            // Đợi request bị làm chậm đáp xong (hoặc bị huỷ) rồi mới soi DB — Rule 7.
+            await eagerDone
 
             const after = await mustReadSiga()
             console.log(`歯式 sau 「いいえ」 (phase 2) = [${after.se.join(',')}]`)
             expect(
                 [...after.se],
-                'Không có Ｐ変更 trong phase này ⇒ pSiga_old vẫn nguyên ảnh chụp lúc mở màn ⇒ ' +
-                    'Restore_Siga phải trả TOÀN BỘ 歯式 về 生活歯. Còn ô nào là ' +
-                    `${SE_MISSING} nghĩa là lệnh ghi nóng đã đáp SAU restore và ghi đè lên ` +
-                    '(chiều ngược lại của cùng một cửa sổ).',
+                '「いいえ」 = không lưu ⇒ TOÀN BỘ 歯式 phải còn 生活歯 như lúc mở màn. Còn ô nào là ' +
+                    `${SE_MISSING} nghĩa là lệnh tính 歯式 đáp muộn đã ghi xuống DB.`,
             ).toEqual(new Array(32).fill(SE_VITAL))
             await step()
         } finally {
