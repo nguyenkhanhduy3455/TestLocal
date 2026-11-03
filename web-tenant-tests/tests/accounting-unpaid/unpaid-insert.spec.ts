@@ -11,68 +11,25 @@
  * Từ 2026-09-04 khối `sflg/att_dr` đã canh thêm chính cột `trt_cnt`, tức hai file
  * đã bắt đầu chồng lên nhau — gộp là dọn đúng chỗ chồng đó.
  *
- * Hai khối giữ NGUYÊN VĂN nội dung hai file cũ.
+ * Mỗi khối tự dựng MỘT bệnh nhân riêng trong dải 990000+ (`seedTestPatient`) và
+ * xoá hẳn nó ở `afterAll` — không đụng bệnh nhân thật, không phụ thuộc dữ liệu
+ * của DB đang chạy.
  */
 
 import { type Locator, type Page } from '@playwright/test'
 import { ACC_BUTTON, routeAccButton, type AccButtonRoute } from '../_shared/acc-button'
-import { dbEnabled, withDb, countRealTreatmentRowsInMonth, deleteTreatmentRows, deleteTreatmentRowsByDspTrt, seedTreatmentRows } from '../_shared/db'
-import { patNo } from '../_shared/env'
+import {
+    dbEnabled,
+    SEED_PAT_NO_BASE,
+    seedTestPatient,
+    seedTreatmentRows,
+    withDb,
+} from '../_shared/db'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
+import { dropTestPatient } from '../_shared/test-patient'
 import { makeStep, skipWithReason } from '../_shared/step'
 import { closeDialogs } from '../_shared/virtual-grid'
-
-/**
- * Trả `unpaid` của (patNo, các ngày test) về đúng tập `keepIds` chụp trước khi chạy.
- *
- * F8 XOÁ dòng 未精算 cũ của ngày rồi chèn dòng mới; trigger archive chép dòng bị xoá
- * sang `unpaid_deleted`. Nên: (1) xoá dòng do lượt chạy sinh ra và bỏ luôn bản sao
- * trigger vừa chép của chúng; (2) chép ngược bản archive mới nhất của những dòng vốn
- * đang sống mà F8 đã xoá, rồi bỏ bản archive đó.
- */
-async function resetUnpaid(
-    patNo: number,
-    trtDts: string[],
-    keepIds: string[],
-): Promise<{ removed: number; revived: number }> {
-    return withDb(async (c) => {
-        const del = await c.query<{ id: string }>(
-            `DELETE FROM unpaid
-              WHERE pat_no = $1 AND trt_dt = ANY($2) AND NOT (id = ANY($3::uuid[]))
-          RETURNING id`,
-            [patNo, trtDts, keepIds],
-        )
-        const removedIds = del.rows.map((r) => r.id)
-        if (removedIds.length > 0) {
-            await c.query('DELETE FROM unpaid_deleted WHERE id = ANY($1::uuid[])', [removedIds])
-        }
-        if (keepIds.length === 0) return { removed: removedIds.length, revived: 0 }
-
-        const cols = (
-            await c.query<{ cols: string }>(
-                `SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position) AS cols
-                   FROM information_schema.columns
-                  WHERE table_schema = current_schema() AND table_name = 'unpaid'`,
-            )
-        ).rows[0]!.cols
-        const ins = await c.query<{ id: string }>(
-            `INSERT INTO unpaid (${cols})
-             SELECT DISTINCT ON (d.id) ${cols}
-               FROM unpaid_deleted d
-              WHERE d.id = ANY($1::uuid[])
-                AND NOT EXISTS (SELECT 1 FROM unpaid u WHERE u.id = d.id)
-              ORDER BY d.id, d.deleted_at DESC
-          RETURNING id`,
-            [keepIds],
-        )
-        const revivedIds = ins.rows.map((r) => r.id)
-        if (revivedIds.length > 0) {
-            await c.query('DELETE FROM unpaid_deleted WHERE id = ANY($1::uuid[])', [revivedIds])
-        }
-        return { removed: removedIds.length, revived: revivedIds.length }
-    })
-}
 
 // ═══ nguyên văn từ unpaid-insert-parity.spec.ts (đã gộp vào file này) ══════════════════════════════════════
 test.describe('cột sflg (1/2/3) và att_dr', () => {
@@ -92,7 +49,7 @@ test.describe('cột sflg (1/2/3) và att_dr', () => {
  *     dòng 介護保険 lấy `+100` (modAcc.cs:673). Bản port từng để `1` cứng.
  *     Kịch bản NGÀY 2 LƯỢT KHÁM — nơi con số này thực sự phân biệt đúng/sai —
  *     nằm ở spec riêng `accounting-unpaid/unpaid-insert.spec.ts` (nó tự dựng dữ liệu).
- *     Ở đây chỉ neo `unpaid.trt_cnt` vào `trn_trn.raiin_cnt` trên DỮ LIỆU THẬT.
+ *     Ở đây chỉ neo `unpaid.trt_cnt` vào `trn_trn.raiin_cnt` của ngày một lượt.
  *
  * Bug tester báo (2026-08-26):
  *   · `SFLG`   — hệ cũ ghi 3 cho ngày có 歯科初診料 và 2 cho ngày 歯科再診料;
@@ -142,26 +99,29 @@ test.describe('cột sflg (1/2/3) và att_dr', () => {
  *  Spec CÓ ghi thật: mỗi lần F8 chạy `deleteTrtDtUnPaid` (xoá dòng 未精算 của
  *  ngày đó) rồi chèn lại. Từ 2026-09-03 bước xoá đó là một endpoint RIÊNG
  *  (`POST …/accounting/clear-unpaid`, chạy ngay sau 日付チェック — modAcc.cs:428);
- *  `insert-unpaid` vẫn tự xoá lần nữa nên hành vi tổng thể không đổi. Vì vậy:
- *   · bắt buộc `TEST_DB=1` (để assert) và `TEST_ALLOW_SAVE=1` (để cho phép ghi);
- *   · chỉ chọn NGÀY CHƯA CÓ 会計 済み (`acc_dat` trống cho ngày đó),
- *     nên không đụng vào dữ liệu đã quyết toán và cũng không bung hộp 既存会計;
- *   · `beforeAll` chụp lại `id` của mọi dòng `unpaid` thuộc các ngày sẽ test,
- *     `afterAll` xoá dòng do lượt chạy sinh ra và chép ngược từ `unpaid_deleted`
- *     những dòng vốn đang sống. In ra số dòng đụng tới để không ai phải đoán.
+ *  `insert-unpaid` vẫn tự xoá lần nữa nên hành vi tổng thể không đổi. Vì vậy
+ *  bắt buộc `TEST_DB=1` (để assert) và `TEST_ALLOW_SAVE=1` (để cho phép ghi).
+ *  Mọi thứ ghi xuống đều thuộc bệnh nhân seed và bị xoá hẳn ở `afterAll`.
  *  KHÔNG bấm Yes ở hộp 「処置データは変更されています」 — Yes ghi lại cả tháng 処置.
  *
- * ─── Kỳ vọng được TÍNH TỪ DỮ LIỆU, không hardcode ────────────────────────────
- *  DB của tester khác DB của dev, nên spec không cắm cứng "ngày 25 phải là 3".
- *  Nó dò trong tháng đang mở một ngày CHỈ có 初診 và một ngày CHỈ có 再診, rồi
- *  diễn đạt lại luật modAcc bằng SQL để ra giá trị kỳ vọng. Không có ngày phù
- *  hợp thì skip kèm lý do + in bảng ngày ra log để đổi `TEST_PAT_NO`/`TEST_TRT_DT`.
+ * ─── Dữ liệu tự dựng ─────────────────────────────────────────────────────────
+ *  Bệnh nhân `SEED_PAT_NO_BASE + 500`, ba ngày 処置 (không ngày nào có 会計):
+ *   · ngày 01 tháng TRƯỚC: 歯科初診料 (100) — để 「過去に初診あり」 đúng ⇒ ngày 初診
+ *     của tháng này phải ra **3 = 再初診**, đúng nhánh mà bug cũ ghi thành 2;
+ *   · ngày 01 tháng này: CHỈ 初診 (100);
+ *   · ngày 02 tháng này: CHỈ 再診 (110).
+ *  Kỳ vọng `sflg` của ngày 初診 vẫn diễn đạt lại luật modAcc bằng SQL
+ *  (`readHasPastFirstVisit`) chứ không cắm cứng 3.
  *
- *  `att_dr` cũng vậy: kỳ vọng lấy từ CHÍNH dropdown Dr trên header ngay trước khi
- *  bấm F8 — đọc nhãn đang hiện rồi tra sang `userNo` bằng danh sách bác sĩ mà màn
- *  hình vừa tải (`GET /tenant/mst-iin-2?userKbn=0`). Header trống thì spec tự chọn
- *  bác sĩ đầu tiên, vì kỳ vọng 0 sẽ trùng đúng giá trị của bug cũ (hardcode 0) và
- *  testcase mất hết ý nghĩa.
+ *  `trn_trn.raiin_cnt` mặc định 1 = đúng giá trị F9 đánh cho ngày chỉ có một lượt
+ *  khám. Ngày MỘT lượt không phân biệt được bản đúng với bản 「1 cứng」; kịch bản
+ *  phân biệt (2 lượt/ngày) nằm ở khối `cột trt_cnt` bên dưới.
+ *
+ *  `att_dr` cũng vậy: kỳ vọng lấy từ CHÍNH combo Dr trên header ngay trước khi
+ *  bấm F8 — đọc tooltip 「現在のDr[no：name]」 (BẪY 7). Combo trống thì spec tự chọn
+ *  bác sĩ đầu tiên trong danh sách màn hình vừa tải (`GET /tenant/mst-iin-2?userKbn=0`),
+ *  vì kỳ vọng 0 sẽ trùng đúng giá trị của bug cũ (hardcode 0) và testcase mất hết
+ *  ý nghĩa.
  *
  * ─── BẪY ─────────────────────────────────────────────────────────────────────
  *  1. Cột 日 chỉ hiện số ở dòng ĐẦU của mỗi ngày ⇒ đọc DOM phải cộng dồn ngày
@@ -176,10 +136,10 @@ test.describe('cột sflg (1/2/3) và att_dr', () => {
  *     dữ liệu cũ.
  *  6. modAcc ghi CÙNG một `intSyosin` (và cùng một `att_dr`) cho cả ba dòng
  *     医療保険 / 介護保険 / 自費 của ngày ⇒ assert trên MỌI dòng, không phải dòng đầu.
- *  7. Dropdown Dr là Radix Select, KHÔNG phải `<select>` gốc: trigger là `button`
- *     nằm ngay sau `<span>Dr:</span>`, và danh sách bung ra qua PORTAL ở `body`
- *     với `role="option"` (Rule 12.6). Nhãn hiện trên trigger là TÊN bác sĩ, còn
- *     thứ ghi xuống DB là `user_no` ⇒ bắt buộc phải tra bảng ánh xạ.
+ *  7. 「Dr:」 trên header là NHÃN hiện bác sĩ của DÒNG ĐANG TRỎ (`lbDr`), không phải
+ *     giá trị sẽ ghi. Giá trị ghi là combo `cboDr`, chỉ lộ ra ở tooltip
+ *     「現在のDr[no：name]」 hoặc khi bấm nhãn để hiện combo (Radix Select, danh sách
+ *     bung qua PORTAL ở `body` với `role="option"`, Rule 12.6).
  *
  * ─── KHÔNG kiểm ở đây ────────────────────────────────────────────────────────
  *  Các nhánh 「健診より/自費より」, thứ tự "hit đầu tiên thắng", 訪問診療 không ra 4,
@@ -193,31 +153,39 @@ test.describe('cột sflg (1/2/3) và att_dr', () => {
  *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/accounting-unpaid/unpaid-insert.spec.ts --retries=0
  *
  * ENV:
- *   TEST_PAT_NO        bệnh nhân test (mặc định 12138)
- *   TEST_TRT_DT        ngày bất kỳ TRONG THÁNG muốn dò (mặc định hôm nay)
  *   TEST_DB=1          BẮT BUỘC — assert soi thẳng Postgres
  *   TEST_ALLOW_SAVE=1  BẮT BUỘC — F8 ghi 未精算データ thật
  *
  * Chạy CẢ FILE, không `-g` một testcase lẻ (Rule 19).
  */
 
-const PAT_NO = Number(patNo('12138'))
+const PAT_NO = SEED_PAT_NO_BASE + 500
 
-/** Ngày bất kỳ trong THÁNG muốn dò — chỉ phần 年月 được dùng. */
-const TRT_DT =
-    process.env.TEST_TRT_DT ??
-    (() => {
-        const d = new Date()
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    })()
+/** `yyyy-MM-dd` theo giờ ĐỊA PHƯƠNG — `toISOString()` lệch ngày ở múi giờ +09. */
+function isoOf(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
-const MONTH_START = `${TRT_DT.slice(0, 8)}01`
-const MONTH_END = (() => {
-    const y = Number(TRT_DT.slice(0, 4))
-    const m = Number(TRT_DT.slice(5, 7))
-    const last = new Date(y, m, 0).getDate()
-    return `${TRT_DT.slice(0, 8)}${String(last).padStart(2, '0')}`
-})()
+const TODAY = new Date()
+/** Tháng đang mở trên 診療入力 = tháng hiện hành (F8 chặn dòng tháng cũ — BẪY 2). */
+const MONTH_START = isoOf(new Date(TODAY.getFullYear(), TODAY.getMonth(), 1))
+/** Ngày CHỈ có 初診 — chưa quyết toán. */
+const SYOSIN_DAY = MONTH_START
+/** Ngày CHỈ có 再診 — chưa quyết toán. */
+const SAISIN_DAY = isoOf(new Date(TODAY.getFullYear(), TODAY.getMonth(), 2))
+/** 初診 của tháng TRƯỚC — làm 「過去に初診あり」 đúng (getKaikeiPastSyosinCnt). */
+const PAST_SYOSIN_DAY = isoOf(new Date(TODAY.getFullYear(), TODAY.getMonth() - 1, 1))
+const TEST_DAYS = [SYOSIN_DAY, SAISIN_DAY]
+
+/** 歯科初診料 / 歯科再診料. */
+const SYOSIN_TRT_CD = 100
+const SAISIN_TRT_CD = 110
+
+/** `dsp_trt` của dòng seed ở từng ngày test — mốc "lưới đã nạp xong" của ngày đó. */
+const SEED_NAME: Record<string, string> = {
+    [SYOSIN_DAY]: '初診-unpaidテスト',
+    [SAISIN_DAY]: '再診-unpaidテスト',
+}
 
 /** Rule 18.1 — F8 ghi 未精算データ thật nên phải có cờ. */
 const ALLOW_SAVE = process.env.TEST_ALLOW_SAVE === '1'
@@ -242,14 +210,6 @@ const CARE_TRT_CNT_OFFSET = 100
 
 /** Ba giá trị hợp lệ của `unpaid.sflg` — buiPrice's 4 KHÔNG nằm trong đây. */
 const SFLG = { firstVisit: 1, revisit: 2, repeatFirstVisit: 3 } as const
-
-interface DaySummary {
-    trtDt: string
-    hasSyosin: boolean
-    hasSaisin: boolean
-    hasPhrase: boolean
-    settled: boolean
-}
 
 interface UnpaidRow {
     trtCnt: number
@@ -285,58 +245,6 @@ async function appearedAny(locators: Locator[], timeout: number): Promise<boolea
         ...races,
         new Promise<boolean>((r) => setTimeout(() => r(false), timeout + 500)),
     ])
-}
-
-/**
- * Từng ngày có 処置 trong tháng, kèm những gì luật modAcc cần biết.
- *
- * `has_syosin` dùng đúng tập mã của `Check.IsFirstVisitTreatCode` (Check.cs:12383):
- * 100-0 / 100-1 / 107-0 / 333-50 / 333-55.
- */
-async function readMonthDays(): Promise<DaySummary[]> {
-    return withDb(async (c) => {
-        const r = await c.query<{
-            trt_dt: Date | string
-            has_syosin: boolean
-            has_saisin: boolean
-            has_phrase: boolean
-            settled: boolean
-        }>(
-            `WITH d AS (
-                 SELECT trt_dt,
-                        bool_or((trt_cd = 100 AND trt_sb IN (0, 1))
-                             OR (trt_cd = 107 AND trt_sb = 0)
-                             OR (trt_cd = 333 AND trt_sb IN (50, 55)))       AS has_syosin,
-                        bool_or(trt_cd = 110 OR (trt_cd = 107 AND trt_sb = 1)) AS has_saisin,
-                        bool_or(COALESCE(dsp_trt, '') LIKE '%健診より%'
-                             OR COALESCE(dsp_trt, '') LIKE '%検診より%'
-                             OR COALESCE(dsp_trt, '') LIKE '%自費より%'
-                             OR COALESCE(dsp_trt, '') LIKE '%健康診断の結果に基づき治療開始%')
-                                                                             AS has_phrase
-                   FROM trn_trn
-                  WHERE pat_no = $1 AND trt_dt BETWEEN $2 AND $3
-                  GROUP BY trt_dt
-             )
-             SELECT d.trt_dt, d.has_syosin, d.has_saisin, d.has_phrase,
-                    EXISTS (SELECT 1 FROM acc_dat a
-                             WHERE a.pat_no = $1 AND a.trt_dt = d.trt_dt) AS settled
-               FROM d
-              ORDER BY d.trt_dt`,
-            [PAT_NO, MONTH_START, MONTH_END],
-        )
-        return r.rows.map((row) => ({
-            trtDt: String(row.trt_dt instanceof Date ? isoOf(row.trt_dt) : row.trt_dt).slice(0, 10),
-            hasSyosin: row.has_syosin,
-            hasSaisin: row.has_saisin,
-            hasPhrase: row.has_phrase,
-            settled: row.settled,
-        }))
-    })
-}
-
-/** `yyyy-MM-dd` theo giờ ĐỊA PHƯƠNG — `toISOString()` lệch ngày ở múi giờ +09. */
-function isoOf(d: Date): string {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 /**
@@ -414,15 +322,8 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
     let page: Page
     let step: () => Promise<void>
 
-    /** Ngày CHỈ có 初診 và ngày CHỈ có 再診, đều chưa quyết toán. */
-    let syosinDay: string | null = null
-    let saisinDay: string | null = null
-
     /** Giá trị kỳ vọng cho ngày 初診: 3 nếu trước tháng này đã có 初診, không thì 1. */
     let expectedSyosinFlg: number = SFLG.firstVisit
-
-    /** `id` của mọi dòng unpaid thuộc các ngày test, chụp TRƯỚC khi chạy. */
-    const unpaidSnapshot = new Set<string>()
 
     /**
      * Nhãn bác sĩ trên dropdown ↔ `user_no` — bắt từ CHÍNH response mà màn hình
@@ -435,7 +336,7 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
     /** Thứ tự bác sĩ như dropdown dựng — cần khi header trống, phải tự chọn. */
     const doctorNames: string[] = []
 
-    /** 会計対象日 → Dr đang hiện trên header lúc bấm F8 = kỳ vọng của `att_dr`. */
+    /** 会計対象日 → Dr trong combo lúc bấm F8 = kỳ vọng của `att_dr`. */
     const expectedAttDr = new Map<string, number>()
 
     const dlg = (text: string | RegExp) =>
@@ -453,8 +354,9 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
         box.getByRole('button', { name, exact: typeof name === 'string' })
 
     /**
-     * Trigger của dropdown Dr trên header — Radix Select nên nó là `button` đứng
-     * ngay sau `<span>Dr:</span>` (BẪY 7). Nhãn hiện trên nút là TÊN bác sĩ.
+     * Nút ngay sau caption 「Dr:」 trên header (BẪY 7). Bình thường nó là NHÃN hiện
+     * bác sĩ của DÒNG ĐANG TRỎ (`lbDr`); bấm vào thì nó thành combo `cboDr`
+     * (Radix Select) — giá trị combo mới là thứ được ghi xuống `att_dr`.
      */
     const drTrigger = () =>
         page
@@ -463,28 +365,35 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
             .locator('xpath=following-sibling::button[1]')
 
     /**
-     * Bảo đảm header ĐANG chọn một bác sĩ thật, trả về `user_no` của người đó.
+     * `user_no` đang nằm trong combo Dr — đọc từ tooltip 「現在のDr[no：name]」 của
+     * nhãn (frm203002.cs:8091-8092). KHÔNG đọc chữ trên nhãn: đó là bác sĩ của dòng
+     * đang trỏ, có thể khác hẳn bác sĩ sẽ được đóng dấu. 0 khi combo trống.
+     */
+    async function comboDrNo(): Promise<number> {
+        const title = (await drTrigger().getAttribute('title')) ?? ''
+        return Number(/^現在のDr\[(\d+)：/.exec(title)?.[1] ?? 0)
+    }
+
+    /**
+     * Bảo đảm combo Dr ĐANG chọn một bác sĩ thật, trả về `user_no` của người đó.
      *
-     * Vì sao phải ép chọn: header trống ⇒ FE gửi `drNo = 0` ⇒ kỳ vọng cũng là 0,
+     * Vì sao phải ép chọn: combo trống ⇒ FE gửi `drNo = 0` ⇒ kỳ vọng cũng là 0,
      * trùng đúng giá trị mà bug cũ (hardcode 0) sinh ra, testcase sẽ xanh cả trên
-     * bản hỏng. Trả về 0 khi phòng khám không có bác sĩ nào hoặc tên bị trùng —
-     * lúc đó testcase tự skip kèm lý do.
+     * bản hỏng. Bệnh nhân seed không có 担当医 nên combo luôn bắt đầu trống. Trả về
+     * 0 khi phòng khám không có bác sĩ nào hoặc tên bị trùng — testcase tự skip.
      */
     async function ensureHeaderDoctor(): Promise<number> {
-        const readLabel = async () => (await drTrigger().innerText()).trim()
+        const current = await comboDrNo()
+        if (current > 0) return current
 
-        let label = await readLabel()
-        if (doctorNoByName.get(label) === undefined || doctorNoByName.get(label) === -1) {
-            const pick = doctorNames.find((nm) => (doctorNoByName.get(nm) ?? -1) > 0)
-            if (pick === undefined) return 0
-            await drTrigger().click()
-            // Radix bung listbox qua portal ở `body`; mục chọn mang role="option".
-            await page.getByRole('option', { name: pick, exact: true }).first().click()
-            await expect(drTrigger()).toContainText(pick, { timeout: 10_000 })
-            label = await readLabel()
-        }
-        const no = doctorNoByName.get(label) ?? 0
-        return no > 0 ? no : 0
+        const pick = doctorNames.find((nm) => (doctorNoByName.get(nm) ?? -1) > 0)
+        if (pick === undefined) return 0
+        await drTrigger().click() // nhãn → combo
+        await drTrigger().click() // mở combo
+        // Radix bung listbox qua portal ở `body`; mục chọn mang role="option".
+        await page.getByRole('option', { name: pick, exact: true }).first().click()
+        await expect.poll(comboDrNo, { timeout: 10_000 }).toBe(doctorNoByName.get(pick))
+        return comboDrNo()
     }
 
     async function drainSanteiDialogs() {
@@ -501,7 +410,10 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
 
     async function openEntry(trtDt: string) {
         await page.goto(`/treatments/${PAT_NO}?trtDt=${trtDt}`, { waitUntil: 'domcontentloaded' })
-        await expect(page.getByText('合計:').first()).toBeVisible({ timeout: GRID_LOAD_TIMEOUT })
+        // 「合計:」 hiện cả khi lưới còn rỗng — chờ chính dòng seed của ngày đó.
+        await expect(page.getByText(SEED_NAME[trtDt]!, { exact: true }).first()).toBeVisible({
+            timeout: GRID_LOAD_TIMEOUT,
+        })
         await drainSanteiDialogs()
     }
 
@@ -627,45 +539,23 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
     let accButtonRoute: AccButtonRoute | undefined
 
     test.beforeAll(async ({ authedPage }) => {
-        // ── Chọn ngày test từ chính dữ liệu của DB đang chạy ──────────────────
-        const days = await readMonthDays()
-        console.log(`Tháng ${MONTH_START.slice(0, 7)} của bệnh nhân ${PAT_NO}:`)
-        for (const d of days) {
-            console.log(
-                `  ${d.trtDt} 初診=${d.hasSyosin} 再診=${d.hasSaisin} ` +
-                    `初診扱い文言=${d.hasPhrase} 会計済=${d.settled}`,
-            )
-        }
-
-        // Ngày CHỈ có 初診 / CHỈ có 再診 để luật "hit đầu tiên thắng" không phụ
-        // thuộc thứ tự dòng, và ngày phải CHƯA quyết toán để F8 không bung hộp
-        // 既存会計 và không đụng dữ liệu đã chốt.
-        syosinDay = days.find((d) => d.hasSyosin && !d.hasSaisin && !d.settled)?.trtDt ?? null
-        saisinDay =
-            days.find((d) => d.hasSaisin && !d.hasSyosin && !d.hasPhrase && !d.settled)?.trtDt ??
-            null
+        await seedTestPatient({ patNo: PAT_NO })
+        await seedTreatmentRows(PAT_NO, PAST_SYOSIN_DAY, [
+            { trtCd: SYOSIN_TRT_CD, dspTrt: '初診-前月-unpaidテスト' },
+        ])
+        await seedTreatmentRows(PAT_NO, SYOSIN_DAY, [
+            { trtCd: SYOSIN_TRT_CD, dspTrt: SEED_NAME[SYOSIN_DAY] },
+        ])
+        await seedTreatmentRows(PAT_NO, SAISIN_DAY, [
+            { trtCd: SAISIN_TRT_CD, dspTrt: SEED_NAME[SAISIN_DAY] },
+        ])
         expectedSyosinFlg = (await readHasPastFirstVisit())
             ? SFLG.repeatFirstVisit
             : SFLG.firstVisit
         console.log(
-            `→ ngày 初診 = ${syosinDay ?? '(không có)'} (kỳ vọng sflg=${expectedSyosinFlg}), ` +
-                `ngày 再診 = ${saisinDay ?? '(không có)'} (kỳ vọng sflg=${SFLG.revisit})`,
+            `đã seed bệnh nhân ${PAT_NO}: 初診 ${PAST_SYOSIN_DAY} + ${SYOSIN_DAY} ` +
+                `(kỳ vọng sflg=${expectedSyosinFlg}), 再診 ${SAISIN_DAY} (kỳ vọng sflg=${SFLG.revisit})`,
         )
-
-        // ── Chụp lại unpaid của các ngày sẽ test, để afterAll trả nguyên trạng ──
-        const targets = [syosinDay, saisinDay].filter((d): d is string => d !== null)
-        if (targets.length > 0) {
-            await withDb(async (c) => {
-                const r = await c.query<{ id: string }>(
-                    `SELECT id FROM unpaid WHERE pat_no = $1 AND trt_dt = ANY($2)`,
-                    [PAT_NO, targets],
-                )
-                for (const row of r.rows) unpaidSnapshot.add(row.id)
-            })
-            console.log(
-                `unpaid hiện có ở các ngày test: ${unpaidSnapshot.size} dòng — afterAll sẽ trả về nguyên trạng`,
-            )
-        }
 
         page = authedPage
         accButtonRoute = await routeAccButton(page, ACC_BUTTON.Acc)
@@ -701,73 +591,45 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
         await disposeOverlays?.()
         await accButtonRoute?.dispose()
         await releaseSharedPage(page)
-
-        const targets = [syosinDay, saisinDay].filter((d): d is string => d !== null)
-        if (!dbEnabled || targets.length === 0) return
-
-        // `deleteTrtDtUnPaid` xoá dòng cũ TRƯỚC khi chèn dòng mới — xem `resetUnpaid`.
-        await resetUnpaid(PAT_NO, targets, [...unpaidSnapshot])
-            .then(({ removed, revived }) =>
-                console.log(
-                    `afterAll: xoá ${removed} dòng unpaid do test sinh ra, ` +
-                        `khôi phục ${revived} dòng bị F8 xoá`,
-                ),
-            )
-            .catch((e: unknown) => console.log(`afterAll: dọn không xong — ${String(e)}`))
+        // dropTestPatient dọn cả bảng phát sinh (unpaid, trn_status…) mà F8/F9 ghi.
+        if (dbEnabled) await dropTestPatient(PAT_NO)
     })
 
     test('TC-SFLG-1 — ngày có 初診: sflg = 1 hoặc 3 theo quá khứ, KHÔNG BAO GIỜ 2', async () => {
-        skipWithReason(
-            syosinDay === null,
-            `tháng ${MONTH_START.slice(0, 7)} của bệnh nhân ${PAT_NO} không có ngày nào CHỈ có 初診 ` +
-                `và chưa quyết toán — đổi TEST_PAT_NO / TEST_TRT_DT (xem bảng ngày in ở log)`,
-        )
-        if (syosinDay === null) return
+        expect(await runF8On(SYOSIN_DAY), `lưới không có dòng nào của ngày ${SYOSIN_DAY}`).toBe(true)
 
-        expect(await runF8On(syosinDay), `lưới không có dòng nào của ngày ${syosinDay}`).toBe(true)
-
-        const rows = await readUnpaidRows(syosinDay)
-        expect(rows, `F8 không để lại dòng 未精算 nào cho ngày ${syosinDay}`).not.toHaveLength(0)
+        const rows = await readUnpaidRows(SYOSIN_DAY)
+        expect(rows, `F8 không để lại dòng 未精算 nào cho ngày ${SYOSIN_DAY}`).not.toHaveLength(0)
 
         for (const row of rows) {
             // Đây là con số tester đọc trên bảng UNPAID.
             expect(
                 row.sflg,
-                `ngày ${syosinDay} có 初診 mà unpaid.sflg = ${row.sflg} (km_cd=${row.kmCd}). ` +
+                `ngày ${SYOSIN_DAY} có 初診 mà unpaid.sflg = ${row.sflg} (km_cd=${row.kmCd}). ` +
                     `Ra 2 nghĩa là vẫn đang lấy 再診; ra 4 nghĩa là còn dùng bảng mã của buiPrice.`,
             ).toBe(expectedSyosinFlg)
         }
-        console.log(`${syosinDay}: sflg = ${rows.map((r) => r.sflg).join(', ')}`)
+        console.log(`${SYOSIN_DAY}: sflg = ${rows.map((r) => r.sflg).join(', ')}`)
     })
 
     test('TC-SFLG-2 — ngày chỉ có 再診: sflg = 2 kể cả khi quá khứ đã có 初診', async () => {
-        skipWithReason(
-            saisinDay === null,
-            `tháng ${MONTH_START.slice(0, 7)} của bệnh nhân ${PAT_NO} không có ngày nào CHỈ có 再診 ` +
-                `và chưa quyết toán — đổi TEST_PAT_NO / TEST_TRT_DT (xem bảng ngày in ở log)`,
-        )
-        if (saisinDay === null) return
+        expect(await runF8On(SAISIN_DAY), `lưới không có dòng nào của ngày ${SAISIN_DAY}`).toBe(true)
 
-        expect(await runF8On(saisinDay), `lưới không có dòng nào của ngày ${saisinDay}`).toBe(true)
-
-        const rows = await readUnpaidRows(saisinDay)
-        expect(rows, `F8 không để lại dòng 未精算 nào cho ngày ${saisinDay}`).not.toHaveLength(0)
+        const rows = await readUnpaidRows(SAISIN_DAY)
+        expect(rows, `F8 không để lại dòng 未精算 nào cho ngày ${SAISIN_DAY}`).not.toHaveLength(0)
 
         for (const row of rows) {
             // Bước hạ 再初診 chỉ áp cho ngày 初診 (modAcc.cs:465 gác trên flgSyosin).
             expect(
                 row.sflg,
-                `ngày ${saisinDay} chỉ có 再診 mà unpaid.sflg = ${row.sflg} (km_cd=${row.kmCd})`,
+                `ngày ${SAISIN_DAY} chỉ có 再診 mà unpaid.sflg = ${row.sflg} (km_cd=${row.kmCd})`,
             ).toBe(SFLG.revisit)
         }
-        console.log(`${saisinDay}: sflg = ${rows.map((r) => r.sflg).join(', ')}`)
+        console.log(`${SAISIN_DAY}: sflg = ${rows.map((r) => r.sflg).join(', ')}`)
     })
 
     test('TC-ATTDR-1 — att_dr = Dr đang chọn trên header, KHÔNG phải 0', async () => {
         const tested = [...expectedAttDr.entries()]
-        skipWithReason(tested.length === 0, 'không có ngày nào chạy được ở TC-SFLG-1/2')
-        if (tested.length === 0) return
-
         const usable = tested.filter(([, drNo]) => drNo > 0)
         skipWithReason(
             usable.length === 0,
@@ -793,14 +655,11 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
     })
 
     test('TC-RAIIN-1 — trt_cnt = 当日来院回数 của dòng con trỏ, KHÔNG phải 1 cứng', async () => {
-        const targets = [syosinDay, saisinDay].filter((d): d is string => d !== null)
-        skipWithReason(targets.length === 0, 'không có ngày nào chạy được ở TC-SFLG-1/2')
-        if (targets.length === 0) return
 
         // Không bấm F8 thêm lần nào — đọc lại chính những dòng hai testcase trên
         // vừa tạo. `runF8On` đặt con trỏ vào dòng ĐẦU của ngày, nên kỳ vọng là
         // `raiin_cnt` của chính dòng đó (WinForm đọc hFG1[71] tại dòng con trỏ).
-        for (const day of targets) {
+        for (const day of TEST_DAYS) {
             const expected = await readFirstRowRaiinCnt(day)
             expect(expected, `ngày ${day} không có dòng 処置 nào trong trn_trn`).not.toBeNull()
 
@@ -833,14 +692,11 @@ test.describe('診療入力 F8 → unpaid: sflg (1/2/3) và att_dr phải khớp
     })
 
     test('TC-SFLG-3 — mọi dòng vừa ghi chỉ mang 1/2/3, không có mã 4 của buiPrice', async () => {
-        const targets = [syosinDay, saisinDay].filter((d): d is string => d !== null)
-        skipWithReason(targets.length === 0, 'không có ngày nào chạy được ở TC-SFLG-1/2')
-        if (targets.length === 0) return
 
         // Không bấm F8 thêm lần nào — đọc lại chính những dòng hai testcase trên
         // vừa tạo. `4` là giá trị của `BuiPriceService.SyosinFlg` cho 訪問診療: nếu
         // nó xuất hiện thì dây cũ đã quay lại.
-        for (const day of targets) {
+        for (const day of TEST_DAYS) {
             for (const row of await readUnpaidRows(day)) {
                 expect(
                     [SFLG.firstVisit, SFLG.revisit, SFLG.repeatFirstVisit],
@@ -922,20 +778,16 @@ test.describe('cột trt_cnt — 1 ngày 2 lượt = 2 dòng', () => {
  *
  * ─── Vì sao spec này phải TỰ DỰNG dữ liệu ──────────────────────────────────
  *  Ngày có 2 lượt khám gần như không tồn tại sẵn trong DB của tester, mà đó lại
- *  chính là kịch bản duy nhất phân biệt bản đúng với bản hỏng. Nên spec seed
- *  thẳng `trn_trn` (vùng `disp_no >= SEED_DISP_BASE`, giống
- *  `save-f9/p0-save-side-effects.spec.ts`) rồi bấm F9 THẬT để `RaiinCntCalculator` đánh số.
+ *  chính là kịch bản duy nhất phân biệt bản đúng với bản hỏng. Nên spec dựng một
+ *  bệnh nhân riêng (`SEED_PAT_NO_BASE + 501`), seed thẳng `trn_trn` cho một ngày
+ *  trống của bệnh nhân đó rồi bấm F9 THẬT để `RaiinCntCalculator` đánh số.
  *  Không seed `raiin_cnt` bằng tay: làm vậy là tự viết ra kỳ vọng của chính mình.
  *
  * ─── GHI DB — đọc kỹ trước khi chạy ────────────────────────────────────────
- *  Spec GHI THẬT ở hai chỗ:
- *   · F9 登録 — bulk-save ghi lại **CẢ THÁNG** 処置 (xoá mềm + chèn lại disp_no mới).
- *     Chọn TEST_PAT_NO / TEST_TRT_DT vào tháng ÍT dữ liệu thật; beforeAll in ra
- *     số dòng thật để không ai phải đoán.
- *   · F8 会計 — `clear-unpaid` xoá mềm 未精算 của ngày rồi `insert-unpaid` chèn lại.
- *  Dọn dẹp: dòng 処置 do spec dựng bị xoá hẳn — nhận theo `(trt_cd, dsp_trt)` chứ
- *  KHÔNG theo mã (xem `TEST_ROW_SIGNATURES`); `unpaid` được snapshot ở beforeAll,
- *  afterAll xoá cứng dòng do lượt chạy sinh ra và bỏ xoá mềm dòng vốn đang sống.
+ *  Spec GHI THẬT ở hai chỗ, đều trên bệnh nhân seed:
+ *   · F9 登録 — bulk-save ghi lại **CẢ THÁNG** 処置 (xoá + chèn lại disp_no mới).
+ *   · F8 会計 — `clear-unpaid` xoá 未精算 của ngày rồi `insert-unpaid` chèn lại.
+ *  `afterAll` xoá hẳn bệnh nhân đó cùng mọi dòng 処置 / 未精算 của nó.
  *
  * ─── BẪY ───────────────────────────────────────────────────────────────────
  *  1. F9 gửi lên NHỮNG GÌ ĐANG CÓ TRONG LƯỚI. Seed xong PHẢI mở lại màn hình,
@@ -951,7 +803,8 @@ test.describe('cột trt_cnt — 1 ngày 2 lượt = 2 dòng', () => {
  *  6. KHÔNG bấm はい ở hộp 「処置データは変更されています」 trong chuỗi F8: nó lưu lại
  *     cả tháng và làm hỏng bộ dòng vừa dựng. Trả lời いいえ.
  *  7. Ngày test phải CHƯA quyết toán (`acc_dat` trống) — nếu không F8
- *     bung hộp 既存会計 và rẽ sang 会計データ修正, khác hẳn nhánh đang đo.
+ *     bung hộp 既存会計 và rẽ sang 会計データ修正, khác hẳn nhánh đang đo. Bệnh nhân
+ *     seed chưa có 会計 nào nên điều này luôn đúng.
  *
  * ─── KHÔNG kiểm ở đây ──────────────────────────────────────────────────────
  *  Luật đếm của `hfgRaiinCnt` (reset khi đổi ngày, 回数 = 0 không mở lượt, 部位病名行,
@@ -965,7 +818,6 @@ test.describe('cột trt_cnt — 1 ngày 2 lượt = 2 dòng', () => {
  *   TEST_DB=1 TEST_ALLOW_SAVE=1 npx playwright test tests/accounting-unpaid/unpaid-insert.spec.ts --retries=0
  *
  * ENV:
- *   TEST_PAT_NO        bệnh nhân test (mặc định 12138)
  *   TEST_TRT_DT        ngày dựng 2 lượt khám (mặc định hôm nay)
  *   TEST_DB=1          BẮT BUỘC — assert soi thẳng Postgres
  *   TEST_ALLOW_SAVE=1  BẮT BUỘC — F9 + F8 ghi thật
@@ -973,7 +825,7 @@ test.describe('cột trt_cnt — 1 ngày 2 lượt = 2 dòng', () => {
  * Chạy CẢ FILE, không `-g` một testcase lẻ (Rule 19) — các TC nối tiếp nhau.
  */
 
-const PAT_NO = Number(patNo('12138'))
+const PAT_NO = SEED_PAT_NO_BASE + 501
 
 const TRT_DT =
     process.env.TEST_TRT_DT ??
@@ -1007,9 +859,9 @@ const PT = { syosin: 264, plainA: 40, saisin: 56, plainB: 30 } as const
  * ═══════════════════════════════════════════════════════════════════════════
  * VÌ SAO KHÔNG VIẾT CỨNG `PT.syosin + PT.plainA`
  * ═══════════════════════════════════════════════════════════════════════════
- * Công thức đó chỉ đúng khi ngày test **không còn dòng nào khác**. Ngày test là
- * ngày THẬT của bệnh nhân THẬT, nên nó thường đã có sẵn 処置; những dòng đó cũng
- * được `hfgRaiinCnt` gán 来院回数 và cũng vào tổng điểm của lượt tương ứng.
+ * Công thức đó chỉ đúng khi ngày test **không còn dòng nào khác**. Bệnh nhân seed
+ * bắt đầu từ một ngày trống, nhưng F9 vẫn có thể thêm dòng (AutoSantei); những dòng
+ * đó cũng được `hfgRaiinCnt` gán 来院回数 và cũng vào tổng điểm của lượt tương ứng.
  *
  * Đã đỏ oan thật 2026-09-04: ngày test còn 3 dòng 加算 thật (2 điểm mỗi dòng) nằm
  * TRƯỚC dòng 初診 ⇒ thuộc lượt 1 ⇒ điểm lượt 1 thật là 264 + 40 + **6** = 310, còn
@@ -1057,8 +909,8 @@ const VISIT_2 = 2
 const CARE_TRT_CNT_OFFSET = 100
 
 /**
- * `dsp_trt` của MỌI dòng spec này seed — dùng cả để locate trên lưới lẫn để dọn.
- * Thêm dòng mới thì PHẢI thêm tên vào đây, nếu không cleanup sẽ để lại rác.
+ * `dsp_trt` của MỌI dòng spec này seed — dùng để locate trên lưới và nhận lại
+ * dòng của spec sau F9.
  */
 const NM = {
     syosin: '初診-来院回数テスト',
@@ -1066,30 +918,6 @@ const NM = {
     saisin: '再診-来院回数テスト',
     plainB: '処置B-来院回数テスト',
 } as const
-
-/**
- * Chữ ký `(trt_cd, dsp_trt[])` của MỌI dòng spec này dựng — dùng để dọn.
- *
- * Dọn theo TÊN chứ không theo mã: `deleteTreatmentRowsByTrtCd` xoá HẲN mọi dòng
- * cùng mã trong ngày, kể cả dòng THẬT. Ngày test hiếm khi trống — bệnh nhân có 再診
- * (110) thật trong ngày là mất luôn, không dựng lại được (xoá cứng, không phải xoá
- * mềm, và `afterAll` cũng chỉ gọi lại chính hàm dọn này).
- *
- * Đã mất thật 2026-09-04: chạy thử trên một ngày có 3 dòng 110 thật, cả ba biến mất.
- * Mã 100/110 lại là mã ai cũng có, nên lưới xoá theo mã ở đây gần như chắc chắn
- * cuốn theo dữ liệu thật.
- *
- * Vẫn phải dọn ngoài vùng `disp_no >= SEED_DISP_BASE`: F9 一回 là `bulk-save` xoá
- * mềm dòng seed rồi chèn lại với `disp_no` đánh số từ 1
- * (`SaveTreatmentsHandler.cs:175-196`) ⇒ bản mới rơi ra ngoài vùng test. `dsp_trt`
- * thì sống sót qua F9 (lưới gửi lên đúng chữ đang hiện), nên nó là chữ ký hẹp vừa
- * đủ: chỉ trúng dòng của spec, không bao giờ trúng dòng thật.
- */
-const TEST_ROW_SIGNATURES = [
-    { trtCd: SYOSIN_TRT_CD, names: [NM.syosin] },
-    { trtCd: SAISIN_TRT_CD, names: [NM.saisin] },
-    { trtCd: PLAIN_TRT_CD, names: [NM.plainA, NM.plainB] },
-] as const
 
 /** Chỉ số cột 日 — `RegiCol.day` = cột 0 (frm203002.cs:158). */
 const COL_DAY = 0
@@ -1173,19 +1001,6 @@ async function readDayRows(): Promise<DayRow[]> {
 }
 
 /**
- * Tập 処置 MỞ một lượt khám mới — `modAcc.hfgRaiinCnt` (modAcc.cs:1208).
- *
- * KHÁC tập quyết định `sflg` (`Check.IsFirstVisitTreatCode`) và KHÁC tập đếm 初診
- * quá khứ (`getKaikeiPastSyosinCnt`). Ba tập, ba việc — lẫn là sai.
- */
-const VISIT_OPENING_TRT_CDS = new Set([100, 107, 110, 111, 333])
-
-/** Số dòng MỞ lượt trong một bộ dòng — `trt_cnt > 0` mới được tính (modAcc.cs:1210). */
-function countVisitOpeners(rows: readonly DayRow[]): number {
-    return rows.filter((r) => VISIT_OPENING_TRT_CDS.has(r.trtCd) && r.trtCnt > 0).length
-}
-
-/**
  * Σ (trt_pt × trt_cnt) theo từng 来院回数 — kỳ vọng cho `unpaid.score`.
  *
  * Gom theo `raiin_cnt` mà F9 vừa đóng dấu (TC-0 khoá giá trị đó trước), nên nó
@@ -1200,18 +1015,6 @@ function scoreByVisit(rows: readonly DayRow[]): Map<number, number> {
         byVisit.set(row.raiinCnt, (byVisit.get(row.raiinCnt) ?? 0) + row.trtPt * cnt)
     }
     return byVisit
-}
-
-/** Ngày test đã có 会計 済み chưa (BẪY 7). */
-async function isDaySettled(): Promise<boolean> {
-    return withDb(async (c) => {
-        const r = await c.query<{ exists: boolean }>(
-            `SELECT EXISTS (SELECT 1 FROM acc_dat
-                             WHERE pat_no = $1 AND trt_dt = $2) AS exists`,
-            [PAT_NO, TRT_DT],
-        )
-        return r.rows[0]?.exists ?? false
-    })
 }
 
 /** `true` nếu locator hiện ra trong `timeout` — `isVisible()` KHÔNG chờ. */
@@ -1247,25 +1050,6 @@ skipWithReason(
 test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 dòng 未精算 riêng', () => {
     let page: Page
     let step: () => Promise<void>
-
-    /** Ngày test đã quyết toán ⇒ mọi TC skip (BẪY 7). */
-    let daySettled = false
-
-    /**
-     * Ngày test ĐÃ có sẵn bao nhiêu 処置 mở lượt khám TRƯỚC khi spec seed.
-     *
-     * Phải bằng 0 thì phép đo mới có nghĩa: spec tự mang theo 初診 + 再診 của mình để
-     * dựng đúng HAI lượt, nên ngày nào đã có 再診/初診 thật thì dòng seed bị đẩy thành
-     * lượt 3, 4… và mọi kỳ vọng 1/2 sai theo.
-     *
-     * Đã đỏ oan thật 2026-09-04: ngày test có 3 dòng 再診 thật ⇒ 初診 seed thành lượt 4,
-     * TC-0 báo 「初診 phải mở lượt 1」 — thông điệp đúng chữ nhưng chỉ sai địa chỉ, người
-     * đọc đi soi `RaiinCntCalculator` trong khi lỗi nằm ở CHỌN NGÀY.
-     */
-    let dayVisitOpeners = 0
-
-    /** `id` của mọi dòng unpaid ngày test, chụp TRƯỚC khi chạy. */
-    const unpaidSnapshot = new Set<string>()
 
     const dlg = (text: string | RegExp) =>
         page.locator('[role="dialog"], [role="alertdialog"]').filter({ hasText: text })
@@ -1320,30 +1104,12 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
     }
 
     /**
-     * Xoá HẲN mọi dòng 処置 do spec này tạo — theo vùng `disp_no` VÀ theo `dsp_trt`.
-     *
-     * Hai lượt là cần: vùng `disp_no >= SEED_DISP_BASE` tóm bản vừa seed, còn
-     * `dsp_trt` tóm bản mà F9 đã chèn lại với `disp_no` thật. KHÔNG dọn theo 処置コード
-     * — xem chú thích ở `TEST_ROW_SIGNATURES`.
-     */
-    async function purgeTestRows(): Promise<number> {
-        let n = await deleteTreatmentRows(PAT_NO, TRT_DT).catch(() => 0)
-        for (const sig of TEST_ROW_SIGNATURES) {
-            n += await deleteTreatmentRowsByDspTrt(PAT_NO, TRT_DT, sig.trtCd, sig.names).catch(
-                () => 0,
-            )
-        }
-        return n
-    }
-
-    /**
      * Dựng ngày test thành HAI lượt khám rồi F9 để `RaiinCntCalculator` đánh số.
      *
      * Thứ tự dòng chính là đầu vào của `hfgRaiinCnt` (quét theo thứ tự hiển thị):
      * 初診 + 処置A → lượt 1; 再診 + 処置B → lượt 2.
      */
     async function buildTwoVisitDay() {
-        await purgeTestRows()
         await seedTreatmentRows(PAT_NO, TRT_DT, [
             { trtCd: SYOSIN_TRT_CD, trtSb: SYOSIN_SB, trtCnt: 1, trtPt: PT.syosin, dspTrt: NM.syosin },
             { trtCd: PLAIN_TRT_CD, trtSb: PLAIN_SB, trtCnt: 1, trtPt: PT.plainA, dspTrt: NM.plainA },
@@ -1487,83 +1253,23 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
     let disposeOverlays: (() => Promise<void>) | undefined
 
     test.beforeAll(async ({ authedPage }) => {
-        daySettled = await isDaySettled()
-        dayVisitOpeners = countVisitOpeners(await readDayRows())
-        const realRows = await countRealTreatmentRowsInMonth(PAT_NO, TRT_DT)
-        console.log(
-            `bệnh nhân ${PAT_NO}, ngày ${TRT_DT}: 会計済 = ${daySettled}, ` +
-                `処置 mở lượt CÓ SẴN trong ngày = ${dayVisitOpeners}, ` +
-                `処置行 THẬT trong tháng = ${realRows}`,
-        )
-        if (realRows > 0) {
-            console.log(
-                `⚠️ mỗi lần F9 sẽ ghi lại toàn bộ ${realRows} dòng đó (xoá mềm + chèn lại ` +
-                    'disp_no mới). Đổi TEST_PAT_NO/TEST_TRT_DT sang tháng trống nếu không muốn đụng.',
-            )
-        }
-
-        await withDb(async (c) => {
-            const r = await c.query<{ id: string }>(
-                `SELECT id FROM unpaid WHERE pat_no = $1 AND trt_dt = $2`,
-                [PAT_NO, TRT_DT],
-            )
-            for (const row of r.rows) unpaidSnapshot.add(row.id)
-        })
-        console.log(
-            `unpaid hiện có ở ngày test: ${unpaidSnapshot.size} dòng — afterAll sẽ trả nguyên trạng`,
-        )
+        await seedTestPatient({ patNo: PAT_NO })
+        console.log(`đã seed bệnh nhân ${PAT_NO}, ngày dựng 2 lượt khám = ${TRT_DT}`)
 
         page = authedPage
         disposeOverlays = await installOverlayHandlers(page, { santei: true })
         step = makeStep(page)
-
     })
 
     test.afterAll(async () => {
         await disposeOverlays?.()
         await releaseSharedPage(page)
-        if (!dbEnabled) return
-
-        const removed = await purgeTestRows()
-
-        // `clear-unpaid` xoá dòng cũ trước khi `insert-unpaid` chèn dòng mới — xem `resetUnpaid`.
-        await resetUnpaid(PAT_NO, [TRT_DT], [...unpaidSnapshot])
-            .then(({ removed: unpaidRemoved, revived }) =>
-                console.log(
-                    `afterAll: xoá ${removed} 処置行 test, xoá ${unpaidRemoved} dòng unpaid do ` +
-                        `test sinh ra, khôi phục ${revived} dòng bị F8 xoá`,
-                ),
-            )
-            .catch((e: unknown) => console.log(`afterAll: dọn không xong — ${String(e)}`))
+        // dropTestPatient dọn cả bảng phát sinh (unpaid, trn_status…) mà F8/F9 ghi.
+        if (dbEnabled) await dropTestPatient(PAT_NO)
     })
-
-    /**
-     * Hai tiền đề của ngày test, kiểm bằng DB TRƯỚC khi ghi gì.
-     *
-     * Trả `true` = bỏ qua. Gọi ở ĐẦU mọi TC: bộ này chạy serial nên TC sau không thể
-     * có nghĩa nếu TC-0 không dựng được dữ liệu.
-     */
-    function skipUnlessDayUsable(): boolean {
-        skipWithReason(
-            daySettled,
-            `ngày ${TRT_DT} của bệnh nhân ${PAT_NO} ĐÃ quyết toán (acc_dat có dòng) — ` +
-                'F8 sẽ rẽ sang nhánh 既存会計/会計データ修正, khác nhánh đang đo. Đổi TEST_TRT_DT.',
-        )
-        skipWithReason(
-            !daySettled && dayVisitOpeners > 0,
-            `ngày ${TRT_DT} của bệnh nhân ${PAT_NO} ĐÃ có ${dayVisitOpeners} 処置 mở lượt khám ` +
-                `(${[...VISIT_OPENING_TRT_CDS].join('/')}) — spec tự mang 初診 + 再診 của mình nên ` +
-                'dòng seed sẽ thành lượt 3, 4… chứ không phải 1 và 2, và mọi kỳ vọng sai theo. ' +
-                'Trỏ TEST_TRT_DT vào một ngày CHƯA có 初診/再診 (ngày trống là tốt nhất — F9 ghi ' +
-                'lại cả tháng nên tháng trống còn tránh đụng dữ liệu thật).',
-        )
-        return daySettled || dayVisitOpeners > 0
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     test('TC-0 (mốc) — F9 đánh số raiin_cnt 1,1,2,2 cho ngày 2 lượt khám', async () => {
-        if (skipUnlessDayUsable()) return
-
         await buildTwoVisitDay()
 
         const rows = await readDayRows()
@@ -1600,14 +1306,14 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
         expect(
             others,
             `ngày test có thêm lượt khám ngoài 1 và 2 (${others.map(([v, s]) => `来院${v}=${s}点`).join(', ')}) ` +
-                '⇒ phép đo không còn là "2 lượt". Chọn TEST_TRT_DT khác.',
+                '⇒ phép đo không còn là "2 lượt".',
         ).toHaveLength(0)
 
         const seeded = mine.reduce((sum, r) => sum + r.trtPt * r.trtCnt, 0)
         const dayTotal = visit1 + visit2
         if (dayTotal !== seeded) {
             console.log(
-                `⚠️ ngày ${TRT_DT} có sẵn ${dayTotal - seeded} điểm từ 処置 THẬT ngoài 4 dòng seed — ` +
+                `⚠️ ngày ${TRT_DT} có thêm ${dayTotal - seeded} điểm ngoài 4 dòng seed — ` +
                     'kỳ vọng đã cộng cả chúng vào đúng lượt của mình.',
             )
         }
@@ -1630,8 +1336,6 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
 
     // ─────────────────────────────────────────────────────────────────────────
     test('TC-1 — F8 từ dòng lượt 1: unpaid.trt_cnt = 1 và score CHỈ của lượt 1', async () => {
-        if (skipUnlessDayUsable()) return
-
         const want = requireExpectedScores()
 
         expect(
@@ -1669,8 +1373,6 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
 
     // ─────────────────────────────────────────────────────────────────────────
     test('TC-2 — F8 từ dòng lượt 2: sinh dòng trt_cnt = 2 và KHÔNG xoá dòng lượt 1', async () => {
-        if (skipUnlessDayUsable()) return
-
         const want = requireExpectedScores()
 
         expect(
@@ -1725,8 +1427,6 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
 
     // ─────────────────────────────────────────────────────────────────────────
     test('TC-4 — rece_kbn = 1 và acc_tm rỗng (1900-01-01): mặc định UnPaidData, LetAccData2 không ghi đè', async () => {
-        if (skipUnlessDayUsable()) return
-
         // UnPaid.cs:93/99 — rece_kbn = 1 (現金), acc_tm = "" ⇒ SQL Server lưu 1900-01-01.
         // Hai dòng gán 0 / "" ở modAcc.cs:509/516 đã bị comment. Bản port từng ghi 0 + giờ hiện tại.
         // Không bấm F8 thêm — đọc lại chính các dòng TC-1/TC-2 vừa tạo.
@@ -1739,8 +1439,6 @@ test.describe('診療入力 F8 会計 — 1 ngày 2 lượt khám phải ra 2 d�
     })
 
     test('TC-3 — sflg giống nhau ở cả hai lượt: 初診判定 quét theo NGÀY, không theo lượt', async () => {
-        if (skipUnlessDayUsable()) return
-
         // Không bấm F8 thêm lần nào — đọc lại chính những dòng TC-1/TC-2 vừa tạo.
         const rows = await readUnpaidRows()
         expect(rows.length, 'không còn dòng 未精算 nào của ngày test').toBeGreaterThan(0)
