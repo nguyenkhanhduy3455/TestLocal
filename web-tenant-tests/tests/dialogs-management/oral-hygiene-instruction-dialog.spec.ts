@@ -276,7 +276,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
     let boxOf: (text: string) => Locator
     let stateBox: Locator
     let noRow: Locator
-    /** SVG chart = svg DUY NHẤT chứa foreignObject (ô 本); svg đầu tiên là icon X. */
+    /** SVG chart trên màn hình = svg đứng cạnh ô 本数; svg đầu tiên là icon X. */
     let chartSvg: Locator
 
     // ── Luồng in, chia sẻ giữa các testcase in ───────────────────────────────
@@ -322,7 +322,10 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         boxOf = (text: string) => dialog.getByText(text, { exact: true }).locator('..')
         stateBox = boxOf('【歯・歯肉の状態】')
         noRow = boxOf('No.')
-        chartSvg = dialog.locator('svg:has(foreignObject)')
+        // Ô 本数 nằm NGOÀI svg từ app 2e9838182 (Redact tạo con của foreignObject trong
+        // namespace SVG nên ô không hiện). Bản printMode ẩn cũng có [data-tooth] ⇒ nhận chart
+        // MÀN HÌNH là svg đứng cạnh ô 本数.
+        chartSvg = dialog.locator('div:has(> div > input[aria-label="本数"]) > svg')
         previewDialog = page.getByRole('dialog').filter({ hasText: '実地指導文書プレビュー' })
 
         // ─── Một route duy nhất cho MỌI endpoint agent ────────────────────────
@@ -534,7 +537,7 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await expect(quarter).toHaveAttribute('fill', beforeFill ?? SURF_OFF)
     })
 
-    test('本数 — input number trong foreignObject giữa chart', async () => {
+    test('本数 — input number đè giữa chart', async () => {
         const toothCnt = dialog.getByLabel('本数')
         await expect(toothCnt).toBeVisible()
         await toothCnt.fill('28')
@@ -717,6 +720,10 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
 
         const guides = dialog.locator('input[aria-label^="指導内容"]')
         for (const [i, text] of PRINT_FIXTURE.guides.entries()) await guides.nth(i).fill(text)
+        // Gõ vào combo 指導内容 làm bung danh sách gợi ý, nó không tự đóng và đè lên combo
+        // 指導開始時刻 ngay dưới. Chỉ Escape khi danh sách đang mở (Escape trơn rơi xuống dialog).
+        if (await page.getByRole('option').first().isVisible()) await page.keyboard.press('Escape')
+        await expect(page.getByRole('option')).toHaveCount(0)
 
         const start = boxOf('指導開始時刻')
         const end = boxOf('指導終了時刻')

@@ -352,7 +352,7 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
     let boxOf: (text: string) => Locator
     /** Hàng No. — chứa 4 textbox: No. / 年 / 月 / 日 và select 元号. */
     let noRow: Locator
-    /** SVG chart = svg DUY NHẤT chứa foreignObject (ô 本数). */
+    /** SVG chart trên màn hình = svg đứng cạnh ô 本数. */
     let chartSvg: Locator
     /** Combo 過去の記録 — nằm cùng hàng với caption 【口腔内の状態】. */
     let history: Locator
@@ -417,7 +417,10 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
         dialog = page.getByRole('dialog').filter({ hasText: '【歯科疾患管理に係わる管理計画書】' })
         boxOf = (text: string) => dialog.getByText(text, { exact: true }).locator('..')
         noRow = boxOf('No.')
-        chartSvg = dialog.locator('svg:has(foreignObject)')
+        // Ô 本数 nằm NGOÀI svg từ app 2e9838182 (Redact tạo con của foreignObject trong
+        // namespace SVG nên ô không hiện). Bản printMode ẩn cũng có [data-tooth] ⇒ nhận chart
+        // MÀN HÌNH là svg đứng cạnh ô 本数.
+        chartSvg = dialog.locator('div:has(> div > input[aria-label="本数"]) > svg')
         history = boxOf('【口腔内の状態】').getByRole('combobox')
         previewDialog = page
             .getByRole('dialog')
@@ -437,15 +440,23 @@ test.describe('歯管 — 歯科疾患管理 dialog (frm203021)', () => {
     })
 
     test('TC-OPEN-1 — mở bằng nút 歯管, POST /initial mang đúng paramData của lưới', async () => {
-        const initialReq = page.waitForRequest(
-            (req) => INITIAL_URL.test(req.url()) && req.method() === 'POST',
-            { timeout: 60000 },
-        )
+        // Mở dialog có thể bắn /initial HAI lần: lần đầu bị chính app huỷ (ERR_ABORTED, query
+        // chạy lại khi paramData của lưới đổi) — body của nó không đọc được ("No data found for
+        // resource"). Dialog dùng lần HOÀN TẤT, nên spec cũng chờ đúng lần đó.
+        const initial = page
+            .waitForResponse(
+                async (res) =>
+                    INITIAL_URL.test(res.url()) &&
+                    res.request().method() === 'POST' &&
+                    (await res.finished()) === null,
+                { timeout: 60000 },
+            )
+            .then(async (res) => ({ req: res.request(), body: await res.json() }))
         await openDialog(page, dialog)
 
-        const req = await initialReq
+        const { req, body } = await initial
         sentInitial = req.postDataJSON() as InitialBody
-        const initialRes = (await (await req.response())?.json()) as {
+        const initialRes = body as {
             carryForward?: { pq: number } | null
         }
         carryForwardPq = initialRes?.carryForward?.pq ?? null
