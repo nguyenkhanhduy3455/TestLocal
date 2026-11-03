@@ -150,7 +150,14 @@ const santeiConfirm = () => dialog.filter({ hasText: /を算定しますか？/ 
 async function cancelSanteiConfirm() {
   const confirm = santeiConfirm()
   if (!(await confirm.count())) return false
-  await confirm.getByRole('button', { name: /^(Cancel|キャンセル)$/ }).click()
+  // Click này có actionability check ⇒ Playwright chạy `installSanteiAutoCancel`
+  // TRƯỚC — handler bấm Cancel, hộp đóng, nút biến mất và click gốc treo tới
+  // timeout. Hộp đã đóng thì việc cần làm đã xong; chỉ ném lỗi khi nó còn mở.
+  try {
+    await confirm.getByRole('button', { name: /^(Cancel|キャンセル)$/ }).click({ timeout: 5000 })
+  } catch (e) {
+    if (await confirm.count()) throw e
+  }
   await expect(confirm).toBeHidden({ timeout: 10000 })
   return true
 }
