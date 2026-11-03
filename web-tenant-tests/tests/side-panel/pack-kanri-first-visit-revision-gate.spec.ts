@@ -1,13 +1,17 @@
 import { type Locator, type Page } from '@playwright/test'
 
 import {
+    SEED_PAT_NO_BASE,
     dbEnabled,
+    deleteTestPatient,
     findMstTrt,
     findPacsWithTrtSlot,
     findTreInpFlg,
     type MstTrtRow,
+    seedTestPatient,
+    seedTreatmentRows,
 } from '../_shared/db'
-import { patNo, trtDt, trtDtPre } from '../_shared/env'
+import { trtDt, trtDtPre } from '../_shared/env'
 import { openTreatmentEntry } from '../_shared/entry'
 import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
@@ -61,7 +65,7 @@ import { rows as gridRows } from '../_shared/virtual-grid'
  *   TEST_DB=1 npx playwright test tests/side-panel/pack-kanri-first-visit-revision-gate.spec.ts
  * Chạy CẢ FILE (`describe.serial` + page dùng chung theo worker, Rule 19); một test
  * đỏ thì các test sau bị skip. Page không do fixture `page` sinh ra nên KHÔNG có
- * trace/video tự động. Spec chỉ SELECT, không ghi DB.
+ * trace/video tự động. Spec chỉ ghi bệnh nhân test của nó (seed ở beforeAll, xoá hẳn ở afterAll).
  *
  * Rule 23: đủ 4 testcase bắt buộc của hộp thoại này nằm ở
  * `pack-sidepanel-handler.spec.ts` (23.1 con trỏ lúc mở, 23.2 thanh cuộn, 23.3
@@ -83,16 +87,19 @@ const REV_R02_04 = '2020-04-01'
 const REV_R08_06 = '2026-06-01'
 
 /**
- * 患者番号 mặc định = 5 (Rule 18): bệnh nhân của lần tái hiện bug, và có
- * 歯科初診料 (100-0) THẬT ở cả hai tháng mà spec ghim bên dưới.
+ * Bệnh nhân test tự dựng: 歯科初診料 (100-0) được seed đúng vào 2 ngày ghim bên dưới,
+ * nên tháng nào cũng là 初診月. Trước đây spec trỏ bệnh nhân THẬT 5 — dữ liệu migrate
+ * lại (2026-11) không còn dòng 処置 nào của bệnh nhân đó ⇒ tiền đề 初診月 không dựng được.
  */
-const PAT_NO = patNo('5')
+const PAT_NO = String(SEED_PAT_NO_BASE + 420)
+/** 歯科初診料. */
+const SHOSIN_TRT_CD = 100
 
 /**
  * 診療日 SAU 改定 令和8年6月 — mặc định 2026-07-01 (env `TEST_TRT_DT`).
  *
  * Rule 18: KHÔNG dùng hôm nay. Tiền đề của bug là 初診月 + sau 改定, mà 初診日 do FE
- * suy từ lưới; bệnh nhân 5 có 歯科初診料 vào 2026-07-01 nên chỉ tháng 2026-07 mới
+ * suy từ lưới; bệnh nhân test có 歯科初診料 vào 2026-07-01 nên chỉ tháng 2026-07 mới
  * dựng được nhánh đó. Lấy hôm nay (2026-09) thì FE gửi `FirstVisitDt=2026-07-01`
  * ⇒ khác tháng ⇒ test rơi về nhánh 「không phải 初診月」 và XANH cả khi chưa vá.
  */
@@ -100,7 +107,7 @@ const TRT_DT_POST = trtDt('2026-07-01')
 
 /**
  * 診療日 TRONG khung thay thế — mặc định 2025-12-23 (env `TEST_TRT_DT_PRE`), ngày
- * bệnh nhân 5 có 歯科初診料 THẬT, nên tiền đề 初診月 dựng được mà không phải ghi gì.
+ * bệnh nhân test được seed 歯科初診料, nên tiền đề 初診月 dựng được.
  */
 const TRT_DT_PRE = trtDtPre('2025-12-23')
 
@@ -363,6 +370,11 @@ test.describe('パック処置選択 — cổng 改定 của 歯管 初診月 (f
         masterPost = await findMstTrt(TRT_DT_POST, KANRI_TRT_CD)
         masterPre = await findMstTrt(TRT_DT_PRE, KANRI_TRT_CD)
 
+        await seedTestPatient({ patNo: Number(PAT_NO) })
+        for (const day of [TRT_DT_POST, TRT_DT_PRE]) {
+            await seedTreatmentRows(Number(PAT_NO), day, [{ trtCd: SHOSIN_TRT_CD, trtSb: 0 }])
+        }
+
         // Tiền đề, in ra để đối chiếu tay với WinForm khi một testcase đỏ.
         for (const p of pacsWithKanri) {
             console.log(`pac_mst: ${p.pacCd} 「${p.pacNm}」 slot ${p.slotIdx} = 116-7`)
@@ -398,6 +410,7 @@ test.describe('パック処置選択 — cổng 改定 của 歯管 初診月 (f
     test.afterAll(async () => {
         await disposeOverlays?.()
         await releaseSharedPage(page)
+        await deleteTestPatient(Number(PAT_NO))
     })
 
     // ═════════════════════════════════════════════════════════════════════════
