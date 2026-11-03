@@ -19,6 +19,7 @@
 
 import { type Locator, type Page } from '@playwright/test'
 import { dbEnabled, deleteWaitRows, ensureWaitRow, findPatientWithTrnThisMonth, findPatientWithoutAttSt, findPatientsByAttDr, listDoctors, personAttending, findPatientForZeroWaitRow } from '../_shared/db'
+import { installOverlayHandlers } from '../_shared/overlays'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { makeStep, skipWithReason } from '../_shared/step'
 import { rows, cells } from '../_shared/virtual-grid'
@@ -149,6 +150,8 @@ test.describe.configure({ mode: 'serial' })
 test.describe('診療入力（患者選択）— 患者確定 phải chốt 担当医 / 衛生士', () => {
     let page: Page
     let step: () => Promise<void>
+    /** Gỡ handler popup ở afterAll — page dùng chung theo worker. */
+    let disposeOverlays: (() => Promise<void>) | undefined
 
     let inpConfig: InpConfig | null = null
     /** `inp.dispEiseisi` bắt được từ GET /tenant/settings?keys=… */
@@ -376,6 +379,9 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
 
         page = authedPage
         step = makeStep(page)
+        // Vào màn chi tiết có thể bung 「歯科初診料を算定しますか？」 tuỳ ngày chạy — chặn
+        // click lên header. 'cancel' không áp dòng nào nên backToList không bị hỏi lưu.
+        disposeOverlays = await installOverlayHandlers(page, { santei: true, santeiAnswer: 'cancel' })
 
         // Cắm listener TRƯỚC khi vào màn: react-query cache inp-config lâu nên
         // chỉ có đúng một request trong cả phiên.
@@ -418,6 +424,7 @@ test.describe('診療入力（患者選択）— 患者確定 phải chốt 担�
     })
 
     test.afterAll(async () => {
+        await disposeOverlays?.()
         await releaseSharedPage(page)
         if (seededWaitIds.length > 0) {
             const n = await deleteWaitRows(seededWaitIds)
@@ -779,6 +786,8 @@ test.describe.configure({ mode: 'serial' })
 test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
     let page: Page
     let step: () => Promise<void>
+    /** Gỡ handler popup ở afterAll — page dùng chung theo worker. */
+    let disposeOverlays: (() => Promise<void>) | undefined
 
     let dispEiseisi: number | null = null
 
@@ -856,6 +865,17 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
             .locator('..')
             .getByRole('button')
             .nth(1)
+    }
+
+    /**
+     * Mở combo Ｄｒ．ở header rồi kiểm giá trị. Popup 「…を算定しますか？」 có thể bung MUỘN
+     * (sau khi lưới nạp xong) — handler đóng nó, focus rời combo và combo tự đóng giữa
+     * chừng ⇒ mở lại và đọc lại thay vì đỏ vì 「không thấy combobox」.
+     */
+    async function expectDetailDrComboText(expected: string, message?: string): Promise<void> {
+        await expect(async () => {
+            await expect(await openDetailDrCombo(), message).toHaveText(expected, { timeout: 5000 })
+        }).toPass({ timeout: 45000 })
     }
 
     /** Mở combo `cboDr` bằng cách click ô giá trị, rồi trả về chính combo đó. */
@@ -1044,6 +1064,10 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
 
         page = authedPage
         step = makeStep(page)
+        // Vào màn chi tiết có thể bung 「歯科初診料を算定しますか？」 tuỳ ngày chạy và lịch sử
+        // của bệnh nhân — hộp modal đó chặn click lên header (TC-DR-*). 'cancel' không áp
+        // dòng nào nên lưới không bẩn và backToList không bị hỏi lưu.
+        disposeOverlays = await installOverlayHandlers(page, { santei: true, santeiAnswer: 'cancel' })
 
         page.on('response', (res) => {
             if (res.request().method() !== 'GET') return
@@ -1064,6 +1088,7 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
     })
 
     test.afterAll(async () => {
+        await disposeOverlays?.()
         await releaseSharedPage(page)
         if (seededWaitIds.length > 0) {
             const n = await deleteWaitRows(seededWaitIds)
@@ -1163,10 +1188,10 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         const drValueCell = (await detailDrValueCell().innerText()).trim()
 
         // Mốc parity: WinForm đọc cùng giá trị này ở combo cboDr (frm203002.cs:425).
-        await expect(
-            await openDetailDrCombo(),
+        await expectDetailDrComboText(
+            expectedNm!,
             `combo trống ⇒ header phải mang att_dr=${attDrOfPatWithDr}「${expectedNm}」`,
-        ).toHaveText(expectedNm!, { timeout: 30000 })
+        )
         console.log(
             `TC-DR-1: combo Dr = 「${expectedNm}」 (att_dr=${attDrOfPatWithDr}) · ` +
                 `ô giá trị Dr = 「${drValueCell}」 (att_st=${attStOfPatWithDr ?? 'NULL'})` +
@@ -1187,11 +1212,11 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         await expect(page).toHaveURL(/\/treatments\/\d+\?/, { timeout: 30000 })
 
         const attNm = doctorNameOf.get(attDrOfPatWithDr)
-        await expect(
-            await openDetailDrCombo(),
+        await expectDetailDrComboText(
+            pickedDoctor!.userNm,
             `chọn Ｄｒ．${pickedDoctor!.userNo} mà combo header vẫn hiện att_dr「${attNm}」 — ` +
                 'combo 患者選択 phải thắng 患者マスタ (frm203001.cs:678)',
-        ).toHaveText(pickedDoctor!.userNm, { timeout: 30000 })
+        )
         console.log(`TC-DR-2: header Dr = 「${pickedDoctor!.userNm}」 (att_dr là 「${attNm}」)`)
         await step()
 
@@ -1348,11 +1373,11 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         const rowNm = doctorNameOf.get(waitUserNo!)
         expect(rowNm, `user_no=${waitUserNo} không có tên trong mst_iin`).toBeTruthy()
 
-        await expect(
-            await openDetailDrCombo(),
+        await expectDetailDrComboText(
+            rowNm!,
             `mở từ 受付一覧 mà combo header không mang user_no=${waitUserNo}「${rowNm}」 của dòng — ` +
                 `đang lấy nhầm att_dr=${attDrOfPatWithDr}`,
-        ).toHaveText(rowNm!, { timeout: 30000 })
+        )
         console.log(`TC-DR-4: header Dr = 「${rowNm}」 (wait.user_no=${waitUserNo})`)
         await step()
 
@@ -1389,7 +1414,7 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
             page,
             'web không còn rơi về att_dr khi dòng 受付 mang user_no = 0 — hành vi đã đổi',
         ).toHaveURL(/\/treatments\/\d+\?/, { timeout: 30000 })
-        await expect(await openDetailDrCombo()).toHaveText(attNm!, { timeout: 30000 })
+        await expectDetailDrComboText(attNm!)
 
         console.log(
             `    ★ LỆCH: web mở màn với att_dr=${attDrOfZeroWaitPat}「${attNm}」. WinForm ở nhánh ` +
@@ -1422,11 +1447,11 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         await page.keyboard.press('End')
 
         await expect(page).toHaveURL(/\/treatments\/\d+\?/, { timeout: 30000 })
-        await expect(
-            await openDetailDrCombo(),
+        await expectDetailDrComboText(
+            seedProbeDoctor!.userNm,
             `combo header lấy Ｄｒ．từ dòng TRN cũ (dr_no=[${trnPatient!.trnDrNos.join(',')}]) ` +
                 `thay vì Ｄｒ．${seedProbeDoctor!.userNo} vừa chọn`,
-        ).toHaveText(seedProbeDoctor!.userNm, { timeout: 30000 })
+        )
 
         console.log(
             `TC-SEED-1: header giữ 「${seedProbeDoctor!.userNm}」 dù TRN tháng này có ` +
@@ -1478,13 +1503,11 @@ test.describe('患者確定 — đối chiếu parity WinForm ↔ web', () => {
         )
 
         // WinForm: `_dtTrtDt.Focus()` (frm203001.cs:639) — CÓ, trái với ghi chú trong
-        // f359a467a. Bản web đặt con trỏ lên trigger 元号, tức ô ĐẦU của control.
+        // f359a467a. Bản web (từ 0ba4b5a66, 2026-10-29) đặt con trỏ vào đúng Ô SAI của
+        // control — ở đây là ô 年 vừa bị xoá (warekiDraftFaultCell).
         focusAfter['E00002'] = await focusedDescription()
         focusAfter['E00002.onTarget'] = String(
-            await trtDtRow()
-                .getByRole('combobox')
-                .first()
-                .evaluate((el) => el === document.activeElement),
+            await yearBox.evaluate((el) => el === document.activeElement),
         )
         console.log(`=== PARITY focus sau E00002 (web) === ${focusAfter['E00002']}`)
 

@@ -311,26 +311,26 @@ test.describe('診療入力（患者選択）— 当月来患 / F7 / 受付一�
 
     test('TC-WAIT-3 — người mới chen lên đầu ⇒ dòng chọn vẫn là bệnh nhân cũ (theo 患者番号)', async () => {
         test.setTimeout(120_000)
-        let items = [waitRow(990_101, 'テスト　Ａ'), waitRow(990_102, 'テスト　Ｂ')]
+        let items = [waitRow(990_331, 'テスト　Ａ'), waitRow(990_332, 'テスト　Ｂ')]
         await page.route(WAIT_LIST_URL, (route) => route.fulfill({ json: waitEnvelope(items) }))
         await page.keyboard.press('F5')
-        await expect(page.getByTestId('row-990102')).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByTestId('row-990332')).toBeVisible({ timeout: 15_000 })
 
-        await page.getByTestId('row-990102').click()
-        await expect(statusBar()).toHaveText('選択中: 990102')
+        await page.getByTestId('row-990332').click()
+        await expect(statusBar()).toHaveText('選択中: 990332')
         await step()
 
         // Người C chen lên đầu: B trượt từ vị trí 2 xuống 3. Giữ theo index thì dòng
         // chọn sẽ thành A — đúng lỗi trỏ nhầm người.
-        items = [waitRow(990_100, 'テスト　Ｃ'), ...items]
+        items = [waitRow(990_330, 'テスト　Ｃ'), ...items]
         await page.waitForResponse(WAIT_LIST_URL, { timeout: WAIT_POLL_MS + 5_000 })
-        await expect(page.getByTestId('row-990100')).toBeVisible()
-        await expect(statusBar(), 'sau poll dòng chọn phải vẫn là B').toHaveText('選択中: 990102')
+        await expect(page.getByTestId('row-990330')).toBeVisible()
+        await expect(statusBar(), 'sau poll dòng chọn phải vẫn là B').toHaveText('選択中: 990332')
 
         // B rời danh sách ⇒ không còn dòng chọn (F9 rơi về dòng đầu như trước).
-        items = items.filter((r) => r.patNo !== 990_102)
+        items = items.filter((r) => r.patNo !== 990_332)
         await page.waitForResponse(WAIT_LIST_URL, { timeout: WAIT_POLL_MS + 5_000 })
-        await expect(page.getByTestId('row-990102')).toHaveCount(0)
+        await expect(page.getByTestId('row-990332')).toHaveCount(0)
         await expect(statusBar()).toHaveCount(0)
         await page.unroute(WAIT_LIST_URL)
     })
@@ -369,7 +369,12 @@ test.describe('診療入力（患者選択）— 当月来患 / F7 / 受付一�
         expect(squash(await dlg.innerText())).toContain(MSG.E00002('生年月日'))
         await clickDialog(page, 'accept')
         await expect(dlg).toBeHidden()
-        await expect(birth.getByRole('combobox'), 'focus phải về 元号 của 生年月日').toBeFocused()
+        // Từ web 0ba4b5a66 (2026-10-29) focus về đúng Ô SAI, không về 元号: 元号 mặc định
+        // 令和, 年 = 10 hợp lệ, 月 trống ⇒ ô 月 (warekiDraftFaultCell).
+        await expect(
+            birth.getByRole('textbox', { name: '月', exact: true }),
+            'focus phải về ô 月 (ô đầu tiên còn sai) của 生年月日',
+        ).toBeFocused()
         await page.waitForTimeout(1_000)
         page.off('request', onReq)
         expect(searched, 'E00002 mà vẫn gọi tìm kiếm').toBe(0)
@@ -393,7 +398,11 @@ test.describe('診療入力（患者選択）— 当月来患 / F7 / 受付一�
         await expect(dlg).toBeVisible({ timeout: 15_000 })
         expect(squash(await dlg.innerText())).toContain(MSG.E00002('最終診療日'))
         await clickDialog(page, 'accept')
-        await expect(last.getByRole('combobox')).toBeFocused()
+        // 年 nằm trong 1..99 nhưng vượt 平成 ⇒ warekiDraftFaultCell rơi về ô 年.
+        await expect(
+            last.getByRole('textbox', { name: '和暦年', exact: true }),
+            'focus phải về ô 年 của 最終診療日',
+        ).toBeFocused()
     })
 
     test('TC-SEARCH-3 — sửa thành ngày thật ⇒ tìm bình thường, không E00002', async () => {

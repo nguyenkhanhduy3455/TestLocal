@@ -365,9 +365,10 @@ test.describe('処置入力 — 「Ｄｒ」ラベル / コンボ / 一括変更
             'combo phải giữ Ｄｒ．「sắp đóng dấu」 = giá trị chọn ở 患者選択',
         ).toContainText(pickedDoctor!.userNm)
 
-        // cboDr_Leave đưa Visible về false.
-        await page.keyboard.press('Escape')
-        await page.locator('body').click({ position: { x: 5, y: 5 } })
+        // cboDr_Leave đưa Visible về false. Rời bằng blur, KHÔNG Escape: ở 処置入力 Escape là
+        // phím End của WinForm (登録 → 「処置データは、変更されていません。保存しますか？」),
+        // hộp modal đó ẩn header khỏi accessibility tree và TC-BULK-1 không thấy caption.
+        await combo.blur()
         await expect(page.getByRole('combobox'), 'combo không tự ẩn sau khi rời').toHaveCount(0)
         await step()
     })
