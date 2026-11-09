@@ -12,6 +12,7 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  * 二段階認証 (TOTP) cho đăng nhập web-tenant — nhánh feat/tenant-totp.
  *
  * FACT bám theo source:
+ *  - Ô 確認コード là 6 ô 1 chữ số (group aria-label 確認コード, từng ô 「確認コード N」).
  *  - apps/web-tenant/src/features/totp/locales/ja.ts (mọi chuỗi UI bên dưới)
  *  - BE: POST /tenant/auth/login trả { step: done | totp | totp_setup }; mã TOTP
  *    RFC 6238 (SHA1, 6 số, 30 giây, lệch ±1 bước), mỗi bước chỉ dùng 1 lần
@@ -46,18 +47,18 @@ const T = {
     submitCode: '確認',
     useRecovery: 'リカバリーコードを使う',
     recoveryLabel: 'リカバリーコード',
-    rememberDevice: 'このブラウザでは30日間コードを省略する',
+    rememberDevice: '30日間このブラウザでは省略',
     enable: '設定する',
     confirmSetup: '設定する',
     recoveryList: 'リカバリーコード',
-    saved: '安全な場所に保存しました',
+    saved: '保存しました',
     done: '完了',
     continue: '続ける',
     requiredTitle: '二段階認証の設定が必要です',
-    requiredOk: '設定に進む',
+    requiredOk: '設定する',
     forceLabel: '全ユーザーに二段階認証を必須にする',
-    savedToast: '保存しました。',
-    enabledToast: '二段階認証を設定しました。',
+    savedToast: '保存しました',
+    enabledToast: '設定しました',
 }
 
 // ── TOTP (RFC 6238) ─────────────────────────────────────────────────────────
@@ -144,7 +145,21 @@ async function restoreSecConfig(): Promise<void> {
 async function signOut(page: Page, keepTrustedDevice = false): Promise<void> {
     if (keepTrustedDevice) await page.context().clearCookies({ name: 'rt' })
     else await page.context().clearCookies()
-    await page.goto('/login', { waitUntil: 'domcontentloaded' })
+    await openLogin(page)
+}
+
+/**
+ * Nạp /login, chờ form hiện. Vite dev thỉnh thoảng nhả hụt module ngay sau restart ⇒ trang
+ * trắng; đó là môi trường (user-master.spec gặp y hệt) nên nạp lại tối đa 3 lần.
+ */
+async function openLogin(page: Page): Promise<void> {
+    const email = page.getByLabel(JA.emailLabel)
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        await page.goto('/login', { waitUntil: 'domcontentloaded' })
+        if (await email.waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false)) return
+        console.log(`openLogin: lượt ${attempt}/3 trang trắng (Vite dev) → nạp lại`)
+    }
+    await expect(email, 'form login không hiện sau 3 lần nạp').toBeVisible()
 }
 
 async function submitPassword(page: Page, email: string): Promise<void> {
@@ -157,6 +172,15 @@ async function submitPassword(page: Page, email: string): Promise<void> {
 async function readSecret(scope: ReturnType<Page['locator']> | Page): Promise<string> {
     const text = await scope.getByText(/^[A-Z2-7]{4}( [A-Z2-7]{1,4})+$/).innerText()
     return text.replace(/\s/g, '')
+}
+
+/** Ô mã là 6 ô 1 chữ số: gõ vào ô đầu, app tự nhảy sang ô sau. */
+async function fillCode(scope: ReturnType<Page['locator']> | Page, code: string): Promise<void> {
+    const cells = scope.getByRole('group', { name: T.codeLabel }).getByRole('textbox')
+    await expect(cells).toHaveCount(6)
+    await cells.first().click()
+    await cells.first().page().keyboard.type(code)
+    for (let i = 0; i < 6; i++) await expect(cells.nth(i)).toHaveValue(code[i])
 }
 
 async function readRecoveryCodes(scope: ReturnType<Page['locator']> | Page): Promise<string[]> {
@@ -208,7 +232,7 @@ test.describe('二段階認証 (TOTP)', () => {
     })
 
     test('個人設定: bật TOTP → QR + mã → 10 リカバリーコード → trạng thái 有効', async () => {
-        await page.goto('/login', { waitUntil: 'domcontentloaded' })
+        await openLogin(page)
         await submitPassword(page, USER_A.email)
         await expect(page).toHaveURL(/\/$/)
 
@@ -218,7 +242,7 @@ test.describe('二段階認証 (TOTP)', () => {
         const dialog = page.getByRole('dialog')
         totpA.secret = await readSecret(dialog)
         await captureFixedUi(dialog, 'totp-setup-dialog')
-        await dialog.getByLabel(T.codeLabel).fill(await nextCode(page, totpA))
+        await fillCode(dialog, await nextCode(page, totpA))
         await dialog.getByRole('button', { name: T.confirmSetup, exact: true }).click()
 
         recoveryA = await readRecoveryCodes(dialog)
@@ -228,7 +252,7 @@ test.describe('二段階認証 (TOTP)', () => {
         await dialog.getByLabel(T.saved).click()
         await done.click()
 
-        await expect(page.getByText(T.enabledToast)).toBeVisible()
+        await expect(page.getByText(T.enabledToast, { exact: true })).toBeVisible()
         await expect(page.getByText(/^有効（/)).toBeVisible()
         await captureFixedUi(page, 'totp-profile-enabled')
 
@@ -251,7 +275,7 @@ test.describe('二段階認証 (TOTP)', () => {
         await expect(page, 'chưa nhập mã thì chưa được vào app').toHaveURL(/\/login/)
         await captureFixedUi(page, 'totp-login-code-step')
 
-        await page.getByLabel(T.codeLabel).fill(await nextCode(page, totpA))
+        await fillCode(page, await nextCode(page, totpA))
         await page.getByRole('button', { name: T.submitCode, exact: true }).click()
         await expect(page).toHaveURL(/\/$/)
     })
@@ -279,7 +303,7 @@ test.describe('二段階認証 (TOTP)', () => {
         await captureFixedUi(page, 'totp-security-settings')
         await page.keyboard.press('F9')
         await page.getByRole('button', { name: 'はい' }).click()
-        await expect(page.getByText(T.savedToast)).toBeVisible()
+        await expect(page.getByText(T.savedToast, { exact: true })).toBeVisible()
 
         await signOut(page)
         await submitPassword(page, USER_B.email)
@@ -290,7 +314,7 @@ test.describe('二段階認証 (TOTP)', () => {
         await notice.getByRole('button', { name: T.requiredOk }).click()
 
         const totpB = { secret: await readSecret(page), lastStep: 0 }
-        await page.getByLabel(T.codeLabel).fill(await nextCode(page, totpB))
+        await fillCode(page, await nextCode(page, totpB))
         await page.getByRole('button', { name: T.confirmSetup, exact: true }).click()
 
         await readRecoveryCodes(page)
