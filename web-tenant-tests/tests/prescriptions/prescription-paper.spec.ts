@@ -9,16 +9,25 @@
  * tests write real `mst_med` / `syo_pac` rows, so they pick a code / pack number that
  * is FREE at the start and delete only what they created.
  *
- * Not covered here: F5 印刷. It goes through the print agent (`/v1/print` opens a
- * Windows dialog that hangs Playwright); the datasource is covered by the BE unit
- * tests.
+ * F5 印刷 goes through the print agent: real agent (tunnel) when TEST_AGENT=1, with
+ * preview forced and every real print / save-pdf blocked (tests/_shared/agent-print.ts);
+ * otherwise a stubbed preview.
  */
 import { type Page } from '@playwright/test'
+
+import {
+    AGENT_AVAILABLE,
+    AGENT_SKIP_REASON,
+    type AgentPrintStub,
+    fetchDatasource,
+    routeAgentPrint,
+} from '../_shared/agent-print'
 
 import { SEED_PAT_NO_BASE, dbEnabled, seedTestPatient, seedTreatmentRows, withDb } from '../_shared/db'
 import { ryoCells, openTreatmentEntry } from '../_shared/entry'
 import { TODAY_ISO } from '../_shared/env'
 import { clickDialog, topDialog } from '../_shared/msgtbl'
+import { foldForCompare, readPdf } from '../_shared/pdf-content'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { dropTestPatient } from '../_shared/test-patient'
 
@@ -47,9 +56,11 @@ test.describe('処方箋 (paper)', () => {
     /** 用法登録 target: a master drug that has no 用法 yet. */
     let medCd = 0
     let packNo = 0
+    let agent: AgentPrintStub
 
     test.beforeAll(async ({ authedPage }) => {
         page = authedPage
+        agent = await routeAgentPrint(page, AGENT_AVAILABLE ? 'real' : 'preview')
         await seedTestPatient({ patNo: PAT_NO })
         await withDb((c) =>
             c.query(
@@ -90,6 +101,7 @@ test.describe('処方箋 (paper)', () => {
     })
 
     test.afterAll(async () => {
+        await agent?.dispose()
         await withDb(async (c) => {
             if (medCd > 0) {
                 await c.query('DELETE FROM mst_med WHERE trt_cd = $1 AND trt_sb = 0 AND usage_nm LIKE $2', [
@@ -130,6 +142,47 @@ test.describe('処方箋 (paper)', () => {
         await page.goto(`/prescriptions/${PAT_NO}`, { waitUntil: 'domcontentloaded' })
         await expect(fkey(page, 'F6')).toBeVisible({ timeout: 60_000 })
         await expect(page.getByText(DRUG_A.name)).toHaveCount(0)
+    })
+
+    // FIXME: agent has no RPT50300126.rpt (rpt_info maps 交付日 >= 2026-06-01 to it; the agent
+    // ships only rpt50300101..103) → "reportId 'rpt50300126' could not be resolved to a .rpt".
+    // Drop the fixme once the 122/124/126 layouts are ported to the agent.
+    test.fixme('F5 印刷: job trỏ syoho-datasource với đúng thuốc; xem trước PDF có tên thuốc', async () => {
+        await openTreatmentEntry(page, String(PAT_NO), TRT_DT)
+        await ryoCells(page).first().click()
+        await page.keyboard.press('Shift+F5')
+        await expect(page.getByText(DRUG_A.name).first()).toBeVisible()
+
+        agent.reset()
+        await fkey(page, 'F5').click()
+        // Q00019 confirm.
+        await clickDialog(page, 'accept')
+
+        const job = await agent.waitForStart()
+        expect(job.request.path).toBe(`/tenant/report/${PAT_NO}/syoho-datasource`)
+        const body = job.request.body as { drugs: { name: string }[] }
+        expect(body.drugs.map((d) => d.name)).toEqual([DRUG_A.name, DRUG_B.name])
+
+        const env = await fetchDatasource(page, job)
+        expect(env.data.shouldPrint).toBe(true)
+
+        const preview = page.getByRole('dialog').filter({ hasText: '処方箋プレビュー' })
+        await expect(preview).toBeVisible({ timeout: 90_000 })
+        if (!AGENT_AVAILABLE) {
+            test.info().annotations.push({ type: 'pdf', description: `không soi PDF: ${AGENT_SKIP_REASON}` })
+        } else {
+            const src = await preview.locator('iframe').getAttribute('src')
+            const res = await page.request.get(src!.split('#')[0]!)
+            expect(res.ok(), `tải PDF preview lỗi ${res.status()}`).toBe(true)
+            const pdf = await readPdf(await res.body())
+            expect(pdf.pageCount).toBeGreaterThanOrEqual(1)
+            for (const d of [DRUG_A, DRUG_B]) {
+                expect(pdf.folded, `PDF thiếu "${d.name}"`).toContain(foldForCompare(d.name))
+            }
+        }
+        expect(agent.pageCalls.filter((c) => c.print), 'không được in thật').toHaveLength(0)
+        await preview.getByRole('button', { name: 'F10 戻る' }).click()
+        await expect(preview).toBeHidden({ timeout: 10_000 })
     })
 
     test.describe('用法登録 (F9)', () => {
