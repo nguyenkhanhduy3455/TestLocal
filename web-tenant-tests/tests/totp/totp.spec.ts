@@ -273,6 +273,8 @@ test.describe('二段階認証 (TOTP)', () => {
 
         await expect(page.getByRole('heading', { name: T.name })).toBeVisible()
         await expect(page, 'chưa nhập mã thì chưa được vào app').toHaveURL(/\/login/)
+        // Chuột còn nằm ở chỗ nút ログイン = đúng chỗ nút 戻る → ảnh bị hover; dời chuột đi trước khi chụp.
+        await page.mouse.move(0, 0)
         await captureFixedUi(page, 'totp-login-code-step')
 
         await fillCode(page, await nextCode(page, totpA))
