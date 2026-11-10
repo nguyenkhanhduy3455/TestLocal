@@ -144,10 +144,7 @@ test.describe('処方箋 (paper)', () => {
         await expect(page.getByText(DRUG_A.name)).toHaveCount(0)
     })
 
-    // FIXME: agent has no RPT50300126.rpt (rpt_info maps 交付日 >= 2026-06-01 to it; the agent
-    // ships only rpt50300101..103) → "reportId 'rpt50300126' could not be resolved to a .rpt".
-    // Drop the fixme once the 122/124/126 layouts are ported to the agent.
-    test.fixme('F5 印刷: job trỏ syoho-datasource với đúng thuốc; xem trước PDF có tên thuốc', async () => {
+    test('F5 印刷: job trỏ syoho-datasource với đúng thuốc; xem trước PDF có tên thuốc', async () => {
         await openTreatmentEntry(page, String(PAT_NO), TRT_DT)
         await ryoCells(page).first().click()
         await page.keyboard.press('Shift+F5')
