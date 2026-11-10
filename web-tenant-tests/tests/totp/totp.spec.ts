@@ -17,7 +17,7 @@ import { ADMIN_USER, JA } from '../_shared/test-data'
  *  - BE: POST /tenant/auth/login trả { step: done | totp | totp_setup }; mã TOTP
  *    RFC 6238 (SHA1, 6 số, 30 giây, lệch ±1 bước), mỗi bước chỉ dùng 1 lần
  *    (totp_last_step) ⇒ helper `nextCode` luôn lấy bước sau bước đã dùng.
- *  - Cookie "ghi nhớ trình duyệt" td_* nằm ở Path=/api/tenant/auth, sống 30 ngày.
+ *  - Cookie "ghi nhớ trình duyệt" td_* nằm ở Path=/api/tenant/auth, sống 1 ngày; ô 「このブラウザでは省略」 mặc định đã tick.
  *
  * Dữ liệu: spec tự seed 2 user riêng (KHÔNG bật TOTP cho ADMIN_USER — làm thế là
  * khoá login của mọi spec khác). Hai user dùng lại password_hash của ADMIN_USER
@@ -47,7 +47,7 @@ const T = {
     submitCode: '確認',
     useRecovery: 'リカバリーコードを使う',
     recoveryLabel: 'リカバリーコード',
-    rememberDevice: '30日間このブラウザでは省略',
+    rememberDevice: 'このブラウザでは省略',
     enable: '設定する',
     confirmSetup: '設定する',
     recoveryList: 'リカバリーコード',
@@ -288,7 +288,7 @@ test.describe('二段階認証 (TOTP)', () => {
 
         await page.getByRole('button', { name: T.useRecovery }).click()
         await page.getByRole('textbox', { name: T.recoveryLabel }).fill(recoveryA[0])
-        await page.getByLabel(T.rememberDevice).click()
+        await expect(page.getByLabel(T.rememberDevice), 'mặc định đã tick sẵn').toBeChecked()
         await page.getByRole('button', { name: T.submitCode, exact: true }).click()
         await expect(page).toHaveURL(/\/$/)
     })
