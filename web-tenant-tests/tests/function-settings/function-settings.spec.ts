@@ -4,9 +4,9 @@ import { dbEnabled, withDb } from '../_shared/db'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
 /**
- * 機能設定 (frm506008) — các tab đã port: 患者登録 / 窓口精算１ / 窓口精算２ / 診療入力 / 診療チェック / 予約.
+ * 機能設定 (frm506008) — các tab đã port: 患者登録 / 窓口精算１ / 窓口精算２ / 診療入力 / 診療チェック / レセプト / 予約.
  *
- * Màn hình đọc/ghi 4 namespace của `tenant_config`: pat, yoyaku, acc, inp-legacy. Spec đối chiếu UI với
+ * Màn hình đọc/ghi 5 namespace của `tenant_config`: pat, yoyaku, acc, inp-legacy, rcp. Spec đối chiếu UI với
  * DB thật rồi ghi một vòng (đổi 2 giá trị vô hại → F9 → đọc DB → đổi lại → F9 → đọc DB), nên sau khi chạy
  * xong DB trở lại như cũ. Nếu bị ngắt giữa chừng, afterAll khôi phục bằng SQL (lúc đó Redis còn cache cũ
  * tới ~1h: xoá key `tenant:*:cache:config:*` hoặc restart API).
@@ -20,11 +20,13 @@ import { expect, releaseSharedPage, test } from '../_shared/session'
  *
  * Cần TEST_DB=1 (đọc DB). Không đụng /v1/print.
  */
-const NAMESPACES = ['pat', 'yoyaku', 'acc', 'inp-legacy'] as const
+const NAMESPACES = ['pat', 'yoyaku', 'acc', 'inp-legacy', 'rcp'] as const
 type Ns = (typeof NAMESPACES)[number]
 type Row = Record<string, unknown>
 
 const FAX_MARKER = 'E2E-FAX-0000'
+/** 月次診療年月変更日 tạm dùng trong vòng ghi (0-99). */
+const UPD_DAY_MARKER = '17'
 
 async function readConfig(): Promise<Record<Ns, Row>> {
     return withDb(async (c) => {
@@ -50,8 +52,19 @@ test.describe('機能設定', () => {
     const check = (name: string) => page.getByRole('checkbox', { name })
     const checked = async (name: string) => (await check(name).getAttribute('aria-checked')) === 'true'
 
+    /**
+     * Mở màn hình bằng điều hướng TRONG app (không `goto`): mỗi lần tải lại trang Vite dev kéo ~1500 module,
+     * chạy dồn vài lần là bị chặn và trang trắng. Cũng nhờ vậy mới lộ lỗi mở lại màn hình sau khi lưu
+     * (xem TC-save).
+     */
     async function openScreen() {
-        await page.goto('/settings/general', { waitUntil: 'domcontentloaded' })
+        const url = page.url()
+        if (url.includes('/settings/function')) {
+            await page.locator('[data-fkey="F10"]').click()
+            await expect(page).toHaveURL(/\/settings\/general/, { timeout: 20_000 })
+        } else if (!url.includes('/settings/general')) {
+            await page.goto('/settings/general', { waitUntil: 'domcontentloaded' })
+        }
         const entry = page.getByRole('button', { name: '機能設定' }).first()
         await expect(entry).toBeVisible({ timeout: 60_000 })
         await entry.click()
@@ -80,7 +93,7 @@ test.describe('機能設定', () => {
 
     test('TC-open — 初期設定 → 機能設定 mở màn, có đủ 6 tab', async () => {
         await openScreen()
-        for (const name of ['患者登録', '窓口精算１', '窓口精算２', '診療入力', '診療チェック', '予約']) {
+        for (const name of ['患者登録', '窓口精算１', '窓口精算２', '診療入力', '診療チェック', 'レセプト', '予約']) {
             await expect(tab(name)).toBeVisible()
         }
         await page.locator('[data-fkey="F10"]').click()
@@ -104,6 +117,12 @@ test.describe('機能設定', () => {
         await tab('診療チェック').click()
         expect(await checked('ガイド表示時チェックをスキップする')).toBe(original['inp-legacy'].guideChkFlg === 1)
 
+        await tab('レセプト').click()
+        expect(await checked('患者情報を摘要欄に印字する')).toBe(original.rcp.patPrnFlg === 1)
+        await expect(page.getByRole('textbox', { name: '月次診療年月変更日' })).toHaveValue(
+            original.rcp.medymUpdDt ? String(original.rcp.medymUpdDt) : '',
+        )
+
         await tab('窓口精算１').click()
         expect(await checked('窓口精算機能を使用する')).toBe(original.acc.accFlg === 1)
         await expect(page.getByRole('textbox', { name: '消費税率 (百分率)' }), '標準税率 là ô disabled').toBeDisabled()
@@ -116,6 +135,8 @@ test.describe('機能設定', () => {
         await check('病検の検索期間6ヶ月').click()
         await tab('窓口精算２').click()
         await page.getByRole('textbox', { name: 'FAX番号' }).fill(FAX_MARKER)
+        await tab('レセプト').click()
+        await page.getByRole('textbox', { name: '月次診療年月変更日' }).fill(UPD_DAY_MARKER)
 
         dirty = true
         await page.locator('[data-fkey="F9"]').click()
@@ -129,6 +150,20 @@ test.describe('機能設定', () => {
         )
         expect(after.yoyaku.timeVal, 'yoyaku.timeVal = 2 là hằng số WinForm').toBe(2)
         expect(after.pat, '患者登録 không đổi (patWizard được giữ)').toEqual(original.pat)
+        expect(after.rcp.medymUpdDt).toBe(Number(UPD_DAY_MARKER))
+        // WinForm sửa đúng hàng đã nạp: các khoảng hiệu lực theo mẫu (hotetuStDt, …) không được đổi.
+        for (const k of Object.keys(original.rcp).filter((k) => /(St|Ed)Dt$/.test(k))) {
+            expect(after.rcp[k], `rcp.${k} phải được giữ nguyên`).toBe(original.rcp[k])
+        }
+
+        // Mở lại NGAY trong cùng phiên (không tải lại trang): form phải hiện giá trị vừa lưu, không phải bản cache cũ.
+        await openScreen()
+        await tab('窓口精算２').click()
+        await expect(page.getByRole('textbox', { name: 'FAX番号' })).toHaveValue(FAX_MARKER)
+        await tab('レセプト').click()
+        await expect(page.getByRole('textbox', { name: '月次診療年月変更日' })).toHaveValue(UPD_DAY_MARKER)
+        await tab('診療入力').click()
+        expect(await checked('病検の検索期間6ヶ月')).toBe(after['inp-legacy'].byokenMode === 1)
     })
 
     test('TC-restore — đổi lại và F9 ⇒ DB về đúng giá trị ban đầu', async () => {
@@ -138,6 +173,10 @@ test.describe('機能設定', () => {
         await check('病検の検索期間6ヶ月').click()
         await tab('窓口精算２').click()
         await page.getByRole('textbox', { name: 'FAX番号' }).fill(String(original.acc.prtTel2 ?? ''))
+        await tab('レセプト').click()
+        await page
+            .getByRole('textbox', { name: '月次診療年月変更日' })
+            .fill(original.rcp.medymUpdDt ? String(original.rcp.medymUpdDt) : '')
 
         await page.locator('[data-fkey="F9"]').click()
         await expect(page).toHaveURL(/\/settings\/general/, { timeout: 30_000 })
@@ -145,6 +184,7 @@ test.describe('機能設定', () => {
         const after = await readConfig()
         expect(after['inp-legacy'].byokenMode).toBe(original['inp-legacy'].byokenMode)
         expect(after.acc.prtTel2 ?? null).toBe(original.acc.prtTel2 ?? null)
+        expect(after.rcp.medymUpdDt).toBe(original.rcp.medymUpdDt)
         dirty = false
     })
 
