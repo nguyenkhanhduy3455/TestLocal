@@ -68,7 +68,10 @@ test.describe('web-admin 二段階認証 (TOTP)', () => {
         await expect(page).not.toHaveURL(/\/login/)
 
         await page.getByRole('button', { name: T.name, exact: true }).click()
-        await page.getByRole('dialog').getByRole('button', { name: T.enable, exact: true }).click()
+        const account = page.getByRole('dialog')
+        await expect(account.getByRole('button', { name: '閉じる' }), 'có X + nút 閉じる').toHaveCount(2)
+        await captureFixedUi(account, 'admin-totp-account-dialog')
+        await account.getByRole('button', { name: T.enable, exact: true }).click()
 
         const setup = page.getByRole('dialog').last()
         totp.secret = await readSecret(setup)
