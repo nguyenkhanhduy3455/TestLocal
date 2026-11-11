@@ -7,6 +7,8 @@ import { ADMIN_USER } from '../_shared/test-data'
 
 import {
     T,
+    changeDevice,
+    openTotpSettings,
     fillCode,
     flushConfigCache,
     nextCode,
@@ -92,7 +94,7 @@ async function signOut(page: Page, keepTrustedDevice = false): Promise<void> {
 
 test.describe('二段階認証 (TOTP)', () => {
     let page: Page
-    const totpA = { secret: '', lastStep: 0 }
+    let totpA = { secret: '', lastStep: 0 }
     let recoveryA: string[] = []
 
     test.beforeAll(async ({ browser }) => {
@@ -196,6 +198,14 @@ test.describe('二段階認証 (TOTP)', () => {
         await signOut(page, true)
         await submitPassword(page, USER_A.email)
         await expect(page).toHaveURL(/\/$/)
+    })
+
+    test('端末を変更: mật khẩu + mã máy cũ → QR mới → リカバリーコード mới', async () => {
+        await openTotpSettings(page, '/account/profile')
+        const changed = await changeDevice(page, { code: await nextCode(page, totpA) })
+        expect(changed.totp.secret, 'phải là khoá mới').not.toBe(totpA.secret)
+        totpA = changed.totp
+        await expect(page.getByText(/^有効（/)).toBeVisible()
     })
 
     test('セキュリティ設定: bật bắt buộc → user chưa có TOTP phải thiết lập ngay khi login', async () => {

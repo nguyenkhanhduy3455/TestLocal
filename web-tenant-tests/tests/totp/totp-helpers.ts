@@ -30,6 +30,9 @@ export const T = {
     forceLabel: '全ユーザーに二段階認証を必須にする',
     savedToast: '保存しました',
     enabledToast: '設定しました',
+    change: '端末を変更',
+    changeNext: '次へ',
+    changedToast: '端末を変更しました',
 }
 
 // ── TOTP (RFC 6238) ─────────────────────────────────────────────────────────
@@ -101,6 +104,17 @@ export async function openLogin(page: Page, loginUrl = '/login'): Promise<void> 
     await expect(email, 'form login không hiện sau 3 lần nạp').toBeVisible()
 }
 
+/** Nạp `url` tới khi nút 端末を変更 hiện (cùng lý do trang trắng Vite dev như openLogin). */
+export async function openTotpSettings(page: Page, url: string): Promise<void> {
+    const change = page.getByRole('button', { name: T.change, exact: true })
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        await page.goto(url, { waitUntil: 'domcontentloaded' })
+        if (await change.waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false)) return
+        console.log(`openTotpSettings: lượt ${attempt}/3 trang trắng (Vite dev) → nạp lại`)
+    }
+    await expect(change, `nút 端末を変更 không hiện ở ${url}`).toBeVisible()
+}
+
 /** User seed dùng lại password_hash của ADMIN_USER ⇒ mật khẩu là ADMIN_USER.password. */
 export async function submitPassword(page: Page, email: string): Promise<void> {
     await page.getByLabel(JA.emailLabel).fill(email)
@@ -149,5 +163,35 @@ export async function enableTotpFromProfile(page: Page, profileUrl = '/account/p
     await dialog.getByLabel(T.saved).click()
     await dialog.getByRole('button', { name: T.done }).click()
     await expect(page.getByText(T.enabledToast, { exact: true })).toBeVisible()
+    return { totp, recoveryCodes }
+}
+
+/**
+ * 端末を変更: password + (mã hiện tại hoặc リカバリーコード) → 次へ → QR máy mới → mã máy mới →
+ * 10 リカバリーコード mới → 完了. Trang phải đang ở màn có nút 端末を変更.
+ */
+export async function changeDevice(
+    page: Page,
+    proof: { code: string } | { recoveryCode: string },
+): Promise<{ totp: TotpState; recoveryCodes: string[] }> {
+    await page.getByRole('button', { name: T.change, exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
+    if ('code' in proof) {
+        await fillCode(dialog, proof.code)
+    } else {
+        await dialog.getByRole('button', { name: T.useRecovery }).click()
+        await dialog.getByRole('textbox', { name: T.recoveryLabel }).fill(proof.recoveryCode)
+    }
+    await dialog.getByRole('button', { name: T.changeNext, exact: true }).click()
+
+    const totp: TotpState = { secret: await readSecret(dialog), lastStep: 0 }
+    await fillCode(dialog, await nextCode(page, totp))
+    await dialog.getByRole('button', { name: T.confirmSetup, exact: true }).click()
+
+    const recoveryCodes = await readRecoveryCodes(dialog)
+    await dialog.getByLabel(T.saved).click()
+    await dialog.getByRole('button', { name: T.done }).click()
+    await expect(page.getByText(T.changedToast, { exact: true })).toBeVisible()
     return { totp, recoveryCodes }
 }
