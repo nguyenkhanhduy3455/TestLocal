@@ -4,9 +4,9 @@ import { dbEnabled, withDb } from '../_shared/db'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
 /**
- * 機能設定 (frm506008) — các tab đã port: 患者登録 / 窓口精算１ / 窓口精算２ / 診療入力 / 診療チェック / レセプト / 予約.
+ * 機能設定 (frm506008) — các tab đã port: 患者登録 / 窓口精算１ / 窓口精算２ / 診療入力 / 診療チェック / レセプト / カルテ印刷 / 予約.
  *
- * Màn hình đọc/ghi 5 namespace của `tenant_config`: pat, yoyaku, acc, inp-legacy, rcp. Spec đối chiếu UI với
+ * Màn hình đọc/ghi 6 namespace của `tenant_config`: pat, yoyaku, acc, inp-legacy, rcp, cct. Spec đối chiếu UI với
  * DB thật rồi ghi một vòng (đổi 2 giá trị vô hại → F9 → đọc DB → đổi lại → F9 → đọc DB), nên sau khi chạy
  * xong DB trở lại như cũ. Nếu bị ngắt giữa chừng, afterAll khôi phục bằng SQL (lúc đó Redis còn cache cũ
  * tới ~1h: xoá key `tenant:*:cache:config:*` hoặc restart API).
@@ -20,13 +20,16 @@ import { expect, releaseSharedPage, test } from '../_shared/session'
  *
  * Cần TEST_DB=1 (đọc DB). Không đụng /v1/print.
  */
-const NAMESPACES = ['pat', 'yoyaku', 'acc', 'inp-legacy', 'rcp'] as const
+const NAMESPACES = ['pat', 'yoyaku', 'acc', 'inp-legacy', 'rcp', 'cct'] as const
 type Ns = (typeof NAMESPACES)[number]
 type Row = Record<string, unknown>
 
 const FAX_MARKER = 'E2E-FAX-0000'
 /** 月次診療年月変更日 tạm dùng trong vòng ghi (0-99). */
 const UPD_DAY_MARKER = '17'
+/** Lề trên 1号用紙 (mm) tạm dùng trong vòng ghi; WinForm lưu twip = Math.Round(mm * 56.6929). */
+const MARGIN_MARKER_MM = 12
+const TWIPS_PER_MM = 56.6929
 
 async function readConfig(): Promise<Record<Ns, Row>> {
     return withDb(async (c) => {
@@ -93,7 +96,7 @@ test.describe('機能設定', () => {
 
     test('TC-open — 初期設定 → 機能設定 mở màn, có đủ 6 tab', async () => {
         await openScreen()
-        for (const name of ['患者登録', '窓口精算１', '窓口精算２', '診療入力', '診療チェック', 'レセプト', '予約']) {
+        for (const name of ['患者登録', '窓口精算１', '窓口精算２', '診療入力', '診療チェック', 'レセプト', 'カルテ印刷', '予約']) {
             await expect(tab(name)).toBeVisible()
         }
         await page.locator('[data-fkey="F10"]').click()
@@ -123,6 +126,12 @@ test.describe('機能設定', () => {
             original.rcp.medymUpdDt ? String(original.rcp.medymUpdDt) : '',
         )
 
+        await tab('カルテ印刷').click()
+        expect(await checked('カルテ印刷機能を使用する')).toBe(original.cct.cltPrnFlg === 1)
+        await expect(page.getByRole('textbox', { name: '上' }).first()).toHaveValue(
+            original.cct.cltAformMt === -1 ? '' : String(Math.round(Number(original.cct.cltAformMt) / TWIPS_PER_MM)),
+        )
+
         await tab('窓口精算１').click()
         expect(await checked('窓口精算機能を使用する')).toBe(original.acc.accFlg === 1)
         await expect(page.getByRole('textbox', { name: '消費税率 (百分率)' }), '標準税率 là ô disabled').toBeDisabled()
@@ -137,6 +146,8 @@ test.describe('機能設定', () => {
         await page.getByRole('textbox', { name: 'FAX番号' }).fill(FAX_MARKER)
         await tab('レセプト').click()
         await page.getByRole('textbox', { name: '月次診療年月変更日' }).fill(UPD_DAY_MARKER)
+        await tab('カルテ印刷').click()
+        await page.getByRole('textbox', { name: '上' }).first().fill(String(MARGIN_MARKER_MM))
 
         dirty = true
         await page.locator('[data-fkey="F9"]').click()
@@ -151,6 +162,12 @@ test.describe('機能設定', () => {
         expect(after.yoyaku.timeVal, 'yoyaku.timeVal = 2 là hằng số WinForm').toBe(2)
         expect(after.pat, '患者登録 không đổi (patWizard được giữ)').toEqual(original.pat)
         expect(after.rcp.medymUpdDt).toBe(Number(UPD_DAY_MARKER))
+        expect(after.cct.cltAformMt, 'lề mm → twip theo Math.Round(mm * 56.6929)').toBe(
+            Math.round(MARGIN_MARKER_MM * TWIPS_PER_MM),
+        )
+        expect(after.cct.cltPatFlg, 'clt_pat_flg dựng lại từ 2 checkbox (chỉ bit 1 và 2)').toBe(
+            Number(original.cct.cltPatFlg) & 0b11,
+        )
         // WinForm sửa đúng hàng đã nạp: các khoảng hiệu lực theo mẫu (hotetuStDt, …) không được đổi.
         for (const k of Object.keys(original.rcp).filter((k) => /(St|Ed)Dt$/.test(k))) {
             expect(after.rcp[k], `rcp.${k} phải được giữ nguyên`).toBe(original.rcp[k])
@@ -177,6 +194,11 @@ test.describe('機能設定', () => {
         await page
             .getByRole('textbox', { name: '月次診療年月変更日' })
             .fill(original.rcp.medymUpdDt ? String(original.rcp.medymUpdDt) : '')
+        await tab('カルテ印刷').click()
+        await page
+            .getByRole('textbox', { name: '上' })
+            .first()
+            .fill(original.cct.cltAformMt === -1 ? '' : String(Math.round(Number(original.cct.cltAformMt) / TWIPS_PER_MM)))
 
         await page.locator('[data-fkey="F9"]').click()
         await expect(page).toHaveURL(/\/settings\/general/, { timeout: 30_000 })
@@ -185,6 +207,10 @@ test.describe('機能設定', () => {
         expect(after['inp-legacy'].byokenMode).toBe(original['inp-legacy'].byokenMode)
         expect(after.acc.prtTel2 ?? null).toBe(original.acc.prtTel2 ?? null)
         expect(after.rcp.medymUpdDt).toBe(original.rcp.medymUpdDt)
+        // Lề lưu theo mm (làm tròn) nên twip gốc có thể lệch ≤ 28 twip: so ở mức mm như màn hình hiển thị.
+        expect(after.cct.cltAformMt === -1 ? -1 : Math.round(Number(after.cct.cltAformMt) / TWIPS_PER_MM)).toBe(
+            original.cct.cltAformMt === -1 ? -1 : Math.round(Number(original.cct.cltAformMt) / TWIPS_PER_MM),
+        )
         dirty = false
     })
 
