@@ -121,7 +121,7 @@ async function tenantIdOf(slug: string): Promise<string> {
 /** Login admin API (1 login) rồi trả bộ lệnh dựng/dọn. */
 export async function openAdminApi(): Promise<AdminApi> {
     const anon = await request.newContext({ baseURL: ADMIN_BASE_URL, ignoreHTTPSErrors: true })
-    const login = await data<{ accessToken: string }>(
+    const login = await data<{ session: { accessToken: string } }>(
         await anon.post('api/admin/auth/login', {
             data: { email: ADMIN_USER.email, password: ADMIN_USER.password },
         }),
@@ -131,7 +131,7 @@ export async function openAdminApi(): Promise<AdminApi> {
     const ctx = await request.newContext({
         baseURL: ADMIN_BASE_URL,
         ignoreHTTPSErrors: true,
-        extraHTTPHeaders: { authorization: `Bearer ${login.accessToken}` },
+        extraHTTPHeaders: { authorization: `Bearer ${login.session.accessToken}` },
     })
 
     return buildApi(ctx, await tenantIdOf(TENANT_SLUG))

@@ -162,8 +162,8 @@ test.describe('監査ログ (admin) — cửa sổ tra cứu bị chặn ở 90 
             return
         }
 
-        const body = (await res.json()) as { data?: { accessToken?: string } }
-        const token = body.data?.accessToken ?? ''
+        const body = (await res.json()) as { data?: { session?: { accessToken?: string } } }
+        const token = body.data?.session?.accessToken ?? ''
         if (token === '') {
             skipReason = 'login admin trả 200 nhưng không có accessToken'
             return
