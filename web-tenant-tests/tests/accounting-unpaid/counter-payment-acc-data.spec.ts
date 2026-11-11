@@ -69,7 +69,11 @@ async function accKms(): Promise<number[]> {
     })
 }
 
-test.describe.configure({ retries: 0, timeout: 180_000 })
+// Cả file chung MỘT bệnh nhân seed (990985) ở beforeAll/afterAll cấp file. Config để
+// fullyParallel + 4 worker ⇒ không ghim thì mỗi describe sang một worker, worker này
+// afterAll xoá seed khi worker kia đang đọc (parity timeout 180s, List/Update đỏ 0ms).
+// 'default' = một worker, đúng thứ tự, nhưng test đỏ không kéo test sau skip theo.
+test.describe.configure({ mode: 'default', retries: 0, timeout: 180_000 })
 
 let page: Page
 let step: () => Promise<void>

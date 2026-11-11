@@ -38,7 +38,11 @@ const SCREEN_LOAD_TIMEOUT = 60_000
 
 skipWithReason(!dbEnabled || !allowSave, 'Cần TEST_DB=1 + TEST_ALLOW_SAVE=1: F8 ghi unpaid, ESC ghi acc_dat thật')
 
-test.describe.configure({ retries: 0, timeout: 240_000 })
+// Cả file chung MỘT bệnh nhân seed (990990) ở beforeAll/afterAll cấp file. Config để
+// fullyParallel + 4 worker ⇒ không ghim thì mỗi describe sang một worker, seed đụng nhau
+// (duplicate ux_person) và worker này xoá unpaid/acc_dat khi worker kia đang F8.
+// 'default' = một worker, đúng thứ tự, nhưng test đỏ không kéo test sau skip theo.
+test.describe.configure({ mode: 'default', retries: 0, timeout: 240_000 })
 
 let page: Page
 let step: () => Promise<void>

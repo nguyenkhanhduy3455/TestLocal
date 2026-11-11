@@ -50,7 +50,10 @@ const CHANGED_F9PROC = '患者データは、変更されています。保存�
 /** Mọi câu hỏi lưu khi rời màn, có hoặc không có 「、」. */
 const ANY_SAVE_PROMPT = /患者データは、?変更されて(い|いま)す/
 
-test.describe.configure({ retries: 0, timeout: 180_000 })
+// Seed DB ở beforeAll/afterAll cấp file. Config để fullyParallel + 4 worker ⇒ không ghim
+// thì mỗi describe sang một worker, seed/xoá cùng bệnh nhân đụng nhau giữa các worker.
+// 'default' = một worker, đúng thứ tự, nhưng test đỏ không kéo test sau skip theo.
+test.describe.configure({ mode: 'default', retries: 0, timeout: 180_000 })
 
 test.beforeAll(async () => {
     if (!dbEnabled) return

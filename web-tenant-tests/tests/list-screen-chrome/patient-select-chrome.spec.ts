@@ -6,12 +6,14 @@
  */
 import { expect, type Page } from '@playwright/test'
 
-import { CHROME_PAT_NO, cleanListChromeData, seedListChromeData } from '../_shared/list-chrome-seed'
+import { CHROME_PAT_NO_BASE, cleanListChromeData, seedListChromeData } from '../_shared/list-chrome-seed'
 import {
     describeListChrome,
     gotoListScreen,
     type ListChromeDef,
 } from '../_shared/list-screen-chrome'
+
+const CHROME_PAT_NO = CHROME_PAT_NO_BASE
 
 const seededRow: ListChromeDef['pickRow'] = (_page, root) =>
     root
@@ -117,7 +119,7 @@ describeListChrome(
         }),
     ],
     {
-        setup: seedListChromeData,
-        teardown: cleanListChromeData,
+        setup: () => seedListChromeData(CHROME_PAT_NO),
+        teardown: () => cleanListChromeData(CHROME_PAT_NO),
     },
 )

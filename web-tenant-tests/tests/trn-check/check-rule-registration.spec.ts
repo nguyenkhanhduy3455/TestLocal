@@ -402,13 +402,11 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
         list.locator('span').filter({ hasText: new RegExp(`^${text}$`) })
 
     /**
-     * Bấm **No** trên hộp `confirmDialog` đang mở.
-     *
-     * ĐÃ ĐO ĐƯỢC (lần chạy 4, a11y snapshot): hộp là `alertdialog "お茶コン"` với
-     * đúng hai nút **Yes / No** — KHÔNG phải はい/いいえ hay キャンセル. Trùng với
-     * ghi chú Rule 6 của guideline ("nút confirm là Yes/No").
+     * Bấm nút từ chối trên hộp `confirmDialog` đang mở (`alertdialog "お茶コン"`).
+     * Nút theo đúng kiểu hộp của WinForm: Q00002 là はい/いいえ ⇒ `いいえ`;
+     * Q00047 là `ShowOKCancelMsg` (frm601002.cs:131) ⇒ OK/キャンセル ⇒ `キャンセル`.
      */
-    async function cancelConfirm() {
+    async function cancelConfirm(button: 'いいえ' | 'キャンセル' = 'いいえ') {
         // Khoanh trong chính hộp confirm, KHÔNG `.first()` ở cấp page: từ 2026-08-26
         // (c6ebf8e5d 「右タブ4グリッドに見出しクリックの並べ替えを追加」) tiêu đề cột
         // 「No」 của lưới sắp-xếp-được cũng mang `role="button"`, nên `.first()` có
@@ -417,7 +415,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
         // 8b) nên hiện chưa trúng bẫy, nhưng đừng để nó phụ thuộc vào điều đó.
         await page
             .getByRole('alertdialog')
-            .getByRole('button', { name: 'いいえ', exact: true })
+            .getByRole('button', { name: button, exact: true })
             .click()
     }
 
@@ -696,7 +694,7 @@ test.describe('チェックルール登録 — hub frm601001 và 6 cặp 一覧/
         const confirm = page.getByText(Q00047_CSV)
         await expect(confirm, 'F1 出力 phải hỏi Q00047 trước').toBeVisible({ timeout: 10_000 })
 
-        await cancelConfirm()
+        await cancelConfirm('キャンセル')
         await expect(confirm).toBeHidden({ timeout: 10_000 })
 
         await backToHub(list)

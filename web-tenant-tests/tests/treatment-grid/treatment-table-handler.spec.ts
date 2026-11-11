@@ -158,7 +158,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * Bệnh nhân tự dựng cắt đứt hẳn: `deleteTestPatient` xoá `trn_trn` của bệnh nhân
  * đó ở MỌI ngày và MỌI vùng `disp_no`, nên không còn gì tích tụ được.
  */
-const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 33))
+const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 302))
 
 /**
  * Ngày test = HÔM NAY (yyyy-MM-dd). BẮT BUỘC thuộc tháng hiện hành: chỉ dòng của

@@ -59,7 +59,10 @@ const SRC_TEL = '099-0000-0900'
 const TYPED_TEL = '090-1111-0899'
 const TYPED_NAME = 'ラウンド　トリップ'
 
-test.describe.configure({ retries: 0, timeout: 180_000 })
+// Seed DB ở beforeAll/afterAll cấp file. Config để fullyParallel + 4 worker ⇒ không ghim
+// thì mỗi describe sang một worker, seed/xoá cùng bệnh nhân đụng nhau giữa các worker.
+// 'default' = một worker, đúng thứ tự, nhưng test đỏ không kéo test sau skip theo.
+test.describe.configure({ mode: 'default', retries: 0, timeout: 180_000 })
 
 test.beforeAll(async () => {
     if (!dbEnabled) return

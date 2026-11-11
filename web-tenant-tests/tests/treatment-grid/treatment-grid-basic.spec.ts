@@ -173,7 +173,7 @@ import { closeDialogs } from '../_shared/virtual-grid'
  * Đánh đổi: file này giờ CẦN `TEST_DB=1` (trước đây không). Đổi lại nó tất định
  * và không còn tranh dữ liệu với bất kỳ spec nào.
  */
-const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 34))
+const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 303))
 
 /**
  * Ngày test — PHẢI khớp `patient.trtDate` bên `testsettings.local.json` (FlaUI).

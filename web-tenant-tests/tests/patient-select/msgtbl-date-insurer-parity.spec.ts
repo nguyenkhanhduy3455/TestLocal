@@ -81,10 +81,12 @@ import { makeStep, skipWithReason } from '../_shared/step'
  *  2. `seedTestPatient` XOÁ rồi tạo lại, nên hai bản sao chạy song song
  *     (`--repeat-each`, Rule 16) sẽ giật bệnh nhân khỏi tay nhau.
  *
- * 61 + workerIndex ⇒ 990061-990064 với 4 worker, chưa ai đụng tới.
+ * 310 + parallelIndex ⇒ 990310-990313 với 4 worker. `parallelIndex` (0..workers−1),
+ * KHÔNG phải `workerIndex`: cái sau tăng mãi mỗi lần worker khởi động lại sau lỗi
+ * nên dải số tràn sang số của spec khác (61 từng đụng perio-kensa-order).
  * `TEST_PAT_NO` vẫn override được, nhưng khi đó ĐỪNG chạy nhiều worker.
  */
-const PAT_NO_OFFSET = 61
+const PAT_NO_OFFSET = 310
 let PAT_NO = ''
 
 /**
@@ -117,8 +119,8 @@ test.describe('MSGTBL parity — 患者登録 (Q00009 / Q00010 / E00002 保険�
         page = authedPage
         step = makeStep(page)
 
-        PAT_NO = patNo(String(SEED_PAT_NO_BASE + PAT_NO_OFFSET + testInfo.workerIndex))
-        console.log(`worker #${testInfo.workerIndex} dùng bệnh nhân ${PAT_NO}`)
+        PAT_NO = patNo(String(SEED_PAT_NO_BASE + PAT_NO_OFFSET + testInfo.parallelIndex))
+        console.log(`worker #${testInfo.parallelIndex} dùng bệnh nhân ${PAT_NO}`)
         if (Number(PAT_NO) < SEED_PAT_NO_BASE) {
             throw new Error(
                 `TEST_PAT_NO=${PAT_NO} nằm ngoài dải seed (>= ${SEED_PAT_NO_BASE}). ` +

@@ -63,7 +63,10 @@ const CHANGED = '患者データは、変更されています。保存します
 /** frm201001.cs:2508 — 負担割合 0 đổi toàn góc thành 「０」. */
 const Q00200_BUR_GENERAL_WINFORM = '負担割合に ０ が入力されています。続行してよろしいですか？'
 
-test.describe.configure({ retries: 0, timeout: 180_000 })
+// Seed DB ở beforeAll/afterAll cấp file. Config để fullyParallel + 4 worker ⇒ không ghim
+// thì mỗi describe sang một worker, seed/xoá cùng bệnh nhân đụng nhau giữa các worker.
+// 'default' = một worker, đúng thứ tự, nhưng test đỏ không kéo test sau skip theo.
+test.describe.configure({ mode: 'default', retries: 0, timeout: 180_000 })
 
 const startedAt = new Date()
 /** Số bệnh nhân TC-5 đã tạo — afterAll xoá. */

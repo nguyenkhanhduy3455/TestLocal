@@ -45,6 +45,8 @@ import { createTestPatient, dropTestPatient } from '../_shared/test-patient'
  * 153 → 除去 vẫn đi được, mà tháng này của bản clone thì trống.
  */
 const TEMPLATE_PAT_NO = Number(patNo('11'))
+/** Số cố định của riêng spec này — `nextTestPatNo()` (max+1) đụng số khi chạy song song. */
+const TEST_PAT_NO = 990306
 const TRT_DT = trtDt(TODAY_ISO)
 const TRT_CD = '153'
 const PICK_SCORE = '48'
@@ -316,7 +318,7 @@ test.describe('F9 登録 — freewd của dòng 摘要 từ コメントパッ�
         })
 
         test.skip(!dbEnabled, 'cần TEST_DB=1 để dựng bệnh nhân test riêng')
-        testPatNo = (await createTestPatient(TRT_DT, { templatePatNo: TEMPLATE_PAT_NO })).patNo
+        testPatNo = (await createTestPatient(TRT_DT, { patNo: TEST_PAT_NO, templatePatNo: TEMPLATE_PAT_NO })).patNo
         console.log(`bệnh nhân test ${testPatNo} (clone của ${TEMPLATE_PAT_NO})`)
 
         await page.goto(`/treatments/${testPatNo}?trtDt=${TRT_DT}`, { waitUntil: 'domcontentloaded' })

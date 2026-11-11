@@ -226,10 +226,9 @@ function migrationClass(
     name: string,
     className: string,
     attributes: string,
-    assemblyAttribute = '',
 ): string {
     return `using Ochacom.Migrations.Framework;
-${assemblyAttribute}
+
 namespace Ochacom.Migrations.Tenant._${id}_${name.replace(/-/g, '_')};
 
 // E2E probe written by TestLocal tenant-migration-buttons.spec.ts; removed when the spec ends.
@@ -285,8 +284,6 @@ DROP TABLE ${PROBE_TABLE};
             PROBE_HIGH_NAME,
             'E2eProbeScale',
             `Impact = MigrationImpact.High, BackupTables = ["${PROBE_TABLE}"], RequiresMaintenance = true`,
-            // The build's code "needs" probe High: tenants without it are not served.
-            `\n[assembly: ApiRequiresTenantMigration("${PROBE_HIGH}")]\n`,
         ),
         'up.sql': `UPDATE ${PROBE_TABLE} SET val = val * 10, updated_at = now();
 `,
@@ -353,6 +350,30 @@ async function removeProbesFromDb(): Promise<void> {
 function removeProbeFolders(): void {
     for (const f of probeFolders())
         rmSync(join(MIGRATIONS_DIR, f), { recursive: true, force: true })
+    restoreApiRequirements()
+}
+
+// The assembly declares ApiRequiresTenantMigration exactly once (ApiRequirements.cs), so the
+// probe cannot add a second one: it rewrites that one and marks it, and the cleanup restores it.
+const API_REQUIREMENTS_FILE = join(MIGRATIONS_DIR, '..', 'ApiRequirements.cs')
+const API_REQUIREMENTS_MARK = '// E2E probe'
+
+/** The build's code "needs" probe High: tenants without it are not served. */
+function requireProbeHigh(): void {
+    const src = readFileSync(API_REQUIREMENTS_FILE, 'utf8')
+    const next = src.replace(
+        /\[assembly: ApiRequiresTenantMigration\("\d+"\)\]/,
+        `[assembly: ApiRequiresTenantMigration("${PROBE_HIGH}")] ${API_REQUIREMENTS_MARK}`,
+    )
+    if (next === src) throw new Error('ApiRequirements.cs: không tìm thấy ApiRequiresTenantMigration')
+    writeFileSync(API_REQUIREMENTS_FILE, next)
+}
+
+function restoreApiRequirements(): void {
+    if (!readFileSync(API_REQUIREMENTS_FILE, 'utf8').includes(API_REQUIREMENTS_MARK)) return
+    execFileSync('git', ['checkout', '--', 'apps/api/src/Ochacom.Migrations/ApiRequirements.cs'], {
+        cwd: DEMO1_DIR,
+    })
 }
 
 /** One signed S3 request (path-style, SigV4) through curl; returns the body. */
@@ -398,7 +419,8 @@ async function createExtraTenants(api: APIRequestContext): Promise<void> {
         data: { email: ADMIN_USER.email, password: ADMIN_USER.password },
     })
     expect(login.ok(), `login API admin: ${login.status()}`).toBeTruthy()
-    const token = ((await login.json()) as { data: { accessToken: string } }).data.accessToken
+    const token = ((await login.json()) as { data: { session: { accessToken: string } } }).data.session
+        .accessToken
     for (const slug of EXTRA_TENANTS) {
         const res = await api.post('api/admin/tenants', {
             headers: { authorization: `Bearer ${token}` },
@@ -696,6 +718,7 @@ test.describe('web-admin /tenants — 更新 / 復元 / 次の段階を実行 / 
         // for them like every other tenant.
         await createExtraTenants(api)
         writeProbeMigrations()
+        requireProbeHigh()
         probesWritten = true
         await restartDemo1(api)
         ;({ context, page } = await newAdminPage(browser))

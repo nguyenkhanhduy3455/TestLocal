@@ -43,7 +43,10 @@ const PAT = SEED_PAT_NO_BASE + 910
 const DIALOG_TIMEOUT = 30_000
 const allowSave = process.env.TEST_ALLOW_SAVE === '1'
 
-test.describe.configure({ retries: 0, timeout: 180_000 })
+// Seed DB ở beforeAll/afterAll cấp file. Config để fullyParallel + 4 worker ⇒ không ghim
+// thì mỗi describe sang một worker, seed/xoá cùng bệnh nhân đụng nhau giữa các worker.
+// 'default' = một worker, đúng thứ tự, nhưng test đỏ không kéo test sau skip theo.
+test.describe.configure({ mode: 'default', retries: 0, timeout: 180_000 })
 
 async function seedTrn(): Promise<void> {
     await seedTreatmentRows(PAT, '2026-09-10', [{ trtCd: 110, trtPt: 59, dspTrt: '再診' }])

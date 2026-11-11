@@ -4,18 +4,20 @@
  *   · 登録患者数 and the 「患者を選択してください」 prompt are gone
  * The 受付 row used for picking is seeded (list-chrome-seed.ts).
  */
-import { cleanListChromeData, CHROME_PAT_NO, seedListChromeData } from '../_shared/list-chrome-seed'
+import { CHROME_PAT_NO_BASE, cleanListChromeData, seedListChromeData } from '../_shared/list-chrome-seed'
 import { gotoListScreen } from '../_shared/list-screen-chrome'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 
+const CHROME_PAT_NO = CHROME_PAT_NO_BASE + 2
+
 test.describe('診療入力 /treatments — 当月来患 beside 選択中', () => {
     test.beforeAll(async ({ authedPage }) => {
-        await seedListChromeData()
+        await seedListChromeData(CHROME_PAT_NO)
         await gotoListScreen(authedPage, '/treatments')
     })
     test.afterAll(async ({ authedPage }) => {
         await releaseSharedPage(authedPage)
-        await cleanListChromeData()
+        await cleanListChromeData(CHROME_PAT_NO)
     })
 
     test('当月来患 is in the footer and shares a row with 選択中', async ({ authedPage: page }) => {

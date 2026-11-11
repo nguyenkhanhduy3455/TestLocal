@@ -125,6 +125,7 @@ const TODAY_URL = /\/tenant\/treatment\/today(\?|$)/
 const ACC_CLEAR_UNPAID_URL = /\/tenant\/treatment\/accounting\/clear-unpaid(\?|$)/
 const INSERT_UNPAID_URL = /\/tenant\/treatment\/accounting\/insert-unpaid(\?|$)/
 const ACC_CORRECT_URL = /\/tenant\/treatment\/accounting\/correct(\?|$)/
+const ACC_PRECHECK_URL = /\/tenant\/treatment\/accounting\/precheck(\?|$)/
 
 /** Đầu thân E00100 — locales/ja.ts `buiPriceFailed`. */
 const BUI_PRICE_FAILED_HEAD = '一部負担金計算に失敗しました。患者登録データを確認してください。'
@@ -812,10 +813,23 @@ test.describe('E00100 一部負担金計算失敗 — 診療入力 / 当日来�
         resetInject()
         inject.insertUnpaid.push(warn())
 
+        // Nhánh đo là nhánh CÓ gọi insert-unpaid. Nếu ngày đó đã có 会計 (ACCDAT) với
+        // cùng số tiền thì cổng 「既に…会計処理がされています」 + いいえ rẽ sang
+        // `isIdentical → return true` (modAcc.cs:571-572) và insert-unpaid không bao
+        // giờ được gọi — warnings giả không có đường về. Ghim precheck ở trạng thái
+        // "chưa có 会計" thay vì phụ thuộc DB hôm nay (spec không đụng DB).
+        await page.route(ACC_PRECHECK_URL, async (route: Route) => {
+            if (route.request().method() !== 'POST') return route.fallback()
+            const res = await route.fetch()
+            const body = await res.json()
+            body.data = { ...body.data, pastExists: false, pastBillingAmount: 0 }
+            await route.fulfill({ response: res, json: body })
+        })
         await backToEntry()
         await pressFKey('F8')
 
         const seen = await settleAccountingDialogs()
+        await page.unroute(ACC_PRECHECK_URL)
         expect(
             seen,
             'chuỗi F8 không hiện E00100 dù insert-unpaid trả warnings — ' +

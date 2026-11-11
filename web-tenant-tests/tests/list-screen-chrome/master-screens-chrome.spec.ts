@@ -5,12 +5,15 @@
  */
 import { expect, type Page } from '@playwright/test'
 
-import { cleanListChromeData, seedListChromeData } from '../_shared/list-chrome-seed'
+import { openPatientRegistration } from '../_shared/entry'
+import { CHROME_PAT_NO_BASE, cleanListChromeData, seedListChromeData } from '../_shared/list-chrome-seed'
 import {
     describeListChrome,
     gotoListScreen,
     type ListChromeDef,
 } from '../_shared/list-screen-chrome'
+
+const CHROME_PAT_NO = CHROME_PAT_NO_BASE + 1
 
 const openRoute = (path: string) => async (page: Page) => {
     await gotoListScreen(page, path)
@@ -56,8 +59,21 @@ describeListChrome(
             prompt: 'auto-selected',
         },
         {
-            // FACT: no .animate-fade-in wrapper here; the screen root is the h-full column holding the h1.
-            ...master('給付先選択 /patients/benefit-provider', '/patients/benefit-provider'),
+            // FACT: no route of its own since 96e592cdc (2026-10-28) — 保険者選択 is a sub-screen of
+            // 患者登録, opened by F3 「保険者」 (patient-side-panel.tsx F3, patient-detail-form.tsx
+            // `subScreen === 'benefit-provider'`). Opened on the patient this file seeds.
+            // No .animate-fade-in wrapper; the screen root is the h-full column holding the h1.
+            ...master('給付先選択 (患者登録 F3)', ''),
+            open: async (page) => {
+                await openPatientRegistration(page, String(CHROME_PAT_NO))
+                await page.locator('[data-fkey="F3"]:visible', { hasText: '保険者' }).first().click()
+                await expect(page.getByRole('heading', { name: '保 険 者 選 択' })).toBeVisible({
+                    timeout: 30_000,
+                })
+                await expect(page.locator('[data-testid^="row-"]').first()).toBeVisible({
+                    timeout: 60_000,
+                })
+            },
             root: (page) =>
                 page
                     .locator('div.flex.flex-col.h-full')
@@ -83,7 +99,7 @@ describeListChrome(
         },
     ],
     {
-        setup: seedListChromeData,
-        teardown: cleanListChromeData,
+        setup: () => seedListChromeData(CHROME_PAT_NO),
+        teardown: () => cleanListChromeData(CHROME_PAT_NO),
     },
 )

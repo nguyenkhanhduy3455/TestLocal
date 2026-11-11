@@ -56,7 +56,10 @@ const SEEDED = [WITH_TRN, WITH_UNPAID, CLEAN]
 const Q00003 = '削除してよろしいですか？'
 const E00004 = '関連データが存在する為、削除できません。'
 
-test.describe.configure({ retries: 0, timeout: 180_000 })
+// Seed DB ở beforeAll/afterAll cấp file. Config để fullyParallel + 4 worker ⇒ không ghim
+// thì mỗi describe sang một worker, seed/xoá cùng bệnh nhân đụng nhau giữa các worker.
+// 'default' = một worker, đúng thứ tự, nhưng test đỏ không kéo test sau skip theo.
+test.describe.configure({ mode: 'default', retries: 0, timeout: 180_000 })
 
 /** Xoá bệnh nhân seed ở MỌI bảng có pat_no (kể cả archive) + audit_log của nó. */
 async function purgeSeedPatient(patNo: number): Promise<void> {

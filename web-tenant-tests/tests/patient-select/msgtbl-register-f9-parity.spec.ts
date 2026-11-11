@@ -92,10 +92,11 @@ import { makeStep, skipWithReason } from '../_shared/step'
 
 /**
  * Chia theo worker để `--repeat-each` (Rule 16) và suite 4 worker không giật
- * bệnh nhân của nhau. 71 + workerIndex ⇒ 990071-990074, chưa offset nào đụng
+ * bệnh nhân của nhau. 320 + parallelIndex ⇒ 990320-990323 (parallelIndex chặn
+ * trong 0..workers−1; workerIndex tăng mãi khi worker khởi động lại nên tràn dải)
  * (`grep -rn "SEED_PAT_NO_BASE +" tests/`).
  */
-const PAT_NO_OFFSET = 71
+const PAT_NO_OFFSET = 320
 let PAT_NO = ''
 
 /** Hằng số nghiệp vụ — tên theo đúng hằng trong wizard-validation.ts. */
@@ -153,14 +154,14 @@ test.describe('MSGTBL parity — F9 登録 màn 患者登録 (7 mã còn lại c
     test.beforeAll(async ({ authedPage }, testInfo) => {
         page = authedPage
         step = makeStep(page)
-        PAT_NO = patNo(String(SEED_PAT_NO_BASE + PAT_NO_OFFSET + testInfo.workerIndex))
+        PAT_NO = patNo(String(SEED_PAT_NO_BASE + PAT_NO_OFFSET + testInfo.parallelIndex))
         if (Number(PAT_NO) < SEED_PAT_NO_BASE) {
             throw new Error(
                 `TEST_PAT_NO=${PAT_NO} ngoài dải seed — spec này ghi đè 生年月日/保険 ` +
                     'nên chỉ chạy trên bệnh nhân seed.',
             )
         }
-        console.log(`worker #${testInfo.workerIndex} dùng bệnh nhân ${PAT_NO}`)
+        console.log(`worker #${testInfo.parallelIndex} dùng bệnh nhân ${PAT_NO}`)
     })
 
     test.afterAll(async () => {

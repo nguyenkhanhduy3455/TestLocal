@@ -51,5 +51,11 @@ export async function login(page: Page): Promise<void> {
     await page.getByLabel(JA.emailLabel).fill(ADMIN_USER.email)
     await page.getByLabel(JA.passwordLabel, { exact: true }).fill(ADMIN_USER.password)
     await page.getByRole('button', { name: JA.submit }).click()
+    // TEMP: tài khoản bật 二段階認証 — API (Development) nhận mã cố định 000000.
+    const totpCell = page.getByLabel('確認コード 1')
+    if (await totpCell.waitFor({ state: 'visible', timeout: 3_000 }).then(() => true, () => false)) {
+        await totpCell.fill('000000')
+        await page.getByRole('button', { name: '確認', exact: true }).click()
+    }
     await expect(page, RATE_LIMIT_HINT).toHaveURL(/\/$/)
 }

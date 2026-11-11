@@ -7,7 +7,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  *  - 申し送り (frm204002.cs:255-295, PatMsg.cs:43-65): PATMSG có update_dt = 診療日 của dòng 未精算 cuối;
  *      msg1..msg10 khác "" đều vào ListBox (`setItem` :829-835) — chuỗi toàn dấu cách vẫn là một dòng.
- *  - 保険証確認 (getPatInfo :670-760): conf_dt trống ⇒ đo được 「保険証確認 」 (FlaUI G9a); có ⇒ 「保険証確認 」 + EraTbl.getWrekiKnji
+ *  - 保険証確認 (getPatInfo :670-760): conf_dt trống ⇒ web 「保険証未確認」 (cố ý lệch WinForm, xem Q-1); có ⇒ 「保険証確認 」 + EraTbl.getWrekiKnji
  *      = ERA_TBL.ERA_NAME (「令和」) + yy年MM月dd日 (EraTbl.cs:119-131).
  *  - F1 ⇒ frm204004 Print (frm204004.cs:80-98, 264-277, 402-406): phím F1 領収書印刷 / F2 精算済ﾖﾘ /
  *      F3 診療内容ﾖﾘ / F5 明細書印刷 / F10 戻る; 精算日 từ–đến và 領収書発行日 = hôm nay; lưới = ACCDAT hôm nay.
@@ -40,7 +40,10 @@ const SCREEN_LOAD_TIMEOUT = 60_000
 const TABLES = ['unpaid', 'unpaid_deleted', 'acc_dat', 'acc_dat_deleted', 'pat_msg', 'pat_msg_deleted', 'med_ins_inf', 'med_ins_inf_deleted']
 
 skipWithReason(!dbEnabled, 'Cần TEST_DB=1: spec tự seed bệnh nhân + unpaid + acc_dat riêng')
-test.describe.configure({ retries: 0, timeout: 180_000 })
+// Seed DB ở beforeAll/afterAll cấp file. Config để fullyParallel + 4 worker ⇒ không ghim
+// thì mỗi describe sang một worker, seed/xoá cùng bệnh nhân đụng nhau giữa các worker.
+// 'default' = một worker, đúng thứ tự, nhưng test đỏ không kéo test sau skip theo.
+test.describe.configure({ mode: 'default', retries: 0, timeout: 180_000 })
 
 test.beforeAll(async () => {
     if (!dbEnabled) return
@@ -270,12 +273,13 @@ test.describe('窓口精算 G9 — parity', () => {
         await releaseSharedPage(page)
     })
 
-    // Đọc getPatInfo (:670-760) tưởng là 「保険証未確認」, nhưng ĐO WinForm (FlaUI G9a, 2026-10-27, CONF_DT1..6 NULL)
-    // ra 「保険証確認 」 — khớp web. Đáp án theo số đo.
-    test('Q-1 (parity) — 保険証確認 khi chưa có ngày xác nhận: 「保険証確認 」 (đo FlaUI G9a)', async () => {
+    // Web CỐ Ý lệch WinForm (app b7da283b1, 2026-10-29): WinForm đo được 「保険証確認 」 (FlaUI G9a, CONF_DT1..6 NULL)
+    // vì bug null ≠ string.Empty — PatInfoList.cs:75 conf_dt mặc định null, :715-720 không gán khi NULL,
+    // frm204002.cs:702 so `== string.Empty` ⇒ rơi nhánh else. Web theo ý định :704 「保険証未確認」.
+    test('Q-1 (parity) — 保険証確認 khi chưa có ngày xác nhận: 「保険証未確認」 (frm204002.cs:704)', async () => {
         await withDb((c) => c.query('UPDATE insurance SET conf_dt_1 = NULL WHERE pat_no = $1', [PAT_NO]))
         await openDetail()
-        await expect(insConf()).toHaveValue('保険証確認 ')
+        await expect(insConf()).toHaveValue('保険証未確認')
     })
 
     test('Q-2 (parity) — 保険証確認 có ngày: niên hiệu đầy đủ ERA_TBL.ERA_NAME 「令和」 (EraTbl.cs:119-131)', async () => {

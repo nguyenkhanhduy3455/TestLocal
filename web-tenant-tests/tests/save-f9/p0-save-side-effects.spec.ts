@@ -424,7 +424,7 @@ test.describe('nhóm P0 chưa port', () => {
  * nhau (`seedTestPatient` xoá-rồi-dựng, dùng chung số là khối sau xoá mất tiền
  * đề của khối trước).
  */
-const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 31))
+const PAT_NO = patNo(String(SEED_PAT_NO_BASE + 301))
 
 const TRT_DT =
     process.env.TEST_TRT_DT ??

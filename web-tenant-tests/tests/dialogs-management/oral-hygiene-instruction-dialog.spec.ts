@@ -593,6 +593,10 @@ test.describe('指導文書 — 実地指１・訪衛指 dialog', () => {
         await expect(guides.nth(0)).toHaveValue('ブラッシング指導')
         await guides.nth(GUIDE_COUNT - 1).fill('フロス使用')
         await expect(guides.nth(GUIDE_COUNT - 1)).toHaveValue('フロス使用')
+        // Gõ vào combo làm bung danh sách gợi ý và nó không tự đóng — đè lên combo
+        // 指導開始時刻 của TC sau. Chỉ Escape khi danh sách đang mở (Escape trơn rơi xuống dialog).
+        if (await page.getByRole('option').first().isVisible()) await page.keyboard.press('Escape')
+        await expect(page.getByRole('option')).toHaveCount(0)
         await step()
     })
 

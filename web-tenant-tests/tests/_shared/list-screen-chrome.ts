@@ -297,9 +297,11 @@ export function describeListChrome(defs: ListChromeDef[], suite: ListChromeSuite
 }
 
 function registerScreens(defs: ListChromeDef[]) {
-    test.describe.configure({ mode: 'serial', timeout: 300_000 })
     for (const def of defs) {
         test.describe(`Rule 24 — ${def.name}`, () => {
+            // Serial theo TỪNG màn (đúng doc-comment đầu file). Đặt ở mức cha thì cả file
+            // thành một chuỗi: một màn đỏ kéo mọi màn sau thành "did not run".
+            test.describe.configure({ mode: 'serial', timeout: 300_000 })
             let page: Page
             const root = () => (def.root ?? defaultRoot)(page)
 

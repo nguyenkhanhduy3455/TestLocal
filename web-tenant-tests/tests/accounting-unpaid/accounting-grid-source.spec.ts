@@ -426,6 +426,9 @@ test.describe('診療入力 会計 — tiền tính từ lưới đang hiện (m
                         // Loại ô của dòng 日計 và ô đang ở chế độ sửa.
                         if (e.hasAttribute('data-footer-cell')) continue
                         if (e.querySelector('input') !== null) continue
+                        // 部位病名行 / dòng gạch hiện 「−」 ở 回 và không mở editor
+                        // (registration-table: !item.isBuiLine && !item.emptyMetrics) — chỉ lấy ô có số.
+                        if (!/^\d+$/.test((e.textContent ?? '').trim())) continue
                         kai.add(key)
                     } else if (col === cols.ryo) {
                         name.set(key, (e.textContent ?? '').trim())

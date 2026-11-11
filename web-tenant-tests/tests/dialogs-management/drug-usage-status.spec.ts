@@ -4,7 +4,7 @@ import { dbEnabled, seedTreatmentRows, withDb } from '../_shared/db'
 import { captureFixedUi } from '../_shared/capture'
 import { expect, releaseSharedPage, test } from '../_shared/session'
 import { skipWithReason } from '../_shared/step'
-import { createTestPatient, dropTestPatient, nextTestPatNo } from '../_shared/test-patient'
+import { createTestPatient, dropTestPatient } from '../_shared/test-patient'
 
 /**
  * 医薬品使用状況 (WinForm frm506011) — màn takeover mở từ 施設基準届出設定 (frm506009)
@@ -191,7 +191,9 @@ test.describe('医薬品使用状況 (frm506011) — mở từ 施設基準届�
     test('TC-SUM: seed 3 処置 cho bệnh nhân test — hiệu (a)(b)(c) và ①～⑤ đúng công thức', async () => {
         skipWithReason(!dbEnabled, 'cần TEST_DB=1 để seed bệnh nhân 990000+')
 
-        patNo = await nextTestPatNo()
+        // Số cố định của riêng spec này: `nextTestPatNo()` (max+1) cấp TRÙNG số khi hai
+        // worker gọi cùng lúc, và có thể rơi đúng số cố định của spec khác.
+        patNo = 990305
         const day15 = (iso: string) => `${iso.slice(0, 8)}15`
         await createTestPatient(months[0]!, { patNo })
         await seedTreatmentRows(patNo, day15(months[0]!), [

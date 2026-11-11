@@ -83,7 +83,10 @@ const EXIT_PROMPT = '患者データは変更されています。保存しま�
 /** Câu hỏi của F9Proc ở 編集 (frm201001.cs:974) — có dấu phẩy sau 「は」. */
 const F9_UPDATE_PROMPT = /患者データは、変更されて(い|いま)す/
 
-test.describe.configure({ retries: 0, timeout: 180_000 })
+// Seed DB ở beforeAll/afterAll cấp file. Config để fullyParallel + 4 worker ⇒ không ghim
+// thì mỗi describe sang một worker, seed/xoá cùng bệnh nhân đụng nhau giữa các worker.
+// 'default' = một worker, đúng thứ tự, nhưng test đỏ không kéo test sau skip theo.
+test.describe.configure({ mode: 'default', retries: 0, timeout: 180_000 })
 
 test.beforeAll(async () => {
     if (!dbEnabled) return
@@ -294,7 +297,11 @@ test.describe('患者登録 (frm201001) — rời màn khi chưa lưu: parity', 
         await prompt().getByRole('button', { name: 'いいえ', exact: true }).click()
     })
 
-    test('TC-8 (parity) — F12 khi đã sửa: hỏi lưu TRƯỚC, chưa mở menu', async () => {
+    // BỎ QUA — web CỐ Ý lệch WinForm (xác nhận 2026-11-03): F12 mở thẳng MainMenuDialog, hỏi lưu
+    // chỉ SAU khi chọn mục (patient-detail-form.tsx onSelect → handleExit). WinForm hỏi TRƯỚC rồi mới
+    // mở MENU (frm201001.cs:751). Lưu ý: source app tự ghi KNOWN ISSUE 「編集 after a change → F12
+    // メニュー: no prompt is shown and the edits are lost」 — TC này chỉ đo thứ tự, không đo chuyện đó.
+    test.skip('TC-8 (parity) — F12 khi đã sửa: hỏi lưu TRƯỚC, chưa mở menu', async () => {
         skipWithReason(!dbEnabled, 'Cần TEST_DB=1 để seed bệnh nhân 編集')
         await openDirty()
         await fkey('F12').click()

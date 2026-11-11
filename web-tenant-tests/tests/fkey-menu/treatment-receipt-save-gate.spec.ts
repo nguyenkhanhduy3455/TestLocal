@@ -80,7 +80,8 @@ test.describe('診療入力 レセプト — chỉ hỏi lưu khi có sửa đ�
         const btn = page
             .getByRole('dialog')
             .or(page.getByRole('alertdialog'))
-            .getByRole('button', { name: /^(キャンセル|閉じる|OK)$/ })
+            // Bản xem 診療報酬明細書プレビュー chỉ có 「F1 印刷」/「F10 戻る」.
+            .getByRole('button', { name: /^(キャンセル|閉じる|OK|F10 戻る)$/ })
         // Bản xem / hộp agent offline bật SAU request print-jobs — chờ nó ra đã.
         await btn.first().waitFor({ timeout: 5_000 }).catch(() => {})
         for (let i = 0; i < 5; i++) {

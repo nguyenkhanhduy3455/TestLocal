@@ -22,7 +22,7 @@ import { dropTestPatient } from '../_shared/test-patient'
  * test tự dựng (dải 990000+) xoá ở afterAll, cả dòng `siga` tạm cho 欠損確認.
  */
 
-const PAT_NO = SEED_PAT_NO_BASE + 731
+const PAT_NO = SEED_PAT_NO_BASE + 304
 const TODAY = (() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
