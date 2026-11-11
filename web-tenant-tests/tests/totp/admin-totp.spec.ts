@@ -13,7 +13,7 @@ import { T, fillCode, nextCode, openLogin, readRecoveryCodes, readSecret, submit
  * 二段階認証 (TOTP) cho đăng nhập web-admin (super-admin) — nhánh feat/tenant-totp.
  *
  * FACT bám theo source (apps/web-admin/src/features/auth/totp/locales/ja.ts):
- *  - Sidebar → link 「二段階認証」 mở màn /two-factor; nút 「設定する」 mở dialog
+ *  - Sidebar → link 「アカウント設定」 mở màn /account (パスワード変更 + 二段階認証); nút 「設定する」 mở dialog
  *    「二段階認証の設定」 (QR + khoá Base32 + 6 ô mã) → 「リカバリーコード」 (10 mã, chỉ có 「コピー」).
  *  - POST /api/admin/auth/login trả { step, challengeToken, session }; step=totp ⇒ bước 確認コード.
  *  - Cookie ghi nhớ trình duyệt là td_{adminId} ở Path=/api/admin/auth.
@@ -62,14 +62,20 @@ test.describe('web-admin 二段階認証 (TOTP)', () => {
         if (dbEnabled) await deleteSeededAdmin()
     })
 
-    test('サイドバー 二段階認証: bật TOTP → QR + mã → 10 リカバリーコード (chỉ コピー)', async () => {
+    test('アカウント設定 → 二段階認証: bật TOTP → QR + mã → 10 リカバリーコード (chỉ コピー)', async () => {
         await openLogin(page)
         await submitPassword(page, SEEDED.email)
         await expect(page).not.toHaveURL(/\/login/)
 
-        await page.getByRole('link', { name: T.name, exact: true }).click()
-        await expect(page).toHaveURL(/\/two-factor$/)
-        await expect(page.getByRole('heading', { name: T.name, level: 1 })).toBeVisible()
+        await page.getByRole('link', { name: 'アカウント設定', exact: true }).click()
+        await expect(page).toHaveURL(/\/account$/)
+        await expect(page.getByRole('heading', { name: 'アカウント設定', level: 1 })).toBeVisible()
+
+        // パスワード変更 now lives on this screen: the button opens the existing dialog.
+        await page.getByRole('button', { name: 'パスワード変更' }).click()
+        await expect(page.getByRole('dialog')).toBeVisible()
+        await page.keyboard.press('Escape')
+        await expect(page.getByRole('dialog')).toHaveCount(0)
         const enable = page.getByRole('button', { name: T.enable, exact: true })
         await expect(enable).toBeVisible()
         await captureFixedUi(page, 'admin-totp-account-screen')
