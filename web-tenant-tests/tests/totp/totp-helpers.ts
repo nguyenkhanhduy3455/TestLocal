@@ -7,6 +7,7 @@ import { execSync } from 'node:child_process'
 
 import { expect, type Locator, type Page } from '@playwright/test'
 
+import { captureFixedUi } from '../_shared/capture'
 import { ADMIN_USER, JA } from '../_shared/test-data'
 
 const REDIS_CONTAINER = process.env.TEST_REDIS_CONTAINER ?? 'ochacom_redis'
@@ -173,6 +174,7 @@ export async function enableTotpFromProfile(page: Page, profileUrl = '/account/p
 export async function changeDevice(
     page: Page,
     proof: { code: string } | { recoveryCode: string },
+    capturePrefix: string,
 ): Promise<{ totp: TotpState; recoveryCodes: string[] }> {
     await page.getByRole('button', { name: T.change, exact: true }).click()
     const dialog = page.getByRole('dialog')
@@ -183,9 +185,11 @@ export async function changeDevice(
         await dialog.getByRole('button', { name: T.useRecovery }).click()
         await dialog.getByRole('textbox', { name: T.recoveryLabel }).fill(proof.recoveryCode)
     }
+    await captureFixedUi(dialog, `${capturePrefix}-change-verify`)
     await dialog.getByRole('button', { name: T.changeNext, exact: true }).click()
 
     const totp: TotpState = { secret: await readSecret(dialog), lastStep: 0 }
+    await captureFixedUi(dialog, `${capturePrefix}-change-new-qr`)
     await fillCode(dialog, await nextCode(page, totp))
     await dialog.getByRole('button', { name: T.confirmSetup, exact: true }).click()
 

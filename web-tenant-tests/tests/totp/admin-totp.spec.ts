@@ -139,7 +139,7 @@ test.describe('web-admin 二段階認証 (TOTP)', () => {
     test('端末を変更: mất máy → リカバリーコード → QR mới; đăng nhập lại bằng máy mới', async () => {
         await openTotpSettings(page, '/account')
         const oldSecret = totp.secret
-        const changed = await changeDevice(page, { recoveryCode: recovery[0]! })
+        const changed = await changeDevice(page, { recoveryCode: recovery[0]! }, 'admin-totp')
         expect(changed.totp.secret, 'phải là khoá mới').not.toBe(oldSecret)
         totp = changed.totp
 

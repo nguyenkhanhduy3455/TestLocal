@@ -202,7 +202,7 @@ test.describe('二段階認証 (TOTP)', () => {
 
     test('端末を変更: mật khẩu + mã máy cũ → QR mới → リカバリーコード mới', async () => {
         await openTotpSettings(page, '/account/profile')
-        const changed = await changeDevice(page, { code: await nextCode(page, totpA) })
+        const changed = await changeDevice(page, { code: await nextCode(page, totpA) }, 'totp')
         expect(changed.totp.secret, 'phải là khoá mới').not.toBe(totpA.secret)
         totpA = changed.totp
         await expect(page.getByText(/^有効（/)).toBeVisible()
