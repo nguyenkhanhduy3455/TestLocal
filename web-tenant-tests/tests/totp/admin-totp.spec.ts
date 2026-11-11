@@ -13,7 +13,7 @@ import { T, fillCode, nextCode, openLogin, readRecoveryCodes, readSecret, submit
  * 二段階認証 (TOTP) cho đăng nhập web-admin (super-admin) — nhánh feat/tenant-totp.
  *
  * FACT bám theo source (apps/web-admin/src/features/auth/totp/locales/ja.ts):
- *  - Sidebar → nút 「二段階認証」 (dưới パスワード変更) mở dialog cài đặt; nút 「設定する」 mở dialog
+ *  - Sidebar → link 「二段階認証」 mở màn /two-factor; nút 「設定する」 mở dialog
  *    「二段階認証の設定」 (QR + khoá Base32 + 6 ô mã) → 「リカバリーコード」 (10 mã, chỉ có 「コピー」).
  *  - POST /api/admin/auth/login trả { step, challengeToken, session }; step=totp ⇒ bước 確認コード.
  *  - Cookie ghi nhớ trình duyệt là td_{adminId} ở Path=/api/admin/auth.
@@ -67,13 +67,15 @@ test.describe('web-admin 二段階認証 (TOTP)', () => {
         await submitPassword(page, SEEDED.email)
         await expect(page).not.toHaveURL(/\/login/)
 
-        await page.getByRole('button', { name: T.name, exact: true }).click()
-        const account = page.getByRole('dialog')
-        await expect(account.getByRole('button', { name: '閉じる' }), 'có X + nút 閉じる').toHaveCount(2)
-        await captureFixedUi(account, 'admin-totp-account-dialog')
-        await account.getByRole('button', { name: T.enable, exact: true }).click()
+        await page.getByRole('link', { name: T.name, exact: true }).click()
+        await expect(page).toHaveURL(/\/two-factor$/)
+        await expect(page.getByRole('heading', { name: T.name, level: 1 })).toBeVisible()
+        const enable = page.getByRole('button', { name: T.enable, exact: true })
+        await expect(enable).toBeVisible()
+        await captureFixedUi(page, 'admin-totp-account-screen')
+        await enable.click()
 
-        const setup = page.getByRole('dialog').last()
+        const setup = page.getByRole('dialog')
         totp.secret = await readSecret(setup)
         await captureFixedUi(setup, 'admin-totp-setup-dialog')
         await fillCode(setup, await nextCode(page, totp))
@@ -86,6 +88,12 @@ test.describe('web-admin 二段階認証 (TOTP)', () => {
         await setup.getByLabel(T.saved).click()
         await setup.getByRole('button', { name: T.done }).click()
         await expect(page.getByText(T.enabledToast, { exact: true })).toBeVisible()
+        await expect(page.getByText(/^有効（/)).toBeVisible()
+        await captureFixedUi(page, 'admin-totp-account-enabled')
+
+        await page.getByRole('link', { name: 'セキュリティ設定', exact: true }).click()
+        await expect(page.getByLabel('全管理者に二段階認証を必須にする')).toBeVisible()
+        await captureFixedUi(page, 'admin-totp-security-settings')
 
         const row = await withDb((c) =>
             c.query<{ totp_secret_enc: string | null }>(
