@@ -209,12 +209,20 @@ test.describe('二段階認証 (TOTP)', () => {
     })
 
     test('セキュリティ設定: bật bắt buộc → user chưa có TOTP phải thiết lập ngay khi login', async () => {
-        await page.goto('/settings/security', { waitUntil: 'domcontentloaded' })
+        // Reached from 初期設定 (last button of <<機能設定>>), not マスタ登録.
+        await page.goto('/settings/general', { waitUntil: 'domcontentloaded' })
+        const menuButton = page.getByRole('button', { name: 'セキュリティ設定' })
+        await expect(menuButton).toBeVisible()
+        await captureFixedUi(page, 'totp-initial-settings-menu')
+        await menuButton.click()
+        await expect(page).toHaveURL(/\/settings\/security$/)
         await page.getByLabel(T.forceLabel).click()
         await captureFixedUi(page, 'totp-security-settings')
         await page.keyboard.press('F9')
         await page.getByRole('button', { name: 'はい' }).click()
         await expect(page.getByText(T.savedToast, { exact: true })).toBeVisible()
+        await page.keyboard.press('F10')
+        await expect(page, 'F10 戻る về 初期設定').toHaveURL(/\/settings\/general$/)
 
         await signOut(page)
         await submitPassword(page, USER_B.email)
